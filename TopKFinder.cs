@@ -270,7 +270,11 @@ class StrategyPrinter
                 }
 
                 int unresolvedPairs = CountUnresolvedPairs(state, group);
-                var score = (minReduction, -group.Count, nextStateKeys.Count, totalReduction, unresolvedPairs);
+                // Prefer smaller groups only when this comparison can finish the job;
+                // otherwise prefer larger groups for more information gain.
+                bool canFinish = state.Active.Count - minReduction <= _k;
+                int negGroupSize = canFinish ? -group.Count : 0;
+                var score = (minReduction, negGroupSize, nextStateKeys.Count, totalReduction, unresolvedPairs);
 
                 bool isUseful = nextStateKeys.Any(key => key != currentKey);
                 if (!isUseful)
