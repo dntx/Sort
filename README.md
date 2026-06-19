@@ -1,6 +1,6 @@
 # TopK Finder
 
-Find the top-k elements from n numbers using **only** a sort operation that accepts at most m elements per call. The goal is to minimize the number of sort invocations.
+Generate a **comparison strategy** for finding the top-k elements from n numbers when the only allowed operation is sorting at most m elements at a time.
 
 ## Problem
 
@@ -8,11 +8,15 @@ Given n numbers, find the largest k numbers (order among them doesn't matter). T
 - Accepts at most m numbers
 - Returns them in sorted order
 
-Minimize the total number of `Sort` calls.
+Instead of printing one concrete run on random data, the program now prints the **decision tree itself**:
+
+- which indices to compare first
+- what the possible sort results are
+- which group should be compared next under each result
 
 ## Algorithm
 
-The current implementation uses a **transitivity-aware elimination strategy**.
+The implementation uses a **transitivity-aware elimination strategy**.
 
 When a sort returns:
 
@@ -40,6 +44,8 @@ Each round, the program chooses up to `m` active candidates and prefers:
 
 This usually beats the earlier batch/tournament approach because it reuses previously learned order relations instead of restarting from scratch.
 
+To print the strategy tree, the program symbolically enumerates all sort outcomes consistent with the currently known partial order, then recursively prints the next comparison for each branch.
+
 ## Usage
 
 ```bash
@@ -60,20 +66,15 @@ $ echo "10
 4
 3" | dotnet run
 
-Input array (10 elements): [668, 141, 126, 523, 169, 263, 724, 513, 174, 761]
-Parameters: n=10, m=4, k=3
+n=10, m=4, k=3
 
---- Finding top-3 elements ---
-  Sort call #1: sorting 4 elements -> [#0=668, #3=523, #1=141, #2=126]
-  Sort call #2: sorting 4 elements -> [#6=724, #7=513, #5=263, #4=169]
-  Sort call #3: sorting 4 elements -> [#9=761, #0=668, #8=174, #1=141]
-  Sort call #4: sorting 4 elements -> [#9=761, #6=724, #0=668, #3=523]
-
---- Results ---
-Top-3 found: [761, 724, 668]
-Correct: True
-Total sort calls: 4
+比较方案：
+状态 S1: 比较 #1, #2, #3, #4
+  如果结果是 #1 > #2 > #3 > #4：
+    ...
 ```
+
+For small inputs such as `n=8, m=3, k=3`, the full strategy tree is readable. For larger inputs, the tree can grow quickly because each sort may have multiple feasible outcomes.
 
 ## Requirements
 
