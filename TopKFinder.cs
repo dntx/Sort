@@ -222,48 +222,52 @@ class StrategyPrinter
     private List<int> ChooseGroup(ComparisonState state)
     {
         var candidates = state.Active.OrderBy(x => x).ToList();
-        int groupSize = Math.Min(_m, candidates.Count);
+        int maxGroupSize = Math.Min(_m, candidates.Count);
         string currentKey = state.GetCanonicalKey();
 
         List<int>? bestGroup = null;
-        (int minReduction, int distinctStates, int totalReduction, int unresolvedPairs) bestScore = (-1, -1, -1, -1);
+        (int minReduction, int negGroupSize, int distinctStates, int totalReduction, int unresolvedPairs) bestScore =
+            (-1, int.MinValue, -1, -1, -1);
 
-        foreach (var group in EnumerateCombinations(candidates, groupSize))
+        for (int groupSize = 2; groupSize <= maxGroupSize; groupSize++)
         {
-            var nextStateKeys = new HashSet<string>(StringComparer.Ordinal);
-            int minReduction = int.MaxValue;
-            int totalReduction = 0;
-
-            foreach (var order in EnumerateFeasibleOrders(state, group))
+            foreach (var group in EnumerateCombinations(candidates, groupSize))
             {
-                var next = state.Clone();
-                next.ApplyOrder(order);
-                next.Eliminate(_k);
+                var nextStateKeys = new HashSet<string>(StringComparer.Ordinal);
+                int minReduction = int.MaxValue;
+                int totalReduction = 0;
 
-                int reduction = state.Active.Count - next.Active.Count;
-                minReduction = Math.Min(minReduction, reduction);
-                totalReduction += reduction;
-                nextStateKeys.Add(next.GetCanonicalKey());
-            }
+                foreach (var order in EnumerateFeasibleOrders(state, group))
+                {
+                    var next = state.Clone();
+                    next.ApplyOrder(order);
+                    next.Eliminate(_k);
 
-            int unresolvedPairs = CountUnresolvedPairs(state, group);
-            var score = (minReduction, nextStateKeys.Count, totalReduction, unresolvedPairs);
+                    int reduction = state.Active.Count - next.Active.Count;
+                    minReduction = Math.Min(minReduction, reduction);
+                    totalReduction += reduction;
+                    nextStateKeys.Add(next.GetCanonicalKey());
+                }
 
-            bool isUseful = nextStateKeys.Any(key => key != currentKey);
-            if (!isUseful)
-                continue;
+                int unresolvedPairs = CountUnresolvedPairs(state, group);
+                var score = (minReduction, -group.Count, nextStateKeys.Count, totalReduction, unresolvedPairs);
 
-            if (bestGroup is null || score.CompareTo(bestScore) > 0)
-            {
-                bestGroup = group;
-                bestScore = score;
+                bool isUseful = nextStateKeys.Any(key => key != currentKey);
+                if (!isUseful)
+                    continue;
+
+                if (bestGroup is null || score.CompareTo(bestScore) > 0)
+                {
+                    bestGroup = group;
+                    bestScore = score;
+                }
             }
         }
 
         if (bestGroup is not null)
             return bestGroup;
 
-        return candidates.Take(groupSize).ToList();
+        return candidates.Take(maxGroupSize).ToList();
     }
 
     private IEnumerable<List<int>> EnumerateFeasibleOrders(ComparisonState state, IReadOnlyList<int> group)
