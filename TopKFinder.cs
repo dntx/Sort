@@ -2,257 +2,330 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-/// <summary>
-/// Finds the top-k elements from n numbers using only a sort operation
-/// that accepts at most m numbers. Minimizes the number of sort calls by
-/// leveraging transitivity: if A > B and B > C, then A > C without extra sorts.
-/// 
-/// An element is "eliminated" when it has >= k elements proven to be above it
-/// (it cannot be in the top-k). The algorithm continues until only k candidates remain.
-/// </summary>
-class TopKFinder
+class ComparisonState
 {
-    private readonly int _m;
-    private int _sortCalls;
+    public HashSet<int>[] Ancestors { get; }
+    public HashSet<int>[] Descendants { get; }
+    public HashSet<int> Active { get; }
 
-    // Transitive closure: ancestors[i] = set of all elements known > element i
-    private HashSet<int>[]? _ancestors;
-    // Transitive closure: descendants[i] = set of all elements known < element i
-    private HashSet<int>[]? _descendants;
-
-    public int SortCalls => _sortCalls;
-
-    public TopKFinder(int m)
+    public ComparisonState(int n)
     {
-        _m = m;
-        _sortCalls = 0;
-    }
-
-    /// <summary>
-    /// The only allowed operation: sort up to m elements, returns indices in descending value order.
-    /// </summary>
-    private List<int> SortOp(int[] values, List<int> indices)
-    {
-        if (indices.Count > _m)
-            throw new InvalidOperationException($"Sort can accept at most {_m} elements, got {indices.Count}");
-        if (indices.Count == 0)
-            return new List<int>();
-
-        _sortCalls++;
-        var sorted = indices.OrderByDescending(i => values[i]).ToList();
-        Console.WriteLine($"  Sort call #{_sortCalls}: sorting {indices.Count} elements -> " +
-            $"[{string.Join(", ", sorted.Select(i => $"#{i}={values[i]}"))}]");
-        return sorted;
-    }
-
-    /// <summary>
-    /// Record that 'greater' > 'lesser' and propagate transitivity.
-    /// </summary>
-    private void AddRelation(int greater, int lesser)
-    {
-        if (_ancestors is null || _descendants is null)
-            throw new InvalidOperationException("TopKFinder state has not been initialized.");
-
-        if (_ancestors[lesser].Contains(greater))
-            return; // already known
-
-        // lesser gains greater and all of greater's ancestors
-        var newAncestorsForLesser = new HashSet<int>(_ancestors[greater]) { greater };
-        newAncestorsForLesser.ExceptWith(_ancestors[lesser]);
-
-        if (newAncestorsForLesser.Count == 0) return;
-
-        // All nodes that are at or below 'lesser' need these new ancestors
-        var belowSet = new HashSet<int>(_descendants[lesser]) { lesser };
-        foreach (int below in belowSet)
-        {
-            _ancestors[below].UnionWith(newAncestorsForLesser);
-        }
-
-        // All nodes that are at or above 'greater' gain 'lesser' and its descendants as descendants
-        var newDescForGreater = new HashSet<int>(_descendants[lesser]) { lesser };
-        newDescForGreater.ExceptWith(_descendants[greater]);
-
-        if (newDescForGreater.Count == 0) return;
-
-        var aboveSet = new HashSet<int>(_ancestors[greater]) { greater };
-        foreach (int above in aboveSet)
-        {
-            _descendants[above].UnionWith(newDescForGreater);
-        }
-    }
-
-    /// <summary>
-    /// Find the top-k elements from the given values. Returns their indices.
-    /// Uses transitivity-aware elimination to minimize sort calls.
-    /// </summary>
-    public List<int> FindTopK(int[] values, int k)
-    {
-        int n = values.Length;
-        if (k >= n)
-            return Enumerable.Range(0, n).ToList();
-
-        // Initialize transitive closure structures
-        _ancestors = new HashSet<int>[n];
-        _descendants = new HashSet<int>[n];
+        Ancestors = new HashSet<int>[n];
+        Descendants = new HashSet<int>[n];
         for (int i = 0; i < n; i++)
         {
-            _ancestors[i] = new HashSet<int>();
-            _descendants[i] = new HashSet<int>();
+            Ancestors[i] = new HashSet<int>();
+            Descendants[i] = new HashSet<int>();
         }
 
-        var active = new HashSet<int>(Enumerable.Range(0, n));
-
-        // Fully adaptive: use strategic group selection from the start.
-        // For elements with no known relationships yet, prioritize covering all elements.
-        while (active.Count > k)
-        {
-            var group = ChooseGroup(active, k);
-            var sorted = SortOp(values, group);
-
-            for (int a = 0; a < sorted.Count - 1; a++)
-                for (int b = a + 1; b < sorted.Count; b++)
-                    AddRelation(sorted[a], sorted[b]);
-
-            Eliminate(active, k);
-        }
-
-        return active.ToList();
+        Active = Enumerable.Range(0, n).ToHashSet();
     }
 
-    /// <summary>
-    /// Remove elements that have >= k ancestors (can't be in top-k).
-    /// </summary>
-    private void Eliminate(HashSet<int> active, int k)
+    private ComparisonState(HashSet<int>[] ancestors, HashSet<int>[] descendants, HashSet<int> active)
     {
-        if (_ancestors is null)
-            throw new InvalidOperationException("TopKFinder state has not been initialized.");
-
-        var toRemove = active.Where(i => _ancestors[i].Count >= k).ToList();
-        foreach (var r in toRemove)
-            active.Remove(r);
+        Ancestors = ancestors;
+        Descendants = descendants;
+        Active = active;
     }
 
-    /// <summary>
-    /// Choose the best group of m elements to sort next.
-    /// Strategy:
-    /// 1. If there are "unseen" elements (no relationships at all), prioritize covering them.
-    /// 2. Otherwise, mix "strong" elements (many descendants) with "almost eliminated" elements
-    ///    (ancestors.Count == k-1) to trigger eliminations via transitivity.
-    /// </summary>
-    private List<int> ChooseGroup(HashSet<int> active, int k)
+    public ComparisonState Clone()
     {
-        if (_ancestors is null || _descendants is null)
-            throw new InvalidOperationException("TopKFinder state has not been initialized.");
+        var ancestors = Ancestors.Select(set => new HashSet<int>(set)).ToArray();
+        var descendants = Descendants.Select(set => new HashSet<int>(set)).ToArray();
+        return new ComparisonState(ancestors, descendants, new HashSet<int>(Active));
+    }
 
-        var candidates = active.ToList();
+    public void AddRelation(int greater, int lesser)
+    {
+        if (Ancestors[lesser].Contains(greater))
+            return;
 
-        // Unseen elements: have no ancestors and no descendants (never been in a sort)
-        var unseen = candidates
-            .Where(i => _ancestors[i].Count == 0 && _descendants[i].Count == 0)
+        var newAncestorsForLesser = new HashSet<int>(Ancestors[greater]) { greater };
+        newAncestorsForLesser.ExceptWith(Ancestors[lesser]);
+
+        if (newAncestorsForLesser.Count > 0)
+        {
+            var belowSet = new HashSet<int>(Descendants[lesser]) { lesser };
+            foreach (int below in belowSet)
+                Ancestors[below].UnionWith(newAncestorsForLesser);
+        }
+
+        var newDescendantsForGreater = new HashSet<int>(Descendants[lesser]) { lesser };
+        newDescendantsForGreater.ExceptWith(Descendants[greater]);
+
+        if (newDescendantsForGreater.Count > 0)
+        {
+            var aboveSet = new HashSet<int>(Ancestors[greater]) { greater };
+            foreach (int above in aboveSet)
+                Descendants[above].UnionWith(newDescendantsForGreater);
+        }
+    }
+
+    public void ApplyOrder(IReadOnlyList<int> sorted)
+    {
+        for (int i = 0; i < sorted.Count - 1; i++)
+        {
+            for (int j = i + 1; j < sorted.Count; j++)
+                AddRelation(sorted[i], sorted[j]);
+        }
+    }
+
+    public void Eliminate(int k)
+    {
+        var removed = Active.Where(i => Ancestors[i].Count >= k).ToList();
+        foreach (int item in removed)
+            Active.Remove(item);
+    }
+
+    public string GetKey()
+    {
+        var parts = new List<string>(Ancestors.Length + 1);
+        parts.Add("A:" + string.Join(",", Active.OrderBy(x => x)));
+        for (int i = 0; i < Ancestors.Length; i++)
+            parts.Add($"{i}:{string.Join(",", Ancestors[i].OrderBy(x => x))}");
+        return string.Join("|", parts);
+    }
+}
+
+class StrategyPrinter
+{
+    private readonly int _n;
+    private readonly int _m;
+    private readonly int _k;
+    private readonly Dictionary<string, int> _stateIds = new();
+    private readonly HashSet<string> _expandedStates = new();
+    private int _nextStateId = 1;
+
+    public StrategyPrinter(int n, int m, int k)
+    {
+        _n = n;
+        _m = m;
+        _k = k;
+    }
+
+    public void Print()
+    {
+        var initial = new ComparisonState(_n);
+        Console.WriteLine($"n={_n}, m={_m}, k={_k}");
+        Console.WriteLine();
+        Console.WriteLine("比较方案：");
+        PrintState(initial, 0);
+    }
+
+    private void PrintState(ComparisonState state, int indent)
+    {
+        string key = state.GetKey();
+        int stateId = GetStateId(key);
+        string prefix = new string(' ', indent * 2);
+
+        if (state.Active.Count <= _k)
+        {
+            Console.WriteLine($"{prefix}状态 S{stateId}: 已经可以确定前 {_k} 个数属于 " +
+                $"{FormatSet(state.Active.OrderBy(x => x))}");
+            return;
+        }
+
+        if (_expandedStates.Contains(key))
+        {
+            Console.WriteLine($"{prefix}转到状态 S{stateId}");
+            return;
+        }
+
+        _expandedStates.Add(key);
+
+        var group = ChooseGroup(state);
+        Console.WriteLine($"{prefix}状态 S{stateId}: 比较 {FormatSet(group)}");
+
+        var groupedBranches = new SortedDictionary<string, BranchInfo>(StringComparer.Ordinal);
+
+        foreach (var order in EnumerateFeasibleOrders(state, group))
+        {
+            var next = state.Clone();
+            next.ApplyOrder(order);
+            next.Eliminate(_k);
+
+            string nextKey = next.GetKey();
+            if (!groupedBranches.TryGetValue(nextKey, out BranchInfo? branch))
+            {
+                branch = new BranchInfo(next);
+                groupedBranches[nextKey] = branch;
+            }
+
+            branch.Orders.Add(FormatOrder(order));
+        }
+
+        foreach (var entry in groupedBranches.Values.OrderBy(v => v.Orders[0], StringComparer.Ordinal))
+        {
+            Console.WriteLine($"{prefix}  如果结果是 {string.Join(" 或 ", entry.Orders)}：");
+            PrintState(entry.NextState, indent + 2);
+        }
+    }
+
+    private List<int> ChooseGroup(ComparisonState state)
+    {
+        var candidates = state.Active.OrderBy(x => x).ToList();
+        int groupSize = Math.Min(_m, candidates.Count);
+        string currentKey = state.GetKey();
+
+        List<int>? bestGroup = null;
+        (int minReduction, int distinctStates, int totalReduction, int unresolvedPairs) bestScore = (-1, -1, -1, -1);
+
+        foreach (var group in EnumerateCombinations(candidates, groupSize))
+        {
+            var nextStateKeys = new HashSet<string>(StringComparer.Ordinal);
+            int minReduction = int.MaxValue;
+            int totalReduction = 0;
+
+            foreach (var order in EnumerateFeasibleOrders(state, group))
+            {
+                var next = state.Clone();
+                next.ApplyOrder(order);
+                next.Eliminate(_k);
+
+                int reduction = state.Active.Count - next.Active.Count;
+                minReduction = Math.Min(minReduction, reduction);
+                totalReduction += reduction;
+                nextStateKeys.Add(next.GetKey());
+            }
+
+            int unresolvedPairs = CountUnresolvedPairs(state, group);
+            var score = (minReduction, nextStateKeys.Count, totalReduction, unresolvedPairs);
+
+            bool isUseful = nextStateKeys.Any(key => key != currentKey);
+            if (!isUseful)
+                continue;
+
+            if (bestGroup is null || score.CompareTo(bestScore) > 0)
+            {
+                bestGroup = group;
+                bestScore = score;
+            }
+        }
+
+        if (bestGroup is not null)
+            return bestGroup;
+
+        return candidates.Take(groupSize).ToList();
+    }
+
+    private IEnumerable<List<int>> EnumerateFeasibleOrders(ComparisonState state, IReadOnlyList<int> group)
+    {
+        var remaining = new HashSet<int>(group);
+        var current = new List<int>(group.Count);
+
+        foreach (var order in EnumerateFeasibleOrders(state, remaining, current))
+            yield return order;
+    }
+
+    private IEnumerable<List<int>> EnumerateFeasibleOrders(
+        ComparisonState state,
+        HashSet<int> remaining,
+        List<int> current)
+    {
+        if (remaining.Count == 0)
+        {
+            yield return new List<int>(current);
+            yield break;
+        }
+
+        var nextChoices = remaining
+            .Where(candidate => remaining.All(other => other == candidate || !state.Ancestors[candidate].Contains(other)))
+            .OrderBy(x => x)
             .ToList();
 
-        // If most elements are unseen, just cover them in groups
-        if (unseen.Count >= _m)
-            return unseen.Take(_m).ToList();
-
-        // If some unseen remain, mix them with the strongest known leader
-        if (unseen.Count > 0)
+        foreach (int next in nextChoices)
         {
-            var earlyGroup = new List<int>();
-            // Add a strong leader first
-            var bestLeader = candidates
-                .Where(i => !unseen.Contains(i))
-                .OrderByDescending(i => _descendants[i].Count)
-                .ThenBy(i => _ancestors[i].Count)
-                .FirstOrDefault(-1);
-            if (bestLeader >= 0)
-                earlyGroup.Add(bestLeader);
-            // Fill rest with unseen
-            foreach (var u in unseen)
-            {
-                if (earlyGroup.Count >= _m) break;
-                earlyGroup.Add(u);
-            }
-            // Fill any remaining slots with other candidates
-            foreach (var c in candidates.Where(i => !earlyGroup.Contains(i))
-                .OrderByDescending(i => _ancestors[i].Count))
-            {
-                if (earlyGroup.Count >= _m) break;
-                earlyGroup.Add(c);
-            }
-            return earlyGroup.Take(_m).ToList();
+            remaining.Remove(next);
+            current.Add(next);
+
+            foreach (var order in EnumerateFeasibleOrders(state, remaining, current))
+                yield return order;
+
+            current.RemoveAt(current.Count - 1);
+            remaining.Add(next);
         }
+    }
 
-        // Almost eliminated: one more ancestor needed
-        var almostEliminated = candidates
-            .Where(i => _ancestors[i].Count == k - 1)
-            .ToList();
-
-        // Leaders: elements with most descendants (most proven wins)
-        var leaders = candidates
-            .OrderByDescending(i => _descendants[i].Count)
-            .ThenBy(i => _ancestors[i].Count)
-            .ToList();
-
-        var group = new List<int>();
-        var used = new HashSet<int>();
-
-        // Pick a leader that can actually eliminate almost-eliminated elements
-        foreach (var leader in leaders)
+    private static int CountUnresolvedPairs(ComparisonState state, IReadOnlyList<int> group)
+    {
+        int count = 0;
+        for (int i = 0; i < group.Count - 1; i++)
         {
-            if (group.Count >= _m) break;
-            bool canEliminate = almostEliminated.Any(ae =>
-                !used.Contains(ae) && !_ancestors[ae].Contains(leader));
-            if (canEliminate || group.Count == 0)
+            for (int j = i + 1; j < group.Count; j++)
             {
-                group.Add(leader);
-                used.Add(leader);
+                int a = group[i];
+                int b = group[j];
+                if (!state.Ancestors[a].Contains(b) && !state.Ancestors[b].Contains(a))
+                    count++;
             }
         }
 
-        // Fill with almost-eliminated elements not already above'd by group members
-        foreach (var ae in almostEliminated)
+        return count;
+    }
+
+    private static IEnumerable<List<int>> EnumerateCombinations(IReadOnlyList<int> items, int count)
+    {
+        var current = new List<int>(count);
+        foreach (var combination in EnumerateCombinations(items, count, 0, current))
+            yield return combination;
+    }
+
+    private static IEnumerable<List<int>> EnumerateCombinations(
+        IReadOnlyList<int> items,
+        int count,
+        int start,
+        List<int> current)
+    {
+        if (current.Count == count)
         {
-            if (group.Count >= _m) break;
-            if (used.Contains(ae)) continue;
-            if (group.Any(g => !_ancestors[ae].Contains(g)))
-            {
-                group.Add(ae);
-                used.Add(ae);
-            }
+            yield return new List<int>(current);
+            yield break;
         }
 
-        // Fill remaining with unseen elements first (they need info)
-        foreach (var u in unseen)
+        for (int i = start; i <= items.Count - (count - current.Count); i++)
         {
-            if (group.Count >= _m) break;
-            if (!used.Contains(u))
-            {
-                group.Add(u);
-                used.Add(u);
-            }
+            current.Add(items[i]);
+            foreach (var combination in EnumerateCombinations(items, count, i + 1, current))
+                yield return combination;
+            current.RemoveAt(current.Count - 1);
         }
+    }
 
-        // Then fill with elements closest to elimination
-        var rest = candidates
-            .Where(i => !used.Contains(i))
-            .OrderByDescending(i => _ancestors[i].Count);
+    private int GetStateId(string key)
+    {
+        if (_stateIds.TryGetValue(key, out int id))
+            return id;
 
-        foreach (var r in rest)
+        id = _nextStateId++;
+        _stateIds[key] = id;
+        return id;
+    }
+
+    private static string FormatSet(IEnumerable<int> items)
+    {
+        return string.Join(", ", items.Select(i => $"#{i + 1}"));
+    }
+
+    private static string FormatOrder(IEnumerable<int> items)
+    {
+        return string.Join(" > ", items.Select(i => $"#{i + 1}"));
+    }
+
+    private sealed class BranchInfo
+    {
+        public List<string> Orders { get; } = new();
+        public ComparisonState NextState { get; }
+
+        public BranchInfo(ComparisonState nextState)
         {
-            if (group.Count >= _m) break;
-            group.Add(r);
-            used.Add(r);
+            NextState = nextState;
         }
-
-        return group.Take(_m).ToList();
     }
 }
 
 class Program
 {
-    static void Main(string[] args)
+    static void Main()
     {
         Console.Write("Enter n (total numbers): ");
         int n = int.Parse(Console.ReadLine()!);
@@ -261,33 +334,25 @@ class Program
         Console.Write("Enter k (top-k to find): ");
         int k = int.Parse(Console.ReadLine()!);
 
-        if (k > n) { Console.WriteLine("Error: k > n"); return; }
-        if (m < 2) { Console.WriteLine("Error: m must be >= 2"); return; }
+        if (n <= 0)
+        {
+            Console.WriteLine("Error: n must be positive");
+            return;
+        }
 
-        // Generate random data
-        var rand = new Random(42);
-        int[] values = new int[n];
-        for (int i = 0; i < n; i++)
-            values[i] = rand.Next(1, 1000);
+        if (k <= 0 || k > n)
+        {
+            Console.WriteLine("Error: k must satisfy 1 <= k <= n");
+            return;
+        }
 
-        Console.WriteLine($"\nInput array ({n} elements): [{string.Join(", ", values)}]");
-        Console.WriteLine($"Parameters: n={n}, m={m}, k={k}");
-        Console.WriteLine($"\n--- Finding top-{k} elements ---\n");
+        if (m < 2)
+        {
+            Console.WriteLine("Error: m must be >= 2");
+            return;
+        }
 
-        var finder = new TopKFinder(m);
-        var topKIndices = finder.FindTopK(values, k);
-
-        // Verify correctness
-        var topKValues = topKIndices.Select(i => values[i]).ToList();
-        var actualTopK = values.OrderByDescending(x => x).Take(k).ToList();
-
-        Console.WriteLine($"\n--- Results ---");
-        Console.WriteLine($"Top-{k} found: [{string.Join(", ", topKValues.OrderByDescending(x => x))}]");
-        Console.WriteLine($"Actual top-{k}: [{string.Join(", ", actualTopK)}]");
-        Console.WriteLine($"Total sort calls: {finder.SortCalls}");
-
-        // Verify: the multiset of top-k values should match
-        bool correct = topKValues.OrderByDescending(x => x).SequenceEqual(actualTopK);
-        Console.WriteLine($"Correct: {correct}");
+        var printer = new StrategyPrinter(n, m, k);
+        printer.Print();
     }
 }
