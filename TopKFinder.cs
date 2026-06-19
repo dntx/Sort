@@ -168,11 +168,24 @@ class StrategyPrinter
         var initial = new ComparisonState(_n);
         Console.WriteLine($"n={_n}, m={_m}, k={_k}");
         Console.WriteLine();
-        Console.WriteLine("比较方案：");
-        PrintState(initial, 0);
+        PrintState(initial, 0, 1);
     }
 
-    private void PrintState(ComparisonState state, int indent)
+    private string? GetInlineResult(ComparisonState state)
+    {
+        string key = state.GetCanonicalKey();
+        int stateId = GetStateId(key);
+
+        if (state.Active.Count <= _k)
+            return $"S{stateId}: top {_k} = ({FormatSet(state.Active.OrderBy(x => x))})";
+
+        if (_expandedStates.Contains(key))
+            return $"→S{stateId}";
+
+        return null;
+    }
+
+    private void PrintState(ComparisonState state, int indent, int step)
     {
         string key = state.GetCanonicalKey();
         int stateId = GetStateId(key);
@@ -180,21 +193,20 @@ class StrategyPrinter
 
         if (state.Active.Count <= _k)
         {
-            Console.WriteLine($"{prefix}状态 S{stateId}: 已经可以确定前 {_k} 个数属于 " +
-                $"{FormatSet(state.Active.OrderBy(x => x))}");
+            Console.WriteLine($"{prefix}S{stateId}: top {_k} = ({FormatSet(state.Active.OrderBy(x => x))})");
             return;
         }
 
         if (_expandedStates.Contains(key))
         {
-            Console.WriteLine($"{prefix}转到状态 S{stateId}");
+            Console.WriteLine($"{prefix}→S{stateId}");
             return;
         }
 
         _expandedStates.Add(key);
 
         var group = ChooseGroup(state);
-        Console.WriteLine($"{prefix}状态 S{stateId}: 比较 {FormatSet(group)}");
+        Console.WriteLine($"{prefix}S{stateId} [step {step}] sort({FormatSet(group)})");
 
         var groupedBranches = new SortedDictionary<string, BranchInfo>(StringComparer.Ordinal);
 
@@ -214,8 +226,16 @@ class StrategyPrinter
 
         foreach (var entry in groupedBranches.Values.OrderBy(v => v.RepresentativeOrder, StringComparer.Ordinal))
         {
-            Console.WriteLine($"{prefix}  如果结果是 {entry.RepresentativeOrder}：");
-            PrintState(entry.NextState, indent + 2);
+            string? inline = GetInlineResult(entry.NextState);
+            if (inline != null)
+            {
+                Console.WriteLine($"{prefix}  {entry.RepresentativeOrder}: {inline}");
+            }
+            else
+            {
+                Console.WriteLine($"{prefix}  {entry.RepresentativeOrder}:");
+                PrintState(entry.NextState, indent + 2, step + 1);
+            }
         }
     }
 
