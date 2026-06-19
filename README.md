@@ -12,22 +12,33 @@ Minimize the total number of `Sort` calls.
 
 ## Algorithm
 
-### Case 1: k < m (Recursive Tournament)
+The current implementation uses a **transitivity-aware elimination strategy**.
 
-1. Divide candidates into groups of m
-2. Sort each group, keep only the top-k from each (eliminating m−k per group)
-3. Recurse on the reduced candidate set until ≤ m remain
-4. One final sort yields the answer
+When a sort returns:
 
-**Complexity**: Each round eliminates a fraction of candidates. Converges in O(log<sub>m/k</sub>(n/m)) rounds.
+```text
+a > b > c
+```
 
-### Case 2: k ≥ m (Iterative Batching)
+the program records all implied relations:
 
-1. Find top-(m−1) using the recursive tournament above
-2. Remove those from the candidate pool
-3. Repeat until k elements have been identified
+- `a > b`
+- `a > c`
+- `b > c`
 
-**Complexity**: ⌈k/(m−1)⌉ iterations of the tournament approach.
+and then keeps propagating them transitively. For example, if we already know `x > a`, then after sorting `[a, b, c]` we also learn `x > b` and `x > c` without paying for another sort.
+
+An element is eliminated as soon as there are at least `k` elements proven to be larger than it, because it can no longer belong to the top-k set.
+
+### Group selection heuristic
+
+Each round, the program chooses up to `m` active candidates and prefers:
+
+1. **Unseen elements**, so every sort adds new information.
+2. **Strong leaders**, which already dominate many others.
+3. **Almost eliminated elements**, which need just one more proven larger element to be removed.
+
+This usually beats the earlier batch/tournament approach because it reuses previously learned order relations instead of restarting from scratch.
 
 ## Usage
 
@@ -55,16 +66,13 @@ Parameters: n=10, m=4, k=3
 --- Finding top-3 elements ---
   Sort call #1: sorting 4 elements -> [#0=668, #3=523, #1=141, #2=126]
   Sort call #2: sorting 4 elements -> [#6=724, #7=513, #5=263, #4=169]
-  Sort call #3: sorting 4 elements -> [#6=724, #0=668, #3=523, #1=141]
-  Sort call #4: sorting 4 elements -> [#9=761, #7=513, #5=263, #8=174]
-  Sort call #5: sorting 4 elements -> [#9=761, #6=724, #0=668, #3=523]
-  Sort call #6: sorting 4 elements -> [#9=761, #6=724, #0=668, #7=513]
-  Sort call #7: sorting 4 elements -> [#9=761, #6=724, #0=668, #5=263]
+  Sort call #3: sorting 4 elements -> [#9=761, #0=668, #8=174, #1=141]
+  Sort call #4: sorting 4 elements -> [#9=761, #6=724, #0=668, #3=523]
 
 --- Results ---
 Top-3 found: [761, 724, 668]
 Correct: True
-Total sort calls: 7
+Total sort calls: 4
 ```
 
 ## Requirements
