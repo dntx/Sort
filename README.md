@@ -13,6 +13,7 @@ Instead of printing one concrete run on random data, the program now prints the 
 - which indices to compare first
 - what the possible sort results are
 - which group should be compared next under each result
+- and only one representative for branches that are symmetric up to relabeling
 
 ## Algorithm
 
@@ -45,6 +46,7 @@ Each round, the program chooses up to `m` active candidates and prefers:
 This usually beats the earlier batch/tournament approach because it reuses previously learned order relations instead of restarting from scratch.
 
 To print the strategy tree, the program symbolically enumerates all sort outcomes consistent with the currently known partial order, then recursively prints the next comparison for each branch.
+Symmetric branches are merged by canonicalizing the comparison state, so equivalent cases are not repeated.
 
 ## Usage
 

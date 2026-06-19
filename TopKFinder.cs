@@ -85,6 +85,66 @@ class ComparisonState
             parts.Add($"{i}:{string.Join(",", Ancestors[i].OrderBy(x => x))}");
         return string.Join("|", parts);
     }
+
+    public string GetCanonicalKey()
+    {
+        int n = Ancestors.Length;
+        var colors = Enumerable.Range(0, n)
+            .Select(i => Active.Contains(i) ? 1 : 0)
+            .ToArray();
+
+        bool changed;
+        do
+        {
+            changed = false;
+            var signatures = new string[n];
+            for (int i = 0; i < n; i++)
+            {
+                string ancestors = string.Join(",", Ancestors[i].Select(a => colors[a]).OrderBy(x => x));
+                string descendants = string.Join(",", Descendants[i].Select(d => colors[d]).OrderBy(x => x));
+                signatures[i] = $"{colors[i]}|A:{ancestors}|D:{descendants}";
+            }
+
+            var signatureToColor = signatures
+                .Distinct()
+                .OrderBy(x => x, StringComparer.Ordinal)
+                .Select((signature, index) => (signature, index))
+                .ToDictionary(x => x.signature, x => x.index, StringComparer.Ordinal);
+
+            var nextColors = signatures.Select(signature => signatureToColor[signature]).ToArray();
+            changed = !colors.SequenceEqual(nextColors);
+            colors = nextColors;
+        }
+        while (changed);
+
+        var classIds = colors.Distinct().OrderBy(x => x).ToList();
+        var parts = new List<string>();
+        foreach (int classId in classIds)
+        {
+            var members = Enumerable.Range(0, n).Where(i => colors[i] == classId).ToList();
+            int representative = members[0];
+            string activeFlag = Active.Contains(representative) ? "1" : "0";
+
+            var ancestorClassCounts = classIds
+                .Select(otherClass => members
+                    .Select(member => Ancestors[member].Count(a => colors[a] == otherClass))
+                    .OrderBy(x => x))
+                .ToList();
+
+            var descendantClassCounts = classIds
+                .Select(otherClass => members
+                    .Select(member => Descendants[member].Count(d => colors[d] == otherClass))
+                    .OrderBy(x => x))
+                .ToList();
+
+            parts.Add(
+                $"C{classId}|N:{members.Count}|Active:{activeFlag}" +
+                $"|Anc:{string.Join(";", ancestorClassCounts.Select(counts => string.Join(",", counts)))}" +
+                $"|Desc:{string.Join(";", descendantClassCounts.Select(counts => string.Join(",", counts)))}");
+        }
+
+        return string.Join("||", parts);
+    }
 }
 
 class StrategyPrinter
@@ -114,7 +174,7 @@ class StrategyPrinter
 
     private void PrintState(ComparisonState state, int indent)
     {
-        string key = state.GetKey();
+        string key = state.GetCanonicalKey();
         int stateId = GetStateId(key);
         string prefix = new string(' ', indent * 2);
 
@@ -144,19 +204,17 @@ class StrategyPrinter
             next.ApplyOrder(order);
             next.Eliminate(_k);
 
-            string nextKey = next.GetKey();
+            string nextKey = next.GetCanonicalKey();
             if (!groupedBranches.TryGetValue(nextKey, out BranchInfo? branch))
             {
-                branch = new BranchInfo(next);
+                branch = new BranchInfo(next, FormatOrder(order));
                 groupedBranches[nextKey] = branch;
             }
-
-            branch.Orders.Add(FormatOrder(order));
         }
 
-        foreach (var entry in groupedBranches.Values.OrderBy(v => v.Orders[0], StringComparer.Ordinal))
+        foreach (var entry in groupedBranches.Values.OrderBy(v => v.RepresentativeOrder, StringComparer.Ordinal))
         {
-            Console.WriteLine($"{prefix}  如果结果是 {string.Join(" 或 ", entry.Orders)}：");
+            Console.WriteLine($"{prefix}  如果结果是 {entry.RepresentativeOrder}：");
             PrintState(entry.NextState, indent + 2);
         }
     }
@@ -165,7 +223,7 @@ class StrategyPrinter
     {
         var candidates = state.Active.OrderBy(x => x).ToList();
         int groupSize = Math.Min(_m, candidates.Count);
-        string currentKey = state.GetKey();
+        string currentKey = state.GetCanonicalKey();
 
         List<int>? bestGroup = null;
         (int minReduction, int distinctStates, int totalReduction, int unresolvedPairs) bestScore = (-1, -1, -1, -1);
@@ -185,7 +243,7 @@ class StrategyPrinter
                 int reduction = state.Active.Count - next.Active.Count;
                 minReduction = Math.Min(minReduction, reduction);
                 totalReduction += reduction;
-                nextStateKeys.Add(next.GetKey());
+                nextStateKeys.Add(next.GetCanonicalKey());
             }
 
             int unresolvedPairs = CountUnresolvedPairs(state, group);
@@ -313,12 +371,13 @@ class StrategyPrinter
 
     private sealed class BranchInfo
     {
-        public List<string> Orders { get; } = new();
         public ComparisonState NextState { get; }
+        public string RepresentativeOrder { get; }
 
-        public BranchInfo(ComparisonState nextState)
+        public BranchInfo(ComparisonState nextState, string representativeOrder)
         {
             NextState = nextState;
+            RepresentativeOrder = representativeOrder;
         }
     }
 }
