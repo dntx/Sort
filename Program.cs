@@ -80,6 +80,12 @@ class Program
             return false;
         }
 
+        if (n > 64)
+        {
+            error = "Error: n must be <= 64";
+            return false;
+        }
+
         if (k <= 0 || k > n)
         {
             error = "Error: k must satisfy 1 <= k <= n";
