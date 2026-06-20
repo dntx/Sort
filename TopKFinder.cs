@@ -275,12 +275,26 @@ class StrategyBuilder
         if (state.Active.Count <= _k)
             return StrategyNode.Terminal(stateId, state.Active.OrderBy(x => x).ToList());
 
+        var possibleCandidates = GetPossibleCandidates(state);
+        if (possibleCandidates.Count > GetRemainingSlots(state) && possibleCandidates.Count <= _m)
+        {
+            var finalBranches = BuildBranches(state, possibleCandidates, step + 1);
+            return StrategyNode.Decision(stateId, step, possibleCandidates, finalBranches);
+        }
+
         if (_expandedStates.Contains(key))
             return StrategyNode.Reference(stateId);
 
         _expandedStates.Add(key);
 
         var group = ChooseGroup(state);
+        var branches = BuildBranches(state, group, step + 1);
+
+        return StrategyNode.Decision(stateId, step, group, branches);
+    }
+
+    private List<StrategyBranch> BuildBranches(ComparisonState state, IReadOnlyList<int> group, int nextStep)
+    {
         var groupedBranches = new SortedDictionary<string, BranchInfo>(StringComparer.Ordinal);
 
         foreach (var order in EnumerateFeasibleOrders(state, group))
@@ -294,15 +308,13 @@ class StrategyBuilder
                 groupedBranches[nextKey] = new BranchInfo(next, FormatOrder(order));
         }
 
-        var branches = groupedBranches.Values
+        return groupedBranches.Values
             .OrderBy(v => v.RepresentativeOrder, StringComparer.Ordinal)
             .Select(v => new StrategyBranch(
                 v.RepresentativeOrder,
                 BuildComparisonEffect(state, v.NextState),
-                BuildState(v.NextState, step + 1)))
+                BuildState(v.NextState, nextStep)))
             .ToList();
-
-        return StrategyNode.Decision(stateId, step, group, branches);
     }
 
     private StrategyEffect BuildComparisonEffect(ComparisonState before, ComparisonState after)
@@ -334,6 +346,20 @@ class StrategyBuilder
         return Enumerable.Range(0, _n)
             .Where(i => state.Active.Contains(i) && _n - 1 - state.Descendants[i].Count <= _k - 1)
             .ToHashSet();
+    }
+
+    private List<int> GetPossibleCandidates(ComparisonState state)
+    {
+        var guaranteedTop = GetGuaranteedTopSet(state);
+        return state.Active
+            .Except(guaranteedTop)
+            .OrderBy(x => x)
+            .ToList();
+    }
+
+    private int GetRemainingSlots(ComparisonState state)
+    {
+        return _k - GetGuaranteedTopSet(state).Count;
     }
 
     private List<int> ChooseGroup(ComparisonState state)
@@ -400,6 +426,10 @@ class StrategyBuilder
     {
         if (state.Active.Count <= _k)
             return 0;
+
+        var possibleCandidates = GetPossibleCandidates(state);
+        if (possibleCandidates.Count > GetRemainingSlots(state) && possibleCandidates.Count <= _m)
+            return 1;
 
         string key = state.GetCanonicalKey();
         if (_minWorstCaseStepsCache.TryGetValue(key, out int cached))
