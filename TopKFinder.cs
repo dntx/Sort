@@ -4,6 +4,68 @@ using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
 
+readonly struct IntSequenceKey : IEquatable<IntSequenceKey>, IComparable<IntSequenceKey>
+{
+    private readonly int[] _parts;
+    private readonly int _hashCode;
+
+    public IntSequenceKey(int[] parts)
+    {
+        _parts = parts;
+        var hash = new HashCode();
+        foreach (int part in parts)
+            hash.Add(part);
+        _hashCode = hash.ToHashCode();
+    }
+
+    public bool Equals(IntSequenceKey other)
+    {
+        if (_parts.Length != other._parts.Length)
+            return false;
+
+        for (int i = 0; i < _parts.Length; i++)
+        {
+            if (_parts[i] != other._parts[i])
+                return false;
+        }
+
+        return true;
+    }
+
+    public int CompareTo(IntSequenceKey other)
+    {
+        int commonLength = Math.Min(_parts.Length, other._parts.Length);
+        for (int i = 0; i < commonLength; i++)
+        {
+            int comparison = _parts[i].CompareTo(other._parts[i]);
+            if (comparison != 0)
+                return comparison;
+        }
+
+        return _parts.Length.CompareTo(other._parts.Length);
+    }
+
+    public override bool Equals(object? obj)
+    {
+        return obj is IntSequenceKey other && Equals(other);
+    }
+
+    public override int GetHashCode()
+    {
+        return _hashCode;
+    }
+
+    public static bool operator ==(IntSequenceKey left, IntSequenceKey right)
+    {
+        return left.Equals(right);
+    }
+
+    public static bool operator !=(IntSequenceKey left, IntSequenceKey right)
+    {
+        return !left.Equals(right);
+    }
+}
+
 class ComparisonState
 {
     private readonly int _n;
@@ -13,7 +75,7 @@ class ComparisonState
     public ulong ActiveMask { get; private set; }
     public int ActiveCount { get; private set; }
     private int[]? _structuralLabelsCache;
-    private string? _canonicalKeyCache;
+    private IntSequenceKey? _canonicalKeyCache;
 
     public ComparisonState(int n)
     {
@@ -101,15 +163,6 @@ class ComparisonState
         ActiveCount -= BitOperations.PopCount(removedMask);
     }
 
-    public string GetKey()
-    {
-        var parts = new List<string>(Ancestors.Length + 1);
-        parts.Add($"A:{ActiveMask:X16}");
-        for (int i = 0; i < Ancestors.Length; i++)
-            parts.Add($"{i}:{Ancestors[i]:X16}");
-        return string.Join("|", parts);
-    }
-
     public int[] GetStructuralLabels()
     {
         if (_structuralLabelsCache is not null)
@@ -124,19 +177,21 @@ class ComparisonState
         do
         {
             changed = false;
-            var signatures = new string[n];
+            int classCount = labels.Max() + 1;
+            var signatures = new IntSequenceKey[n];
             for (int i = 0; i < n; i++)
             {
-                string ancestors = BuildNeighborSignature(Ancestors[i], labels);
-                string descendants = BuildNeighborSignature(Descendants[i], labels);
-                signatures[i] = $"{labels[i]}|A:{ancestors}|D:{descendants}";
+                signatures[i] = BuildElementSignature(labels[i], Ancestors[i], Descendants[i], labels, classCount);
             }
 
-            var signatureToColor = signatures
+            var orderedSignatures = signatures
                 .Distinct()
-                .OrderBy(x => x, StringComparer.Ordinal)
-                .Select((signature, index) => (signature, index))
-                .ToDictionary(x => x.signature, x => x.index, StringComparer.Ordinal);
+                .OrderBy(signature => signature)
+                .ToList();
+
+            var signatureToColor = new Dictionary<IntSequenceKey, int>(orderedSignatures.Count);
+            for (int index = 0; index < orderedSignatures.Count; index++)
+                signatureToColor[orderedSignatures[index]] = index;
 
             var nextLabels = signatures.Select(signature => signatureToColor[signature]).ToArray();
             changed = !labels.SequenceEqual(nextLabels);
@@ -148,41 +203,66 @@ class ComparisonState
         return labels;
     }
 
-    public string GetCanonicalKey()
+    public IntSequenceKey GetCanonicalKey()
     {
         if (_canonicalKeyCache is not null)
-            return _canonicalKeyCache;
+            return _canonicalKeyCache.Value;
 
         int n = Ancestors.Length;
         var labels = GetStructuralLabels();
-        var classIds = labels.Distinct().OrderBy(x => x).ToList();
-        var parts = new List<string>();
-        foreach (int classId in classIds)
+        int classCount = labels.Max() + 1;
+        var parts = new List<int> { classCount };
+
+        for (int classId = 0; classId < classCount; classId++)
         {
             var members = Enumerable.Range(0, n).Where(i => labels[i] == classId).ToList();
+            int memberCount = members.Count;
             int representative = members[0];
-            string activeFlag = IsActive(representative) ? "1" : "0";
 
-            var ancestorClassCounts = classIds
-                .Select(otherClass => members
+            parts.Add(memberCount);
+            parts.Add(IsActive(representative) ? 1 : 0);
+
+            for (int otherClass = 0; otherClass < classCount; otherClass++)
+            {
+                var counts = members
                     .Select(member => CountNeighborsWithLabel(Ancestors[member], labels, otherClass))
-                    .OrderBy(x => x))
-                .ToList();
+                    .OrderBy(x => x);
 
-            var descendantClassCounts = classIds
-                .Select(otherClass => members
+                parts.AddRange(counts);
+            }
+
+            for (int otherClass = 0; otherClass < classCount; otherClass++)
+            {
+                var counts = members
                     .Select(member => CountNeighborsWithLabel(Descendants[member], labels, otherClass))
-                    .OrderBy(x => x))
-                .ToList();
+                    .OrderBy(x => x);
 
-            parts.Add(
-                $"C{classId}|N:{members.Count}|Active:{activeFlag}" +
-                $"|Anc:{string.Join(";", ancestorClassCounts.Select(counts => string.Join(",", counts)))}" +
-                $"|Desc:{string.Join(";", descendantClassCounts.Select(counts => string.Join(",", counts)))}");
+                parts.AddRange(counts);
+            }
         }
 
-        _canonicalKeyCache = string.Join("||", parts);
-        return _canonicalKeyCache;
+        _canonicalKeyCache = new IntSequenceKey(parts.ToArray());
+        return _canonicalKeyCache.Value;
+    }
+
+    private static IntSequenceKey BuildElementSignature(
+        int currentLabel,
+        ulong ancestorMask,
+        ulong descendantMask,
+        IReadOnlyList<int> labels,
+        int classCount)
+    {
+        int[] parts = new int[1 + (2 * classCount)];
+        parts[0] = currentLabel;
+        AddNeighborCounts(parts, 1, ancestorMask, labels);
+        AddNeighborCounts(parts, 1 + classCount, descendantMask, labels);
+        return new IntSequenceKey(parts);
+    }
+
+    private static void AddNeighborCounts(int[] target, int offset, ulong mask, IReadOnlyList<int> labels)
+    {
+        foreach (int item in EnumerateBits(mask))
+            target[offset + labels[item]]++;
     }
 
     public bool IsActive(int item)
@@ -233,16 +313,6 @@ class ComparisonState
             yield return bit;
             mask &= mask - 1;
         }
-    }
-
-    private static string BuildNeighborSignature(ulong mask, IReadOnlyList<int> labels)
-    {
-        var neighborLabels = new List<int>();
-        foreach (int item in EnumerateBits(mask))
-            neighborLabels.Add(labels[item]);
-
-        neighborLabels.Sort();
-        return string.Join(",", neighborLabels);
     }
 
     private static int CountNeighborsWithLabel(ulong mask, IReadOnlyList<int> labels, int targetLabel)
@@ -380,9 +450,9 @@ class StrategyBuilder
     private readonly int _n;
     private readonly int _m;
     private readonly int _k;
-    private readonly Dictionary<string, int> _stateIds = new();
-    private readonly HashSet<string> _expandedStates = new();
-    private readonly Dictionary<string, int> _minWorstCaseStepsCache = new();
+    private readonly Dictionary<IntSequenceKey, int> _stateIds = new();
+    private readonly HashSet<IntSequenceKey> _expandedStates = new();
+    private readonly Dictionary<IntSequenceKey, int> _minWorstCaseStepsCache = new();
     private int _nextStateId = 1;
 
     public StrategyBuilder(int n, int m, int k)
@@ -408,7 +478,7 @@ class StrategyBuilder
 
     private StrategyNode BuildState(ComparisonState state, int step)
     {
-        string key = state.GetCanonicalKey();
+        IntSequenceKey key = state.GetCanonicalKey();
         int stateId = GetStateId(key);
 
         if (state.ActiveCount <= _k)
@@ -441,14 +511,14 @@ class StrategyBuilder
 
     private List<StrategyBranch> BuildBranches(ComparisonState state, IReadOnlyList<int> group, int nextStep)
     {
-        var groupedBranches = new SortedDictionary<string, BranchInfo>(StringComparer.Ordinal);
+        var groupedBranches = new Dictionary<IntSequenceKey, BranchInfo>();
         foreach (var order in EnumerateFeasibleOrders(state, group))
         {
             var next = state.Clone();
             next.ApplyOrder(order);
             next.Eliminate(_k);
 
-            string nextKey = next.GetCanonicalKey();
+            IntSequenceKey nextKey = next.GetCanonicalKey();
             if (!groupedBranches.TryGetValue(nextKey, out BranchInfo? branch))
                 groupedBranches[nextKey] = new BranchInfo(next, FormatOrder(order));
         }
@@ -502,7 +572,7 @@ class StrategyBuilder
     {
         var candidates = state.GetActiveItemsOrdered();
         int maxGroupSize = Math.Min(_m, candidates.Count);
-        string currentKey = state.GetCanonicalKey();
+        IntSequenceKey currentKey = state.GetCanonicalKey();
         var labels = state.GetStructuralLabels();
 
         List<int>? bestGroup = null;
@@ -511,13 +581,13 @@ class StrategyBuilder
 
         for (int groupSize = 2; groupSize <= maxGroupSize; groupSize++)
         {
-            var seenGroupPatterns = new HashSet<string>(StringComparer.Ordinal);
+            var seenGroupPatterns = new HashSet<IntSequenceKey>();
             foreach (var group in EnumerateCombinations(candidates, groupSize))
             {
                 if (!seenGroupPatterns.Add(GetGroupPattern(group, labels)))
                     continue;
 
-                var nextStateKeys = new HashSet<string>(StringComparer.Ordinal);
+                var nextStateKeys = new HashSet<IntSequenceKey>();
                 int worstCaseSteps = 0;
                 int totalReduction = 0;
                 bool isUseful = false;
@@ -528,7 +598,7 @@ class StrategyBuilder
                     next.ApplyOrder(order);
                     next.Eliminate(_k);
 
-                    string nextKey = next.GetCanonicalKey();
+                    IntSequenceKey nextKey = next.GetCanonicalKey();
                     if (nextKey == currentKey)
                         continue;
 
@@ -572,7 +642,7 @@ class StrategyBuilder
         if (possibleCandidates.Count > GetRemainingSlots(state) && possibleCandidates.Count <= _m)
             return 1;
 
-        string key = state.GetCanonicalKey();
+        IntSequenceKey key = state.GetCanonicalKey();
         if (_minWorstCaseStepsCache.TryGetValue(key, out int cached))
             return cached;
 
@@ -583,7 +653,7 @@ class StrategyBuilder
 
         for (int groupSize = 2; groupSize <= maxGroupSize; groupSize++)
         {
-            var seenGroupPatterns = new HashSet<string>(StringComparer.Ordinal);
+            var seenGroupPatterns = new HashSet<IntSequenceKey>();
             foreach (var group in EnumerateCombinations(candidates, groupSize))
             {
                 if (!seenGroupPatterns.Add(GetGroupPattern(group, labels)))
@@ -598,7 +668,7 @@ class StrategyBuilder
                     next.ApplyOrder(order);
                     next.Eliminate(_k);
 
-                    string nextKey = next.GetCanonicalKey();
+                    IntSequenceKey nextKey = next.GetCanonicalKey();
                     if (nextKey == key)
                         continue;
 
@@ -622,9 +692,9 @@ class StrategyBuilder
         return bestWorstCase;
     }
 
-    private static string GetGroupPattern(IReadOnlyList<int> group, IReadOnlyList<int> labels)
+    private static IntSequenceKey GetGroupPattern(IReadOnlyList<int> group, IReadOnlyList<int> labels)
     {
-        return string.Join(",", group.Select(i => labels[i]).OrderBy(x => x));
+        return new IntSequenceKey(group.Select(i => labels[i]).OrderBy(x => x).ToArray());
     }
 
     private IEnumerable<List<int>> EnumerateFeasibleOrders(ComparisonState state, IReadOnlyList<int> group)
@@ -710,7 +780,7 @@ class StrategyBuilder
         }
     }
 
-    private int GetStateId(string key)
+    private int GetStateId(IntSequenceKey key)
     {
         if (_stateIds.TryGetValue(key, out int id))
             return id;
