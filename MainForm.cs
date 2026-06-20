@@ -41,7 +41,7 @@ class MainForm : Form
             Margin = new Padding(0, 0, 0, 8),
         };
 
-        _nTextBox = CreateInputTextBox("10");
+        _nTextBox = CreateInputTextBox("4");
         _mTextBox = CreateInputTextBox("3");
         _kTextBox = CreateInputTextBox("3");
 
