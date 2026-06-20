@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Windows.Forms;
 
 class ComparisonState
 {
@@ -152,23 +154,33 @@ class StrategyPrinter
     private readonly int _n;
     private readonly int _m;
     private readonly int _k;
+    private readonly TextWriter _writer;
     private readonly Dictionary<string, int> _stateIds = new();
     private readonly HashSet<string> _expandedStates = new();
     private int _nextStateId = 1;
 
-    public StrategyPrinter(int n, int m, int k)
+    public StrategyPrinter(int n, int m, int k, TextWriter? writer = null)
     {
         _n = n;
         _m = m;
         _k = k;
+        _writer = writer ?? Console.Out;
     }
 
     public void Print()
     {
         var initial = new ComparisonState(_n);
-        Console.WriteLine($"n={_n}, m={_m}, k={_k}");
-        Console.WriteLine();
+        _writer.WriteLine($"n={_n}, m={_m}, k={_k}");
+        _writer.WriteLine();
         PrintState(initial, 0, 1);
+    }
+
+    public static string Generate(int n, int m, int k)
+    {
+        using var writer = new StringWriter();
+        var printer = new StrategyPrinter(n, m, k, writer);
+        printer.Print();
+        return writer.ToString();
     }
 
     private string? GetInlineResult(ComparisonState state)
@@ -216,20 +228,20 @@ class StrategyPrinter
 
         if (state.Active.Count <= _k)
         {
-            Console.WriteLine($"{prefix}S{stateId}: top {_k} = ({FormatSet(state.Active.OrderBy(x => x))})");
+            _writer.WriteLine($"{prefix}S{stateId}: top {_k} = ({FormatSet(state.Active.OrderBy(x => x))})");
             return;
         }
 
         if (_expandedStates.Contains(key))
         {
-            Console.WriteLine($"{prefix}→S{stateId}");
+            _writer.WriteLine($"{prefix}→S{stateId}");
             return;
         }
 
         _expandedStates.Add(key);
 
         var group = ChooseGroup(state);
-        Console.WriteLine($"{prefix}S{stateId} [step {step}] sort({FormatSet(group)})");
+        _writer.WriteLine($"{prefix}S{stateId} [step {step}] sort({FormatSet(group)})");
 
         var groupedBranches = new SortedDictionary<string, BranchInfo>(StringComparer.Ordinal);
 
@@ -253,11 +265,11 @@ class StrategyPrinter
             string? inline = GetInlineResult(entry.NextState);
             if (inline != null)
             {
-                Console.WriteLine($"{prefix}  {entry.RepresentativeOrder}: {effect} {inline}");
+                _writer.WriteLine($"{prefix}  {entry.RepresentativeOrder}: {effect} {inline}");
             }
             else
             {
-                Console.WriteLine($"{prefix}  {entry.RepresentativeOrder}: {effect}");
+                _writer.WriteLine($"{prefix}  {entry.RepresentativeOrder}: {effect}");
                 PrintState(entry.NextState, indent + 2, step + 1);
             }
         }
@@ -442,34 +454,94 @@ class StrategyPrinter
 
 class Program
 {
-    static void Main()
+    [STAThread]
+    static void Main(string[] args)
     {
+        if (args.Length == 3)
+        {
+            if (!TryParseAndValidate(args[0], args[1], args[2], out int nFromArgs, out int mFromArgs, out int kFromArgs, out string? errorFromArgs))
+            {
+                Console.WriteLine(errorFromArgs);
+                return;
+            }
+
+            Console.Write(StrategyPrinter.Generate(nFromArgs, mFromArgs, kFromArgs));
+            return;
+        }
+
+        if (!Console.IsInputRedirected)
+        {
+            ApplicationConfiguration.Initialize();
+            Application.Run(new MainForm());
+            return;
+        }
+
         Console.Write("Enter n (total numbers): ");
-        int n = int.Parse(Console.ReadLine()!);
+        string? nText = Console.ReadLine();
         Console.Write("Enter m (max sort size): ");
-        int m = int.Parse(Console.ReadLine()!);
+        string? mText = Console.ReadLine();
         Console.Write("Enter k (top-k to find): ");
-        int k = int.Parse(Console.ReadLine()!);
+        string? kText = Console.ReadLine();
+
+        if (!TryParseAndValidate(nText, mText, kText, out int n, out int m, out int k, out string? error))
+        {
+            Console.WriteLine(error);
+            return;
+        }
+
+        Console.Write(StrategyPrinter.Generate(n, m, k));
+    }
+
+    public static bool TryParseAndValidate(
+        string? nText,
+        string? mText,
+        string? kText,
+        out int n,
+        out int m,
+        out int k,
+        out string? error)
+    {
+        n = 0;
+        m = 0;
+        k = 0;
+
+        if (!int.TryParse(nText, out n))
+        {
+            error = "Error: n must be an integer";
+            return false;
+        }
+
+        if (!int.TryParse(mText, out m))
+        {
+            error = "Error: m must be an integer";
+            return false;
+        }
+
+        if (!int.TryParse(kText, out k))
+        {
+            error = "Error: k must be an integer";
+            return false;
+        }
 
         if (n <= 0)
         {
-            Console.WriteLine("Error: n must be positive");
-            return;
+            error = "Error: n must be positive";
+            return false;
         }
 
         if (k <= 0 || k > n)
         {
-            Console.WriteLine("Error: k must satisfy 1 <= k <= n");
-            return;
+            error = "Error: k must satisfy 1 <= k <= n";
+            return false;
         }
 
         if (m < 2)
         {
-            Console.WriteLine("Error: m must be >= 2");
-            return;
+            error = "Error: m must be >= 2";
+            return false;
         }
 
-        var printer = new StrategyPrinter(n, m, k);
-        printer.Print();
+        error = null;
+        return true;
     }
 }
