@@ -8,6 +8,8 @@ class ComparisonState
     public HashSet<int>[] Ancestors { get; }
     public HashSet<int>[] Descendants { get; }
     public HashSet<int> Active { get; }
+    private int[]? _structuralLabelsCache;
+    private string? _canonicalKeyCache;
 
     public ComparisonState(int n)
     {
@@ -36,10 +38,18 @@ class ComparisonState
         return new ComparisonState(ancestors, descendants, new HashSet<int>(Active));
     }
 
+    private void InvalidateDerivedCaches()
+    {
+        _structuralLabelsCache = null;
+        _canonicalKeyCache = null;
+    }
+
     public void AddRelation(int greater, int lesser)
     {
         if (Ancestors[lesser].Contains(greater))
             return;
+
+        InvalidateDerivedCaches();
 
         var newAncestorsForLesser = new HashSet<int>(Ancestors[greater]) { greater };
         newAncestorsForLesser.ExceptWith(Ancestors[lesser]);
@@ -74,6 +84,9 @@ class ComparisonState
     public void Eliminate(int k)
     {
         var removed = Active.Where(i => Ancestors[i].Count >= k).ToList();
+        if (removed.Count > 0)
+            InvalidateDerivedCaches();
+
         foreach (int item in removed)
             Active.Remove(item);
     }
@@ -89,6 +102,9 @@ class ComparisonState
 
     public int[] GetStructuralLabels()
     {
+        if (_structuralLabelsCache is not null)
+            return _structuralLabelsCache;
+
         int n = Ancestors.Length;
         var labels = Enumerable.Range(0, n)
             .Select(i => Active.Contains(i) ? 1 : 0)
@@ -118,11 +134,15 @@ class ComparisonState
         }
         while (changed);
 
+        _structuralLabelsCache = labels;
         return labels;
     }
 
     public string GetCanonicalKey()
     {
+        if (_canonicalKeyCache is not null)
+            return _canonicalKeyCache;
+
         int n = Ancestors.Length;
         var labels = GetStructuralLabels();
         var classIds = labels.Distinct().OrderBy(x => x).ToList();
@@ -151,7 +171,8 @@ class ComparisonState
                 $"|Desc:{string.Join(";", descendantClassCounts.Select(counts => string.Join(",", counts)))}");
         }
 
-        return string.Join("||", parts);
+        _canonicalKeyCache = string.Join("||", parts);
+        return _canonicalKeyCache;
     }
 }
 
@@ -339,7 +360,6 @@ class StrategyBuilder
     private List<StrategyBranch> BuildBranches(ComparisonState state, IReadOnlyList<int> group, int nextStep)
     {
         var groupedBranches = new SortedDictionary<string, BranchInfo>(StringComparer.Ordinal);
-
         foreach (var order in EnumerateFeasibleOrders(state, group))
         {
             var next = state.Clone();
