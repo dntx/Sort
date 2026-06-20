@@ -414,12 +414,14 @@ sealed class StrategyNode
 sealed class StrategyBranch
 {
     public string OrderText { get; }
+    public IReadOnlyList<string> EquivalentOrderTexts { get; }
     public StrategyEffect Effect { get; }
     public StrategyNode Next { get; }
 
-    public StrategyBranch(string orderText, StrategyEffect effect, StrategyNode next)
+    public StrategyBranch(string orderText, IReadOnlyList<string> equivalentOrderTexts, StrategyEffect effect, StrategyNode next)
     {
         OrderText = orderText;
+        EquivalentOrderTexts = equivalentOrderTexts;
         Effect = effect;
         Next = next;
     }
@@ -537,13 +539,20 @@ class StrategyBuilder
 
             IntSequenceKey nextKey = next.GetCanonicalKey();
             if (!groupedBranches.TryGetValue(nextKey, out BranchInfo? branch))
+            {
                 groupedBranches[nextKey] = new BranchInfo(next, FormatOrder(order));
+            }
+            else
+            {
+                branch.EquivalentOrders.Add(FormatOrder(order));
+            }
         }
 
         return groupedBranches.Values
             .OrderBy(v => v.RepresentativeOrder, StringComparer.Ordinal)
             .Select(v => new StrategyBranch(
                 v.RepresentativeOrder,
+                v.EquivalentOrders.OrderBy(order => order, StringComparer.Ordinal).ToList(),
                 BuildComparisonEffect(state, v.NextState),
                 BuildState(v.NextState, nextStep)))
             .ToList();
@@ -942,11 +951,13 @@ class StrategyBuilder
     {
         public ComparisonState NextState { get; }
         public string RepresentativeOrder { get; }
+        public List<string> EquivalentOrders { get; }
 
         public BranchInfo(ComparisonState nextState, string representativeOrder)
         {
             NextState = nextState;
             RepresentativeOrder = representativeOrder;
+            EquivalentOrders = new List<string>();
         }
     }
 
