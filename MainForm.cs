@@ -80,7 +80,7 @@ class MainForm : Form
         _summaryLabel = new Label
         {
             AutoSize = true,
-            Text = "Colors: state = blue, branch = black, in = green, out = red, cand = orange, result = dark green, goto = purple.",
+            Text = "Colors: state = blue, branch = black, in = green, out = red, cand fixed = orange, cand possible = brown, result = dark green, goto = purple.",
             Margin = new Padding(0, 0, 0, 8),
         };
 
@@ -167,7 +167,7 @@ class MainForm : Form
         {
             var plan = StrategyBuilder.Generate(n, m, k);
             PopulateTree(plan);
-            _summaryLabel.Text = $"n={n}, m={m}, k={k}. Colors: state = blue, branch = black, in = green, out = red, cand = orange, result = dark green, goto = purple.";
+            _summaryLabel.Text = $"n={n}, m={m}, k={k}. Colors: state = blue, branch = black, in = green, out = red, cand fixed = orange, cand possible = brown, result = dark green, goto = purple.";
         }
         finally
         {
@@ -236,10 +236,16 @@ class MainForm : Form
                 Tag = $"Newly excluded from top-k: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.NewlyExcluded)}",
             });
 
-            branchNode.Nodes.Add(new TreeNode($"cand ({StrategyTextRenderer.FormatSet(branch.Effect.Candidates)})")
+            branchNode.Nodes.Add(new TreeNode($"cand fixed {StrategyTextRenderer.FormatOptionalSet(branch.Effect.FixedCandidates)}")
             {
                 ForeColor = Color.DarkOrange,
-                Tag = $"Current candidates: ({StrategyTextRenderer.FormatSet(branch.Effect.Candidates)})",
+                Tag = $"Current fixed top-k candidates: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.FixedCandidates)}",
+            });
+
+            branchNode.Nodes.Add(new TreeNode($"cand possible {StrategyTextRenderer.FormatOptionalSet(branch.Effect.PossibleCandidates)}")
+            {
+                ForeColor = Color.Peru,
+                Tag = $"Current possible top-k candidates: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.PossibleCandidates)}",
             });
 
             branchNode.Nodes.Add(CreateStateNode(branch.Next, k));
@@ -272,7 +278,8 @@ class MainForm : Form
         return $"{branch.OrderText}\n" +
             $"in  {StrategyTextRenderer.FormatOptionalSet(branch.Effect.NewlyGuaranteedTop)}\n" +
             $"out {StrategyTextRenderer.FormatOptionalSet(branch.Effect.NewlyExcluded)}\n" +
-            $"cand ({StrategyTextRenderer.FormatSet(branch.Effect.Candidates)})";
+            $"cand fixed    {StrategyTextRenderer.FormatOptionalSet(branch.Effect.FixedCandidates)}\n" +
+            $"cand possible {StrategyTextRenderer.FormatOptionalSet(branch.Effect.PossibleCandidates)}";
     }
 
     private void ShowNodeDetails(TreeNode? node)

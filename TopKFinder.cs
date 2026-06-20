@@ -225,13 +225,19 @@ sealed class StrategyEffect
 {
     public IReadOnlyList<int> NewlyGuaranteedTop { get; }
     public IReadOnlyList<int> NewlyExcluded { get; }
-    public IReadOnlyList<int> Candidates { get; }
+    public IReadOnlyList<int> FixedCandidates { get; }
+    public IReadOnlyList<int> PossibleCandidates { get; }
 
-    public StrategyEffect(IReadOnlyList<int> newlyGuaranteedTop, IReadOnlyList<int> newlyExcluded, IReadOnlyList<int> candidates)
+    public StrategyEffect(
+        IReadOnlyList<int> newlyGuaranteedTop,
+        IReadOnlyList<int> newlyExcluded,
+        IReadOnlyList<int> fixedCandidates,
+        IReadOnlyList<int> possibleCandidates)
     {
         NewlyGuaranteedTop = newlyGuaranteedTop;
         NewlyExcluded = newlyExcluded;
-        Candidates = candidates;
+        FixedCandidates = fixedCandidates;
+        PossibleCandidates = possibleCandidates;
     }
 }
 
@@ -302,8 +308,11 @@ class StrategyBuilder
 
     private StrategyEffect BuildComparisonEffect(ComparisonState before, ComparisonState after)
     {
-        var newlyGuaranteedTop = GetGuaranteedTopSet(after)
-            .Except(GetGuaranteedTopSet(before))
+        var guaranteedTopBefore = GetGuaranteedTopSet(before);
+        var guaranteedTopAfter = GetGuaranteedTopSet(after);
+
+        var newlyGuaranteedTop = guaranteedTopAfter
+            .Except(guaranteedTopBefore)
             .OrderBy(x => x)
             .ToList();
 
@@ -312,8 +321,13 @@ class StrategyBuilder
             .OrderBy(x => x)
             .ToList();
 
-        var candidates = after.Active.OrderBy(x => x).ToList();
-        return new StrategyEffect(newlyGuaranteedTop, newlyExcluded, candidates);
+        var fixedCandidates = guaranteedTopAfter.OrderBy(x => x).ToList();
+        var possibleCandidates = after.Active
+            .Except(guaranteedTopAfter)
+            .OrderBy(x => x)
+            .ToList();
+
+        return new StrategyEffect(newlyGuaranteedTop, newlyExcluded, fixedCandidates, possibleCandidates);
     }
 
     private HashSet<int> GetGuaranteedTopSet(ComparisonState state)
@@ -556,7 +570,7 @@ static class StrategyTextRenderer
 
     public static string FormatEffect(StrategyEffect effect)
     {
-        return $"[in {FormatOptionalSet(effect.NewlyGuaranteedTop)}, out {FormatOptionalSet(effect.NewlyExcluded)}, cand ({FormatSet(effect.Candidates)})]";
+        return $"[in {FormatOptionalSet(effect.NewlyGuaranteedTop)}, out {FormatOptionalSet(effect.NewlyExcluded)}, cand fixed {FormatOptionalSet(effect.FixedCandidates)}, possible {FormatOptionalSet(effect.PossibleCandidates)}]";
     }
 }
 
