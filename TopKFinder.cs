@@ -149,62 +149,158 @@ class ComparisonState
     }
 }
 
-class StrategyPrinter
+enum StrategyNodeKind
+{
+    Decision,
+    Terminal,
+    Reference,
+}
+
+sealed class StrategyPlan
+{
+    public int N { get; }
+    public int M { get; }
+    public int K { get; }
+    public StrategyNode Root { get; }
+
+    public StrategyPlan(int n, int m, int k, StrategyNode root)
+    {
+        N = n;
+        M = m;
+        K = k;
+        Root = root;
+    }
+}
+
+sealed class StrategyNode
+{
+    public StrategyNodeKind Kind { get; }
+    public int StateId { get; }
+    public int? Step { get; }
+    public IReadOnlyList<int> Group { get; }
+    public IReadOnlyList<int> TopSet { get; }
+    public IReadOnlyList<StrategyBranch> Branches { get; }
+
+    private StrategyNode(
+        StrategyNodeKind kind,
+        int stateId,
+        int? step,
+        IReadOnlyList<int>? group,
+        IReadOnlyList<int>? topSet,
+        IReadOnlyList<StrategyBranch>? branches)
+    {
+        Kind = kind;
+        StateId = stateId;
+        Step = step;
+        Group = group ?? Array.Empty<int>();
+        TopSet = topSet ?? Array.Empty<int>();
+        Branches = branches ?? Array.Empty<StrategyBranch>();
+    }
+
+    public static StrategyNode Decision(int stateId, int step, IReadOnlyList<int> group, IReadOnlyList<StrategyBranch> branches)
+        => new(StrategyNodeKind.Decision, stateId, step, group, null, branches);
+
+    public static StrategyNode Terminal(int stateId, IReadOnlyList<int> topSet)
+        => new(StrategyNodeKind.Terminal, stateId, null, null, topSet, null);
+
+    public static StrategyNode Reference(int stateId)
+        => new(StrategyNodeKind.Reference, stateId, null, null, null, null);
+}
+
+sealed class StrategyBranch
+{
+    public string OrderText { get; }
+    public StrategyEffect Effect { get; }
+    public StrategyNode Next { get; }
+
+    public StrategyBranch(string orderText, StrategyEffect effect, StrategyNode next)
+    {
+        OrderText = orderText;
+        Effect = effect;
+        Next = next;
+    }
+}
+
+sealed class StrategyEffect
+{
+    public IReadOnlyList<int> NewlyGuaranteedTop { get; }
+    public IReadOnlyList<int> NewlyExcluded { get; }
+    public IReadOnlyList<int> Candidates { get; }
+
+    public StrategyEffect(IReadOnlyList<int> newlyGuaranteedTop, IReadOnlyList<int> newlyExcluded, IReadOnlyList<int> candidates)
+    {
+        NewlyGuaranteedTop = newlyGuaranteedTop;
+        NewlyExcluded = newlyExcluded;
+        Candidates = candidates;
+    }
+}
+
+class StrategyBuilder
 {
     private readonly int _n;
     private readonly int _m;
     private readonly int _k;
-    private readonly TextWriter _writer;
     private readonly Dictionary<string, int> _stateIds = new();
     private readonly HashSet<string> _expandedStates = new();
     private int _nextStateId = 1;
 
-    public StrategyPrinter(int n, int m, int k, TextWriter? writer = null)
+    public StrategyBuilder(int n, int m, int k)
     {
         _n = n;
         _m = m;
         _k = k;
-        _writer = writer ?? Console.Out;
     }
 
-    public void Print()
+    public StrategyPlan Build()
     {
         var initial = new ComparisonState(_n);
-        _writer.WriteLine($"n={_n}, m={_m}, k={_k}");
-        _writer.WriteLine();
-        PrintState(initial, 0, 1);
+        return new StrategyPlan(_n, _m, _k, BuildState(initial, 1));
     }
 
-    public static string Generate(int n, int m, int k)
+    public static StrategyPlan Generate(int n, int m, int k)
     {
-        using var writer = new StringWriter();
-        var printer = new StrategyPrinter(n, m, k, writer);
-        printer.Print();
-        return writer.ToString();
+        return new StrategyBuilder(n, m, k).Build();
     }
 
-    private string? GetInlineResult(ComparisonState state)
+    private StrategyNode BuildState(ComparisonState state, int step)
     {
         string key = state.GetCanonicalKey();
         int stateId = GetStateId(key);
 
         if (state.Active.Count <= _k)
-            return $"S{stateId}: top {_k} = ({FormatSet(state.Active.OrderBy(x => x))})";
+            return StrategyNode.Terminal(stateId, state.Active.OrderBy(x => x).ToList());
 
         if (_expandedStates.Contains(key))
-            return $"→S{stateId}";
+            return StrategyNode.Reference(stateId);
 
-        return null;
+        _expandedStates.Add(key);
+
+        var group = ChooseGroup(state);
+        var groupedBranches = new SortedDictionary<string, BranchInfo>(StringComparer.Ordinal);
+
+        foreach (var order in EnumerateFeasibleOrders(state, group))
+        {
+            var next = state.Clone();
+            next.ApplyOrder(order);
+            next.Eliminate(_k);
+
+            string nextKey = next.GetCanonicalKey();
+            if (!groupedBranches.TryGetValue(nextKey, out BranchInfo? branch))
+                groupedBranches[nextKey] = new BranchInfo(next, FormatOrder(order));
+        }
+
+        var branches = groupedBranches.Values
+            .OrderBy(v => v.RepresentativeOrder, StringComparer.Ordinal)
+            .Select(v => new StrategyBranch(
+                v.RepresentativeOrder,
+                BuildComparisonEffect(state, v.NextState),
+                BuildState(v.NextState, step + 1)))
+            .ToList();
+
+        return StrategyNode.Decision(stateId, step, group, branches);
     }
 
-    private HashSet<int> GetGuaranteedTopSet(ComparisonState state)
-    {
-        return Enumerable.Range(0, _n)
-            .Where(i => state.Active.Contains(i) && _n - 1 - state.Descendants[i].Count <= _k - 1)
-            .ToHashSet();
-    }
-
-    private string FormatComparisonEffect(ComparisonState before, ComparisonState after)
+    private StrategyEffect BuildComparisonEffect(ComparisonState before, ComparisonState after)
     {
         var newlyGuaranteedTop = GetGuaranteedTopSet(after)
             .Except(GetGuaranteedTopSet(before))
@@ -216,63 +312,15 @@ class StrategyPrinter
             .OrderBy(x => x)
             .ToList();
 
-        string candidates = $"({FormatSet(after.Active.OrderBy(x => x))})";
-        return $"[in {FormatOptionalSet(newlyGuaranteedTop)}, out {FormatOptionalSet(newlyExcluded)}, cand {candidates}]";
+        var candidates = after.Active.OrderBy(x => x).ToList();
+        return new StrategyEffect(newlyGuaranteedTop, newlyExcluded, candidates);
     }
 
-    private void PrintState(ComparisonState state, int indent, int step)
+    private HashSet<int> GetGuaranteedTopSet(ComparisonState state)
     {
-        string key = state.GetCanonicalKey();
-        int stateId = GetStateId(key);
-        string prefix = new string(' ', indent * 2);
-
-        if (state.Active.Count <= _k)
-        {
-            _writer.WriteLine($"{prefix}S{stateId}: top {_k} = ({FormatSet(state.Active.OrderBy(x => x))})");
-            return;
-        }
-
-        if (_expandedStates.Contains(key))
-        {
-            _writer.WriteLine($"{prefix}→S{stateId}");
-            return;
-        }
-
-        _expandedStates.Add(key);
-
-        var group = ChooseGroup(state);
-        _writer.WriteLine($"{prefix}S{stateId} [step {step}] sort({FormatSet(group)})");
-
-        var groupedBranches = new SortedDictionary<string, BranchInfo>(StringComparer.Ordinal);
-
-        foreach (var order in EnumerateFeasibleOrders(state, group))
-        {
-            var next = state.Clone();
-            next.ApplyOrder(order);
-            next.Eliminate(_k);
-
-            string nextKey = next.GetCanonicalKey();
-            if (!groupedBranches.TryGetValue(nextKey, out BranchInfo? branch))
-            {
-                branch = new BranchInfo(next, FormatOrder(order));
-                groupedBranches[nextKey] = branch;
-            }
-        }
-
-        foreach (var entry in groupedBranches.Values.OrderBy(v => v.RepresentativeOrder, StringComparer.Ordinal))
-        {
-            string effect = FormatComparisonEffect(state, entry.NextState);
-            string? inline = GetInlineResult(entry.NextState);
-            if (inline != null)
-            {
-                _writer.WriteLine($"{prefix}  {entry.RepresentativeOrder}: {effect} {inline}");
-            }
-            else
-            {
-                _writer.WriteLine($"{prefix}  {entry.RepresentativeOrder}: {effect}");
-                PrintState(entry.NextState, indent + 2, step + 1);
-            }
-        }
+        return Enumerable.Range(0, _n)
+            .Where(i => state.Active.Contains(i) && _n - 1 - state.Descendants[i].Count <= _k - 1)
+            .ToHashSet();
     }
 
     private List<int> ChooseGroup(ComparisonState state)
@@ -423,17 +471,6 @@ class StrategyPrinter
         return id;
     }
 
-    private static string FormatSet(IEnumerable<int> items)
-    {
-        return string.Join(", ", items.Select(i => $"#{i + 1}"));
-    }
-
-    private static string FormatOptionalSet(IEnumerable<int> items)
-    {
-        var list = items.ToList();
-        return list.Count == 0 ? "-" : $"({FormatSet(list)})";
-    }
-
     private static string FormatOrder(IEnumerable<int> items)
     {
         return string.Join(" > ", items.Select(i => $"#{i + 1}"));
@@ -452,6 +489,77 @@ class StrategyPrinter
     }
 }
 
+static class StrategyTextRenderer
+{
+    public static string Render(StrategyPlan plan)
+    {
+        using var writer = new StringWriter();
+        Render(plan, writer);
+        return writer.ToString();
+    }
+
+    public static void Render(StrategyPlan plan, TextWriter writer)
+    {
+        writer.WriteLine($"n={plan.N}, m={plan.M}, k={plan.K}");
+        writer.WriteLine();
+        RenderNode(plan.Root, plan.K, writer, 0);
+    }
+
+    private static void RenderNode(StrategyNode node, int k, TextWriter writer, int indent)
+    {
+        string prefix = new string(' ', indent * 2);
+
+        switch (node.Kind)
+        {
+            case StrategyNodeKind.Terminal:
+                writer.WriteLine($"{prefix}S{node.StateId}: top {k} = ({FormatSet(node.TopSet)})");
+                return;
+            case StrategyNodeKind.Reference:
+                writer.WriteLine($"{prefix}→S{node.StateId}");
+                return;
+            case StrategyNodeKind.Decision:
+                writer.WriteLine($"{prefix}S{node.StateId} [step {node.Step}] sort({FormatSet(node.Group)})");
+                foreach (var branch in node.Branches)
+                {
+                    string effect = FormatEffect(branch.Effect);
+                    if (branch.Next.Kind == StrategyNodeKind.Decision)
+                    {
+                        writer.WriteLine($"{prefix}  {branch.OrderText}: {effect}");
+                        RenderNode(branch.Next, k, writer, indent + 2);
+                    }
+                    else if (branch.Next.Kind == StrategyNodeKind.Terminal)
+                    {
+                        writer.WriteLine($"{prefix}  {branch.OrderText}: {effect} S{branch.Next.StateId}: top {k} = ({FormatSet(branch.Next.TopSet)})");
+                    }
+                    else
+                    {
+                        writer.WriteLine($"{prefix}  {branch.OrderText}: {effect} →S{branch.Next.StateId}");
+                    }
+                }
+
+                return;
+            default:
+                throw new InvalidOperationException("Unknown node kind");
+        }
+    }
+
+    public static string FormatSet(IEnumerable<int> items)
+    {
+        return string.Join(", ", items.Select(i => $"#{i + 1}"));
+    }
+
+    public static string FormatOptionalSet(IEnumerable<int> items)
+    {
+        var list = items.ToList();
+        return list.Count == 0 ? "-" : $"({FormatSet(list)})";
+    }
+
+    public static string FormatEffect(StrategyEffect effect)
+    {
+        return $"[in {FormatOptionalSet(effect.NewlyGuaranteedTop)}, out {FormatOptionalSet(effect.NewlyExcluded)}, cand ({FormatSet(effect.Candidates)})]";
+    }
+}
+
 class Program
 {
     [STAThread]
@@ -465,11 +573,13 @@ class Program
                 return;
             }
 
-            Console.Write(StrategyPrinter.Generate(nFromArgs, mFromArgs, kFromArgs));
+            Console.Write(StrategyTextRenderer.Render(StrategyBuilder.Generate(nFromArgs, mFromArgs, kFromArgs)));
             return;
         }
 
-        if (!Console.IsInputRedirected)
+        bool hasRedirectedInput = Console.IsInputRedirected && Console.In.Peek() != -1;
+
+        if (!hasRedirectedInput)
         {
             ApplicationConfiguration.Initialize();
             Application.Run(new MainForm());
@@ -489,7 +599,7 @@ class Program
             return;
         }
 
-        Console.Write(StrategyPrinter.Generate(n, m, k));
+        Console.Write(StrategyTextRenderer.Render(StrategyBuilder.Generate(n, m, k)));
     }
 
     public static bool TryParseAndValidate(
