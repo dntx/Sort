@@ -167,7 +167,7 @@ class MainForm : Form
         {
             var plan = StrategyBuilder.Generate(n, m, k);
             PopulateTree(plan);
-            _summaryLabel.Text = $"n={n}, m={m}, k={k}. Colors: state = blue, branch = black, in = green, out = red, cand fixed = orange, cand possible = brown, result = dark green, goto = purple.";
+            _summaryLabel.Text = $"n={n}, m={m}, k={k}, elapsed={plan.Elapsed.TotalMilliseconds:F1} ms, max step={plan.MaxStep}. Colors: state = blue, branch = black, in = green, out = red, cand fixed = orange, cand possible = brown, result = dark green, goto = purple.";
         }
         finally
         {
@@ -183,7 +183,7 @@ class MainForm : Form
         _treeView.BeginUpdate();
         _treeView.Nodes.Clear();
 
-        var root = new TreeNode($"n={plan.N}, m={plan.M}, k={plan.K}")
+        var root = new TreeNode($"n={plan.N}, m={plan.M}, k={plan.K}, elapsed={plan.Elapsed.TotalMilliseconds:F1} ms, max step={plan.MaxStep}")
         {
             Tag = StrategyTextRenderer.Render(plan).TrimEnd(),
             NodeFont = new Font(_treeView.Font, FontStyle.Bold),
@@ -213,7 +213,7 @@ class MainForm : Form
         var treeNode = new TreeNode($"S{node.StateId} [step {node.Step}] sort({StrategyTextRenderer.FormatSet(node.Group)})")
         {
             ForeColor = Color.MidnightBlue,
-            Tag = $"State S{node.StateId}\nStep: {node.Step}\nComparison group: ({StrategyTextRenderer.FormatSet(node.Group)})",
+            Tag = BuildStateDetails(node),
         };
 
         foreach (var branch in node.Branches)
@@ -252,6 +252,15 @@ class MainForm : Form
             treeNode.Nodes.Add(branchNode);
         }
 
+        if (node.IsCompressedFinalComparison && node.OmittedBranchCount > 0)
+        {
+            treeNode.Nodes.Add(new TreeNode($"... {node.OmittedBranchCount} other final outcome(s) omitted; analogous")
+            {
+                ForeColor = Color.Gray,
+                Tag = "This is the last-step possible-candidate comparison. Only one representative outcome is shown; the omitted outcomes can be derived analogously.",
+            });
+        }
+
         return treeNode;
     }
 
@@ -280,6 +289,23 @@ class MainForm : Form
             $"out {StrategyTextRenderer.FormatOptionalSet(branch.Effect.NewlyExcluded)}\n" +
             $"cand fixed    {StrategyTextRenderer.FormatOptionalSet(branch.Effect.FixedCandidates)}\n" +
             $"cand possible {StrategyTextRenderer.FormatOptionalSet(branch.Effect.PossibleCandidates)}";
+    }
+
+    private static string BuildStateDetails(StrategyNode node)
+    {
+        string details =
+            $"State S{node.StateId}\n" +
+            $"Step: {node.Step}\n" +
+            $"Comparison group: ({StrategyTextRenderer.FormatSet(node.Group)})";
+
+        if (node.IsCompressedFinalComparison && node.OmittedBranchCount > 0)
+        {
+            details += "\n" +
+                $"Compressed final comparison: yes\n" +
+                $"Omitted analogous outcomes: {node.OmittedBranchCount}";
+        }
+
+        return details;
     }
 
     private void ShowNodeDetails(TreeNode? node)

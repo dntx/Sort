@@ -15,6 +15,8 @@ static class StrategyTextRenderer
     public static void Render(StrategyPlan plan, TextWriter writer)
     {
         writer.WriteLine($"n={plan.N}, m={plan.M}, k={plan.K}");
+        writer.WriteLine($"elapsed = {plan.Elapsed.TotalMilliseconds:F1} ms");
+        writer.WriteLine($"max step = {plan.MaxStep}");
         writer.WriteLine();
         RenderNode(plan.Root, plan.K, writer, 0);
     }
@@ -50,6 +52,9 @@ static class StrategyTextRenderer
                         writer.WriteLine($"{prefix}  {branch.OrderText}: {effect} →S{branch.Next.StateId}");
                     }
                 }
+
+                if (node.IsCompressedFinalComparison && node.OmittedBranchCount > 0)
+                    writer.WriteLine($"{prefix}  ... {node.OmittedBranchCount} other final outcome(s) omitted; analogous.");
 
                 return;
             default:
