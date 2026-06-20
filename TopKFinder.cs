@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 
 class ComparisonState
@@ -86,7 +87,7 @@ class ComparisonState
         return string.Join("|", parts);
     }
 
-    public string GetCanonicalKey()
+    public int[] GetStructuralLabels()
     {
         int n = Ancestors.Length;
         var labels = Enumerable.Range(0, n)
@@ -117,6 +118,13 @@ class ComparisonState
         }
         while (changed);
 
+        return labels;
+    }
+
+    public string GetCanonicalKey()
+    {
+        int n = Ancestors.Length;
+        var labels = GetStructuralLabels();
         var classIds = labels.Distinct().OrderBy(x => x).ToList();
         var parts = new List<string>();
         foreach (int classId in classIds)
@@ -160,13 +168,26 @@ sealed class StrategyPlan
     public int M { get; }
     public int K { get; }
     public StrategyNode Root { get; }
+    public TimeSpan Elapsed { get; }
+    public int MaxStep { get; }
 
-    public StrategyPlan(int n, int m, int k, StrategyNode root)
+    public StrategyPlan(int n, int m, int k, StrategyNode root, TimeSpan elapsed)
     {
         N = n;
         M = m;
         K = k;
         Root = root;
+        Elapsed = elapsed;
+        MaxStep = GetMaxStep(root);
+    }
+
+    private static int GetMaxStep(StrategyNode node)
+    {
+        int selfStep = node.Step ?? 0;
+        if (node.Branches.Count == 0)
+            return selfStep;
+
+        return Math.Max(selfStep, node.Branches.Max(branch => GetMaxStep(branch.Next)));
     }
 }
 
@@ -178,6 +199,8 @@ sealed class StrategyNode
     public IReadOnlyList<int> Group { get; }
     public IReadOnlyList<int> TopSet { get; }
     public IReadOnlyList<StrategyBranch> Branches { get; }
+    public bool IsCompressedFinalComparison { get; }
+    public int OmittedBranchCount { get; }
 
     private StrategyNode(
         StrategyNodeKind kind,
@@ -185,7 +208,9 @@ sealed class StrategyNode
         int? step,
         IReadOnlyList<int>? group,
         IReadOnlyList<int>? topSet,
-        IReadOnlyList<StrategyBranch>? branches)
+        IReadOnlyList<StrategyBranch>? branches,
+        bool isCompressedFinalComparison,
+        int omittedBranchCount)
     {
         Kind = kind;
         StateId = stateId;
@@ -193,16 +218,24 @@ sealed class StrategyNode
         Group = group ?? Array.Empty<int>();
         TopSet = topSet ?? Array.Empty<int>();
         Branches = branches ?? Array.Empty<StrategyBranch>();
+        IsCompressedFinalComparison = isCompressedFinalComparison;
+        OmittedBranchCount = omittedBranchCount;
     }
 
-    public static StrategyNode Decision(int stateId, int step, IReadOnlyList<int> group, IReadOnlyList<StrategyBranch> branches)
-        => new(StrategyNodeKind.Decision, stateId, step, group, null, branches);
+    public static StrategyNode Decision(
+        int stateId,
+        int step,
+        IReadOnlyList<int> group,
+        IReadOnlyList<StrategyBranch> branches,
+        bool isCompressedFinalComparison = false,
+        int omittedBranchCount = 0)
+        => new(StrategyNodeKind.Decision, stateId, step, group, null, branches, isCompressedFinalComparison, omittedBranchCount);
 
     public static StrategyNode Terminal(int stateId, IReadOnlyList<int> topSet)
-        => new(StrategyNodeKind.Terminal, stateId, null, null, topSet, null);
+        => new(StrategyNodeKind.Terminal, stateId, null, null, topSet, null, false, 0);
 
     public static StrategyNode Reference(int stateId)
-        => new(StrategyNodeKind.Reference, stateId, null, null, null, null);
+        => new(StrategyNodeKind.Reference, stateId, null, null, null, null, false, 0);
 }
 
 sealed class StrategyBranch
@@ -258,8 +291,11 @@ class StrategyBuilder
 
     public StrategyPlan Build()
     {
+        var stopwatch = Stopwatch.StartNew();
         var initial = new ComparisonState(_n);
-        return new StrategyPlan(_n, _m, _k, BuildState(initial, 1));
+        var root = BuildState(initial, 1);
+        stopwatch.Stop();
+        return new StrategyPlan(_n, _m, _k, root, stopwatch.Elapsed);
     }
 
     public static StrategyPlan Generate(int n, int m, int k)
@@ -279,7 +315,14 @@ class StrategyBuilder
         if (possibleCandidates.Count > GetRemainingSlots(state) && possibleCandidates.Count <= _m)
         {
             var finalBranches = BuildBranches(state, possibleCandidates, step + 1);
-            return StrategyNode.Decision(stateId, step, possibleCandidates, finalBranches);
+            var representativeBranches = finalBranches.Take(1).ToList();
+            return StrategyNode.Decision(
+                stateId,
+                step,
+                possibleCandidates,
+                representativeBranches,
+                isCompressedFinalComparison: true,
+                omittedBranchCount: Math.Max(0, finalBranches.Count - representativeBranches.Count));
         }
 
         if (_expandedStates.Contains(key))
@@ -367,6 +410,7 @@ class StrategyBuilder
         var candidates = state.Active.OrderBy(x => x).ToList();
         int maxGroupSize = Math.Min(_m, candidates.Count);
         string currentKey = state.GetCanonicalKey();
+        var labels = state.GetStructuralLabels();
 
         List<int>? bestGroup = null;
         (int negWorstCaseSteps, int negFreshItems, int negUnrelatedScore, int negGroupSize, int distinctStates, int totalReduction, int unresolvedPairs) bestScore =
@@ -374,8 +418,12 @@ class StrategyBuilder
 
         for (int groupSize = 2; groupSize <= maxGroupSize; groupSize++)
         {
+            var seenGroupPatterns = new HashSet<string>(StringComparer.Ordinal);
             foreach (var group in EnumerateCombinations(candidates, groupSize))
             {
+                if (!seenGroupPatterns.Add(GetGroupPattern(group, labels)))
+                    continue;
+
                 var nextStateKeys = new HashSet<string>(StringComparer.Ordinal);
                 int worstCaseSteps = 0;
                 int totalReduction = 0;
@@ -437,12 +485,17 @@ class StrategyBuilder
 
         var candidates = state.Active.OrderBy(x => x).ToList();
         int maxGroupSize = Math.Min(_m, candidates.Count);
+        var labels = state.GetStructuralLabels();
         int bestWorstCase = int.MaxValue;
 
         for (int groupSize = 2; groupSize <= maxGroupSize; groupSize++)
         {
+            var seenGroupPatterns = new HashSet<string>(StringComparer.Ordinal);
             foreach (var group in EnumerateCombinations(candidates, groupSize))
             {
+                if (!seenGroupPatterns.Add(GetGroupPattern(group, labels)))
+                    continue;
+
                 int groupWorstCase = 0;
                 bool isUseful = false;
 
@@ -474,6 +527,11 @@ class StrategyBuilder
 
         _minWorstCaseStepsCache[key] = bestWorstCase;
         return bestWorstCase;
+    }
+
+    private static string GetGroupPattern(IReadOnlyList<int> group, IReadOnlyList<int> labels)
+    {
+        return string.Join(",", group.Select(i => labels[i]).OrderBy(x => x));
     }
 
     private IEnumerable<List<int>> EnumerateFeasibleOrders(ComparisonState state, IReadOnlyList<int> group)
