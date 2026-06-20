@@ -381,8 +381,6 @@ sealed class StrategyNode
     public IReadOnlyList<int> Group { get; }
     public IReadOnlyList<int> TopSet { get; }
     public IReadOnlyList<StrategyBranch> Branches { get; }
-    public bool IsCompressedFinalComparison { get; }
-    public int OmittedBranchCount { get; }
 
     private StrategyNode(
         StrategyNodeKind kind,
@@ -390,9 +388,7 @@ sealed class StrategyNode
         int? step,
         IReadOnlyList<int>? group,
         IReadOnlyList<int>? topSet,
-        IReadOnlyList<StrategyBranch>? branches,
-        bool isCompressedFinalComparison,
-        int omittedBranchCount)
+        IReadOnlyList<StrategyBranch>? branches)
     {
         Kind = kind;
         StateId = stateId;
@@ -400,24 +396,20 @@ sealed class StrategyNode
         Group = group ?? Array.Empty<int>();
         TopSet = topSet ?? Array.Empty<int>();
         Branches = branches ?? Array.Empty<StrategyBranch>();
-        IsCompressedFinalComparison = isCompressedFinalComparison;
-        OmittedBranchCount = omittedBranchCount;
     }
 
     public static StrategyNode Decision(
         int stateId,
         int step,
         IReadOnlyList<int> group,
-        IReadOnlyList<StrategyBranch> branches,
-        bool isCompressedFinalComparison = false,
-        int omittedBranchCount = 0)
-        => new(StrategyNodeKind.Decision, stateId, step, group, null, branches, isCompressedFinalComparison, omittedBranchCount);
+        IReadOnlyList<StrategyBranch> branches)
+        => new(StrategyNodeKind.Decision, stateId, step, group, null, branches);
 
     public static StrategyNode Terminal(int stateId, IReadOnlyList<int> topSet)
-        => new(StrategyNodeKind.Terminal, stateId, null, null, topSet, null, false, 0);
+        => new(StrategyNodeKind.Terminal, stateId, null, null, topSet, null);
 
     public static StrategyNode Reference(int stateId)
-        => new(StrategyNodeKind.Reference, stateId, null, null, null, null, false, 0);
+        => new(StrategyNodeKind.Reference, stateId, null, null, null, null);
 }
 
 sealed class StrategyBranch
@@ -509,20 +501,6 @@ class StrategyBuilder
 
         if (state.ActiveCount <= _k)
             return StrategyNode.Terminal(stateId, state.GetActiveItemsOrdered());
-
-        var possibleCandidates = GetPossibleCandidates(state);
-        if (possibleCandidates.Count > GetRemainingSlots(state) && possibleCandidates.Count <= _m)
-        {
-            var finalBranches = BuildBranches(state, possibleCandidates, step + 1);
-            var representativeBranches = finalBranches.Take(1).ToList();
-            return StrategyNode.Decision(
-                stateId,
-                step,
-                possibleCandidates,
-                representativeBranches,
-                isCompressedFinalComparison: true,
-                omittedBranchCount: Math.Max(0, finalBranches.Count - representativeBranches.Count));
-        }
 
         if (_expandedStates.Contains(key))
             return StrategyNode.Reference(stateId);

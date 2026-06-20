@@ -5,15 +5,78 @@ using System.Windows.Forms;
 
 class MainForm : Form
 {
+    private enum ColorTheme
+    {
+        Dark,
+        Light,
+    }
+
+    private sealed class ThemePalette
+    {
+        public required Color FormBackColor { get; init; }
+        public required Color SurfaceBackColor { get; init; }
+        public required Color InputBackColor { get; init; }
+        public required Color ForeColor { get; init; }
+        public required Color MutedForeColor { get; init; }
+        public required Color BorderColor { get; init; }
+        public required Color StateColor { get; init; }
+        public required Color BranchColor { get; init; }
+        public required Color InColor { get; init; }
+        public required Color OutColor { get; init; }
+        public required Color FixedColor { get; init; }
+        public required Color PossibleColor { get; init; }
+        public required Color ResultColor { get; init; }
+        public required Color ReferenceColor { get; init; }
+    }
+
+    private static readonly ThemePalette DarkPalette = new()
+    {
+        FormBackColor = Color.FromArgb(18, 18, 18),
+        SurfaceBackColor = Color.FromArgb(24, 24, 24),
+        InputBackColor = Color.FromArgb(32, 32, 32),
+        ForeColor = Color.White,
+        MutedForeColor = Color.Gainsboro,
+        BorderColor = Color.FromArgb(70, 70, 70),
+        StateColor = Color.LightSkyBlue,
+        BranchColor = Color.White,
+        InColor = Color.LightGreen,
+        OutColor = Color.LightCoral,
+        FixedColor = Color.Gold,
+        PossibleColor = Color.Khaki,
+        ResultColor = Color.MediumSpringGreen,
+        ReferenceColor = Color.Plum,
+    };
+
+    private static readonly ThemePalette LightPalette = new()
+    {
+        FormBackColor = SystemColors.Control,
+        SurfaceBackColor = SystemColors.Window,
+        InputBackColor = SystemColors.Window,
+        ForeColor = SystemColors.ControlText,
+        MutedForeColor = Color.DimGray,
+        BorderColor = SystemColors.ControlDark,
+        StateColor = Color.MidnightBlue,
+        BranchColor = Color.Black,
+        InColor = Color.ForestGreen,
+        OutColor = Color.Crimson,
+        FixedColor = Color.DarkOrange,
+        PossibleColor = Color.Peru,
+        ResultColor = Color.DarkGreen,
+        ReferenceColor = Color.Purple,
+    };
+
     private readonly TextBox _nTextBox;
     private readonly TextBox _mTextBox;
     private readonly TextBox _kTextBox;
+    private readonly ComboBox _themeComboBox;
     private readonly Button _runButton;
     private readonly Button _expandAllButton;
     private readonly Button _collapseAllButton;
     private readonly Label _summaryLabel;
     private readonly TreeView _treeView;
     private readonly RichTextBox _detailsTextBox;
+    private ThemePalette _palette = DarkPalette;
+    private StrategyPlan? _currentPlan;
 
     public MainForm()
     {
@@ -44,6 +107,15 @@ class MainForm : Form
         _nTextBox = CreateInputTextBox("4");
         _mTextBox = CreateInputTextBox("3");
         _kTextBox = CreateInputTextBox("3");
+        _themeComboBox = new ComboBox
+        {
+            Width = 140,
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Margin = new Padding(0, 4, 0, 0),
+        };
+        _themeComboBox.Items.AddRange(Enum.GetNames<ColorTheme>());
+        _themeComboBox.SelectedItem = ColorTheme.Dark.ToString();
+        _themeComboBox.SelectedIndexChanged += (_, _) => ApplyTheme(ParseSelectedTheme());
 
         _runButton = new Button
         {
@@ -73,6 +145,7 @@ class MainForm : Form
         toolbar.Controls.Add(CreateLabeledInput("n", _nTextBox));
         toolbar.Controls.Add(CreateLabeledInput("m", _mTextBox));
         toolbar.Controls.Add(CreateLabeledInput("k", _kTextBox));
+        toolbar.Controls.Add(CreateLabeledInput("theme", _themeComboBox));
         toolbar.Controls.Add(_runButton);
         toolbar.Controls.Add(_expandAllButton);
         toolbar.Controls.Add(_collapseAllButton);
@@ -80,7 +153,6 @@ class MainForm : Form
         _summaryLabel = new Label
         {
             AutoSize = true,
-            Text = "Colors: state = blue, branch = black, in = green, out = red, cand fixed = orange, cand possible = brown, result = dark green, goto = purple.",
             Margin = new Padding(0, 0, 0, 8),
         };
 
@@ -107,7 +179,6 @@ class MainForm : Form
             Dock = DockStyle.Fill,
             ReadOnly = true,
             Font = new Font(FontFamily.GenericMonospace, 10),
-            BackColor = SystemColors.Window,
         };
 
         split.Panel1.Controls.Add(_treeView);
@@ -119,9 +190,10 @@ class MainForm : Form
 
         Controls.Add(layout);
         AcceptButton = _runButton;
+        ApplyTheme(ColorTheme.Dark);
     }
 
-    private static Control CreateLabeledInput(string labelText, TextBox textBox)
+    private static Control CreateLabeledInput(string labelText, Control inputControl)
     {
         var panel = new FlowLayoutPanel
         {
@@ -136,7 +208,7 @@ class MainForm : Form
             AutoSize = true,
             Margin = new Padding(0, 8, 6, 0),
         });
-        panel.Controls.Add(textBox);
+        panel.Controls.Add(inputControl);
         return panel;
     }
 
@@ -166,8 +238,9 @@ class MainForm : Form
         try
         {
             var plan = StrategyBuilder.Generate(n, m, k);
+            _currentPlan = plan;
             PopulateTree(plan);
-            _summaryLabel.Text = $"n={n}, m={m}, k={k}, elapsed={plan.Elapsed.TotalMilliseconds:F1} ms, max step={plan.MaxStep}. Colors: state = blue, branch = black, in = green, out = red, cand fixed = orange, cand possible = brown, result = dark green, goto = purple.";
+            UpdateSummaryText(plan);
         }
         finally
         {
@@ -187,6 +260,7 @@ class MainForm : Form
         {
             Tag = StrategyTextRenderer.Render(plan).TrimEnd(),
             NodeFont = new Font(_treeView.Font, FontStyle.Bold),
+            ForeColor = _palette.ForeColor,
         };
         root.Nodes.Add(CreateStateNode(plan.Root, plan.K));
         _treeView.Nodes.Add(root);
@@ -212,7 +286,7 @@ class MainForm : Form
     {
         var treeNode = new TreeNode($"S{node.StateId} [step {node.Step}] sort({StrategyTextRenderer.FormatSet(node.Group)})")
         {
-            ForeColor = Color.MidnightBlue,
+            ForeColor = _palette.StateColor,
             Tag = BuildStateDetails(node),
         };
 
@@ -220,7 +294,7 @@ class MainForm : Form
         {
             var branchNode = new TreeNode(branch.OrderText)
             {
-                ForeColor = Color.Black,
+                ForeColor = _palette.BranchColor,
                 Tag = BuildBranchDetails(branch),
             };
 
@@ -232,46 +306,37 @@ class MainForm : Form
 
                 branchNode.Nodes.Add(new TreeNode(equivalentText)
                 {
-                    ForeColor = Color.DimGray,
+                    ForeColor = _palette.MutedForeColor,
                     Tag = $"Equivalent merged branch forms: {string.Join("; ", branch.EquivalentOrderTexts)}",
                 });
             }
 
             branchNode.Nodes.Add(new TreeNode($"in {StrategyTextRenderer.FormatOptionalSet(branch.Effect.NewlyGuaranteedTop)}")
             {
-                ForeColor = Color.ForestGreen,
+                ForeColor = _palette.InColor,
                 Tag = $"Newly confirmed in top-k: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.NewlyGuaranteedTop)}",
             });
 
             branchNode.Nodes.Add(new TreeNode($"out {StrategyTextRenderer.FormatOptionalSet(branch.Effect.NewlyExcluded)}")
             {
-                ForeColor = Color.Crimson,
+                ForeColor = _palette.OutColor,
                 Tag = $"Newly excluded from top-k: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.NewlyExcluded)}",
             });
 
             branchNode.Nodes.Add(new TreeNode($"cand fixed {StrategyTextRenderer.FormatOptionalSet(branch.Effect.FixedCandidates)}")
             {
-                ForeColor = Color.DarkOrange,
+                ForeColor = _palette.FixedColor,
                 Tag = $"Current fixed top-k candidates: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.FixedCandidates)}",
             });
 
             branchNode.Nodes.Add(new TreeNode($"cand possible {StrategyTextRenderer.FormatOptionalSet(branch.Effect.PossibleCandidates)}")
             {
-                ForeColor = Color.Peru,
+                ForeColor = _palette.PossibleColor,
                 Tag = $"Current possible top-k candidates: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.PossibleCandidates)}",
             });
 
             branchNode.Nodes.Add(CreateStateNode(branch.Next, k));
             treeNode.Nodes.Add(branchNode);
-        }
-
-        if (node.IsCompressedFinalComparison && node.OmittedBranchCount > 0)
-        {
-            treeNode.Nodes.Add(new TreeNode($"... {node.OmittedBranchCount} other final outcome(s) omitted; analogous")
-            {
-                ForeColor = Color.Gray,
-                Tag = "This is the last-step possible-candidate comparison. Only one representative outcome is shown; the omitted outcomes can be derived analogously.",
-            });
         }
 
         return treeNode;
@@ -281,16 +346,16 @@ class MainForm : Form
     {
         return new TreeNode($"S{node.StateId}: top {k} = ({StrategyTextRenderer.FormatSet(node.TopSet)})")
         {
-            ForeColor = Color.DarkGreen,
+            ForeColor = _palette.ResultColor,
             Tag = $"Result state S{node.StateId}\nTop {k} = ({StrategyTextRenderer.FormatSet(node.TopSet)})",
         };
     }
 
     private TreeNode CreateReferenceNode(StrategyNode node)
     {
-        return new TreeNode($"→S{node.StateId}")
+        return new TreeNode($"->S{node.StateId}")
         {
-            ForeColor = Color.Purple,
+            ForeColor = _palette.ReferenceColor,
             Tag = $"Reference to previously expanded state S{node.StateId}",
         };
     }
@@ -311,19 +376,92 @@ class MainForm : Form
 
     private static string BuildStateDetails(StrategyNode node)
     {
-        string details =
+        return
             $"State S{node.StateId}\n" +
             $"Step: {node.Step}\n" +
             $"Comparison group: ({StrategyTextRenderer.FormatSet(node.Group)})";
+    }
 
-        if (node.IsCompressedFinalComparison && node.OmittedBranchCount > 0)
+    private ColorTheme ParseSelectedTheme()
+    {
+        return Enum.TryParse<ColorTheme>(_themeComboBox.SelectedItem?.ToString(), out var theme)
+            ? theme
+            : ColorTheme.Dark;
+    }
+
+    private void ApplyTheme(ColorTheme theme)
+    {
+        _palette = theme == ColorTheme.Dark ? DarkPalette : LightPalette;
+        BackColor = _palette.FormBackColor;
+        ForeColor = _palette.ForeColor;
+        ApplyThemeToControlTree(this);
+
+        if (_currentPlan is not null)
         {
-            details += "\n" +
-                $"Compressed final comparison: yes\n" +
-                $"Omitted analogous outcomes: {node.OmittedBranchCount}";
+            PopulateTree(_currentPlan);
+            UpdateSummaryText(_currentPlan);
+        }
+        else
+        {
+            _summaryLabel.Text = $"theme={theme}. Colors: state, branch, in, out, cand fixed, cand possible, result, goto.";
+        }
+    }
+
+    private void ApplyThemeToControlTree(Control control)
+    {
+        switch (control)
+        {
+            case TreeView treeView:
+                treeView.BackColor = _palette.SurfaceBackColor;
+                treeView.ForeColor = _palette.ForeColor;
+                treeView.LineColor = _palette.BorderColor;
+                break;
+            case RichTextBox richTextBox:
+                richTextBox.BackColor = _palette.SurfaceBackColor;
+                richTextBox.ForeColor = _palette.ForeColor;
+                break;
+            case TextBox textBox:
+                textBox.BackColor = _palette.InputBackColor;
+                textBox.ForeColor = _palette.ForeColor;
+                textBox.BorderStyle = BorderStyle.FixedSingle;
+                break;
+            case ComboBox comboBox:
+                comboBox.BackColor = _palette.InputBackColor;
+                comboBox.ForeColor = _palette.ForeColor;
+                comboBox.FlatStyle = FlatStyle.Flat;
+                break;
+            case Button button:
+                button.UseVisualStyleBackColor = false;
+                button.BackColor = _palette.InputBackColor;
+                button.ForeColor = _palette.ForeColor;
+                button.FlatStyle = FlatStyle.Flat;
+                button.FlatAppearance.BorderColor = _palette.BorderColor;
+                break;
+            case Label label:
+                label.ForeColor = _palette.ForeColor;
+                label.BackColor = Color.Transparent;
+                break;
+            default:
+                control.BackColor = _palette.FormBackColor;
+                control.ForeColor = _palette.ForeColor;
+                break;
         }
 
-        return details;
+        if (control is SplitContainer splitContainer)
+        {
+            splitContainer.Panel1.BackColor = _palette.FormBackColor;
+            splitContainer.Panel1.ForeColor = _palette.ForeColor;
+            splitContainer.Panel2.BackColor = _palette.FormBackColor;
+            splitContainer.Panel2.ForeColor = _palette.ForeColor;
+        }
+
+        foreach (Control child in control.Controls)
+            ApplyThemeToControlTree(child);
+    }
+
+    private void UpdateSummaryText(StrategyPlan plan)
+    {
+        _summaryLabel.Text = $"n={plan.N}, m={plan.M}, k={plan.K}, elapsed={plan.Elapsed.TotalMilliseconds:F1} ms, max step={plan.MaxStep}, theme={ParseSelectedTheme()}. Colors: state, branch, in, out, cand fixed, cand possible, result, goto.";
     }
 
     private void ShowNodeDetails(TreeNode? node)
