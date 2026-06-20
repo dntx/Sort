@@ -185,6 +185,29 @@ class StrategyPrinter
         return null;
     }
 
+    private HashSet<int> GetGuaranteedTopSet(ComparisonState state)
+    {
+        return Enumerable.Range(0, _n)
+            .Where(i => state.Active.Contains(i) && _n - 1 - state.Descendants[i].Count <= _k - 1)
+            .ToHashSet();
+    }
+
+    private string FormatComparisonEffect(ComparisonState before, ComparisonState after)
+    {
+        var newlyGuaranteedTop = GetGuaranteedTopSet(after)
+            .Except(GetGuaranteedTopSet(before))
+            .OrderBy(x => x)
+            .ToList();
+
+        var newlyExcluded = before.Active
+            .Except(after.Active)
+            .OrderBy(x => x)
+            .ToList();
+
+        string candidates = $"({FormatSet(after.Active.OrderBy(x => x))})";
+        return $"[in {FormatOptionalSet(newlyGuaranteedTop)}, out {FormatOptionalSet(newlyExcluded)}, cand {candidates}]";
+    }
+
     private void PrintState(ComparisonState state, int indent, int step)
     {
         string key = state.GetCanonicalKey();
@@ -226,14 +249,15 @@ class StrategyPrinter
 
         foreach (var entry in groupedBranches.Values.OrderBy(v => v.RepresentativeOrder, StringComparer.Ordinal))
         {
+            string effect = FormatComparisonEffect(state, entry.NextState);
             string? inline = GetInlineResult(entry.NextState);
             if (inline != null)
             {
-                Console.WriteLine($"{prefix}  {entry.RepresentativeOrder}: {inline}");
+                Console.WriteLine($"{prefix}  {entry.RepresentativeOrder}: {effect} {inline}");
             }
             else
             {
-                Console.WriteLine($"{prefix}  {entry.RepresentativeOrder}:");
+                Console.WriteLine($"{prefix}  {entry.RepresentativeOrder}: {effect}");
                 PrintState(entry.NextState, indent + 2, step + 1);
             }
         }
@@ -390,6 +414,12 @@ class StrategyPrinter
     private static string FormatSet(IEnumerable<int> items)
     {
         return string.Join(", ", items.Select(i => $"#{i + 1}"));
+    }
+
+    private static string FormatOptionalSet(IEnumerable<int> items)
+    {
+        var list = items.ToList();
+        return list.Count == 0 ? "-" : $"({FormatSet(list)})";
     }
 
     private static string FormatOrder(IEnumerable<int> items)
