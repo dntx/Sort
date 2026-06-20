@@ -2,40 +2,47 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Numerics;
 
 class ComparisonState
 {
-    public HashSet<int>[] Ancestors { get; }
-    public HashSet<int>[] Descendants { get; }
-    public HashSet<int> Active { get; }
+    private readonly int _n;
+    private readonly ulong _allMask;
+    public ulong[] Ancestors { get; }
+    public ulong[] Descendants { get; }
+    public ulong ActiveMask { get; private set; }
+    public int ActiveCount { get; private set; }
     private int[]? _structuralLabelsCache;
     private string? _canonicalKeyCache;
 
     public ComparisonState(int n)
     {
-        Ancestors = new HashSet<int>[n];
-        Descendants = new HashSet<int>[n];
-        for (int i = 0; i < n; i++)
-        {
-            Ancestors[i] = new HashSet<int>();
-            Descendants[i] = new HashSet<int>();
-        }
-
-        Active = Enumerable.Range(0, n).ToHashSet();
+        _n = n;
+        _allMask = CreateFullMask(n);
+        Ancestors = new ulong[n];
+        Descendants = new ulong[n];
+        ActiveMask = _allMask;
+        ActiveCount = n;
     }
 
-    private ComparisonState(HashSet<int>[] ancestors, HashSet<int>[] descendants, HashSet<int> active)
+    private ComparisonState(int n, ulong[] ancestors, ulong[] descendants, ulong activeMask, int activeCount)
     {
+        _n = n;
+        _allMask = CreateFullMask(n);
         Ancestors = ancestors;
         Descendants = descendants;
-        Active = active;
+        ActiveMask = activeMask;
+        ActiveCount = activeCount;
     }
 
     public ComparisonState Clone()
     {
-        var ancestors = Ancestors.Select(set => new HashSet<int>(set)).ToArray();
-        var descendants = Descendants.Select(set => new HashSet<int>(set)).ToArray();
-        return new ComparisonState(ancestors, descendants, new HashSet<int>(Active));
+        return new ComparisonState(
+            _n,
+            (ulong[])Ancestors.Clone(),
+            (ulong[])Descendants.Clone(),
+            ActiveMask,
+            ActiveCount);
     }
 
     private void InvalidateDerivedCaches()
@@ -46,29 +53,25 @@ class ComparisonState
 
     public void AddRelation(int greater, int lesser)
     {
-        if (Ancestors[lesser].Contains(greater))
+        ulong greaterBit = Bit(greater);
+        ulong lesserBit = Bit(lesser);
+        if ((Ancestors[lesser] & greaterBit) != 0)
             return;
 
         InvalidateDerivedCaches();
 
-        var newAncestorsForLesser = new HashSet<int>(Ancestors[greater]) { greater };
-        newAncestorsForLesser.ExceptWith(Ancestors[lesser]);
-
-        if (newAncestorsForLesser.Count > 0)
+        ulong newAncestorsForLesser = (Ancestors[greater] | greaterBit) & ~Ancestors[lesser] & _allMask;
+        if (newAncestorsForLesser != 0)
         {
-            var belowSet = new HashSet<int>(Descendants[lesser]) { lesser };
-            foreach (int below in belowSet)
-                Ancestors[below].UnionWith(newAncestorsForLesser);
+            foreach (int below in EnumerateBits(Descendants[lesser] | lesserBit))
+                Ancestors[below] |= newAncestorsForLesser;
         }
 
-        var newDescendantsForGreater = new HashSet<int>(Descendants[lesser]) { lesser };
-        newDescendantsForGreater.ExceptWith(Descendants[greater]);
-
-        if (newDescendantsForGreater.Count > 0)
+        ulong newDescendantsForGreater = (Descendants[lesser] | lesserBit) & ~Descendants[greater] & _allMask;
+        if (newDescendantsForGreater != 0)
         {
-            var aboveSet = new HashSet<int>(Ancestors[greater]) { greater };
-            foreach (int above in aboveSet)
-                Descendants[above].UnionWith(newDescendantsForGreater);
+            foreach (int above in EnumerateBits(Ancestors[greater] | greaterBit))
+                Descendants[above] |= newDescendantsForGreater;
         }
     }
 
@@ -83,20 +86,27 @@ class ComparisonState
 
     public void Eliminate(int k)
     {
-        var removed = Active.Where(i => Ancestors[i].Count >= k).ToList();
-        if (removed.Count > 0)
-            InvalidateDerivedCaches();
+        ulong removedMask = 0;
+        foreach (int item in EnumerateBits(ActiveMask))
+        {
+            if (BitOperations.PopCount(Ancestors[item]) >= k)
+                removedMask |= Bit(item);
+        }
 
-        foreach (int item in removed)
-            Active.Remove(item);
+        if (removedMask == 0)
+            return;
+
+        InvalidateDerivedCaches();
+        ActiveMask &= ~removedMask;
+        ActiveCount -= BitOperations.PopCount(removedMask);
     }
 
     public string GetKey()
     {
         var parts = new List<string>(Ancestors.Length + 1);
-        parts.Add("A:" + string.Join(",", Active.OrderBy(x => x)));
+        parts.Add($"A:{ActiveMask:X16}");
         for (int i = 0; i < Ancestors.Length; i++)
-            parts.Add($"{i}:{string.Join(",", Ancestors[i].OrderBy(x => x))}");
+            parts.Add($"{i}:{Ancestors[i]:X16}");
         return string.Join("|", parts);
     }
 
@@ -107,7 +117,7 @@ class ComparisonState
 
         int n = Ancestors.Length;
         var labels = Enumerable.Range(0, n)
-            .Select(i => Active.Contains(i) ? 1 : 0)
+            .Select(i => IsActive(i) ? 1 : 0)
             .ToArray();
 
         bool changed;
@@ -117,8 +127,8 @@ class ComparisonState
             var signatures = new string[n];
             for (int i = 0; i < n; i++)
             {
-                string ancestors = string.Join(",", Ancestors[i].Select(a => labels[a]).OrderBy(x => x));
-                string descendants = string.Join(",", Descendants[i].Select(d => labels[d]).OrderBy(x => x));
+                string ancestors = BuildNeighborSignature(Ancestors[i], labels);
+                string descendants = BuildNeighborSignature(Descendants[i], labels);
                 signatures[i] = $"{labels[i]}|A:{ancestors}|D:{descendants}";
             }
 
@@ -151,17 +161,17 @@ class ComparisonState
         {
             var members = Enumerable.Range(0, n).Where(i => labels[i] == classId).ToList();
             int representative = members[0];
-            string activeFlag = Active.Contains(representative) ? "1" : "0";
+            string activeFlag = IsActive(representative) ? "1" : "0";
 
             var ancestorClassCounts = classIds
                 .Select(otherClass => members
-                    .Select(member => Ancestors[member].Count(a => labels[a] == otherClass))
+                    .Select(member => CountNeighborsWithLabel(Ancestors[member], labels, otherClass))
                     .OrderBy(x => x))
                 .ToList();
 
             var descendantClassCounts = classIds
                 .Select(otherClass => members
-                    .Select(member => Descendants[member].Count(d => labels[d] == otherClass))
+                    .Select(member => CountNeighborsWithLabel(Descendants[member], labels, otherClass))
                     .OrderBy(x => x))
                 .ToList();
 
@@ -173,6 +183,78 @@ class ComparisonState
 
         _canonicalKeyCache = string.Join("||", parts);
         return _canonicalKeyCache;
+    }
+
+    public bool IsActive(int item)
+    {
+        return (ActiveMask & Bit(item)) != 0;
+    }
+
+    public bool HasAncestor(int item, int possibleAncestor)
+    {
+        return (Ancestors[item] & Bit(possibleAncestor)) != 0;
+    }
+
+    public int GetAncestorCount(int item)
+    {
+        return BitOperations.PopCount(Ancestors[item]);
+    }
+
+    public int GetDescendantCount(int item)
+    {
+        return BitOperations.PopCount(Descendants[item]);
+    }
+
+    public List<int> GetActiveItemsOrdered()
+    {
+        return MaskToOrderedList(ActiveMask);
+    }
+
+    public static List<int> MaskToOrderedList(ulong mask)
+    {
+        return EnumerateBits(mask).ToList();
+    }
+
+    private static ulong Bit(int item)
+    {
+        return 1UL << item;
+    }
+
+    private static ulong CreateFullMask(int n)
+    {
+        return n == 64 ? ulong.MaxValue : (1UL << n) - 1;
+    }
+
+    private static IEnumerable<int> EnumerateBits(ulong mask)
+    {
+        while (mask != 0)
+        {
+            int bit = BitOperations.TrailingZeroCount(mask);
+            yield return bit;
+            mask &= mask - 1;
+        }
+    }
+
+    private static string BuildNeighborSignature(ulong mask, IReadOnlyList<int> labels)
+    {
+        var neighborLabels = new List<int>();
+        foreach (int item in EnumerateBits(mask))
+            neighborLabels.Add(labels[item]);
+
+        neighborLabels.Sort();
+        return string.Join(",", neighborLabels);
+    }
+
+    private static int CountNeighborsWithLabel(ulong mask, IReadOnlyList<int> labels, int targetLabel)
+    {
+        int count = 0;
+        foreach (int item in EnumerateBits(mask))
+        {
+            if (labels[item] == targetLabel)
+                count++;
+        }
+
+        return count;
     }
 }
 
@@ -329,8 +411,8 @@ class StrategyBuilder
         string key = state.GetCanonicalKey();
         int stateId = GetStateId(key);
 
-        if (state.Active.Count <= _k)
-            return StrategyNode.Terminal(stateId, state.Active.OrderBy(x => x).ToList());
+        if (state.ActiveCount <= _k)
+            return StrategyNode.Terminal(stateId, state.GetActiveItemsOrdered());
 
         var possibleCandidates = GetPossibleCandidates(state);
         if (possibleCandidates.Count > GetRemainingSlots(state) && possibleCandidates.Count <= _m)
@@ -382,52 +464,43 @@ class StrategyBuilder
 
     private StrategyEffect BuildComparisonEffect(ComparisonState before, ComparisonState after)
     {
-        var guaranteedTopBefore = GetGuaranteedTopSet(before);
-        var guaranteedTopAfter = GetGuaranteedTopSet(after);
+        ulong guaranteedTopBefore = GetGuaranteedTopMask(before);
+        ulong guaranteedTopAfter = GetGuaranteedTopMask(after);
 
-        var newlyGuaranteedTop = guaranteedTopAfter
-            .Except(guaranteedTopBefore)
-            .OrderBy(x => x)
-            .ToList();
-
-        var newlyExcluded = before.Active
-            .Except(after.Active)
-            .OrderBy(x => x)
-            .ToList();
-
-        var fixedCandidates = guaranteedTopAfter.OrderBy(x => x).ToList();
-        var possibleCandidates = after.Active
-            .Except(guaranteedTopAfter)
-            .OrderBy(x => x)
-            .ToList();
+        var newlyGuaranteedTop = ComparisonState.MaskToOrderedList(guaranteedTopAfter & ~guaranteedTopBefore);
+        var newlyExcluded = ComparisonState.MaskToOrderedList(before.ActiveMask & ~after.ActiveMask);
+        var fixedCandidates = ComparisonState.MaskToOrderedList(guaranteedTopAfter);
+        var possibleCandidates = ComparisonState.MaskToOrderedList(after.ActiveMask & ~guaranteedTopAfter);
 
         return new StrategyEffect(newlyGuaranteedTop, newlyExcluded, fixedCandidates, possibleCandidates);
     }
 
-    private HashSet<int> GetGuaranteedTopSet(ComparisonState state)
+    private ulong GetGuaranteedTopMask(ComparisonState state)
     {
-        return Enumerable.Range(0, _n)
-            .Where(i => state.Active.Contains(i) && _n - 1 - state.Descendants[i].Count <= _k - 1)
-            .ToHashSet();
+        ulong mask = 0;
+        for (int i = 0; i < _n; i++)
+        {
+            if (state.IsActive(i) && _n - 1 - state.GetDescendantCount(i) <= _k - 1)
+                mask |= 1UL << i;
+        }
+
+        return mask;
     }
 
     private List<int> GetPossibleCandidates(ComparisonState state)
     {
-        var guaranteedTop = GetGuaranteedTopSet(state);
-        return state.Active
-            .Except(guaranteedTop)
-            .OrderBy(x => x)
-            .ToList();
+        ulong guaranteedTop = GetGuaranteedTopMask(state);
+        return ComparisonState.MaskToOrderedList(state.ActiveMask & ~guaranteedTop);
     }
 
     private int GetRemainingSlots(ComparisonState state)
     {
-        return _k - GetGuaranteedTopSet(state).Count;
+        return _k - BitOperations.PopCount(GetGuaranteedTopMask(state));
     }
 
     private List<int> ChooseGroup(ComparisonState state)
     {
-        var candidates = state.Active.OrderBy(x => x).ToList();
+        var candidates = state.GetActiveItemsOrdered();
         int maxGroupSize = Math.Min(_m, candidates.Count);
         string currentKey = state.GetCanonicalKey();
         var labels = state.GetStructuralLabels();
@@ -460,7 +533,7 @@ class StrategyBuilder
                         continue;
 
                     isUseful = true;
-                    int reduction = state.Active.Count - next.Active.Count;
+                    int reduction = state.ActiveCount - next.ActiveCount;
                     totalReduction += reduction;
                     nextStateKeys.Add(nextKey);
 
@@ -471,8 +544,8 @@ class StrategyBuilder
                 if (!isUseful)
                     continue;
 
-                int freshItems = group.Count(i => state.Ancestors[i].Count == 0 && state.Descendants[i].Count == 0);
-                int unrelatedScore = -group.Sum(i => state.Ancestors[i].Count + state.Descendants[i].Count);
+                int freshItems = group.Count(i => state.GetAncestorCount(i) == 0 && state.GetDescendantCount(i) == 0);
+                int unrelatedScore = -group.Sum(i => state.GetAncestorCount(i) + state.GetDescendantCount(i));
                 int unresolvedPairs = CountUnresolvedPairs(state, group);
                 var score = (-worstCaseSteps, freshItems, unrelatedScore, group.Count, nextStateKeys.Count, totalReduction, unresolvedPairs);
 
@@ -492,7 +565,7 @@ class StrategyBuilder
 
     private int GetMinWorstCaseSteps(ComparisonState state)
     {
-        if (state.Active.Count <= _k)
+        if (state.ActiveCount <= _k)
             return 0;
 
         var possibleCandidates = GetPossibleCandidates(state);
@@ -503,7 +576,7 @@ class StrategyBuilder
         if (_minWorstCaseStepsCache.TryGetValue(key, out int cached))
             return cached;
 
-        var candidates = state.Active.OrderBy(x => x).ToList();
+        var candidates = state.GetActiveItemsOrdered();
         int maxGroupSize = Math.Min(_m, candidates.Count);
         var labels = state.GetStructuralLabels();
         int bestWorstCase = int.MaxValue;
@@ -575,7 +648,7 @@ class StrategyBuilder
         }
 
         var nextChoices = remaining
-            .Where(candidate => remaining.All(other => other == candidate || !state.Ancestors[candidate].Contains(other)))
+            .Where(candidate => remaining.All(other => other == candidate || !state.HasAncestor(candidate, other)))
             .OrderBy(x => x)
             .ToList();
 
@@ -601,7 +674,7 @@ class StrategyBuilder
             {
                 int a = group[i];
                 int b = group[j];
-                if (!state.Ancestors[a].Contains(b) && !state.Ancestors[b].Contains(a))
+                if (!state.HasAncestor(a, b) && !state.HasAncestor(b, a))
                     count++;
             }
         }
