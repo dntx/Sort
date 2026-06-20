@@ -89,7 +89,7 @@ class ComparisonState
     public string GetCanonicalKey()
     {
         int n = Ancestors.Length;
-        var colors = Enumerable.Range(0, n)
+        var labels = Enumerable.Range(0, n)
             .Select(i => Active.Contains(i) ? 1 : 0)
             .ToArray();
 
@@ -100,9 +100,9 @@ class ComparisonState
             var signatures = new string[n];
             for (int i = 0; i < n; i++)
             {
-                string ancestors = string.Join(",", Ancestors[i].Select(a => colors[a]).OrderBy(x => x));
-                string descendants = string.Join(",", Descendants[i].Select(d => colors[d]).OrderBy(x => x));
-                signatures[i] = $"{colors[i]}|A:{ancestors}|D:{descendants}";
+                string ancestors = string.Join(",", Ancestors[i].Select(a => labels[a]).OrderBy(x => x));
+                string descendants = string.Join(",", Descendants[i].Select(d => labels[d]).OrderBy(x => x));
+                signatures[i] = $"{labels[i]}|A:{ancestors}|D:{descendants}";
             }
 
             var signatureToColor = signatures
@@ -111,29 +111,29 @@ class ComparisonState
                 .Select((signature, index) => (signature, index))
                 .ToDictionary(x => x.signature, x => x.index, StringComparer.Ordinal);
 
-            var nextColors = signatures.Select(signature => signatureToColor[signature]).ToArray();
-            changed = !colors.SequenceEqual(nextColors);
-            colors = nextColors;
+            var nextLabels = signatures.Select(signature => signatureToColor[signature]).ToArray();
+            changed = !labels.SequenceEqual(nextLabels);
+            labels = nextLabels;
         }
         while (changed);
 
-        var classIds = colors.Distinct().OrderBy(x => x).ToList();
+        var classIds = labels.Distinct().OrderBy(x => x).ToList();
         var parts = new List<string>();
         foreach (int classId in classIds)
         {
-            var members = Enumerable.Range(0, n).Where(i => colors[i] == classId).ToList();
+            var members = Enumerable.Range(0, n).Where(i => labels[i] == classId).ToList();
             int representative = members[0];
             string activeFlag = Active.Contains(representative) ? "1" : "0";
 
             var ancestorClassCounts = classIds
                 .Select(otherClass => members
-                    .Select(member => Ancestors[member].Count(a => colors[a] == otherClass))
+                    .Select(member => Ancestors[member].Count(a => labels[a] == otherClass))
                     .OrderBy(x => x))
                 .ToList();
 
             var descendantClassCounts = classIds
                 .Select(otherClass => members
-                    .Select(member => Descendants[member].Count(d => colors[d] == otherClass))
+                    .Select(member => Descendants[member].Count(d => labels[d] == otherClass))
                     .OrderBy(x => x))
                 .ToList();
 
