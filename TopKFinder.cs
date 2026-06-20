@@ -458,14 +458,12 @@ sealed class StrategyEffect
 
 readonly struct FeasibleTopSetInfo
 {
-    public FeasibleTopSetInfo(int count, ulong uniqueMask)
+    public FeasibleTopSetInfo(int count)
     {
         Count = count;
-        UniqueMask = uniqueMask;
     }
 
     public int Count { get; }
-    public ulong UniqueMask { get; }
 }
 
 class StrategyBuilder
@@ -781,9 +779,9 @@ class StrategyBuilder
     private bool TryGetDeterminedTopSet(ComparisonState state, out List<int> topSet)
     {
         FeasibleTopSetInfo info = GetFeasibleTopSetInfo(state);
-        if (info.Count == 1)
+        if (info.Count == 1 && TryGetUniqueTopSetMask(state, out ulong uniqueMask))
         {
-            topSet = ComparisonState.MaskToOrderedList(info.UniqueMask);
+            topSet = ComparisonState.MaskToOrderedList(uniqueMask);
             return true;
         }
 
@@ -797,39 +795,72 @@ class StrategyBuilder
         if (_feasibleTopSetCache.TryGetValue(key, out FeasibleTopSetInfo cached))
             return cached;
 
+        int count = CountFeasibleTopSets(state);
+        FeasibleTopSetInfo info = new(count);
+
+        _feasibleTopSetCache[key] = info;
+        return info;
+    }
+
+    private bool TryGetUniqueTopSetMask(ComparisonState state, out ulong uniqueMask)
+    {
         ulong guaranteedMask = GetGuaranteedTopMask(state);
         int guaranteedCount = BitOperations.PopCount(guaranteedMask);
         int remainingSlots = _k - guaranteedCount;
 
-        FeasibleTopSetInfo info;
         if (remainingSlots == 0)
         {
-            info = new FeasibleTopSetInfo(1, guaranteedMask);
+            uniqueMask = guaranteedMask;
+            return true;
         }
-        else
+
+        uniqueMask = 0;
+        bool found = false;
+        var possibleCandidates = GetPossibleCandidates(state);
+        foreach (var combination in EnumerateCombinations(possibleCandidates, remainingSlots))
         {
-            var possibleCandidates = GetPossibleCandidates(state);
-            int count = 0;
-            ulong uniqueMask = 0;
-            foreach (var combination in EnumerateCombinations(possibleCandidates, remainingSlots))
+            ulong candidateMask = guaranteedMask;
+            foreach (int item in combination)
+                candidateMask |= 1UL << item;
+
+            if (!IsFeasibleTopSet(state, candidateMask))
+                continue;
+
+            if (found)
             {
-                ulong candidateMask = guaranteedMask;
-                foreach (int item in combination)
-                    candidateMask |= 1UL << item;
-
-                if (!IsFeasibleTopSet(state, candidateMask))
-                    continue;
-
-                count++;
-                if (count == 1)
-                    uniqueMask = candidateMask;
+                uniqueMask = 0;
+                return false;
             }
 
-            info = new FeasibleTopSetInfo(count, uniqueMask);
+            uniqueMask = candidateMask;
+            found = true;
         }
 
-        _feasibleTopSetCache[key] = info;
-        return info;
+        return found;
+    }
+
+    private int CountFeasibleTopSets(ComparisonState state)
+    {
+        ulong guaranteedMask = GetGuaranteedTopMask(state);
+        int guaranteedCount = BitOperations.PopCount(guaranteedMask);
+        int remainingSlots = _k - guaranteedCount;
+
+        if (remainingSlots == 0)
+            return 1;
+
+        int count = 0;
+        var possibleCandidates = GetPossibleCandidates(state);
+        foreach (var combination in EnumerateCombinations(possibleCandidates, remainingSlots))
+        {
+            ulong candidateMask = guaranteedMask;
+            foreach (int item in combination)
+                candidateMask |= 1UL << item;
+
+            if (IsFeasibleTopSet(state, candidateMask))
+                count++;
+        }
+
+        return count;
     }
 
     private bool IsFeasibleTopSet(ComparisonState state, ulong candidateMask)
