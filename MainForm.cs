@@ -224,6 +224,19 @@ class MainForm : Form
                 Tag = BuildBranchDetails(branch),
             };
 
+            if (branch.EquivalentOrderTexts.Count > 0)
+            {
+                string equivalentText = branch.EquivalentOrderTexts.Count == 1
+                    ? $"equivalent form {branch.EquivalentOrderTexts[0]}"
+                    : $"equivalent forms {branch.EquivalentOrderTexts.Count}";
+
+                branchNode.Nodes.Add(new TreeNode(equivalentText)
+                {
+                    ForeColor = Color.DimGray,
+                    Tag = $"Equivalent merged branch forms: {string.Join("; ", branch.EquivalentOrderTexts)}",
+                });
+            }
+
             branchNode.Nodes.Add(new TreeNode($"in {StrategyTextRenderer.FormatOptionalSet(branch.Effect.NewlyGuaranteedTop)}")
             {
                 ForeColor = Color.ForestGreen,
@@ -284,11 +297,16 @@ class MainForm : Form
 
     private static string BuildBranchDetails(StrategyBranch branch)
     {
-        return $"{branch.OrderText}\n" +
+        string details = $"{branch.OrderText}\n" +
             $"in  {StrategyTextRenderer.FormatOptionalSet(branch.Effect.NewlyGuaranteedTop)}\n" +
             $"out {StrategyTextRenderer.FormatOptionalSet(branch.Effect.NewlyExcluded)}\n" +
             $"cand fixed    {StrategyTextRenderer.FormatOptionalSet(branch.Effect.FixedCandidates)}\n" +
             $"cand possible {StrategyTextRenderer.FormatOptionalSet(branch.Effect.PossibleCandidates)}";
+
+        if (branch.EquivalentOrderTexts.Count > 0)
+            details += $"\nmerged equivalent forms: {string.Join("; ", branch.EquivalentOrderTexts)}";
+
+        return details;
     }
 
     private static string BuildStateDetails(StrategyNode node)

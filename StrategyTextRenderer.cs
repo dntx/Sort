@@ -41,15 +41,18 @@ static class StrategyTextRenderer
                     if (branch.Next.Kind == StrategyNodeKind.Decision)
                     {
                         writer.WriteLine($"{prefix}  {branch.OrderText}: {effect}");
+                        WriteEquivalentOrders(branch, writer, indent + 2);
                         RenderNode(branch.Next, k, writer, indent + 2);
                     }
                     else if (branch.Next.Kind == StrategyNodeKind.Terminal)
                     {
                         writer.WriteLine($"{prefix}  {branch.OrderText}: {effect} S{branch.Next.StateId}: top {k} = ({FormatSet(branch.Next.TopSet)})");
+                        WriteEquivalentOrders(branch, writer, indent + 2);
                     }
                     else
                     {
                         writer.WriteLine($"{prefix}  {branch.OrderText}: {effect} →S{branch.Next.StateId}");
+                        WriteEquivalentOrders(branch, writer, indent + 2);
                     }
                 }
 
@@ -76,5 +79,14 @@ static class StrategyTextRenderer
     public static string FormatEffect(StrategyEffect effect)
     {
         return $"[in {FormatOptionalSet(effect.NewlyGuaranteedTop)}, out {FormatOptionalSet(effect.NewlyExcluded)}, cand fixed {FormatOptionalSet(effect.FixedCandidates)}, possible {FormatOptionalSet(effect.PossibleCandidates)}]";
+    }
+
+    private static void WriteEquivalentOrders(StrategyBranch branch, TextWriter writer, int indent)
+    {
+        if (branch.EquivalentOrderTexts.Count == 0)
+            return;
+
+        string prefix = new string(' ', indent * 2);
+        writer.WriteLine($"{prefix}equivalent forms: {string.Join("; ", branch.EquivalentOrderTexts)}");
     }
 }
