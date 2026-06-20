@@ -246,6 +246,7 @@ class StrategyBuilder
     private readonly int _k;
     private readonly Dictionary<string, int> _stateIds = new();
     private readonly HashSet<string> _expandedStates = new();
+    private readonly Dictionary<string, int> _minWorstCaseStepsCache = new();
     private int _nextStateId = 1;
 
     public StrategyBuilder(int n, int m, int k)
@@ -342,16 +343,17 @@ class StrategyBuilder
         string currentKey = state.GetCanonicalKey();
 
         List<int>? bestGroup = null;
-        (int minReduction, int negGroupSize, int distinctStates, int totalReduction, int unresolvedPairs) bestScore =
-            (-1, int.MinValue, -1, -1, -1);
+        (int negWorstCaseSteps, int negFreshItems, int negUnrelatedScore, int negGroupSize, int distinctStates, int totalReduction, int unresolvedPairs) bestScore =
+            (int.MinValue, int.MinValue, int.MinValue, int.MinValue, int.MinValue, int.MinValue, int.MinValue);
 
         for (int groupSize = 2; groupSize <= maxGroupSize; groupSize++)
         {
             foreach (var group in EnumerateCombinations(candidates, groupSize))
             {
                 var nextStateKeys = new HashSet<string>(StringComparer.Ordinal);
-                int minReduction = int.MaxValue;
+                int worstCaseSteps = 0;
                 int totalReduction = 0;
+                bool isUseful = false;
 
                 foreach (var order in EnumerateFeasibleOrders(state, group))
                 {
@@ -359,22 +361,26 @@ class StrategyBuilder
                     next.ApplyOrder(order);
                     next.Eliminate(_k);
 
+                    string nextKey = next.GetCanonicalKey();
+                    if (nextKey == currentKey)
+                        continue;
+
+                    isUseful = true;
                     int reduction = state.Active.Count - next.Active.Count;
-                    minReduction = Math.Min(minReduction, reduction);
                     totalReduction += reduction;
-                    nextStateKeys.Add(next.GetCanonicalKey());
+                    nextStateKeys.Add(nextKey);
+
+                    int branchSteps = 1 + GetMinWorstCaseSteps(next);
+                    worstCaseSteps = Math.Max(worstCaseSteps, branchSteps);
                 }
 
-                int unresolvedPairs = CountUnresolvedPairs(state, group);
-                // Prefer smaller groups only when this comparison can finish the job;
-                // otherwise prefer larger groups for more information gain.
-                bool canFinish = state.Active.Count - minReduction <= _k;
-                int negGroupSize = canFinish ? -group.Count : 0;
-                var score = (minReduction, negGroupSize, nextStateKeys.Count, totalReduction, unresolvedPairs);
-
-                bool isUseful = nextStateKeys.Any(key => key != currentKey);
                 if (!isUseful)
                     continue;
+
+                int freshItems = group.Count(i => state.Ancestors[i].Count == 0 && state.Descendants[i].Count == 0);
+                int unrelatedScore = -group.Sum(i => state.Ancestors[i].Count + state.Descendants[i].Count);
+                int unresolvedPairs = CountUnresolvedPairs(state, group);
+                var score = (-worstCaseSteps, freshItems, unrelatedScore, group.Count, nextStateKeys.Count, totalReduction, unresolvedPairs);
 
                 if (bestGroup is null || score.CompareTo(bestScore) > 0)
                 {
@@ -388,6 +394,56 @@ class StrategyBuilder
             return bestGroup;
 
         return candidates.Take(maxGroupSize).ToList();
+    }
+
+    private int GetMinWorstCaseSteps(ComparisonState state)
+    {
+        if (state.Active.Count <= _k)
+            return 0;
+
+        string key = state.GetCanonicalKey();
+        if (_minWorstCaseStepsCache.TryGetValue(key, out int cached))
+            return cached;
+
+        var candidates = state.Active.OrderBy(x => x).ToList();
+        int maxGroupSize = Math.Min(_m, candidates.Count);
+        int bestWorstCase = int.MaxValue;
+
+        for (int groupSize = 2; groupSize <= maxGroupSize; groupSize++)
+        {
+            foreach (var group in EnumerateCombinations(candidates, groupSize))
+            {
+                int groupWorstCase = 0;
+                bool isUseful = false;
+
+                foreach (var order in EnumerateFeasibleOrders(state, group))
+                {
+                    var next = state.Clone();
+                    next.ApplyOrder(order);
+                    next.Eliminate(_k);
+
+                    string nextKey = next.GetCanonicalKey();
+                    if (nextKey == key)
+                        continue;
+
+                    isUseful = true;
+                    int branchSteps = 1 + GetMinWorstCaseSteps(next);
+                    groupWorstCase = Math.Max(groupWorstCase, branchSteps);
+
+                    if (groupWorstCase >= bestWorstCase)
+                        break;
+                }
+
+                if (isUseful)
+                    bestWorstCase = Math.Min(bestWorstCase, groupWorstCase);
+            }
+        }
+
+        if (bestWorstCase == int.MaxValue)
+            bestWorstCase = 0;
+
+        _minWorstCaseStepsCache[key] = bestWorstCase;
+        return bestWorstCase;
     }
 
     private IEnumerable<List<int>> EnumerateFeasibleOrders(ComparisonState state, IReadOnlyList<int> group)
@@ -500,4 +556,3 @@ class StrategyBuilder
         }
     }
 }
-
