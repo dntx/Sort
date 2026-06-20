@@ -445,6 +445,18 @@ sealed class StrategyEffect
     }
 }
 
+readonly struct FeasibleTopSetInfo
+{
+    public FeasibleTopSetInfo(int count, ulong uniqueMask)
+    {
+        Count = count;
+        UniqueMask = uniqueMask;
+    }
+
+    public int Count { get; }
+    public ulong UniqueMask { get; }
+}
+
 class StrategyBuilder
 {
     private readonly int _n;
@@ -453,6 +465,8 @@ class StrategyBuilder
     private readonly Dictionary<IntSequenceKey, int> _stateIds = new();
     private readonly HashSet<IntSequenceKey> _expandedStates = new();
     private readonly Dictionary<IntSequenceKey, int> _minWorstCaseStepsCache = new();
+    private readonly Dictionary<IntSequenceKey, int> _lowerBoundStepsCache = new();
+    private readonly Dictionary<IntSequenceKey, FeasibleTopSetInfo> _feasibleTopSetCache = new();
     private int _nextStateId = 1;
 
     public StrategyBuilder(int n, int m, int k)
@@ -480,6 +494,9 @@ class StrategyBuilder
     {
         IntSequenceKey key = state.GetCanonicalKey();
         int stateId = GetStateId(key);
+
+        if (TryGetDeterminedTopSet(state, out List<int> determinedTopSet))
+            return StrategyNode.Terminal(stateId, determinedTopSet);
 
         if (state.ActiveCount <= _k)
             return StrategyNode.Terminal(stateId, state.GetActiveItemsOrdered());
@@ -591,6 +608,7 @@ class StrategyBuilder
                 int worstCaseSteps = 0;
                 int totalReduction = 0;
                 bool isUseful = false;
+                int bestKnownWorstCase = bestGroup is null ? int.MaxValue : -bestScore.negWorstCaseSteps;
 
                 foreach (var order in EnumerateFeasibleOrders(state, group))
                 {
@@ -606,6 +624,13 @@ class StrategyBuilder
                     int reduction = state.ActiveCount - next.ActiveCount;
                     totalReduction += reduction;
                     nextStateKeys.Add(nextKey);
+
+                    int branchLowerBound = 1 + GetMinWorstCaseLowerBound(next);
+                    if (branchLowerBound > bestKnownWorstCase)
+                    {
+                        worstCaseSteps = branchLowerBound;
+                        break;
+                    }
 
                     int branchSteps = 1 + GetMinWorstCaseSteps(next);
                     worstCaseSteps = Math.Max(worstCaseSteps, branchSteps);
@@ -635,6 +660,9 @@ class StrategyBuilder
 
     private int GetMinWorstCaseSteps(ComparisonState state)
     {
+        if (TryGetDeterminedTopSet(state, out _))
+            return 0;
+
         if (state.ActiveCount <= _k)
             return 0;
 
@@ -673,6 +701,13 @@ class StrategyBuilder
                         continue;
 
                     isUseful = true;
+                    int branchLowerBound = 1 + GetMinWorstCaseLowerBound(next);
+                    if (branchLowerBound >= bestWorstCase)
+                    {
+                        groupWorstCase = branchLowerBound;
+                        break;
+                    }
+
                     int branchSteps = 1 + GetMinWorstCaseSteps(next);
                     groupWorstCase = Math.Max(groupWorstCase, branchSteps);
 
@@ -690,6 +725,114 @@ class StrategyBuilder
 
         _minWorstCaseStepsCache[key] = bestWorstCase;
         return bestWorstCase;
+    }
+
+    private int GetMinWorstCaseLowerBound(ComparisonState state)
+    {
+        if (TryGetDeterminedTopSet(state, out _))
+            return 0;
+
+        if (state.ActiveCount <= _k)
+            return 0;
+
+        var possibleCandidates = GetPossibleCandidates(state);
+        if (possibleCandidates.Count > GetRemainingSlots(state) && possibleCandidates.Count <= _m)
+            return 1;
+
+        IntSequenceKey key = state.GetCanonicalKey();
+        if (_lowerBoundStepsCache.TryGetValue(key, out int cached))
+            return cached;
+
+        FeasibleTopSetInfo info = GetFeasibleTopSetInfo(state);
+        int maxOutcomesPerStep = GetMaxOutcomesPerStep(state);
+        int distinguishable = 1;
+        int steps = 0;
+        while (distinguishable < info.Count)
+        {
+            steps++;
+            checked
+            {
+                distinguishable *= maxOutcomesPerStep;
+            }
+        }
+
+        _lowerBoundStepsCache[key] = steps;
+        return steps;
+    }
+
+    private bool TryGetDeterminedTopSet(ComparisonState state, out List<int> topSet)
+    {
+        FeasibleTopSetInfo info = GetFeasibleTopSetInfo(state);
+        if (info.Count == 1)
+        {
+            topSet = ComparisonState.MaskToOrderedList(info.UniqueMask);
+            return true;
+        }
+
+        topSet = Array.Empty<int>().ToList();
+        return false;
+    }
+
+    private FeasibleTopSetInfo GetFeasibleTopSetInfo(ComparisonState state)
+    {
+        IntSequenceKey key = state.GetCanonicalKey();
+        if (_feasibleTopSetCache.TryGetValue(key, out FeasibleTopSetInfo cached))
+            return cached;
+
+        ulong guaranteedMask = GetGuaranteedTopMask(state);
+        int guaranteedCount = BitOperations.PopCount(guaranteedMask);
+        int remainingSlots = _k - guaranteedCount;
+
+        FeasibleTopSetInfo info;
+        if (remainingSlots == 0)
+        {
+            info = new FeasibleTopSetInfo(1, guaranteedMask);
+        }
+        else
+        {
+            var possibleCandidates = GetPossibleCandidates(state);
+            int count = 0;
+            ulong uniqueMask = 0;
+            foreach (var combination in EnumerateCombinations(possibleCandidates, remainingSlots))
+            {
+                ulong candidateMask = guaranteedMask;
+                foreach (int item in combination)
+                    candidateMask |= 1UL << item;
+
+                if (!IsFeasibleTopSet(state, candidateMask))
+                    continue;
+
+                count++;
+                if (count == 1)
+                    uniqueMask = candidateMask;
+            }
+
+            info = new FeasibleTopSetInfo(count, uniqueMask);
+        }
+
+        _feasibleTopSetCache[key] = info;
+        return info;
+    }
+
+    private bool IsFeasibleTopSet(ComparisonState state, ulong candidateMask)
+    {
+        foreach (int item in ComparisonState.MaskToOrderedList(candidateMask))
+        {
+            ulong activeAncestorsOutsideSet = state.Ancestors[item] & state.ActiveMask & ~candidateMask;
+            if (activeAncestorsOutsideSet != 0)
+                return false;
+        }
+
+        return true;
+    }
+
+    private int GetMaxOutcomesPerStep(ComparisonState state)
+    {
+        int maxGroupSize = Math.Min(_m, state.ActiveCount);
+        int outcomes = 1;
+        for (int i = 2; i <= maxGroupSize; i++)
+            outcomes *= i;
+        return outcomes;
     }
 
     private static IntSequenceKey GetGroupPattern(IReadOnlyList<int> group, IReadOnlyList<int> labels)
@@ -806,4 +949,5 @@ class StrategyBuilder
             RepresentativeOrder = representativeOrder;
         }
     }
+
 }
