@@ -68,6 +68,7 @@ readonly struct IntSequenceKey : IEquatable<IntSequenceKey>, IComparable<IntSequ
 
 class ComparisonState
 {
+    private static readonly IntSequenceKey InactiveSignature = new(new[] { 0 });
     private readonly int _n;
     private readonly ulong _allMask;
     public ulong[] Ancestors { get; }
@@ -181,7 +182,9 @@ class ComparisonState
             var signatures = new IntSequenceKey[n];
             for (int i = 0; i < n; i++)
             {
-                signatures[i] = BuildElementSignature(labels[i], Ancestors[i], Descendants[i], labels, classCount);
+                signatures[i] = IsActive(i)
+                    ? BuildElementSignature(labels[i], Ancestors[i] & ActiveMask, Descendants[i] & ActiveMask, labels, classCount)
+                    : InactiveSignature;
             }
 
             var orderedSignatures = signatures
@@ -210,10 +213,16 @@ class ComparisonState
 
         int n = Ancestors.Length;
         var labels = GetStructuralLabels();
-        int classCount = labels.Max() + 1;
-        var parts = new List<int> { classCount };
+        var activeClassIds = Enumerable.Range(0, n)
+            .Where(IsActive)
+            .Select(i => labels[i])
+            .Distinct()
+            .OrderBy(x => x)
+            .ToList();
 
-        for (int classId = 0; classId < classCount; classId++)
+        var parts = new List<int> { activeClassIds.Count };
+
+        foreach (int classId in activeClassIds)
         {
             var members = Enumerable.Range(0, n).Where(i => labels[i] == classId).ToList();
             int memberCount = members.Count;
@@ -222,19 +231,19 @@ class ComparisonState
             parts.Add(memberCount);
             parts.Add(IsActive(representative) ? 1 : 0);
 
-            for (int otherClass = 0; otherClass < classCount; otherClass++)
+            foreach (int otherClass in activeClassIds)
             {
                 var counts = members
-                    .Select(member => CountNeighborsWithLabel(Ancestors[member], labels, otherClass))
+                    .Select(member => CountNeighborsWithLabel(Ancestors[member] & ActiveMask, labels, otherClass))
                     .OrderBy(x => x);
 
                 parts.AddRange(counts);
             }
 
-            for (int otherClass = 0; otherClass < classCount; otherClass++)
+            foreach (int otherClass in activeClassIds)
             {
                 var counts = members
-                    .Select(member => CountNeighborsWithLabel(Descendants[member], labels, otherClass))
+                    .Select(member => CountNeighborsWithLabel(Descendants[member] & ActiveMask, labels, otherClass))
                     .OrderBy(x => x);
 
                 parts.AddRange(counts);
