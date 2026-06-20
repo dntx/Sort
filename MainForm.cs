@@ -27,7 +27,6 @@ class MainForm : Form
         public required Color PossibleColor { get; init; }
         public required Color ResultColor { get; init; }
         public required Color ReferenceColor { get; init; }
-        public required Color OmittedColor { get; init; }
     }
 
     private static readonly ThemePalette DarkPalette = new()
@@ -46,7 +45,6 @@ class MainForm : Form
         PossibleColor = Color.Khaki,
         ResultColor = Color.MediumSpringGreen,
         ReferenceColor = Color.Plum,
-        OmittedColor = Color.Silver,
     };
 
     private static readonly ThemePalette LightPalette = new()
@@ -65,7 +63,6 @@ class MainForm : Form
         PossibleColor = Color.Peru,
         ResultColor = Color.DarkGreen,
         ReferenceColor = Color.Purple,
-        OmittedColor = Color.Gray,
     };
 
     private readonly TextBox _nTextBox;
@@ -342,15 +339,6 @@ class MainForm : Form
             treeNode.Nodes.Add(branchNode);
         }
 
-        if (node.IsCompressedFinalComparison && node.OmittedBranchCount > 0)
-        {
-            treeNode.Nodes.Add(new TreeNode($"... {node.OmittedBranchCount} other final outcome(s) omitted; analogous")
-            {
-                ForeColor = _palette.OmittedColor,
-                Tag = "This is the last-step possible-candidate comparison. Only one representative outcome is shown; the omitted outcomes can be derived analogously.",
-            });
-        }
-
         return treeNode;
     }
 
@@ -388,19 +376,10 @@ class MainForm : Form
 
     private static string BuildStateDetails(StrategyNode node)
     {
-        string details =
+        return
             $"State S{node.StateId}\n" +
             $"Step: {node.Step}\n" +
             $"Comparison group: ({StrategyTextRenderer.FormatSet(node.Group)})";
-
-        if (node.IsCompressedFinalComparison && node.OmittedBranchCount > 0)
-        {
-            details += "\n" +
-                $"Compressed final comparison: yes\n" +
-                $"Omitted analogous outcomes: {node.OmittedBranchCount}";
-        }
-
-        return details;
     }
 
     private ColorTheme ParseSelectedTheme()

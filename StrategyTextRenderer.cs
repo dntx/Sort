@@ -56,9 +56,6 @@ static class StrategyTextRenderer
                     }
                 }
 
-                if (node.IsCompressedFinalComparison && node.OmittedBranchCount > 0)
-                    writer.WriteLine($"{prefix}  ... {node.OmittedBranchCount} other final outcome(s) omitted; analogous.");
-
                 return;
             default:
                 throw new InvalidOperationException("Unknown node kind");
