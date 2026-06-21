@@ -99,7 +99,7 @@ partial class StrategyBuilder
 
         _expandedStates.Add(displayKey);
 
-        SelectedComparisonGroup chosenGroup = ChooseGroup(state, remainingSlots);
+        SelectedComparisonGroup chosenGroup = ChooseGroup(state, fixedTopMask, remainingSlots);
         var branches = BuildBranches(state, fixedTopMask, remainingSlots, chosenGroup, step + 1);
 
         return StrategyNode.Decision(stateId, step, chosenGroup.Group, branches);
@@ -110,7 +110,7 @@ partial class StrategyBuilder
         return state.GetActiveItemsOrdered();
     }
 
-    private SelectedComparisonGroup ChooseGroup(ComparisonState state, int remainingSlots)
+    private SelectedComparisonGroup ChooseGroup(ComparisonState state, ulong fixedTopMask, int remainingSlots)
     {
         ThrowIfCancellationRequested();
         var candidates = state.GetActiveItemsOrdered();
@@ -123,12 +123,12 @@ partial class StrategyBuilder
             foreach (var group in EnumerateCombinations(candidates, cachedPattern.GroupSize))
             {
                 if (GetGroupPattern(group, labels) == cachedPattern.Pattern)
-                    return new SelectedComparisonGroup(group, BuildAllComparisonOutcomes(state, remainingSlots, group));
+                    return new SelectedComparisonGroup(group, BuildMergedComparisonOutcomes(state, fixedTopMask, remainingSlots, group));
             }
         }
 
         List<int>? bestGroup = null;
-        IReadOnlyList<ComparisonOutcome>? bestOutcomes = null;
+        IReadOnlyList<MergedBranch>? bestBranches = null;
         ComparisonGroupScore? bestScore = null;
 
         ThrowIfCancellationRequested();
@@ -140,6 +140,7 @@ partial class StrategyBuilder
             ThrowIfCancellationRequested();
             ComparisonGroupEvaluation? evaluation = EvaluateComparisonGroup(
                 state,
+                fixedTopMask,
                 remainingSlots,
                 group,
                 currentKey,
@@ -150,23 +151,24 @@ partial class StrategyBuilder
             if (bestScore is null || evaluation.Score.CompareTo(bestScore.Value) > 0)
             {
                 bestGroup = group;
-                bestOutcomes = evaluation.Outcomes;
+                bestBranches = evaluation.Branches;
                 bestScore = evaluation.Score;
             }
         }
 
-        if (bestGroup is not null && bestOutcomes is not null)
+        if (bestGroup is not null && bestBranches is not null)
         {
             _bestGroupPatternCache[currentKey] = new BestGroupPattern(bestGroup.Count, GetGroupPattern(bestGroup, labels));
-            return new SelectedComparisonGroup(bestGroup, bestOutcomes);
+            return new SelectedComparisonGroup(bestGroup, bestBranches);
         }
 
         List<int> fallbackGroup = candidates.Take(groupSize).ToList();
-        return new SelectedComparisonGroup(fallbackGroup, BuildAllComparisonOutcomes(state, remainingSlots, fallbackGroup));
+        return new SelectedComparisonGroup(fallbackGroup, BuildMergedComparisonOutcomes(state, fixedTopMask, remainingSlots, fallbackGroup));
     }
 
     private ComparisonGroupEvaluation? EvaluateComparisonGroup(
         ComparisonState state,
+        ulong fixedTopMask,
         int remainingSlots,
         IReadOnlyList<int> group,
         SearchStateKey currentKey,
@@ -175,10 +177,11 @@ partial class StrategyBuilder
         int worstCaseSteps = 0;
         OutcomeTraversalSummary traversal = VisitComparisonOutcomes(
             state,
+            fixedTopMask,
             remainingSlots,
             group,
             currentKey,
-            collectAllOutcomes: true,
+            collectMergedBranches: true,
             onUsefulOutcome: outcome =>
             {
                 int branchLowerBound = 1 + GetMinWorstCaseLowerBound(outcome.NextState, outcome.NextRemainingSlots);
@@ -202,18 +205,19 @@ partial class StrategyBuilder
             worstCaseSteps,
             traversal.DistinctNextStateCount,
             traversal.TotalReduction);
-        return new ComparisonGroupEvaluation(traversal.AllOutcomes, score);
+        return new ComparisonGroupEvaluation(traversal.MergedBranches, score);
     }
 
-    private IReadOnlyList<ComparisonOutcome> BuildAllComparisonOutcomes(ComparisonState state, int remainingSlots, IReadOnlyList<int> group)
+    private IReadOnlyList<MergedBranch> BuildMergedComparisonOutcomes(ComparisonState state, ulong fixedTopMask, int remainingSlots, IReadOnlyList<int> group)
     {
         return VisitComparisonOutcomes(
             state,
+            fixedTopMask,
             remainingSlots,
             group,
             currentKey: null,
-            collectAllOutcomes: true,
-            onUsefulOutcome: _ => true).AllOutcomes;
+            collectMergedBranches: true,
+            onUsefulOutcome: _ => true).MergedBranches;
     }
 
     private static ComparisonGroupScore BuildComparisonGroupScore(
@@ -406,43 +410,43 @@ partial class StrategyBuilder
 
     private sealed class SelectedComparisonGroup
     {
-        public SelectedComparisonGroup(IReadOnlyList<int> group, IReadOnlyList<ComparisonOutcome> outcomes)
+        public SelectedComparisonGroup(IReadOnlyList<int> group, IReadOnlyList<MergedBranch> branches)
         {
             Group = group;
-            Outcomes = outcomes;
+            Branches = branches;
         }
 
         public IReadOnlyList<int> Group { get; }
-        public IReadOnlyList<ComparisonOutcome> Outcomes { get; }
+        public IReadOnlyList<MergedBranch> Branches { get; }
     }
 
     private sealed class ComparisonGroupEvaluation
     {
-        public ComparisonGroupEvaluation(IReadOnlyList<ComparisonOutcome> outcomes, ComparisonGroupScore score)
+        public ComparisonGroupEvaluation(IReadOnlyList<MergedBranch> branches, ComparisonGroupScore score)
         {
-            Outcomes = outcomes;
+            Branches = branches;
             Score = score;
         }
 
-        public IReadOnlyList<ComparisonOutcome> Outcomes { get; }
+        public IReadOnlyList<MergedBranch> Branches { get; }
         public ComparisonGroupScore Score { get; }
     }
 
     private sealed class OutcomeTraversalSummary
     {
         public OutcomeTraversalSummary(
-            IReadOnlyList<ComparisonOutcome> allOutcomes,
+            IReadOnlyList<MergedBranch> mergedBranches,
             bool isUseful,
             int totalReduction,
             int distinctNextStateCount)
         {
-            AllOutcomes = allOutcomes;
+            MergedBranches = mergedBranches;
             IsUseful = isUseful;
             TotalReduction = totalReduction;
             DistinctNextStateCount = distinctNextStateCount;
         }
 
-        public IReadOnlyList<ComparisonOutcome> AllOutcomes { get; }
+        public IReadOnlyList<MergedBranch> MergedBranches { get; }
         public bool IsUseful { get; }
         public int TotalReduction { get; }
         public int DistinctNextStateCount { get; }

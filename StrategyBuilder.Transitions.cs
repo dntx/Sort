@@ -8,38 +8,32 @@ partial class StrategyBuilder
     {
         ThrowIfCancellationRequested();
 
-        return MergeComparisonOutcomeBranches(state, fixedTopMask, chosenGroup.Outcomes)
+        return chosenGroup.Branches
             .OrderBy(branch => branch.RepresentativeOrder, StringComparer.Ordinal)
             .Select(branch => BuildTransitionBranch(state, fixedTopMask, branch, nextStep))
             .ToList();
     }
 
-    private IEnumerable<MergedBranch> MergeComparisonOutcomeBranches(
+    private static void AddMergedBranch(
         ComparisonState state,
         ulong fixedTopMask,
-        IReadOnlyList<ComparisonOutcome> outcomes)
+        ComparisonOutcome outcome,
+        Dictionary<IntSequenceKey, MergedBranch> groupedBranches)
     {
-        var groupedBranches = new Dictionary<IntSequenceKey, MergedBranch>();
-        foreach (ComparisonOutcome outcome in outcomes)
+        ulong nextFixedTopMask = fixedTopMask | outcome.AddedFixedTopMask;
+        IntSequenceKey nextKey = state.GetDisplayCanonicalKey(nextFixedTopMask);
+
+        if (!groupedBranches.TryGetValue(nextKey, out MergedBranch? branch))
         {
-            ThrowIfCancellationRequested();
-            ulong nextFixedTopMask = fixedTopMask | outcome.AddedFixedTopMask;
-            IntSequenceKey nextKey = GetDisplayStateKey(outcome.NextState, nextFixedTopMask);
-
-            if (!groupedBranches.TryGetValue(nextKey, out MergedBranch? branch))
-            {
-                groupedBranches[nextKey] = new MergedBranch(
-                    outcome.NextState,
-                    nextFixedTopMask,
-                    outcome.NextRemainingSlots,
-                    outcome.OrderFamily);
-                continue;
-            }
-
-            branch.OrderFamilies.Add(outcome.OrderFamily);
+            groupedBranches[nextKey] = new MergedBranch(
+                outcome.NextState,
+                nextFixedTopMask,
+                outcome.NextRemainingSlots,
+                outcome.OrderFamily);
+            return;
         }
 
-        return groupedBranches.Values;
+        branch.AddOrderFamily(outcome.OrderFamily);
     }
 
     private StrategyBranch BuildTransitionBranch(ComparisonState state, ulong fixedTopMask, MergedBranch branch, int nextStep)
@@ -82,15 +76,17 @@ partial class StrategyBuilder
 
     private OutcomeTraversalSummary VisitComparisonOutcomes(
         ComparisonState state,
+        ulong fixedTopMask,
         int remainingSlots,
         IReadOnlyList<int> group,
         SearchStateKey? currentKey,
-        bool collectAllOutcomes,
+        bool collectMergedBranches,
         Func<ComparisonOutcome, bool> onUsefulOutcome)
     {
         ThrowIfCancellationRequested();
         var nextStateKeys = new HashSet<SearchStateKey>();
-        var allOutcomes = collectAllOutcomes ? new List<ComparisonOutcome>() : null;
+        var evaluatedStateKeys = new HashSet<SearchStateKey>();
+        var groupedBranches = collectMergedBranches ? new Dictionary<IntSequenceKey, MergedBranch>() : null;
         int totalReduction = 0;
         bool isUseful = false;
 
@@ -98,7 +94,8 @@ partial class StrategyBuilder
         {
             ThrowIfCancellationRequested();
             ComparisonOutcome outcome = CreateComparisonOutcome(state, remainingSlots, orderFamily);
-            allOutcomes?.Add(outcome);
+            if (groupedBranches is not null)
+                AddMergedBranch(outcome.NextState, fixedTopMask, outcome, groupedBranches);
 
             if (currentKey is not null && outcome.NextSearchKey.Equals(currentKey.Value))
                 continue;
@@ -107,12 +104,15 @@ partial class StrategyBuilder
             totalReduction += outcome.Reduction;
             nextStateKeys.Add(outcome.NextSearchKey);
 
+            if (!evaluatedStateKeys.Add(outcome.NextSearchKey))
+                continue;
+
             if (!onUsefulOutcome(outcome))
                 break;
         }
 
         return new OutcomeTraversalSummary(
-            allOutcomes is not null ? allOutcomes : Array.Empty<ComparisonOutcome>(),
+            groupedBranches is not null ? groupedBranches.Values.ToList() : Array.Empty<MergedBranch>(),
             isUseful,
             totalReduction,
             nextStateKeys.Count);
@@ -133,6 +133,11 @@ partial class StrategyBuilder
             NextRemainingSlots = nextRemainingSlots;
             RepresentativeOrder = representativeFamily.RepresentativeOrder;
             OrderFamilies = new List<OrderFamilyDescriptor> { representativeFamily };
+        }
+
+        public void AddOrderFamily(OrderFamilyDescriptor orderFamily)
+        {
+            OrderFamilies.Add(orderFamily);
         }
     }
 

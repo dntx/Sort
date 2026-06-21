@@ -55,10 +55,11 @@ partial class StrategyBuilder
                 int groupWorstCase = 0;
                 OutcomeTraversalSummary traversal = VisitComparisonOutcomes(
                     state,
+                    fixedTopMask: 0,
                     remainingSlots,
                     group,
                     key,
-                    collectAllOutcomes: false,
+                    collectMergedBranches: false,
                     onUsefulOutcome: outcome =>
                     {
                         int branchLowerBound = 1 + GetMinWorstCaseLowerBound(outcome.NextState, outcome.NextRemainingSlots);
