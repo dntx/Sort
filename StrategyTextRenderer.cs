@@ -35,6 +35,12 @@ static class StrategyTextRenderer
                 return;
             case StrategyNodeKind.Decision:
                 writer.WriteLine($"{prefix}S{node.StateId} [step {node.Step}] sort({FormatSet(node.Group)})");
+                if (StrategyNodeAnalysis.TryGetCompressedFinalChoice(node, out FinalChoiceSummary finalChoice))
+                {
+                    writer.WriteLine($"{prefix}  {FormatCompressedFinalChoice(finalChoice, k)}");
+                    return;
+                }
+
                 foreach (var branch in node.Branches)
                 {
                     string effect = FormatEffect(branch.Effect);
@@ -85,5 +91,10 @@ static class StrategyTextRenderer
 
         string prefix = new string(' ', indent * 2);
         writer.WriteLine($"{prefix}equivalent forms: {string.Join("; ", branch.EquivalentOrderTexts)}");
+    }
+
+    private static string FormatCompressedFinalChoice(FinalChoiceSummary summary, int k)
+    {
+        return $"fixed ({FormatSet(summary.FixedTopSet)}); choose {summary.RemainingSlots} of ({FormatSet(summary.CandidatePool)}) into top {k}";
     }
 }

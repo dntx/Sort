@@ -337,6 +337,16 @@ class MainForm : Form
             Tag = BuildStateDetails(node),
         };
 
+        if (StrategyNodeAnalysis.TryGetCompressedFinalChoice(node, out FinalChoiceSummary finalChoice))
+        {
+            treeNode.Nodes.Add(new TreeNode(BuildCompressedFinalChoiceText(finalChoice, k))
+            {
+                ForeColor = _palette.ResultColor,
+                Tag = BuildCompressedFinalChoiceDetails(finalChoice, k),
+            });
+            return treeNode;
+        }
+
         foreach (var branch in node.Branches)
         {
             var branchNode = new TreeNode(branch.OrderText)
@@ -423,10 +433,20 @@ class MainForm : Form
 
     private static string BuildStateDetails(StrategyNode node)
     {
-        return
+        string details =
             $"State S{node.StateId}\n" +
             $"Step: {node.Step}\n" +
             $"Comparison group: ({StrategyTextRenderer.FormatSet(node.Group)})";
+
+        if (StrategyNodeAnalysis.TryGetCompressedFinalChoice(node, out FinalChoiceSummary finalChoice))
+        {
+            int k = finalChoice.FixedTopSet.Count + finalChoice.RemainingSlots;
+            details += "\n" +
+                "Compressed final choice: yes\n" +
+                BuildCompressedFinalChoiceDetails(finalChoice, k);
+        }
+
+        return details;
     }
 
     private ColorTheme ParseSelectedTheme()
@@ -510,6 +530,18 @@ class MainForm : Form
     private void UpdateSummaryText(StrategyPlan plan)
     {
         _summaryLabel.Text = $"n={plan.N}, m={plan.M}, k={plan.K}, elapsed={plan.Elapsed.TotalMilliseconds:F1} ms, max step={plan.MaxStep}, theme={ParseSelectedTheme()}. Colors: state, branch, in, out, cand fixed, cand possible, result, goto.";
+    }
+
+    private static string BuildCompressedFinalChoiceText(FinalChoiceSummary summary, int k)
+    {
+        return $"fixed ({StrategyTextRenderer.FormatSet(summary.FixedTopSet)}); choose {summary.RemainingSlots} of ({StrategyTextRenderer.FormatSet(summary.CandidatePool)}) into top {k}";
+    }
+
+    private static string BuildCompressedFinalChoiceDetails(FinalChoiceSummary summary, int k)
+    {
+        return
+            $"Fixed top-{k} members: ({StrategyTextRenderer.FormatSet(summary.FixedTopSet)})\n" +
+            $"Choose {summary.RemainingSlots} of ({StrategyTextRenderer.FormatSet(summary.CandidatePool)}) to complete top {k}";
     }
 
     private void StopStrategy()
