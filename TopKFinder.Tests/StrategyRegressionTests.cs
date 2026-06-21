@@ -146,6 +146,87 @@ public sealed class StrategyRegressionTests
 
         Assert.Equal(StrategyTestHelpers.NormalizeRenderedSnapshot(expected), rendered);
     }
+
+    [Fact]
+    public void N5M3K2_DecisionTransitionEffectRemainsStable()
+    {
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.Generate(5, 3, 2)",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.Generate(5, 3, 2, cancellationToken));
+
+        StrategyBranch branch = Assert.Single(plan.Root.Branches);
+
+        Assert.Empty(branch.Effect.NewlyGuaranteedTop);
+        Assert.Equal(new[] { 2 }, branch.Effect.NewlyExcluded);
+        Assert.Empty(branch.Effect.FixedCandidates);
+        Assert.Equal(new[] { 0, 1, 3, 4 }, branch.Effect.PossibleCandidates);
+
+        Assert.Equal(StrategyNodeKind.Decision, branch.Next.Kind);
+        Assert.Equal(new[] { 0, 3, 4 }, branch.Next.Group);
+    }
+
+    [Fact]
+    public void N5M3K2_TerminalTransitionEffectRemainsStable()
+    {
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.Generate(5, 3, 2)",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.Generate(5, 3, 2, cancellationToken));
+
+        StrategyBranch branch = StrategyTestHelpers.FindBranchPath(
+            plan.Root,
+            "#1 > #2 > #3",
+            "#4 > #1 > #5");
+
+        Assert.Equal(new[] { 0, 3 }, branch.Effect.NewlyGuaranteedTop);
+        Assert.Equal(new[] { 1, 4 }, branch.Effect.NewlyExcluded);
+        Assert.Equal(new[] { 0, 3 }, branch.Effect.FixedCandidates);
+        Assert.Empty(branch.Effect.PossibleCandidates);
+
+        Assert.Equal(StrategyNodeKind.Terminal, branch.Next.Kind);
+        Assert.Equal(new[] { 0, 3 }, branch.Next.TopSet);
+    }
+
+    [Fact]
+    public void N10M2K2_ReferenceTransitionEffectRemainsStable()
+    {
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.Generate(10, 2, 2)",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.Generate(10, 2, 2, cancellationToken));
+
+        StrategyNode referenceTarget = StrategyTestHelpers.FollowBranchPath(
+            plan.Root,
+            "#1 > #2",
+            "#3 > #4",
+            "#5 > #6",
+            "#7 > #8",
+            "#9 > #10",
+            "#1 > #3",
+            "#2 > #5");
+
+        StrategyBranch branch = StrategyTestHelpers.FindBranchPath(
+            plan.Root,
+            "#1 > #2",
+            "#3 > #4",
+            "#5 > #6",
+            "#7 > #8",
+            "#9 > #10",
+            "#1 > #3",
+            "#5 > #2",
+            "#1 > #5");
+
+        Assert.Empty(branch.Effect.NewlyGuaranteedTop);
+        Assert.Equal(new[] { 5 }, branch.Effect.NewlyExcluded);
+        Assert.Empty(branch.Effect.FixedCandidates);
+        Assert.Equal(new[] { 0, 2, 4, 6, 7, 8, 9 }, branch.Effect.PossibleCandidates);
+
+        Assert.Equal(StrategyNodeKind.Reference, branch.Next.Kind);
+        Assert.Equal(referenceTarget.StateId, branch.Next.StateId);
+        Assert.Equal(StrategyNodeKind.Decision, referenceTarget.Kind);
+        Assert.Equal(new[] { 6, 8 }, referenceTarget.Group);
+    }
 }
 
 internal static class StrategyTestHelpers
@@ -159,6 +240,38 @@ internal static class StrategyTestHelpers
         }
 
         throw new Xunit.Sdk.XunitException($"Could not find branch with order text '{orderText}'.");
+    }
+
+    public static StrategyBranch FindChildBranch(StrategyNode node, string orderText)
+    {
+        foreach (StrategyBranch branch in node.Branches)
+        {
+            if (branch.OrderText == orderText)
+                return branch;
+        }
+
+        throw new Xunit.Sdk.XunitException($"Could not find child branch with order text '{orderText}' from node S{node.StateId}.");
+    }
+
+    public static StrategyBranch FindBranchPath(StrategyNode root, params string[] orderTexts)
+    {
+        StrategyNode current = root;
+        StrategyBranch? branch = null;
+        foreach (string orderText in orderTexts)
+        {
+            branch = FindChildBranch(current, orderText);
+            current = branch.Next;
+        }
+
+        return branch ?? throw new Xunit.Sdk.XunitException("Branch path must contain at least one order text.");
+    }
+
+    public static StrategyNode FollowBranchPath(StrategyNode root, params string[] orderTexts)
+    {
+        StrategyNode current = root;
+        foreach (string orderText in orderTexts)
+            current = FindChildBranch(current, orderText).Next;
+        return current;
     }
 
     public static IEnumerable<StrategyNode> EnumerateDecisionNodes(StrategyNode root)
