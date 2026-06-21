@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
+using System.Text.RegularExpressions;
 using System.Threading;
 
 readonly struct IntSequenceKey : IEquatable<IntSequenceKey>, IComparable<IntSequenceKey>
@@ -1411,9 +1412,7 @@ class StrategyBuilder
             var childOrders = onlyGroup.Select(order => order.Skip(1).ToArray()).ToList();
             EquivalentPatternSummary childSummary = BuildEquivalentPatternSummary(childOrders, nextRemaining, representativePositions);
             string itemText = $"#{item + 1}";
-            string patternText = string.IsNullOrEmpty(childSummary.PatternText)
-                ? itemText
-                : $"{itemText} > {childSummary.PatternText}";
+            string patternText = JoinPatternSegments(new[] { itemText, childSummary.PatternText });
             return new EquivalentPatternSummary(patternText, childSummary.TotalCountFormula, childSummary.TotalCount);
         }
 
@@ -1427,9 +1426,7 @@ class StrategyBuilder
             var childOrders = group.Select(order => order.Skip(1).ToArray()).ToList();
             EquivalentPatternSummary childSummary = BuildEquivalentPatternSummary(childOrders, nextRemaining, representativePositions);
             string itemText = $"#{item + 1}";
-            patternParts.Add(string.IsNullOrEmpty(childSummary.PatternText)
-                ? itemText
-                : $"{itemText} > {childSummary.PatternText}");
+            patternParts.Add(JoinPatternSegments(new[] { itemText, childSummary.PatternText }));
             formulaParts.Add(childSummary.TotalCountFormula);
             totalCount += childSummary.TotalCount;
         }
@@ -1697,7 +1694,106 @@ class StrategyBuilder
 
     private static string JoinPatternSegments(IEnumerable<string> segments)
     {
-        return string.Join(" > ", segments.Where(segment => !string.IsNullOrEmpty(segment)));
+        var definitions = new List<string>();
+        var bodies = new List<string>();
+        int nextAliasIndex = 0;
+
+        foreach (string segment in segments.Where(segment => !string.IsNullOrEmpty(segment)))
+        {
+            ParsedPatternSegment parsed = ParsePatternSegment(segment);
+            if (parsed.Definitions.Count == 0)
+            {
+                bodies.Add(parsed.Body);
+                continue;
+            }
+
+            var aliasMap = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var definition in parsed.Definitions)
+            {
+                string newAlias = GetAliasName(nextAliasIndex++);
+                aliasMap[definition.Alias] = newAlias;
+                definitions.Add($"{newAlias}={definition.Expression}");
+            }
+
+            bodies.Add(RewritePatternAliases(parsed.Body, aliasMap));
+        }
+
+        if (definitions.Count == 0)
+            return string.Join(" > ", bodies);
+
+        return $"{string.Join(", ", definitions)}; {string.Join(" > ", bodies)}";
+    }
+
+    private static ParsedPatternSegment ParsePatternSegment(string segment)
+    {
+        int separatorIndex = segment.IndexOf(';');
+        if (separatorIndex < 0)
+            return new ParsedPatternSegment(Array.Empty<PatternAliasDefinition>(), segment);
+
+        string definitionText = segment[..separatorIndex].Trim();
+        string body = segment[(separatorIndex + 1)..].Trim();
+        var definitions = SplitTopLevelCommaSeparated(definitionText)
+            .Select(part =>
+            {
+                int equalsIndex = part.IndexOf('=');
+                return new PatternAliasDefinition(
+                    part[..equalsIndex].Trim(),
+                    part[(equalsIndex + 1)..].Trim());
+            })
+            .ToList();
+        return new ParsedPatternSegment(definitions, body);
+    }
+
+    private static List<string> SplitTopLevelCommaSeparated(string text)
+    {
+        var parts = new List<string>();
+        int depth = 0;
+        int start = 0;
+        for (int i = 0; i < text.Length; i++)
+        {
+            char ch = text[i];
+            if (ch == '{')
+                depth++;
+            else if (ch == '}')
+                depth--;
+            else if (ch == ',' && depth == 0)
+            {
+                parts.Add(text[start..i].Trim());
+                start = i + 1;
+            }
+        }
+
+        parts.Add(text[start..].Trim());
+        return parts.Where(part => part.Length > 0).ToList();
+    }
+
+    private static string RewritePatternAliases(string body, IReadOnlyDictionary<string, string> aliasMap)
+    {
+        string rewritten = body;
+        foreach (var pair in aliasMap)
+        {
+            rewritten = Regex.Replace(
+                rewritten,
+                $@"\b{Regex.Escape(pair.Key)}(?=\d)",
+                pair.Value);
+        }
+
+        return rewritten;
+    }
+
+    private static string GetAliasName(int index)
+    {
+        const string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        string alias = string.Empty;
+        int value = index;
+        do
+        {
+            alias = alphabet[value % alphabet.Length] + alias;
+            value = value / alphabet.Length - 1;
+        }
+        while (value >= 0);
+
+        return alias;
     }
 
     private static string CombineFormulaParts(IReadOnlyList<string> formulaParts)
@@ -1909,6 +2005,12 @@ class StrategyBuilder
             return other.Partition.Count.CompareTo(Partition.Count);
         }
     }
+
+    private sealed record PatternAliasDefinition(string Alias, string Expression);
+
+    private sealed record ParsedPatternSegment(
+        IReadOnlyList<PatternAliasDefinition> Definitions,
+        string Body);
 
     private void EnterSearchState()
     {
