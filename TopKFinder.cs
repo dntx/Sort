@@ -513,18 +513,18 @@ sealed class StrategyPlan
 
 readonly struct SearchProgressSnapshot
 {
-    public SearchProgressSnapshot(int searchedStates, int pendingStates, int peakPendingStates, int strategyStates)
+    public SearchProgressSnapshot(int searchedStates, int pendingStates, int peakPendingStates, int outputStates)
     {
         SearchedStates = searchedStates;
         PendingStates = pendingStates;
         PeakPendingStates = peakPendingStates;
-        StrategyStates = strategyStates;
+        OutputStates = outputStates;
     }
 
     public int SearchedStates { get; }
     public int PendingStates { get; }
     public int PeakPendingStates { get; }
-    public int StrategyStates { get; }
+    public int OutputStates { get; }
 }
 
 sealed class SearchStatistics
@@ -533,16 +533,16 @@ sealed class SearchStatistics
         int searchedStates,
         int pendingStates,
         int peakPendingStates,
-        int strategyStates,
-        int expandedStrategyStates,
+        int outputStates,
+        int expandedOutputStates,
         int lowerBoundStates,
         int feasibleTopSetStates)
     {
         SearchedStates = searchedStates;
         PendingStates = pendingStates;
         PeakPendingStates = peakPendingStates;
-        StrategyStates = strategyStates;
-        ExpandedStrategyStates = expandedStrategyStates;
+        OutputStates = outputStates;
+        ExpandedOutputStates = expandedOutputStates;
         LowerBoundStates = lowerBoundStates;
         FeasibleTopSetStates = feasibleTopSetStates;
     }
@@ -550,8 +550,8 @@ sealed class SearchStatistics
     public int SearchedStates { get; }
     public int PendingStates { get; }
     public int PeakPendingStates { get; }
-    public int StrategyStates { get; }
-    public int ExpandedStrategyStates { get; }
+    public int OutputStates { get; }
+    public int ExpandedOutputStates { get; }
     public int LowerBoundStates { get; }
     public int FeasibleTopSetStates { get; }
 }

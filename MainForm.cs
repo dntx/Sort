@@ -290,7 +290,7 @@ class MainForm : Form
                 plan.SearchStatistics.SearchedStates,
                 plan.SearchStatistics.PendingStates,
                 plan.SearchStatistics.PeakPendingStates,
-                plan.SearchStatistics.StrategyStates);
+                plan.SearchStatistics.OutputStates);
             PopulateTree(plan);
             UpdateSummaryText(plan);
             UpdateSearchStatsLabel();
@@ -298,12 +298,12 @@ class MainForm : Form
         catch (OperationCanceledException)
         {
             _runStopwatch?.Stop();
-            _summaryLabel.Text = $"Stopped after {GetElapsedSeconds():F1} s. {FormatSearchStatsSummary(_latestProgress, includeStrategyStates: true)}. theme={ParseSelectedTheme()}";
+            _summaryLabel.Text = $"Stopped after {GetElapsedSeconds():F1} s. {FormatSearchStatsSummary(_latestProgress, includeOutputStates: true)}. theme={ParseSelectedTheme()}";
         }
         catch (Exception ex)
         {
             _runStopwatch?.Stop();
-            _summaryLabel.Text = $"Run failed after {GetElapsedSeconds():F1} s. {FormatSearchStatsSummary(_latestProgress, includeStrategyStates: true)}. theme={ParseSelectedTheme()}";
+            _summaryLabel.Text = $"Run failed after {GetElapsedSeconds():F1} s. {FormatSearchStatsSummary(_latestProgress, includeOutputStates: true)}. theme={ParseSelectedTheme()}";
             MessageBox.Show(this, ex.Message, "Run failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         finally
@@ -593,18 +593,18 @@ class MainForm : Form
 
     private void UpdateSearchStatsLabel()
     {
-        _searchStatsLabel.Text = $"searched: {_latestProgress.SearchedStates}, pending: {_latestProgress.PendingStates}, peak: {_latestProgress.PeakPendingStates}, strategy: {_latestProgress.StrategyStates}";
+        _searchStatsLabel.Text = $"searched: {_latestProgress.SearchedStates}, pending: {_latestProgress.PendingStates}, peak: {_latestProgress.PeakPendingStates}, output: {_latestProgress.OutputStates}";
     }
 
     private static string FormatSearchStatsSummary(SearchStatistics statistics)
     {
-        return $"searched={statistics.SearchedStates}, pending={statistics.PendingStates}, peak pending={statistics.PeakPendingStates}, strategy states={statistics.StrategyStates}";
+        return $"searched={statistics.SearchedStates}, pending={statistics.PendingStates}, peak pending={statistics.PeakPendingStates}, output states={statistics.OutputStates}";
     }
 
-    private static string FormatSearchStatsSummary(SearchProgressSnapshot snapshot, bool includeStrategyStates)
+    private static string FormatSearchStatsSummary(SearchProgressSnapshot snapshot, bool includeOutputStates)
     {
-        string strategyText = includeStrategyStates ? $", strategy={snapshot.StrategyStates}" : string.Empty;
-        return $"searched={snapshot.SearchedStates}, pending={snapshot.PendingStates}, peak pending={snapshot.PeakPendingStates}{strategyText}";
+        string outputText = includeOutputStates ? $", output={snapshot.OutputStates}" : string.Empty;
+        return $"searched={snapshot.SearchedStates}, pending={snapshot.PendingStates}, peak pending={snapshot.PeakPendingStates}{outputText}";
     }
 
     private double GetElapsedSeconds()

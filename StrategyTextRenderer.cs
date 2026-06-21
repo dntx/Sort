@@ -19,7 +19,7 @@ static class StrategyTextRenderer
         writer.WriteLine($"max step = {plan.MaxStep}");
         writer.WriteLine($"searched states = {plan.SearchStatistics.SearchedStates}");
         writer.WriteLine($"pending states = {plan.SearchStatistics.PendingStates} (peak {plan.SearchStatistics.PeakPendingStates})");
-        writer.WriteLine($"strategy states = {plan.SearchStatistics.StrategyStates} (expanded {plan.SearchStatistics.ExpandedStrategyStates})");
+        writer.WriteLine($"output states = {plan.SearchStatistics.OutputStates} (expanded {plan.SearchStatistics.ExpandedOutputStates})");
         writer.WriteLine();
         RenderNode(plan.Root, plan.K, writer, 0);
     }
