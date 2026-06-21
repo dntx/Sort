@@ -1386,6 +1386,10 @@ class StrategyBuilder
             return new EquivalentPatternSummary(patternText, middleSummary.TotalCountFormula, middleSummary.TotalCount);
         }
 
+        EquivalentPatternSummary? independentBlockSummary = TryBuildIndependentBlockSummary(orders, remainingItems, representativePositions);
+        if (independentBlockSummary is not null)
+            return independentBlockSummary;
+
         EquivalentPatternSummary? anchoredPermutationSummary = TryBuildAnchoredPermutationSummary(orders, remainingItems);
         if (anchoredPermutationSummary is not null)
             return anchoredPermutationSummary;
@@ -1437,6 +1441,65 @@ class StrategyBuilder
         while (length < orders[0].Count && orders.All(order => order[length] == orders[0][length]))
             length++;
         return length;
+    }
+
+    private static EquivalentPatternSummary? TryBuildIndependentBlockSummary(
+        IReadOnlyList<IReadOnlyList<int>> orders,
+        IReadOnlyList<int> remainingItems,
+        IReadOnlyDictionary<int, int> representativePositions)
+    {
+        int orderLength = orders[0].Count;
+        string fullItemKey = string.Join(",", remainingItems.OrderBy(item => item));
+
+        for (int splitPosition = 1; splitPosition < orderLength; splitPosition++)
+        {
+            var prefixItems = orders
+                .SelectMany(order => order.Take(splitPosition))
+                .Distinct()
+                .OrderBy(item => representativePositions[item])
+                .ToArray();
+            var suffixItems = orders
+                .SelectMany(order => order.Skip(splitPosition))
+                .Distinct()
+                .OrderBy(item => representativePositions[item])
+                .ToArray();
+
+            if (prefixItems.Length != splitPosition || suffixItems.Length != orderLength - splitPosition)
+                continue;
+
+            if (prefixItems.Intersect(suffixItems).Any())
+                continue;
+
+            if (string.Join(",", prefixItems.Concat(suffixItems).OrderBy(item => item)) != fullItemKey)
+                continue;
+
+            var uniquePrefixes = orders
+                .Select(order => order.Take(splitPosition).ToArray())
+                .Distinct(ArraySequenceComparer.Instance)
+                .ToList();
+            var uniqueSuffixes = orders
+                .Select(order => order.Skip(splitPosition).ToArray())
+                .Distinct(ArraySequenceComparer.Instance)
+                .ToList();
+
+            if (orders.Count != uniquePrefixes.Count * uniqueSuffixes.Count)
+                continue;
+
+            var fullPairs = new HashSet<string>(orders.Select(order => $"{string.Join(",", order.Take(splitPosition))}|{string.Join(",", order.Skip(splitPosition))}"), StringComparer.Ordinal);
+            bool hasAllCombinations = uniquePrefixes.All(prefix =>
+                uniqueSuffixes.All(suffix =>
+                    fullPairs.Contains($"{string.Join(",", prefix)}|{string.Join(",", suffix)}")));
+            if (!hasAllCombinations)
+                continue;
+
+            EquivalentPatternSummary prefixSummary = BuildEquivalentPatternSummary(uniquePrefixes, prefixItems, representativePositions);
+            EquivalentPatternSummary suffixSummary = BuildEquivalentPatternSummary(uniqueSuffixes, suffixItems, representativePositions);
+            string patternText = JoinPatternSegments(new[] { prefixSummary.PatternText, suffixSummary.PatternText });
+            string formula = MultiplyFormulas(prefixSummary.TotalCountFormula, suffixSummary.TotalCountFormula);
+            return new EquivalentPatternSummary(patternText, formula, prefixSummary.TotalCount * suffixSummary.TotalCount);
+        }
+
+        return null;
     }
 
     private static int GetCommonSuffixLength(IReadOnlyList<IReadOnlyList<int>> orders, int prefixLength)
@@ -1559,6 +1622,19 @@ class StrategyBuilder
         return string.Join(" + ", normalizedParts.Select(ParenthesizeSum));
     }
 
+    private static string MultiplyFormulas(string left, string right)
+    {
+        left = SimplifyFormula(left);
+        right = SimplifyFormula(right);
+
+        if (left == "1")
+            return right;
+        if (right == "1")
+            return left;
+
+        return $"{ParenthesizeSum(left)} x {ParenthesizeSum(right)}";
+    }
+
     private static string ParenthesizeSum(string formula)
     {
         return formula.Contains(" + ", StringComparison.Ordinal) ? $"({formula})" : formula;
@@ -1596,6 +1672,35 @@ class StrategyBuilder
         public string PatternText { get; }
         public string TotalCountFormula { get; }
         public BigInteger TotalCount { get; }
+    }
+
+    private sealed class ArraySequenceComparer : IEqualityComparer<IReadOnlyList<int>>
+    {
+        public static ArraySequenceComparer Instance { get; } = new();
+
+        public bool Equals(IReadOnlyList<int>? x, IReadOnlyList<int>? y)
+        {
+            if (ReferenceEquals(x, y))
+                return true;
+            if (x is null || y is null || x.Count != y.Count)
+                return false;
+
+            for (int i = 0; i < x.Count; i++)
+            {
+                if (x[i] != y[i])
+                    return false;
+            }
+
+            return true;
+        }
+
+        public int GetHashCode(IReadOnlyList<int> items)
+        {
+            var hash = new HashCode();
+            foreach (int item in items)
+                hash.Add(item);
+            return hash.ToHashCode();
+        }
     }
 
     private void EnterSearchState()
