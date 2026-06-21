@@ -38,6 +38,26 @@ public sealed class StrategyRegressionTests
     }
 
     [Fact]
+    public void N9M3K3_RootChoiceRemainsCanonicalOpeningGroup()
+    {
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.Generate(9, 3, 3)",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.Generate(9, 3, 3, cancellationToken));
+
+        Assert.Equal(new[] { 0, 1, 2 }, plan.Root.Group);
+
+        StrategyBranch rootBranch = Assert.Single(plan.Root.Branches);
+        Assert.Equal("#1 > #2 > #3", rootBranch.OrderText);
+        Assert.NotNull(rootBranch.EquivalentOrders);
+        Assert.Equal(5, rootBranch.EquivalentOrders!.Count);
+        Assert.Equal("3! - 1", rootBranch.EquivalentOrders.CountFormula);
+        Assert.Equal("permute {#1, #2, #3}", rootBranch.EquivalentOrders.PatternText);
+
+        Assert.Equal(new[] { 3, 4, 5 }, rootBranch.Next.Group);
+    }
+
+    [Fact]
     public void N12M3K3_SearchWorkStaysWithinBaseline()
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
@@ -72,6 +92,25 @@ public sealed class StrategyRegressionTests
         Assert.Contains("#2 > #6", branch.EquivalentOrders.PatternText);
         Assert.Contains("#6 > #2", branch.EquivalentOrders.PatternText);
     }
+
+    [Fact]
+    public void N12M3K3_DoesNotCreateSelfReferentialBranches()
+    {
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.Generate(12, 3, 3)",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.Generate(12, 3, 3, cancellationToken));
+
+        foreach (StrategyNode node in StrategyTestHelpers.EnumerateDecisionNodes(plan.Root))
+        {
+            foreach (StrategyBranch branch in node.Branches)
+            {
+                Assert.False(
+                    branch.Next.Kind == StrategyNodeKind.Reference && branch.Next.StateId == node.StateId,
+                    $"Node S{node.StateId} contains a self-referential branch '{branch.OrderText}'.");
+            }
+        }
+    }
 }
 
 internal static class StrategyTestHelpers
@@ -87,6 +126,15 @@ internal static class StrategyTestHelpers
         throw new Xunit.Sdk.XunitException($"Could not find branch with order text '{orderText}'.");
     }
 
+    public static IEnumerable<StrategyNode> EnumerateDecisionNodes(StrategyNode root)
+    {
+        foreach (StrategyNode node in EnumerateNodes(root))
+        {
+            if (node.Kind == StrategyNodeKind.Decision)
+                yield return node;
+        }
+    }
+
     private static IEnumerable<StrategyBranch> EnumerateBranches(StrategyNode node)
     {
         foreach (StrategyBranch branch in node.Branches)
@@ -96,6 +144,20 @@ internal static class StrategyTestHelpers
             if (branch.Next.Kind != StrategyNodeKind.Reference)
             {
                 foreach (StrategyBranch nested in EnumerateBranches(branch.Next))
+                    yield return nested;
+            }
+        }
+    }
+
+    private static IEnumerable<StrategyNode> EnumerateNodes(StrategyNode node)
+    {
+        yield return node;
+
+        foreach (StrategyBranch branch in node.Branches)
+        {
+            if (branch.Next.Kind != StrategyNodeKind.Reference)
+            {
+                foreach (StrategyNode nested in EnumerateNodes(branch.Next))
                     yield return nested;
             }
         }
