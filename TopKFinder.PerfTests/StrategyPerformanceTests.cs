@@ -23,6 +23,13 @@ public sealed class StrategyPerformanceTests
         Assert.True(medianMs <= 6000, $"Median elapsed regressed to {medianMs:F1} ms.");
     }
 
+    [Fact]
+    public void N12M5K5_CompletesWithinLooseBudget()
+    {
+        double medianMs = MeasureMedianElapsedMilliseconds(12, 5, 5, iterations: 3);
+        Assert.True(medianMs <= 3000, $"Median elapsed regressed to {medianMs:F1} ms.");
+    }
+
     private static double MeasureMedianElapsedMilliseconds(int n, int m, int k, int iterations)
     {
         _ = StrategyBuilder.Generate(n, m, k);
