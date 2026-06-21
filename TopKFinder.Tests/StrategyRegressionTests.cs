@@ -291,6 +291,39 @@ public sealed class StrategyRegressionTests
             "#1 > #3");
         Assert.Equal(new[] { 1, 4 }, secondCrossPairNode.Group);
     }
+
+    [Fact]
+    public void N12M4K4_RenderedAliasCompressionSectionMatchesSnapshot()
+    {
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.Generate(12, 4, 4)",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.Generate(12, 4, 4, cancellationToken));
+
+        string rendered = StrategyTestHelpers.NormalizeRenderedSnapshot(StrategyTextRenderer.Render(plan));
+        string excerpt = StrategyTestHelpers.ExtractRenderedSection(
+            rendered,
+            "        S3 [step 3] sort(#2, #6, #9, #10)",
+            "              #11 > #5 > #3 > #12");
+
+        const string expected = """
+                    S3 [step 3] sort(#2, #6, #9, #10)
+                      #2 > #6 > #9 > #10: [in (#1), out (#7, #8, #9, #10), fixed (#1), possible (#2, #3, #4, #5, #6, #11, #12)]
+                        equivalent forms: 3 = 2 x 2! - 1
+                        pattern: (C=permute{#9, #10}; #2 > #6 > C1 > C2 | C=permute{#9, #10}; #6 > #2 > C1 > C2)
+                        S4 [step 4] sort(#3, #5, #11, #12)
+                          #11 > #3 > #5 > #12: [in (#2, #3, #11), out (#4, #5, #6, #12), fixed (#1, #2, #3, #11), possible -] S5: top 4 = (#1, #2, #3, #11)
+                            equivalent forms: 3 = 2 x 2! - 1
+                            pattern: (C=permute{#11, #12}; C1 > #3 > #5 > C2 | C=permute{#11, #12}; C1 > #3 > C2 > #5)
+                          #11 > #5 > #12 > #3: [in (#5, #11), out (#3, #4, #6), fixed (#1, #5, #11), possible (#2, #12)]
+                            equivalent forms: 3 = 2 x 2! - 1
+                            pattern: (C=permute{#11, #12}; C1 > #5 > C2 > #3 | C=permute{#11, #12}; C1 > C2 > #5 > #3)
+                            S6 [step 5] sort(#2, #12)
+                              fixed (#1, #5, #11); choose 1 of (#2, #12) into top 4
+            """;
+
+        Assert.Equal(StrategyTestHelpers.NormalizeRenderedSnapshot(expected), excerpt);
+    }
 }
 
 internal static class StrategyTestHelpers
@@ -354,6 +387,23 @@ internal static class StrategyTestHelpers
         if (lines.Length > 1 && lines[1].StartsWith("elapsed = ", StringComparison.Ordinal))
             lines[1] = "elapsed = <elapsed>";
         return string.Join("\n", lines);
+    }
+
+    public static string ExtractRenderedSection(string rendered, string startLinePrefix, string endLinePrefixExclusive)
+    {
+        string[] lines = NormalizeRenderedSnapshot(rendered).Split('\n');
+        int startIndex = Array.FindIndex(lines, line => line.StartsWith(startLinePrefix, StringComparison.Ordinal));
+        if (startIndex < 0)
+            throw new Xunit.Sdk.XunitException($"Could not find rendered line starting with '{startLinePrefix}'.");
+
+        int endIndex = Array.FindIndex(lines, startIndex + 1, lines.Length - startIndex - 1, line => line.StartsWith(endLinePrefixExclusive, StringComparison.Ordinal));
+        if (endIndex < 0)
+            throw new Xunit.Sdk.XunitException($"Could not find rendered line starting with '{endLinePrefixExclusive}'.");
+
+        if (endIndex <= startIndex)
+            throw new Xunit.Sdk.XunitException("Rendered section end must appear after the start line.");
+
+        return string.Join("\n", lines[startIndex..endIndex]);
     }
 
     private static IEnumerable<StrategyBranch> EnumerateBranches(StrategyNode node)
