@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
+using System.Threading;
 
 readonly struct IntSequenceKey : IEquatable<IntSequenceKey>, IComparable<IntSequenceKey>
 {
@@ -463,6 +464,7 @@ class StrategyBuilder
     private readonly int _n;
     private readonly int _m;
     private readonly int _k;
+    private readonly CancellationToken _cancellationToken;
     private readonly Dictionary<IntSequenceKey, int> _stateIds = new();
     private readonly HashSet<IntSequenceKey> _expandedStates = new();
     private readonly Dictionary<IntSequenceKey, int> _minWorstCaseStepsCache = new();
@@ -470,11 +472,12 @@ class StrategyBuilder
     private readonly Dictionary<IntSequenceKey, FeasibleTopSetInfo> _feasibleTopSetCache = new();
     private int _nextStateId = 1;
 
-    public StrategyBuilder(int n, int m, int k)
+    public StrategyBuilder(int n, int m, int k, CancellationToken cancellationToken = default)
     {
         _n = n;
         _m = m;
         _k = k;
+        _cancellationToken = cancellationToken;
     }
 
     public StrategyPlan Build()
@@ -491,8 +494,14 @@ class StrategyBuilder
         return new StrategyBuilder(n, m, k).Build();
     }
 
+    public static StrategyPlan Generate(int n, int m, int k, CancellationToken cancellationToken)
+    {
+        return new StrategyBuilder(n, m, k, cancellationToken).Build();
+    }
+
     private StrategyNode BuildState(ComparisonState state, int step)
     {
+        ThrowIfCancellationRequested();
         IntSequenceKey key = state.GetCanonicalKey();
         int stateId = GetStateId(key);
 
@@ -515,9 +524,11 @@ class StrategyBuilder
 
     private List<StrategyBranch> BuildBranches(ComparisonState state, IReadOnlyList<int> group, int nextStep)
     {
+        ThrowIfCancellationRequested();
         var groupedBranches = new Dictionary<IntSequenceKey, BranchInfo>();
         foreach (var order in EnumerateFeasibleOrders(state, group))
         {
+            ThrowIfCancellationRequested();
             var next = state.Clone();
             next.ApplyOrder(order);
             next.Eliminate(_k);
@@ -558,6 +569,7 @@ class StrategyBuilder
 
     private ulong GetGuaranteedTopMask(ComparisonState state)
     {
+        ThrowIfCancellationRequested();
         ulong mask = 0;
         for (int i = 0; i < _n; i++)
         {
@@ -581,6 +593,7 @@ class StrategyBuilder
 
     private List<int> ChooseGroup(ComparisonState state)
     {
+        ThrowIfCancellationRequested();
         var candidates = state.GetActiveItemsOrdered();
         int maxGroupSize = Math.Min(_m, candidates.Count);
         IntSequenceKey currentKey = state.GetCanonicalKey();
@@ -592,9 +605,11 @@ class StrategyBuilder
 
         for (int groupSize = 2; groupSize <= maxGroupSize; groupSize++)
         {
+            ThrowIfCancellationRequested();
             var seenGroupPatterns = new HashSet<IntSequenceKey>();
             foreach (var group in EnumerateCombinations(candidates, groupSize))
             {
+                ThrowIfCancellationRequested();
                 if (!seenGroupPatterns.Add(GetGroupPattern(group, labels)))
                     continue;
 
@@ -606,6 +621,7 @@ class StrategyBuilder
 
                 foreach (var order in EnumerateFeasibleOrders(state, group))
                 {
+                    ThrowIfCancellationRequested();
                     var next = state.Clone();
                     next.ApplyOrder(order);
                     next.Eliminate(_k);
@@ -654,6 +670,7 @@ class StrategyBuilder
 
     private int GetMinWorstCaseSteps(ComparisonState state)
     {
+        ThrowIfCancellationRequested();
         if (TryGetDeterminedTopSet(state, out _))
             return 0;
 
@@ -675,9 +692,11 @@ class StrategyBuilder
 
         for (int groupSize = 2; groupSize <= maxGroupSize; groupSize++)
         {
+            ThrowIfCancellationRequested();
             var seenGroupPatterns = new HashSet<IntSequenceKey>();
             foreach (var group in EnumerateCombinations(candidates, groupSize))
             {
+                ThrowIfCancellationRequested();
                 if (!seenGroupPatterns.Add(GetGroupPattern(group, labels)))
                     continue;
 
@@ -686,6 +705,7 @@ class StrategyBuilder
 
                 foreach (var order in EnumerateFeasibleOrders(state, group))
                 {
+                    ThrowIfCancellationRequested();
                     var next = state.Clone();
                     next.ApplyOrder(order);
                     next.Eliminate(_k);
@@ -723,6 +743,7 @@ class StrategyBuilder
 
     private int GetMinWorstCaseLowerBound(ComparisonState state)
     {
+        ThrowIfCancellationRequested();
         if (TryGetDeterminedTopSet(state, out _))
             return 0;
 
@@ -743,6 +764,7 @@ class StrategyBuilder
         int steps = 0;
         while (distinguishable < info.Count)
         {
+            ThrowIfCancellationRequested();
             steps++;
             checked
             {
@@ -756,6 +778,7 @@ class StrategyBuilder
 
     private bool TryGetDeterminedTopSet(ComparisonState state, out List<int> topSet)
     {
+        ThrowIfCancellationRequested();
         FeasibleTopSetInfo info = GetFeasibleTopSetInfo(state);
         if (info.Count == 1 && TryGetUniqueTopSetMask(state, out ulong uniqueMask))
         {
@@ -769,6 +792,7 @@ class StrategyBuilder
 
     private FeasibleTopSetInfo GetFeasibleTopSetInfo(ComparisonState state)
     {
+        ThrowIfCancellationRequested();
         IntSequenceKey key = state.GetCanonicalKey();
         if (_feasibleTopSetCache.TryGetValue(key, out FeasibleTopSetInfo cached))
             return cached;
@@ -782,6 +806,7 @@ class StrategyBuilder
 
     private bool TryGetUniqueTopSetMask(ComparisonState state, out ulong uniqueMask)
     {
+        ThrowIfCancellationRequested();
         ulong guaranteedMask = GetGuaranteedTopMask(state);
         int guaranteedCount = BitOperations.PopCount(guaranteedMask);
         int remainingSlots = _k - guaranteedCount;
@@ -797,6 +822,7 @@ class StrategyBuilder
         var possibleCandidates = GetPossibleCandidates(state);
         foreach (var combination in EnumerateCombinations(possibleCandidates, remainingSlots))
         {
+            ThrowIfCancellationRequested();
             ulong candidateMask = guaranteedMask;
             foreach (int item in combination)
                 candidateMask |= 1UL << item;
@@ -819,6 +845,7 @@ class StrategyBuilder
 
     private int CountFeasibleTopSets(ComparisonState state)
     {
+        ThrowIfCancellationRequested();
         ulong guaranteedMask = GetGuaranteedTopMask(state);
         int guaranteedCount = BitOperations.PopCount(guaranteedMask);
         int remainingSlots = _k - guaranteedCount;
@@ -830,6 +857,7 @@ class StrategyBuilder
         var possibleCandidates = GetPossibleCandidates(state);
         foreach (var combination in EnumerateCombinations(possibleCandidates, remainingSlots))
         {
+            ThrowIfCancellationRequested();
             ulong candidateMask = guaranteedMask;
             foreach (int item in combination)
                 candidateMask |= 1UL << item;
@@ -843,6 +871,7 @@ class StrategyBuilder
 
     private bool IsFeasibleTopSet(ComparisonState state, ulong candidateMask)
     {
+        ThrowIfCancellationRequested();
         foreach (int item in ComparisonState.MaskToOrderedList(candidateMask))
         {
             ulong activeAncestorsOutsideSet = state.Ancestors[item] & state.ActiveMask & ~candidateMask;
@@ -869,6 +898,7 @@ class StrategyBuilder
 
     private IEnumerable<List<int>> EnumerateFeasibleOrders(ComparisonState state, IReadOnlyList<int> group)
     {
+        ThrowIfCancellationRequested();
         var remaining = new HashSet<int>(group);
         var current = new List<int>(group.Count);
 
@@ -881,6 +911,7 @@ class StrategyBuilder
         HashSet<int> remaining,
         List<int> current)
     {
+        ThrowIfCancellationRequested();
         if (remaining.Count == 0)
         {
             yield return new List<int>(current);
@@ -894,6 +925,7 @@ class StrategyBuilder
 
         foreach (int next in nextChoices)
         {
+            ThrowIfCancellationRequested();
             remaining.Remove(next);
             current.Add(next);
 
@@ -922,19 +954,21 @@ class StrategyBuilder
         return count;
     }
 
-    private static IEnumerable<List<int>> EnumerateCombinations(IReadOnlyList<int> items, int count)
+    private IEnumerable<List<int>> EnumerateCombinations(IReadOnlyList<int> items, int count)
     {
+        ThrowIfCancellationRequested();
         var current = new List<int>(count);
         foreach (var combination in EnumerateCombinations(items, count, 0, current))
             yield return combination;
     }
 
-    private static IEnumerable<List<int>> EnumerateCombinations(
+    private IEnumerable<List<int>> EnumerateCombinations(
         IReadOnlyList<int> items,
         int count,
         int start,
         List<int> current)
     {
+        ThrowIfCancellationRequested();
         if (current.Count == count)
         {
             yield return new List<int>(current);
@@ -943,6 +977,7 @@ class StrategyBuilder
 
         for (int i = start; i <= items.Count - (count - current.Count); i++)
         {
+            ThrowIfCancellationRequested();
             current.Add(items[i]);
             foreach (var combination in EnumerateCombinations(items, count, i + 1, current))
                 yield return combination;
@@ -952,6 +987,7 @@ class StrategyBuilder
 
     private int GetStateId(IntSequenceKey key)
     {
+        ThrowIfCancellationRequested();
         if (_stateIds.TryGetValue(key, out int id))
             return id;
 
@@ -963,6 +999,11 @@ class StrategyBuilder
     private static string FormatOrder(IEnumerable<int> items)
     {
         return string.Join(" > ", items.Select(i => $"#{i + 1}"));
+    }
+
+    private void ThrowIfCancellationRequested()
+    {
+        _cancellationToken.ThrowIfCancellationRequested();
     }
 
     private sealed class BranchInfo
