@@ -227,6 +227,70 @@ public sealed class StrategyRegressionTests
         Assert.Equal(StrategyNodeKind.Decision, referenceTarget.Kind);
         Assert.Equal(new[] { 6, 8 }, referenceTarget.Group);
     }
+
+    [Fact]
+    public void N12M3K3_AfterInitialPrefixesChoosesCrossBlockGroup()
+    {
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.Generate(12, 3, 3)",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.Generate(12, 3, 3, cancellationToken));
+
+        StrategyNode node = StrategyTestHelpers.FollowBranchPath(
+            plan.Root,
+            "#1 > #2 > #3",
+            "#4 > #5 > #6",
+            "#7 > #8 > #9");
+
+        Assert.Equal(new[] { 0, 3, 6 }, node.Group);
+    }
+
+    [Fact]
+    public void N12M3K3_WhenLeadingCandidateFixedChoosesBalancedFollowUpGroup()
+    {
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.Generate(12, 3, 3)",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.Generate(12, 3, 3, cancellationToken));
+
+        StrategyNode node = StrategyTestHelpers.FollowBranchPath(
+            plan.Root,
+            "#1 > #2 > #3",
+            "#4 > #5 > #6",
+            "#7 > #8 > #9",
+            "#1 > #4 > #7",
+            "#10 > #2 > #11");
+
+        Assert.Equal(new[] { 3, 9, 11 }, node.Group);
+    }
+
+    [Fact]
+    public void N10M2K2_AfterPairwisePrefixChoosesCrossPairComparisons()
+    {
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.Generate(10, 2, 2)",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.Generate(10, 2, 2, cancellationToken));
+
+        StrategyNode firstCrossPairNode = StrategyTestHelpers.FollowBranchPath(
+            plan.Root,
+            "#1 > #2",
+            "#3 > #4",
+            "#5 > #6",
+            "#7 > #8",
+            "#9 > #10");
+        Assert.Equal(new[] { 0, 2 }, firstCrossPairNode.Group);
+
+        StrategyNode secondCrossPairNode = StrategyTestHelpers.FollowBranchPath(
+            plan.Root,
+            "#1 > #2",
+            "#3 > #4",
+            "#5 > #6",
+            "#7 > #8",
+            "#9 > #10",
+            "#1 > #3");
+        Assert.Equal(new[] { 1, 4 }, secondCrossPairNode.Group);
+    }
 }
 
 internal static class StrategyTestHelpers
