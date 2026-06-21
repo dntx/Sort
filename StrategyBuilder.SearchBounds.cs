@@ -49,47 +49,31 @@ partial class StrategyBuilder
         try
         {
             ThrowIfCancellationRequested();
-            var seenGroupPatterns = new HashSet<IntSequenceKey>();
-            foreach (var group in EnumerateCombinations(candidates, groupSize))
+            foreach (var group in EnumerateDistinctGroups(candidates, groupSize, labels))
             {
                 ThrowIfCancellationRequested();
-                if (!seenGroupPatterns.Add(GetGroupPattern(group, labels)))
-                    continue;
-
                 int groupWorstCase = 0;
-                bool isUseful = false;
-
-                foreach (var orderFamily in EnumerateFeasibleOrderFamilies(state, group))
-                {
-                    ThrowIfCancellationRequested();
-                    var next = state.Clone();
-                    next.ApplyOrder(orderFamily.RepresentativeOrderItems);
-                    next.Eliminate(remainingSlots);
-
-                    ulong nextIgnoredFixedTopMask = 0;
-                    int nextRemainingSlots = remainingSlots;
-                    NormalizeState(next, ref nextIgnoredFixedTopMask, ref nextRemainingSlots);
-
-                    SearchStateKey nextKey = GetSearchStateKey(next, nextRemainingSlots);
-                    if (nextKey.Equals(key))
-                        continue;
-
-                    isUseful = true;
-                    int branchLowerBound = 1 + GetMinWorstCaseLowerBound(next, nextRemainingSlots);
-                    if (branchLowerBound >= bestWorstCase)
+                GroupTransitionVisitResult visitResult = VisitGroupTransitions(
+                    state,
+                    remainingSlots,
+                    group,
+                    key,
+                    collectAllTransitions: false,
+                    onUsefulTransition: transition =>
                     {
-                        groupWorstCase = branchLowerBound;
-                        break;
-                    }
+                        int branchLowerBound = 1 + GetMinWorstCaseLowerBound(transition.NextState, transition.NextRemainingSlots);
+                        if (branchLowerBound >= bestWorstCase)
+                        {
+                            groupWorstCase = branchLowerBound;
+                            return false;
+                        }
 
-                    int branchSteps = 1 + GetMinWorstCaseSteps(next, nextRemainingSlots);
-                    groupWorstCase = Math.Max(groupWorstCase, branchSteps);
+                        int branchSteps = 1 + GetMinWorstCaseSteps(transition.NextState, transition.NextRemainingSlots);
+                        groupWorstCase = Math.Max(groupWorstCase, branchSteps);
+                        return groupWorstCase < bestWorstCase;
+                    });
 
-                    if (groupWorstCase >= bestWorstCase)
-                        break;
-                }
-
-                if (isUseful)
+                if (visitResult.IsUseful)
                     bestWorstCase = Math.Min(bestWorstCase, groupWorstCase);
             }
         }

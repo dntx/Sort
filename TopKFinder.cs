@@ -177,13 +177,9 @@ partial class StrategyBuilder
         // Under the current cost model, a size-m comparison weakly dominates any smaller
         // non-terminal comparison because it costs the same one step and reveals a superset
         // of ordering information.
-        var seenGroupPatterns = new HashSet<IntSequenceKey>();
-        foreach (var group in EnumerateCombinations(candidates, groupSize))
+        foreach (var group in EnumerateDistinctGroups(candidates, groupSize, labels))
         {
             ThrowIfCancellationRequested();
-            if (!seenGroupPatterns.Add(GetGroupPattern(group, labels)))
-                continue;
-
             GroupEvaluation? evaluation = EvaluateGroup(
                 state,
                 remainingSlots,
@@ -218,55 +214,48 @@ partial class StrategyBuilder
         SearchStateKey currentKey,
         int bestKnownWorstCase)
     {
-        var nextStateKeys = new HashSet<SearchStateKey>();
         int worstCaseSteps = 0;
-        int totalReduction = 0;
-        bool isUseful = false;
-        var transitions = new List<GroupTransition>();
-
-        foreach (OrderFamilyDescriptor orderFamily in EnumerateFeasibleOrderFamilies(state, group))
-        {
-            ThrowIfCancellationRequested();
-            GroupTransition transition = CreateGroupTransition(state, remainingSlots, orderFamily);
-            transitions.Add(transition);
-
-            SearchStateKey nextKey = transition.NextSearchKey;
-            if (nextKey.Equals(currentKey))
-                continue;
-
-            isUseful = true;
-            totalReduction += transition.Reduction;
-            nextStateKeys.Add(nextKey);
-
-            int branchLowerBound = 1 + GetMinWorstCaseLowerBound(transition.NextState, transition.NextRemainingSlots);
-            if (branchLowerBound > bestKnownWorstCase)
+        GroupTransitionVisitResult visitResult = VisitGroupTransitions(
+            state,
+            remainingSlots,
+            group,
+            currentKey,
+            collectAllTransitions: true,
+            onUsefulTransition: transition =>
             {
-                worstCaseSteps = branchLowerBound;
-                break;
-            }
+                int branchLowerBound = 1 + GetMinWorstCaseLowerBound(transition.NextState, transition.NextRemainingSlots);
+                if (branchLowerBound > bestKnownWorstCase)
+                {
+                    worstCaseSteps = branchLowerBound;
+                    return false;
+                }
 
-            int branchSteps = 1 + GetMinWorstCaseSteps(transition.NextState, transition.NextRemainingSlots);
-            worstCaseSteps = Math.Max(worstCaseSteps, branchSteps);
-        }
+                int branchSteps = 1 + GetMinWorstCaseSteps(transition.NextState, transition.NextRemainingSlots);
+                worstCaseSteps = Math.Max(worstCaseSteps, branchSteps);
+                return true;
+            });
 
-        if (!isUseful)
+        if (!visitResult.IsUseful)
             return null;
 
-        GroupEvaluationScore score = BuildGroupEvaluationScore(state, group, worstCaseSteps, nextStateKeys.Count, totalReduction);
-        return new GroupEvaluation(transitions, score);
+        GroupEvaluationScore score = BuildGroupEvaluationScore(
+            state,
+            group,
+            worstCaseSteps,
+            visitResult.DistinctNextStateCount,
+            visitResult.TotalReduction);
+        return new GroupEvaluation(visitResult.AllTransitions, score);
     }
 
     private IReadOnlyList<GroupTransition> BuildAllGroupTransitions(ComparisonState state, int remainingSlots, IReadOnlyList<int> group)
     {
-        ThrowIfCancellationRequested();
-        var transitions = new List<GroupTransition>();
-        foreach (OrderFamilyDescriptor orderFamily in EnumerateFeasibleOrderFamilies(state, group))
-        {
-            ThrowIfCancellationRequested();
-            transitions.Add(CreateGroupTransition(state, remainingSlots, orderFamily));
-        }
-
-        return transitions;
+        return VisitGroupTransitions(
+            state,
+            remainingSlots,
+            group,
+            currentKey: null,
+            collectAllTransitions: true,
+            onUsefulTransition: _ => true).AllTransitions;
     }
 
     private GroupTransition CreateGroupTransition(ComparisonState state, int remainingSlots, OrderFamilyDescriptor orderFamily)
@@ -286,6 +275,44 @@ partial class StrategyBuilder
             GetSearchStateKey(next, nextRemainingSlots),
             state.ActiveCount - next.ActiveCount,
             orderFamily);
+    }
+
+    private GroupTransitionVisitResult VisitGroupTransitions(
+        ComparisonState state,
+        int remainingSlots,
+        IReadOnlyList<int> group,
+        SearchStateKey? currentKey,
+        bool collectAllTransitions,
+        Func<GroupTransition, bool> onUsefulTransition)
+    {
+        ThrowIfCancellationRequested();
+        var nextStateKeys = new HashSet<SearchStateKey>();
+        var allTransitions = collectAllTransitions ? new List<GroupTransition>() : null;
+        int totalReduction = 0;
+        bool isUseful = false;
+
+        foreach (OrderFamilyDescriptor orderFamily in EnumerateFeasibleOrderFamilies(state, group))
+        {
+            ThrowIfCancellationRequested();
+            GroupTransition transition = CreateGroupTransition(state, remainingSlots, orderFamily);
+            allTransitions?.Add(transition);
+
+            if (currentKey is not null && transition.NextSearchKey.Equals(currentKey.Value))
+                continue;
+
+            isUseful = true;
+            totalReduction += transition.Reduction;
+            nextStateKeys.Add(transition.NextSearchKey);
+
+            if (!onUsefulTransition(transition))
+                break;
+        }
+
+        return new GroupTransitionVisitResult(
+            allTransitions is not null ? allTransitions : Array.Empty<GroupTransition>(),
+            isUseful,
+            totalReduction,
+            nextStateKeys.Count);
     }
 
     private static GroupEvaluationScore BuildGroupEvaluationScore(
@@ -308,6 +335,20 @@ partial class StrategyBuilder
     private static IntSequenceKey GetGroupPattern(IReadOnlyList<int> group, IReadOnlyList<int> labels)
     {
         return new IntSequenceKey(group.Select(i => labels[i]).OrderBy(x => x).ToArray());
+    }
+
+    private IEnumerable<List<int>> EnumerateDistinctGroups(
+        IReadOnlyList<int> candidates,
+        int groupSize,
+        IReadOnlyList<int> labels)
+    {
+        var seenGroupPatterns = new HashSet<IntSequenceKey>();
+        foreach (var group in EnumerateCombinations(candidates, groupSize))
+        {
+            ThrowIfCancellationRequested();
+            if (seenGroupPatterns.Add(GetGroupPattern(group, labels)))
+                yield return group;
+        }
     }
 
     private static int CountFreshItems(ComparisonState state, IReadOnlyList<int> group)
@@ -502,6 +543,26 @@ partial class StrategyBuilder
 
         public IReadOnlyList<GroupTransition> Transitions { get; }
         public GroupEvaluationScore Score { get; }
+    }
+
+    private sealed class GroupTransitionVisitResult
+    {
+        public GroupTransitionVisitResult(
+            IReadOnlyList<GroupTransition> allTransitions,
+            bool isUseful,
+            int totalReduction,
+            int distinctNextStateCount)
+        {
+            AllTransitions = allTransitions;
+            IsUseful = isUseful;
+            TotalReduction = totalReduction;
+            DistinctNextStateCount = distinctNextStateCount;
+        }
+
+        public IReadOnlyList<GroupTransition> AllTransitions { get; }
+        public bool IsUseful { get; }
+        public int TotalReduction { get; }
+        public int DistinctNextStateCount { get; }
     }
 
     private readonly record struct GroupEvaluationScore(
