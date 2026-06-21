@@ -1317,141 +1317,145 @@ class StrategyBuilder
         var allOrders = new List<IReadOnlyList<int>>(equivalentOrders.Count + 1) { representativeOrder };
         allOrders.AddRange(equivalentOrders);
 
-        var positionMasks = new Dictionary<int, ulong>();
-        foreach (var order in allOrders)
-        {
-            for (int position = 0; position < order.Count; position++)
-            {
-                int item = order[position];
-                positionMasks[item] = positionMasks.GetValueOrDefault(item) | (1UL << position);
-            }
-        }
-
         var representativePositions = representativeOrder
             .Select((item, index) => (item, index))
             .ToDictionary(x => x.item, x => x.index);
 
-        var positionSets = Enumerable.Range(0, representativeOrder.Count)
-            .Select(position => allOrders
-                .Select(order => order[position])
-                .Distinct()
-                .OrderBy(item => representativePositions[item])
-                .ToList())
-            .ToList();
-
-        string patternText = BuildEquivalentPatternText(positionSets);
-        string formula = BuildEquivalentCountFormula(positionSets);
-        return new EquivalentOrderSummary(equivalentOrders.Count, patternText, formula);
-    }
-
-    private static string BuildEquivalentPatternText(IReadOnlyList<List<int>> positionSets)
-    {
-        var tokens = new List<string>();
-        var seenPoolOccurrences = new Dictionary<string, int>();
-        var totalPoolOccurrences = positionSets
-            .Where(set => set.Count > 1)
-            .GroupBy(FormatBraceSet)
-            .ToDictionary(group => group.Key, group => group.Count());
-
-        int position = 0;
-        while (position < positionSets.Count)
-        {
-            var currentSet = positionSets[position];
-            if (currentSet.Count == 1)
-            {
-                tokens.Add($"#{currentSet[0] + 1}");
-                position++;
-                continue;
-            }
-
-            string poolKey = FormatBraceSet(currentSet);
-            int segmentLength = 1;
-            while (position + segmentLength < positionSets.Count &&
-                positionSets[position + segmentLength].SequenceEqual(currentSet))
-            {
-                segmentLength++;
-            }
-
-            int seenBefore = seenPoolOccurrences.GetValueOrDefault(poolKey);
-            int totalOccurrences = totalPoolOccurrences[poolKey];
-            int remainingAfter = totalOccurrences - seenBefore - segmentLength;
-            tokens.Add(FormatPoolSegment(currentSet, segmentLength, seenBefore, remainingAfter));
-            seenPoolOccurrences[poolKey] = seenBefore + segmentLength;
-            position += segmentLength;
-        }
-
-        return string.Join(" > ", tokens);
-    }
-
-    private static string BuildEquivalentCountFormula(IReadOnlyList<List<int>> positionSets)
-    {
-        var terms = new List<string>();
-        var seenPoolOccurrences = new Dictionary<string, int>();
-        var totalPoolOccurrences = positionSets
-            .Where(set => set.Count > 1)
-            .GroupBy(FormatBraceSet)
-            .ToDictionary(group => group.Key, group => group.Count());
-
-        int position = 0;
-        while (position < positionSets.Count)
-        {
-            var currentSet = positionSets[position];
-            if (currentSet.Count == 1)
-            {
-                position++;
-                continue;
-            }
-
-            string poolKey = FormatBraceSet(currentSet);
-            int segmentLength = 1;
-            while (position + segmentLength < positionSets.Count &&
-                positionSets[position + segmentLength].SequenceEqual(currentSet))
-            {
-                segmentLength++;
-            }
-
-            int seenBefore = seenPoolOccurrences.GetValueOrDefault(poolKey);
-            int totalOccurrences = totalPoolOccurrences[poolKey];
-            int available = totalOccurrences - seenBefore;
-            terms.Add(FormatSegmentFactor(available, segmentLength));
-            seenPoolOccurrences[poolKey] = seenBefore + segmentLength;
-            position += segmentLength;
-        }
-
-        return $"{string.Join(" x ", terms)} - 1";
-    }
-
-    private static string FormatPoolSegment(IReadOnlyList<int> items, int segmentLength, int seenBefore, int remainingAfter)
-    {
-        string setText = FormatBraceSet(items);
-        if (segmentLength == items.Count && seenBefore == 0 && remainingAfter == 0)
-            return $"permute {setText}";
-
-        if (seenBefore == 0 && remainingAfter == 0)
-            return $"{segmentLength} of {setText} in any order";
-
-        if (seenBefore == 0)
-            return segmentLength == 1
-                ? $"1 of {setText}"
-                : $"{segmentLength} of {setText} in any order";
-
-        if (remainingAfter == 0)
-            return $"remaining {segmentLength} of {setText} in any order";
-
-        return $"{segmentLength} of remaining {setText} in any order";
-    }
-
-    private static string FormatSegmentFactor(int available, int segmentLength)
-    {
-        if (segmentLength == available)
-            return $"{available}!";
-
-        return string.Join(" x ", Enumerable.Range(0, segmentLength).Select(offset => (available - offset).ToString()));
+        EquivalentPatternSummary summary = BuildEquivalentPatternSummary(
+            allOrders.Select(order => order.ToArray()).ToList(),
+            representativeOrder.ToArray(),
+            representativePositions);
+        return new EquivalentOrderSummary(
+            equivalentOrders.Count,
+            summary.PatternText,
+            $"{summary.TotalCountFormula} - 1");
     }
 
     private static string FormatBraceSet(IEnumerable<int> items)
     {
         return "{" + string.Join(", ", items.Select(i => $"#{i + 1}")) + "}";
+    }
+
+    private static EquivalentPatternSummary BuildEquivalentPatternSummary(
+        IReadOnlyList<IReadOnlyList<int>> orders,
+        IReadOnlyList<int> remainingItems,
+        IReadOnlyDictionary<int, int> representativePositions)
+    {
+        if (remainingItems.Count == 0)
+            return new EquivalentPatternSummary(string.Empty, "1", BigInteger.One);
+
+        BigInteger fullPermutationCount = Factorial(remainingItems.Count);
+        if (orders.Count == (int)fullPermutationCount)
+        {
+            if (remainingItems.Count == 1)
+            {
+                int item = remainingItems[0];
+                return new EquivalentPatternSummary($"#{item + 1}", "1", BigInteger.One);
+            }
+
+            return new EquivalentPatternSummary(
+                $"permute {FormatBraceSet(remainingItems)}",
+                $"{remainingItems.Count}!",
+                fullPermutationCount);
+        }
+
+        var groups = orders
+            .GroupBy(order => order[0])
+            .OrderBy(group => representativePositions[group.Key])
+            .ToList();
+
+        if (groups.Count == 1)
+        {
+            var onlyGroup = groups[0];
+            int item = onlyGroup.Key;
+            var nextRemaining = remainingItems.Where(candidate => candidate != item).ToArray();
+            var childOrders = onlyGroup.Select(order => order.Skip(1).ToArray()).ToList();
+            EquivalentPatternSummary childSummary = BuildEquivalentPatternSummary(childOrders, nextRemaining, representativePositions);
+            string itemText = $"#{item + 1}";
+            string patternText = string.IsNullOrEmpty(childSummary.PatternText)
+                ? itemText
+                : $"{itemText} > {childSummary.PatternText}";
+            return new EquivalentPatternSummary(patternText, childSummary.TotalCountFormula, childSummary.TotalCount);
+        }
+
+        var patternParts = new List<string>(groups.Count);
+        var formulaParts = new List<string>(groups.Count);
+        BigInteger totalCount = BigInteger.Zero;
+        foreach (var group in groups)
+        {
+            int item = group.Key;
+            var nextRemaining = remainingItems.Where(candidate => candidate != item).ToArray();
+            var childOrders = group.Select(order => order.Skip(1).ToArray()).ToList();
+            EquivalentPatternSummary childSummary = BuildEquivalentPatternSummary(childOrders, nextRemaining, representativePositions);
+            string itemText = $"#{item + 1}";
+            patternParts.Add(string.IsNullOrEmpty(childSummary.PatternText)
+                ? itemText
+                : $"{itemText} > {childSummary.PatternText}");
+            formulaParts.Add(childSummary.TotalCountFormula);
+            totalCount += childSummary.TotalCount;
+        }
+
+        string pattern = "(" + string.Join(" | ", patternParts) + ")";
+        string formula = CombineFormulaParts(formulaParts);
+        return new EquivalentPatternSummary(pattern, formula, totalCount);
+    }
+
+    private static string CombineFormulaParts(IReadOnlyList<string> formulaParts)
+    {
+        var normalizedParts = formulaParts
+            .Select(SimplifyFormula)
+            .ToList();
+
+        if (normalizedParts.All(formula => formula == normalizedParts[0]))
+        {
+            if (normalizedParts[0] == "1")
+                return normalizedParts.Count.ToString();
+
+            return normalizedParts.Count == 1
+                ? normalizedParts[0]
+                : $"{normalizedParts.Count} x {ParenthesizeSum(normalizedParts[0])}";
+        }
+
+        return string.Join(" + ", normalizedParts.Select(ParenthesizeSum));
+    }
+
+    private static string ParenthesizeSum(string formula)
+    {
+        return formula.Contains(" + ", StringComparison.Ordinal) ? $"({formula})" : formula;
+    }
+
+    private static string SimplifyFormula(string formula)
+    {
+        if (formula == "1!" || formula == "1")
+            return "1";
+
+        return formula
+            .Replace("1! x ", string.Empty, StringComparison.Ordinal)
+            .Replace(" x 1!", string.Empty, StringComparison.Ordinal)
+            .Replace("1 x ", string.Empty, StringComparison.Ordinal)
+            .Replace(" x 1", string.Empty, StringComparison.Ordinal);
+    }
+
+    private static BigInteger Factorial(int value)
+    {
+        BigInteger result = BigInteger.One;
+        for (int i = 2; i <= value; i++)
+            result *= i;
+        return result;
+    }
+
+    private sealed class EquivalentPatternSummary
+    {
+        public EquivalentPatternSummary(string patternText, string totalCountFormula, BigInteger totalCount)
+        {
+            PatternText = patternText;
+            TotalCountFormula = totalCountFormula;
+            TotalCount = totalCount;
+        }
+
+        public string PatternText { get; }
+        public string TotalCountFormula { get; }
+        public BigInteger TotalCount { get; }
     }
 
     private void EnterSearchState()
