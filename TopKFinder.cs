@@ -1399,6 +1399,10 @@ class StrategyBuilder
         if (anchoredPermutationSummary is not null)
             return anchoredPermutationSummary;
 
+        EquivalentPatternSummary? windowPermutationFamilySummary = TryBuildWindowPermutationFamilySummary(orders, representativePositions);
+        if (windowPermutationFamilySummary is not null)
+            return windowPermutationFamilySummary;
+
         var groups = orders
             .GroupBy(order => order[0])
             .OrderBy(group => representativePositions[group.Key])
@@ -1632,6 +1636,126 @@ class StrategyBuilder
         }
 
         return null;
+    }
+
+    private static EquivalentPatternSummary? TryBuildWindowPermutationFamilySummary(
+        IReadOnlyList<IReadOnlyList<int>> orders,
+        IReadOnlyDictionary<int, int> representativePositions)
+    {
+        int orderLength = orders[0].Count;
+        if (orders.Count < 4 || orderLength < 4)
+            return null;
+
+        var candidates = new List<WindowPermutationFamilyCandidate>();
+        for (int start = 0; start < orderLength - 1; start++)
+        {
+            for (int width = 2; start + width <= orderLength; width++)
+            {
+                var groupedByOutside = orders
+                    .Select((order, index) => new
+                    {
+                        Order = order,
+                        Index = index,
+                        Key = $"{string.Join(",", order.Take(start))}|{string.Join(",", order.Skip(start + width))}"
+                    })
+                    .GroupBy(x => x.Key);
+
+                foreach (var outsideGroup in groupedByOutside)
+                {
+                    var members = outsideGroup.ToList();
+                    int expectedCount = (int)Factorial(width);
+                    if (members.Count != expectedCount)
+                        continue;
+
+                    int[] sortedWindowItems = members[0].Order
+                        .Skip(start)
+                        .Take(width)
+                        .OrderBy(item => representativePositions[item])
+                        .ToArray();
+                    string expectedItemKey = string.Join(",", sortedWindowItems);
+
+                    var uniqueWindowOrders = new HashSet<string>(StringComparer.Ordinal);
+                    bool valid = true;
+                    foreach (var member in members)
+                    {
+                        int[] windowItems = member.Order.Skip(start).Take(width).ToArray();
+                        if (string.Join(",", windowItems.OrderBy(item => representativePositions[item])) != expectedItemKey)
+                        {
+                            valid = false;
+                            break;
+                        }
+
+                        uniqueWindowOrders.Add(string.Join(",", windowItems));
+                    }
+
+                    if (!valid || uniqueWindowOrders.Count != expectedCount)
+                        continue;
+
+                    string candidatePatternText = JoinPatternSegments(
+                        members[0].Order.Take(start).Select(item => $"#{item + 1}")
+                            .Concat(new[] { $"permute {FormatBraceSet(sortedWindowItems)}" })
+                            .Concat(members[0].Order.Skip(start + width).Select(item => $"#{item + 1}")));
+
+                    candidates.Add(new WindowPermutationFamilyCandidate(
+                        members.Select(member => member.Index).ToArray(),
+                        members.Min(member => member.Index),
+                        width,
+                        candidatePatternText,
+                        $"{width}!"));
+                }
+            }
+        }
+
+        if (candidates.Count == 0)
+            return null;
+
+        var selectedCandidates = new List<WindowPermutationFamilyCandidate>();
+        var coveredOrderIndices = new HashSet<int>();
+        foreach (var candidate in candidates
+            .OrderByDescending(candidate => candidate.Savings)
+            .ThenByDescending(candidate => candidate.Width)
+            .ThenBy(candidate => candidate.FirstOrderIndex))
+        {
+            if (candidate.OrderIndices.Any(index => coveredOrderIndices.Contains(index)))
+                continue;
+
+            selectedCandidates.Add(candidate);
+            foreach (int index in candidate.OrderIndices)
+                coveredOrderIndices.Add(index);
+        }
+
+        if (selectedCandidates.Count == 0)
+            return null;
+
+        var components = new List<WindowPermutationFamilyComponent>();
+        foreach (var candidate in selectedCandidates)
+        {
+            components.Add(new WindowPermutationFamilyComponent(
+                candidate.FirstOrderIndex,
+                candidate.PatternText,
+                candidate.Formula,
+                candidate.OrderIndices.Count));
+        }
+
+        for (int index = 0; index < orders.Count; index++)
+        {
+            if (coveredOrderIndices.Contains(index))
+                continue;
+
+            components.Add(new WindowPermutationFamilyComponent(
+                index,
+                FormatOrder(orders[index]),
+                "1",
+                1));
+        }
+
+        if (components.Count >= orders.Count)
+            return null;
+
+        components.Sort((left, right) => left.FirstOrderIndex.CompareTo(right.FirstOrderIndex));
+        string patternText = "(" + string.Join(" | ", components.Select(component => component.PatternText)) + ")";
+        string formula = CombineFormulaParts(components.Select(component => component.Formula).ToList());
+        return new EquivalentPatternSummary(patternText, formula, orders.Count);
     }
 
     private static bool IsCompletePermutationSet(
@@ -2011,6 +2135,22 @@ class StrategyBuilder
     private sealed record ParsedPatternSegment(
         IReadOnlyList<PatternAliasDefinition> Definitions,
         string Body);
+
+    private sealed record WindowPermutationFamilyCandidate(
+        IReadOnlyList<int> OrderIndices,
+        int FirstOrderIndex,
+        int Width,
+        string PatternText,
+        string Formula)
+    {
+        public int Savings => OrderIndices.Count - 1;
+    }
+
+    private sealed record WindowPermutationFamilyComponent(
+        int FirstOrderIndex,
+        string PatternText,
+        string Formula,
+        int Count);
 
     private void EnterSearchState()
     {
