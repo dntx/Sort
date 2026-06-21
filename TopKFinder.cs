@@ -449,6 +449,69 @@ sealed class StrategyEffect
     }
 }
 
+sealed class FinalChoiceSummary
+{
+    public FinalChoiceSummary(
+        IReadOnlyList<int> fixedTopSet,
+        IReadOnlyList<int> candidatePool,
+        int remainingSlots)
+    {
+        FixedTopSet = fixedTopSet;
+        CandidatePool = candidatePool;
+        RemainingSlots = remainingSlots;
+    }
+
+    public IReadOnlyList<int> FixedTopSet { get; }
+    public IReadOnlyList<int> CandidatePool { get; }
+    public int RemainingSlots { get; }
+}
+
+static class StrategyNodeAnalysis
+{
+    public static bool TryGetCompressedFinalChoice(StrategyNode node, out FinalChoiceSummary summary)
+    {
+        summary = null!;
+        if (node.Kind != StrategyNodeKind.Decision || node.Branches.Count < 2)
+            return false;
+
+        var terminalBranches = node.Branches.Where(branch => branch.Next.Kind == StrategyNodeKind.Terminal).ToList();
+        if (terminalBranches.Count != node.Branches.Count)
+            return false;
+
+        int topSetSize = terminalBranches[0].Next.TopSet.Count;
+        var common = new HashSet<int>(terminalBranches[0].Next.TopSet);
+        var union = new HashSet<int>(terminalBranches[0].Next.TopSet);
+
+        foreach (var branch in terminalBranches.Skip(1))
+        {
+            if (branch.Next.TopSet.Count != topSetSize)
+                return false;
+
+            common.IntersectWith(branch.Next.TopSet);
+            union.UnionWith(branch.Next.TopSet);
+        }
+
+        int remainingSlots = topSetSize - common.Count;
+        if (remainingSlots <= 0)
+            return false;
+
+        foreach (var branch in terminalBranches)
+        {
+            int varyingCount = branch.Next.TopSet.Count(item => !common.Contains(item));
+            if (varyingCount != remainingSlots)
+                return false;
+        }
+
+        var fixedTopSet = common.OrderBy(x => x).ToList();
+        var candidatePool = union.Where(item => !common.Contains(item)).OrderBy(x => x).ToList();
+        if (candidatePool.Count <= remainingSlots)
+            return false;
+
+        summary = new FinalChoiceSummary(fixedTopSet, candidatePool, remainingSlots);
+        return true;
+    }
+}
+
 readonly struct FeasibleTopSetInfo
 {
     public FeasibleTopSetInfo(int count)
