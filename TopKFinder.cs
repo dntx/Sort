@@ -1395,6 +1395,10 @@ class StrategyBuilder
         if (independentBlockSummary is not null)
             return independentBlockSummary;
 
+        EquivalentPatternSummary? partialIndependentBlockSummary = TryBuildPartialIndependentBlockSummary(orders, representativePositions);
+        if (partialIndependentBlockSummary is not null)
+            return partialIndependentBlockSummary;
+
         EquivalentPatternSummary? anchoredPermutationSummary = TryBuildAnchoredPermutationSummary(orders, remainingItems);
         if (anchoredPermutationSummary is not null)
             return anchoredPermutationSummary;
@@ -1638,6 +1642,76 @@ class StrategyBuilder
         return null;
     }
 
+    private static EquivalentPatternSummary? TryBuildPartialIndependentBlockSummary(
+        IReadOnlyList<IReadOnlyList<int>> orders,
+        IReadOnlyDictionary<int, int> representativePositions)
+    {
+        int orderLength = orders[0].Count;
+        if (orders.Count < 4 || orderLength < 2)
+            return null;
+
+        var candidates = new List<PartialPatternFamilyCandidate>();
+        for (int splitPosition = 1; splitPosition < orderLength; splitPosition++)
+        {
+            var groupedOrders = orders
+                .Select((order, index) => new
+                {
+                    Order = order,
+                    Index = index,
+                    PrefixItems = order.Take(splitPosition).OrderBy(item => representativePositions[item]).ToArray(),
+                    SuffixItems = order.Skip(splitPosition).OrderBy(item => representativePositions[item]).ToArray()
+                })
+                .GroupBy(x => $"{string.Join(",", x.PrefixItems)}|{string.Join(",", x.SuffixItems)}");
+
+            foreach (var groupedOrder in groupedOrders)
+            {
+                var members = groupedOrder.ToList();
+                if (members.Count < 4)
+                    continue;
+
+                int[] prefixItems = members[0].PrefixItems;
+                int[] suffixItems = members[0].SuffixItems;
+                if (prefixItems.Intersect(suffixItems).Any())
+                    continue;
+
+                var uniquePrefixes = members
+                    .Select(member => member.Order.Take(splitPosition).ToArray())
+                    .Distinct(ArraySequenceComparer.Instance)
+                    .ToList();
+                var uniqueSuffixes = members
+                    .Select(member => member.Order.Skip(splitPosition).ToArray())
+                    .Distinct(ArraySequenceComparer.Instance)
+                    .ToList();
+
+                if (uniquePrefixes.Count <= 1 || uniqueSuffixes.Count <= 1)
+                    continue;
+
+                if (members.Count != uniquePrefixes.Count * uniqueSuffixes.Count)
+                    continue;
+
+                var fullPairs = new HashSet<string>(members.Select(member =>
+                    $"{string.Join(",", member.Order.Take(splitPosition))}|{string.Join(",", member.Order.Skip(splitPosition))}"), StringComparer.Ordinal);
+                bool hasAllCombinations = uniquePrefixes.All(prefix =>
+                    uniqueSuffixes.All(suffix =>
+                        fullPairs.Contains($"{string.Join(",", prefix)}|{string.Join(",", suffix)}")));
+                if (!hasAllCombinations)
+                    continue;
+
+                EquivalentPatternSummary prefixSummary = BuildEquivalentPatternSummary(uniquePrefixes, prefixItems, representativePositions);
+                EquivalentPatternSummary suffixSummary = BuildEquivalentPatternSummary(uniqueSuffixes, suffixItems, representativePositions);
+                string patternText = JoinPatternSegments(new[] { prefixSummary.PatternText, suffixSummary.PatternText });
+                string formula = MultiplyFormulas(prefixSummary.TotalCountFormula, suffixSummary.TotalCountFormula);
+                candidates.Add(new PartialPatternFamilyCandidate(
+                    members.Select(member => member.Index).ToArray(),
+                    members.Min(member => member.Index),
+                    patternText,
+                    formula));
+            }
+        }
+
+        return BuildPartialPatternFamilySummary(orders, candidates);
+    }
+
     private static EquivalentPatternSummary? TryBuildWindowPermutationFamilySummary(
         IReadOnlyList<IReadOnlyList<int>> orders,
         IReadOnlyDictionary<int, int> representativePositions)
@@ -1706,14 +1780,27 @@ class StrategyBuilder
             }
         }
 
+        return BuildPartialPatternFamilySummary(
+            orders,
+            candidates.Select(candidate => new PartialPatternFamilyCandidate(
+                candidate.OrderIndices,
+                candidate.FirstOrderIndex,
+                candidate.PatternText,
+                candidate.Formula)).ToList());
+    }
+
+    private static EquivalentPatternSummary? BuildPartialPatternFamilySummary(
+        IReadOnlyList<IReadOnlyList<int>> orders,
+        IReadOnlyList<PartialPatternFamilyCandidate> candidates)
+    {
         if (candidates.Count == 0)
             return null;
 
-        var selectedCandidates = new List<WindowPermutationFamilyCandidate>();
+        var selectedCandidates = new List<PartialPatternFamilyCandidate>();
         var coveredOrderIndices = new HashSet<int>();
         foreach (var candidate in candidates
             .OrderByDescending(candidate => candidate.Savings)
-            .ThenByDescending(candidate => candidate.Width)
+            .ThenByDescending(candidate => candidate.OrderIndices.Count)
             .ThenBy(candidate => candidate.FirstOrderIndex))
         {
             if (candidate.OrderIndices.Any(index => coveredOrderIndices.Contains(index)))
@@ -2151,6 +2238,15 @@ class StrategyBuilder
         string PatternText,
         string Formula,
         int Count);
+
+    private sealed record PartialPatternFamilyCandidate(
+        IReadOnlyList<int> OrderIndices,
+        int FirstOrderIndex,
+        string PatternText,
+        string Formula)
+    {
+        public int Savings => OrderIndices.Count - 1;
+    }
 
     private void EnterSearchState()
     {
