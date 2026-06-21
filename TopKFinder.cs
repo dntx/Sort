@@ -67,6 +67,60 @@ readonly struct IntSequenceKey : IEquatable<IntSequenceKey>, IComparable<IntSequ
     }
 }
 
+readonly struct SearchStateKey : IEquatable<SearchStateKey>
+{
+    public SearchStateKey(int remainingSlots, IntSequenceKey stateKey)
+    {
+        RemainingSlots = remainingSlots;
+        StateKey = stateKey;
+    }
+
+    public int RemainingSlots { get; }
+    public IntSequenceKey StateKey { get; }
+
+    public bool Equals(SearchStateKey other)
+    {
+        return RemainingSlots == other.RemainingSlots && StateKey.Equals(other.StateKey);
+    }
+
+    public override bool Equals(object? obj)
+    {
+        return obj is SearchStateKey other && Equals(other);
+    }
+
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(RemainingSlots, StateKey);
+    }
+}
+
+readonly struct BuildStateKey : IEquatable<BuildStateKey>
+{
+    public BuildStateKey(ulong fixedTopMask, SearchStateKey searchKey)
+    {
+        FixedTopMask = fixedTopMask;
+        SearchKey = searchKey;
+    }
+
+    public ulong FixedTopMask { get; }
+    public SearchStateKey SearchKey { get; }
+
+    public bool Equals(BuildStateKey other)
+    {
+        return FixedTopMask == other.FixedTopMask && SearchKey.Equals(other.SearchKey);
+    }
+
+    public override bool Equals(object? obj)
+    {
+        return obj is BuildStateKey other && Equals(other);
+    }
+
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(FixedTopMask, SearchKey);
+    }
+}
+
 class ComparisonState
 {
     private static readonly IntSequenceKey InactiveSignature = new(new[] { 0 });
@@ -153,10 +207,21 @@ class ComparisonState
         ulong removedMask = 0;
         foreach (int item in EnumerateBits(ActiveMask))
         {
-            if (BitOperations.PopCount(Ancestors[item]) >= k)
+            if (BitOperations.PopCount(Ancestors[item] & ActiveMask) >= k)
                 removedMask |= Bit(item);
         }
 
+        if (removedMask == 0)
+            return;
+
+        InvalidateDerivedCaches();
+        ActiveMask &= ~removedMask;
+        ActiveCount -= BitOperations.PopCount(removedMask);
+    }
+
+    public void Deactivate(ulong removedMask)
+    {
+        removedMask &= ActiveMask;
         if (removedMask == 0)
             return;
 
@@ -287,12 +352,12 @@ class ComparisonState
 
     public int GetAncestorCount(int item)
     {
-        return BitOperations.PopCount(Ancestors[item]);
+        return BitOperations.PopCount(Ancestors[item] & ActiveMask);
     }
 
     public int GetDescendantCount(int item)
     {
-        return BitOperations.PopCount(Descendants[item]);
+        return BitOperations.PopCount(Descendants[item] & ActiveMask);
     }
 
     public List<int> GetActiveItemsOrdered()
@@ -480,17 +545,30 @@ readonly struct FeasibleTopSetInfo
     public int Count { get; }
 }
 
+readonly struct BestGroupPattern
+{
+    public BestGroupPattern(int groupSize, IntSequenceKey pattern)
+    {
+        GroupSize = groupSize;
+        Pattern = pattern;
+    }
+
+    public int GroupSize { get; }
+    public IntSequenceKey Pattern { get; }
+}
+
 class StrategyBuilder
 {
     private readonly int _n;
     private readonly int _m;
     private readonly int _k;
     private readonly CancellationToken _cancellationToken;
-    private readonly Dictionary<IntSequenceKey, int> _stateIds = new();
-    private readonly HashSet<IntSequenceKey> _expandedStates = new();
-    private readonly Dictionary<IntSequenceKey, int> _minWorstCaseStepsCache = new();
-    private readonly Dictionary<IntSequenceKey, int> _lowerBoundStepsCache = new();
-    private readonly Dictionary<IntSequenceKey, FeasibleTopSetInfo> _feasibleTopSetCache = new();
+    private readonly Dictionary<BuildStateKey, int> _stateIds = new();
+    private readonly HashSet<BuildStateKey> _expandedStates = new();
+    private readonly Dictionary<SearchStateKey, int> _minWorstCaseStepsCache = new();
+    private readonly Dictionary<SearchStateKey, int> _lowerBoundStepsCache = new();
+    private readonly Dictionary<SearchStateKey, FeasibleTopSetInfo> _feasibleTopSetCache = new();
+    private readonly Dictionary<SearchStateKey, BestGroupPattern> _bestGroupPatternCache = new();
     private int _nextStateId = 1;
 
     public StrategyBuilder(int n, int m, int k, CancellationToken cancellationToken = default)
@@ -505,7 +583,7 @@ class StrategyBuilder
     {
         var stopwatch = Stopwatch.StartNew();
         var initial = new ComparisonState(_n);
-        var root = BuildState(initial, 1);
+        var root = BuildState(initial, 0, _k, 1);
         stopwatch.Stop();
         return new StrategyPlan(_n, _m, _k, root, stopwatch.Elapsed);
     }
@@ -520,21 +598,25 @@ class StrategyBuilder
         return new StrategyBuilder(n, m, k, cancellationToken).Build();
     }
 
-    private StrategyNode BuildState(ComparisonState state, int step)
+    private StrategyNode BuildState(ComparisonState state, ulong fixedTopMask, int remainingSlots, int step)
     {
         ThrowIfCancellationRequested();
-        IntSequenceKey key = state.GetCanonicalKey();
+        NormalizeState(state, ref fixedTopMask, ref remainingSlots);
+
+        BuildStateKey key = GetBuildStateKey(state, fixedTopMask, remainingSlots);
         int stateId = GetStateId(key);
 
-        if (TryGetDeterminedTopSet(state, out List<int> determinedTopSet))
-            return StrategyNode.Terminal(stateId, determinedTopSet);
+        if (remainingSlots == 0)
+            return StrategyNode.Terminal(stateId, ComparisonState.MaskToOrderedList(fixedTopMask));
 
-        if (state.ActiveCount <= _k)
-            return StrategyNode.Terminal(stateId, state.GetActiveItemsOrdered());
+        if (TryGetDeterminedTopSet(state, remainingSlots, out ulong determinedTopMask))
+            return StrategyNode.Terminal(stateId, ComparisonState.MaskToOrderedList(fixedTopMask | determinedTopMask));
+
+        if (state.ActiveCount <= remainingSlots)
+            return StrategyNode.Terminal(stateId, ComparisonState.MaskToOrderedList(fixedTopMask | state.ActiveMask));
 
         var possibleCandidates = GetPossibleCandidates(state);
-        int remainingSlots = GetRemainingSlots(state);
-        if (possibleCandidates.Count > remainingSlots && possibleCandidates.Count <= _m)
+        if (state.ActiveCount <= _m)
         {
             return StrategyNode.Decision(
                 stateId,
@@ -542,7 +624,7 @@ class StrategyBuilder
                 possibleCandidates,
                 Array.Empty<StrategyBranch>(),
                 new FinalChoiceSummary(
-                    ComparisonState.MaskToOrderedList(GetGuaranteedTopMask(state)),
+                    ComparisonState.MaskToOrderedList(fixedTopMask),
                     possibleCandidates,
                     remainingSlots));
         }
@@ -552,27 +634,31 @@ class StrategyBuilder
 
         _expandedStates.Add(key);
 
-        var group = ChooseGroup(state);
-        var branches = BuildBranches(state, group, step + 1);
+        var group = ChooseGroup(state, remainingSlots);
+        var branches = BuildBranches(state, fixedTopMask, remainingSlots, group, step + 1);
 
         return StrategyNode.Decision(stateId, step, group, branches);
     }
 
-    private List<StrategyBranch> BuildBranches(ComparisonState state, IReadOnlyList<int> group, int nextStep)
+    private List<StrategyBranch> BuildBranches(ComparisonState state, ulong fixedTopMask, int remainingSlots, IReadOnlyList<int> group, int nextStep)
     {
         ThrowIfCancellationRequested();
-        var groupedBranches = new Dictionary<IntSequenceKey, BranchInfo>();
+        var groupedBranches = new Dictionary<BuildStateKey, BranchInfo>();
         foreach (var order in EnumerateFeasibleOrders(state, group))
         {
             ThrowIfCancellationRequested();
             var next = state.Clone();
             next.ApplyOrder(order);
-            next.Eliminate(_k);
+            next.Eliminate(remainingSlots);
 
-            IntSequenceKey nextKey = next.GetCanonicalKey();
+            ulong nextFixedTopMask = fixedTopMask;
+            int nextRemainingSlots = remainingSlots;
+            NormalizeState(next, ref nextFixedTopMask, ref nextRemainingSlots);
+
+            BuildStateKey nextKey = GetBuildStateKey(next, nextFixedTopMask, nextRemainingSlots);
             if (!groupedBranches.TryGetValue(nextKey, out BranchInfo? branch))
             {
-                groupedBranches[nextKey] = new BranchInfo(next, FormatOrder(order));
+                groupedBranches[nextKey] = new BranchInfo(next, nextFixedTopMask, nextRemainingSlots, FormatOrder(order));
             }
             else
             {
@@ -585,31 +671,28 @@ class StrategyBuilder
             .Select(v => new StrategyBranch(
                 v.RepresentativeOrder,
                 v.EquivalentOrders.OrderBy(order => order, StringComparer.Ordinal).ToList(),
-                BuildComparisonEffect(state, v.NextState),
-                BuildState(v.NextState, nextStep)))
+                BuildComparisonEffect(state, fixedTopMask, v.NextState, v.NextFixedTopMask),
+                BuildState(v.NextState, v.NextFixedTopMask, v.NextRemainingSlots, nextStep)))
             .ToList();
     }
 
-    private StrategyEffect BuildComparisonEffect(ComparisonState before, ComparisonState after)
+    private StrategyEffect BuildComparisonEffect(ComparisonState before, ulong beforeFixedTopMask, ComparisonState after, ulong afterFixedTopMask)
     {
-        ulong guaranteedTopBefore = GetGuaranteedTopMask(before);
-        ulong guaranteedTopAfter = GetGuaranteedTopMask(after);
-
-        var newlyGuaranteedTop = ComparisonState.MaskToOrderedList(guaranteedTopAfter & ~guaranteedTopBefore);
-        var newlyExcluded = ComparisonState.MaskToOrderedList(before.ActiveMask & ~after.ActiveMask);
-        var fixedCandidates = ComparisonState.MaskToOrderedList(guaranteedTopAfter);
-        var possibleCandidates = ComparisonState.MaskToOrderedList(after.ActiveMask & ~guaranteedTopAfter);
+        var newlyGuaranteedTop = ComparisonState.MaskToOrderedList(afterFixedTopMask & ~beforeFixedTopMask);
+        var newlyExcluded = ComparisonState.MaskToOrderedList(before.ActiveMask & ~after.ActiveMask & ~afterFixedTopMask);
+        var fixedCandidates = ComparisonState.MaskToOrderedList(afterFixedTopMask);
+        var possibleCandidates = after.GetActiveItemsOrdered();
 
         return new StrategyEffect(newlyGuaranteedTop, newlyExcluded, fixedCandidates, possibleCandidates);
     }
 
-    private ulong GetGuaranteedTopMask(ComparisonState state)
+    private ulong GetGuaranteedTopMask(ComparisonState state, int remainingSlots)
     {
         ThrowIfCancellationRequested();
         ulong mask = 0;
         for (int i = 0; i < _n; i++)
         {
-            if (state.IsActive(i) && _n - 1 - state.GetDescendantCount(i) <= _k - 1)
+            if (state.IsActive(i) && state.ActiveCount - 1 - state.GetDescendantCount(i) <= remainingSlots - 1)
                 mask |= 1UL << i;
         }
 
@@ -618,22 +701,25 @@ class StrategyBuilder
 
     private List<int> GetPossibleCandidates(ComparisonState state)
     {
-        ulong guaranteedTop = GetGuaranteedTopMask(state);
-        return ComparisonState.MaskToOrderedList(state.ActiveMask & ~guaranteedTop);
+        return state.GetActiveItemsOrdered();
     }
 
-    private int GetRemainingSlots(ComparisonState state)
-    {
-        return _k - BitOperations.PopCount(GetGuaranteedTopMask(state));
-    }
-
-    private List<int> ChooseGroup(ComparisonState state)
+    private List<int> ChooseGroup(ComparisonState state, int remainingSlots)
     {
         ThrowIfCancellationRequested();
         var candidates = state.GetActiveItemsOrdered();
         int maxGroupSize = Math.Min(_m, candidates.Count);
-        IntSequenceKey currentKey = state.GetCanonicalKey();
+        SearchStateKey currentKey = GetSearchStateKey(state, remainingSlots);
         var labels = state.GetStructuralLabels();
+
+        if (_bestGroupPatternCache.TryGetValue(currentKey, out BestGroupPattern cachedPattern))
+        {
+            foreach (var group in EnumerateCombinations(candidates, cachedPattern.GroupSize))
+            {
+                if (GetGroupPattern(group, labels) == cachedPattern.Pattern)
+                    return group;
+            }
+        }
 
         List<int>? bestGroup = null;
         (int negWorstCaseSteps, int negFreshItems, int negUnrelatedScore, int negGroupSize, int distinctStates, int totalReduction, int unresolvedPairs) bestScore =
@@ -649,7 +735,7 @@ class StrategyBuilder
                 if (!seenGroupPatterns.Add(GetGroupPattern(group, labels)))
                     continue;
 
-                var nextStateKeys = new HashSet<IntSequenceKey>();
+                var nextStateKeys = new HashSet<SearchStateKey>();
                 int worstCaseSteps = 0;
                 int totalReduction = 0;
                 bool isUseful = false;
@@ -660,10 +746,14 @@ class StrategyBuilder
                     ThrowIfCancellationRequested();
                     var next = state.Clone();
                     next.ApplyOrder(order);
-                    next.Eliminate(_k);
+                    next.Eliminate(remainingSlots);
 
-                    IntSequenceKey nextKey = next.GetCanonicalKey();
-                    if (nextKey == currentKey)
+                    ulong ignoredFixedTopMask = 0;
+                    int nextRemainingSlots = remainingSlots;
+                    NormalizeState(next, ref ignoredFixedTopMask, ref nextRemainingSlots);
+
+                    SearchStateKey nextKey = GetSearchStateKey(next, nextRemainingSlots);
+                    if (nextKey.Equals(currentKey))
                         continue;
 
                     isUseful = true;
@@ -671,14 +761,14 @@ class StrategyBuilder
                     totalReduction += reduction;
                     nextStateKeys.Add(nextKey);
 
-                    int branchLowerBound = 1 + GetMinWorstCaseLowerBound(next);
+                    int branchLowerBound = 1 + GetMinWorstCaseLowerBound(next, nextRemainingSlots);
                     if (branchLowerBound > bestKnownWorstCase)
                     {
                         worstCaseSteps = branchLowerBound;
                         break;
                     }
 
-                    int branchSteps = 1 + GetMinWorstCaseSteps(next);
+                    int branchSteps = 1 + GetMinWorstCaseSteps(next, nextRemainingSlots);
                     worstCaseSteps = Math.Max(worstCaseSteps, branchSteps);
                 }
 
@@ -699,25 +789,33 @@ class StrategyBuilder
         }
 
         if (bestGroup is not null)
+        {
+            _bestGroupPatternCache[currentKey] = new BestGroupPattern(bestGroup.Count, GetGroupPattern(bestGroup, labels));
             return bestGroup;
+        }
 
         return candidates.Take(maxGroupSize).ToList();
     }
 
-    private int GetMinWorstCaseSteps(ComparisonState state)
+    private int GetMinWorstCaseSteps(ComparisonState state, int remainingSlots)
     {
         ThrowIfCancellationRequested();
-        if (TryGetDeterminedTopSet(state, out _))
+        ulong ignoredFixedTopMask = 0;
+        NormalizeState(state, ref ignoredFixedTopMask, ref remainingSlots);
+
+        if (remainingSlots == 0)
             return 0;
 
-        if (state.ActiveCount <= _k)
+        if (TryGetDeterminedTopSet(state, remainingSlots, out _))
             return 0;
 
-        var possibleCandidates = GetPossibleCandidates(state);
-        if (possibleCandidates.Count > GetRemainingSlots(state) && possibleCandidates.Count <= _m)
+        if (state.ActiveCount <= remainingSlots)
+            return 0;
+
+        if (state.ActiveCount <= _m)
             return 1;
 
-        IntSequenceKey key = state.GetCanonicalKey();
+        SearchStateKey key = GetSearchStateKey(state, remainingSlots);
         if (_minWorstCaseStepsCache.TryGetValue(key, out int cached))
             return cached;
 
@@ -744,21 +842,25 @@ class StrategyBuilder
                     ThrowIfCancellationRequested();
                     var next = state.Clone();
                     next.ApplyOrder(order);
-                    next.Eliminate(_k);
+                    next.Eliminate(remainingSlots);
 
-                    IntSequenceKey nextKey = next.GetCanonicalKey();
-                    if (nextKey == key)
+                    ulong nextIgnoredFixedTopMask = 0;
+                    int nextRemainingSlots = remainingSlots;
+                    NormalizeState(next, ref nextIgnoredFixedTopMask, ref nextRemainingSlots);
+
+                    SearchStateKey nextKey = GetSearchStateKey(next, nextRemainingSlots);
+                    if (nextKey.Equals(key))
                         continue;
 
                     isUseful = true;
-                    int branchLowerBound = 1 + GetMinWorstCaseLowerBound(next);
+                    int branchLowerBound = 1 + GetMinWorstCaseLowerBound(next, nextRemainingSlots);
                     if (branchLowerBound >= bestWorstCase)
                     {
                         groupWorstCase = branchLowerBound;
                         break;
                     }
 
-                    int branchSteps = 1 + GetMinWorstCaseSteps(next);
+                    int branchSteps = 1 + GetMinWorstCaseSteps(next, nextRemainingSlots);
                     groupWorstCase = Math.Max(groupWorstCase, branchSteps);
 
                     if (groupWorstCase >= bestWorstCase)
@@ -777,24 +879,29 @@ class StrategyBuilder
         return bestWorstCase;
     }
 
-    private int GetMinWorstCaseLowerBound(ComparisonState state)
+    private int GetMinWorstCaseLowerBound(ComparisonState state, int remainingSlots)
     {
         ThrowIfCancellationRequested();
-        if (TryGetDeterminedTopSet(state, out _))
+        ulong ignoredFixedTopMask = 0;
+        NormalizeState(state, ref ignoredFixedTopMask, ref remainingSlots);
+
+        if (remainingSlots == 0)
             return 0;
 
-        if (state.ActiveCount <= _k)
+        if (TryGetDeterminedTopSet(state, remainingSlots, out _))
             return 0;
 
-        var possibleCandidates = GetPossibleCandidates(state);
-        if (possibleCandidates.Count > GetRemainingSlots(state) && possibleCandidates.Count <= _m)
+        if (state.ActiveCount <= remainingSlots)
+            return 0;
+
+        if (state.ActiveCount <= _m)
             return 1;
 
-        IntSequenceKey key = state.GetCanonicalKey();
+        SearchStateKey key = GetSearchStateKey(state, remainingSlots);
         if (_lowerBoundStepsCache.TryGetValue(key, out int cached))
             return cached;
 
-        FeasibleTopSetInfo info = GetFeasibleTopSetInfo(state);
+        FeasibleTopSetInfo info = GetFeasibleTopSetInfo(state, remainingSlots);
         int maxOutcomesPerStep = GetMaxOutcomesPerStep(state);
         int distinguishable = 1;
         int steps = 0;
@@ -812,54 +919,44 @@ class StrategyBuilder
         return steps;
     }
 
-    private bool TryGetDeterminedTopSet(ComparisonState state, out List<int> topSet)
+    private bool TryGetDeterminedTopSet(ComparisonState state, int remainingSlots, out ulong topMask)
     {
         ThrowIfCancellationRequested();
-        FeasibleTopSetInfo info = GetFeasibleTopSetInfo(state);
-        if (info.Count == 1 && TryGetUniqueTopSetMask(state, out ulong uniqueMask))
+        FeasibleTopSetInfo info = GetFeasibleTopSetInfo(state, remainingSlots);
+        if (info.Count == 1 && TryGetUniqueTopSetMask(state, remainingSlots, out ulong uniqueMask))
         {
-            topSet = ComparisonState.MaskToOrderedList(uniqueMask);
+            topMask = uniqueMask;
             return true;
         }
 
-        topSet = Array.Empty<int>().ToList();
+        topMask = 0;
         return false;
     }
 
-    private FeasibleTopSetInfo GetFeasibleTopSetInfo(ComparisonState state)
+    private FeasibleTopSetInfo GetFeasibleTopSetInfo(ComparisonState state, int remainingSlots)
     {
         ThrowIfCancellationRequested();
-        IntSequenceKey key = state.GetCanonicalKey();
+        SearchStateKey key = GetSearchStateKey(state, remainingSlots);
         if (_feasibleTopSetCache.TryGetValue(key, out FeasibleTopSetInfo cached))
             return cached;
 
-        int count = CountFeasibleTopSets(state);
+        int count = CountFeasibleTopSets(state, remainingSlots);
         FeasibleTopSetInfo info = new(count);
 
         _feasibleTopSetCache[key] = info;
         return info;
     }
 
-    private bool TryGetUniqueTopSetMask(ComparisonState state, out ulong uniqueMask)
+    private bool TryGetUniqueTopSetMask(ComparisonState state, int remainingSlots, out ulong uniqueMask)
     {
         ThrowIfCancellationRequested();
-        ulong guaranteedMask = GetGuaranteedTopMask(state);
-        int guaranteedCount = BitOperations.PopCount(guaranteedMask);
-        int remainingSlots = _k - guaranteedCount;
-
-        if (remainingSlots == 0)
-        {
-            uniqueMask = guaranteedMask;
-            return true;
-        }
-
         uniqueMask = 0;
         bool found = false;
         var possibleCandidates = GetPossibleCandidates(state);
         foreach (var combination in EnumerateCombinations(possibleCandidates, remainingSlots))
         {
             ThrowIfCancellationRequested();
-            ulong candidateMask = guaranteedMask;
+            ulong candidateMask = 0;
             foreach (int item in combination)
                 candidateMask |= 1UL << item;
 
@@ -879,22 +976,15 @@ class StrategyBuilder
         return found;
     }
 
-    private int CountFeasibleTopSets(ComparisonState state)
+    private int CountFeasibleTopSets(ComparisonState state, int remainingSlots)
     {
         ThrowIfCancellationRequested();
-        ulong guaranteedMask = GetGuaranteedTopMask(state);
-        int guaranteedCount = BitOperations.PopCount(guaranteedMask);
-        int remainingSlots = _k - guaranteedCount;
-
-        if (remainingSlots == 0)
-            return 1;
-
         int count = 0;
         var possibleCandidates = GetPossibleCandidates(state);
         foreach (var combination in EnumerateCombinations(possibleCandidates, remainingSlots))
         {
             ThrowIfCancellationRequested();
-            ulong candidateMask = guaranteedMask;
+            ulong candidateMask = 0;
             foreach (int item in combination)
                 candidateMask |= 1UL << item;
 
@@ -1021,7 +1111,7 @@ class StrategyBuilder
         }
     }
 
-    private int GetStateId(IntSequenceKey key)
+    private int GetStateId(BuildStateKey key)
     {
         ThrowIfCancellationRequested();
         if (_stateIds.TryGetValue(key, out int id))
@@ -1030,6 +1120,30 @@ class StrategyBuilder
         id = _nextStateId++;
         _stateIds[key] = id;
         return id;
+    }
+
+    private SearchStateKey GetSearchStateKey(ComparisonState state, int remainingSlots)
+    {
+        return new SearchStateKey(remainingSlots, state.GetCanonicalKey());
+    }
+
+    private BuildStateKey GetBuildStateKey(ComparisonState state, ulong fixedTopMask, int remainingSlots)
+    {
+        return new BuildStateKey(fixedTopMask, GetSearchStateKey(state, remainingSlots));
+    }
+
+    private void NormalizeState(ComparisonState state, ref ulong fixedTopMask, ref int remainingSlots)
+    {
+        while (remainingSlots > 0)
+        {
+            ulong guaranteedTopMask = GetGuaranteedTopMask(state, remainingSlots);
+            if (guaranteedTopMask == 0)
+                break;
+
+            fixedTopMask |= guaranteedTopMask;
+            remainingSlots -= BitOperations.PopCount(guaranteedTopMask);
+            state.Deactivate(guaranteedTopMask);
+        }
     }
 
     private static string FormatOrder(IEnumerable<int> items)
@@ -1045,15 +1159,18 @@ class StrategyBuilder
     private sealed class BranchInfo
     {
         public ComparisonState NextState { get; }
+        public ulong NextFixedTopMask { get; }
+        public int NextRemainingSlots { get; }
         public string RepresentativeOrder { get; }
         public List<string> EquivalentOrders { get; }
 
-        public BranchInfo(ComparisonState nextState, string representativeOrder)
+        public BranchInfo(ComparisonState nextState, ulong nextFixedTopMask, int nextRemainingSlots, string representativeOrder)
         {
             NextState = nextState;
+            NextFixedTopMask = nextFixedTopMask;
+            NextRemainingSlots = nextRemainingSlots;
             RepresentativeOrder = representativeOrder;
             EquivalentOrders = new List<string>();
         }
     }
-
 }
