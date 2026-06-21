@@ -842,7 +842,7 @@ class StrategyBuilder
     {
         ThrowIfCancellationRequested();
         var candidates = state.GetActiveItemsOrdered();
-        int maxGroupSize = Math.Min(_m, candidates.Count);
+        int groupSize = Math.Min(_m, candidates.Count);
         SearchStateKey currentKey = GetSearchStateKey(state, remainingSlots);
         var labels = state.GetStructuralLabels();
 
@@ -859,66 +859,66 @@ class StrategyBuilder
         (int negWorstCaseSteps, int negFreshItems, int negUnrelatedScore, int negGroupSize, int distinctStates, int totalReduction, int unresolvedPairs) bestScore =
             (int.MinValue, int.MinValue, int.MinValue, int.MinValue, int.MinValue, int.MinValue, int.MinValue);
 
-        for (int groupSize = 2; groupSize <= maxGroupSize; groupSize++)
+        ThrowIfCancellationRequested();
+        // Under the current cost model, a size-m comparison weakly dominates any smaller
+        // non-terminal comparison because it costs the same one step and reveals a superset
+        // of ordering information.
+        var seenGroupPatterns = new HashSet<IntSequenceKey>();
+        foreach (var group in EnumerateCombinations(candidates, groupSize))
         {
             ThrowIfCancellationRequested();
-            var seenGroupPatterns = new HashSet<IntSequenceKey>();
-            foreach (var group in EnumerateCombinations(candidates, groupSize))
+            if (!seenGroupPatterns.Add(GetGroupPattern(group, labels)))
+                continue;
+
+            var nextStateKeys = new HashSet<SearchStateKey>();
+            int worstCaseSteps = 0;
+            int totalReduction = 0;
+            bool isUseful = false;
+            int bestKnownWorstCase = bestGroup is null ? int.MaxValue : -bestScore.negWorstCaseSteps;
+
+            foreach (var order in EnumerateFeasibleOrders(state, group))
             {
                 ThrowIfCancellationRequested();
-                if (!seenGroupPatterns.Add(GetGroupPattern(group, labels)))
+                var next = state.Clone();
+                next.ApplyOrder(order);
+                next.Eliminate(remainingSlots);
+
+                ulong ignoredFixedTopMask = 0;
+                int nextRemainingSlots = remainingSlots;
+                NormalizeState(next, ref ignoredFixedTopMask, ref nextRemainingSlots);
+
+                SearchStateKey nextKey = GetSearchStateKey(next, nextRemainingSlots);
+                if (nextKey.Equals(currentKey))
                     continue;
 
-                var nextStateKeys = new HashSet<SearchStateKey>();
-                int worstCaseSteps = 0;
-                int totalReduction = 0;
-                bool isUseful = false;
-                int bestKnownWorstCase = bestGroup is null ? int.MaxValue : -bestScore.negWorstCaseSteps;
+                isUseful = true;
+                int reduction = state.ActiveCount - next.ActiveCount;
+                totalReduction += reduction;
+                nextStateKeys.Add(nextKey);
 
-                foreach (var order in EnumerateFeasibleOrders(state, group))
+                int branchLowerBound = 1 + GetMinWorstCaseLowerBound(next, nextRemainingSlots);
+                if (branchLowerBound > bestKnownWorstCase)
                 {
-                    ThrowIfCancellationRequested();
-                    var next = state.Clone();
-                    next.ApplyOrder(order);
-                    next.Eliminate(remainingSlots);
-
-                    ulong ignoredFixedTopMask = 0;
-                    int nextRemainingSlots = remainingSlots;
-                    NormalizeState(next, ref ignoredFixedTopMask, ref nextRemainingSlots);
-
-                    SearchStateKey nextKey = GetSearchStateKey(next, nextRemainingSlots);
-                    if (nextKey.Equals(currentKey))
-                        continue;
-
-                    isUseful = true;
-                    int reduction = state.ActiveCount - next.ActiveCount;
-                    totalReduction += reduction;
-                    nextStateKeys.Add(nextKey);
-
-                    int branchLowerBound = 1 + GetMinWorstCaseLowerBound(next, nextRemainingSlots);
-                    if (branchLowerBound > bestKnownWorstCase)
-                    {
-                        worstCaseSteps = branchLowerBound;
-                        break;
-                    }
-
-                    int branchSteps = 1 + GetMinWorstCaseSteps(next, nextRemainingSlots);
-                    worstCaseSteps = Math.Max(worstCaseSteps, branchSteps);
+                    worstCaseSteps = branchLowerBound;
+                    break;
                 }
 
-                if (!isUseful)
-                    continue;
+                int branchSteps = 1 + GetMinWorstCaseSteps(next, nextRemainingSlots);
+                worstCaseSteps = Math.Max(worstCaseSteps, branchSteps);
+            }
 
-                int freshItems = group.Count(i => state.GetAncestorCount(i) == 0 && state.GetDescendantCount(i) == 0);
-                int unrelatedScore = -group.Sum(i => state.GetAncestorCount(i) + state.GetDescendantCount(i));
-                int unresolvedPairs = CountUnresolvedPairs(state, group);
-                var score = (-worstCaseSteps, freshItems, unrelatedScore, group.Count, nextStateKeys.Count, totalReduction, unresolvedPairs);
+            if (!isUseful)
+                continue;
 
-                if (bestGroup is null || score.CompareTo(bestScore) > 0)
-                {
-                    bestGroup = group;
-                    bestScore = score;
-                }
+            int freshItems = group.Count(i => state.GetAncestorCount(i) == 0 && state.GetDescendantCount(i) == 0);
+            int unrelatedScore = -group.Sum(i => state.GetAncestorCount(i) + state.GetDescendantCount(i));
+            int unresolvedPairs = CountUnresolvedPairs(state, group);
+            var score = (-worstCaseSteps, freshItems, unrelatedScore, group.Count, nextStateKeys.Count, totalReduction, unresolvedPairs);
+
+            if (bestGroup is null || score.CompareTo(bestScore) > 0)
+            {
+                bestGroup = group;
+                bestScore = score;
             }
         }
 
@@ -928,7 +928,7 @@ class StrategyBuilder
             return bestGroup;
         }
 
-        return candidates.Take(maxGroupSize).ToList();
+        return candidates.Take(groupSize).ToList();
     }
 
     private int GetMinWorstCaseSteps(ComparisonState state, int remainingSlots)
@@ -957,57 +957,54 @@ class StrategyBuilder
         EnterSearchState();
 
         var candidates = state.GetActiveItemsOrdered();
-        int maxGroupSize = Math.Min(_m, candidates.Count);
+        int groupSize = Math.Min(_m, candidates.Count);
         var labels = state.GetStructuralLabels();
         int bestWorstCase = int.MaxValue;
         try
         {
-            for (int groupSize = 2; groupSize <= maxGroupSize; groupSize++)
+            ThrowIfCancellationRequested();
+            var seenGroupPatterns = new HashSet<IntSequenceKey>();
+            foreach (var group in EnumerateCombinations(candidates, groupSize))
             {
                 ThrowIfCancellationRequested();
-                var seenGroupPatterns = new HashSet<IntSequenceKey>();
-                foreach (var group in EnumerateCombinations(candidates, groupSize))
+                if (!seenGroupPatterns.Add(GetGroupPattern(group, labels)))
+                    continue;
+
+                int groupWorstCase = 0;
+                bool isUseful = false;
+
+                foreach (var order in EnumerateFeasibleOrders(state, group))
                 {
                     ThrowIfCancellationRequested();
-                    if (!seenGroupPatterns.Add(GetGroupPattern(group, labels)))
+                    var next = state.Clone();
+                    next.ApplyOrder(order);
+                    next.Eliminate(remainingSlots);
+
+                    ulong nextIgnoredFixedTopMask = 0;
+                    int nextRemainingSlots = remainingSlots;
+                    NormalizeState(next, ref nextIgnoredFixedTopMask, ref nextRemainingSlots);
+
+                    SearchStateKey nextKey = GetSearchStateKey(next, nextRemainingSlots);
+                    if (nextKey.Equals(key))
                         continue;
 
-                    int groupWorstCase = 0;
-                    bool isUseful = false;
-
-                    foreach (var order in EnumerateFeasibleOrders(state, group))
+                    isUseful = true;
+                    int branchLowerBound = 1 + GetMinWorstCaseLowerBound(next, nextRemainingSlots);
+                    if (branchLowerBound >= bestWorstCase)
                     {
-                        ThrowIfCancellationRequested();
-                        var next = state.Clone();
-                        next.ApplyOrder(order);
-                        next.Eliminate(remainingSlots);
-
-                        ulong nextIgnoredFixedTopMask = 0;
-                        int nextRemainingSlots = remainingSlots;
-                        NormalizeState(next, ref nextIgnoredFixedTopMask, ref nextRemainingSlots);
-
-                        SearchStateKey nextKey = GetSearchStateKey(next, nextRemainingSlots);
-                        if (nextKey.Equals(key))
-                            continue;
-
-                        isUseful = true;
-                        int branchLowerBound = 1 + GetMinWorstCaseLowerBound(next, nextRemainingSlots);
-                        if (branchLowerBound >= bestWorstCase)
-                        {
-                            groupWorstCase = branchLowerBound;
-                            break;
-                        }
-
-                        int branchSteps = 1 + GetMinWorstCaseSteps(next, nextRemainingSlots);
-                        groupWorstCase = Math.Max(groupWorstCase, branchSteps);
-
-                        if (groupWorstCase >= bestWorstCase)
-                            break;
+                        groupWorstCase = branchLowerBound;
+                        break;
                     }
 
-                    if (isUseful)
-                        bestWorstCase = Math.Min(bestWorstCase, groupWorstCase);
+                    int branchSteps = 1 + GetMinWorstCaseSteps(next, nextRemainingSlots);
+                    groupWorstCase = Math.Max(groupWorstCase, branchSteps);
+
+                    if (groupWorstCase >= bestWorstCase)
+                        break;
                 }
+
+                if (isUseful)
+                    bestWorstCase = Math.Min(bestWorstCase, groupWorstCase);
             }
         }
         finally
