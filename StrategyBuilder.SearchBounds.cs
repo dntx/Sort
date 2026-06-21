@@ -45,11 +45,15 @@ partial class StrategyBuilder
         var candidates = state.GetActiveItemsOrdered();
         int groupSize = Math.Min(_m, candidates.Count);
         var labels = state.GetStructuralLabels();
+        IEnumerable<List<int>> groups = remainingSlots > _m
+            ? EnumeratePrioritizedGroups(state, remainingSlots, candidates, groupSize, labels)
+            : EnumerateDistinctGroups(candidates, groupSize, labels);
+        List<int>? bestGroup = null;
         int bestWorstCase = int.MaxValue;
         try
         {
             ThrowIfCancellationRequested();
-            foreach (var group in EnumerateDistinctGroups(candidates, groupSize, labels))
+            foreach (var group in groups)
             {
                 ThrowIfCancellationRequested();
                 int groupWorstCase = 0;
@@ -74,8 +78,11 @@ partial class StrategyBuilder
                         return groupWorstCase < bestWorstCase;
                     });
 
-                if (traversal.IsUseful)
+                if (traversal.IsUseful && groupWorstCase < bestWorstCase)
+                {
                     bestWorstCase = Math.Min(bestWorstCase, groupWorstCase);
+                    bestGroup = group;
+                }
             }
         }
         finally
@@ -85,6 +92,9 @@ partial class StrategyBuilder
 
         if (bestWorstCase == int.MaxValue)
             throw new InvalidOperationException("Expected at least one useful comparison group when unresolved candidates exceed comparison size.");
+
+        if (remainingSlots > _m && bestGroup is not null)
+            _bestGroupPatternCache[key] = new BestGroupPattern(bestGroup.Count, GetGroupPattern(bestGroup, labels));
 
         _minWorstCaseStepsCache[key] = bestWorstCase;
         return bestWorstCase;

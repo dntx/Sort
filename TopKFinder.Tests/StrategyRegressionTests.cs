@@ -72,6 +72,34 @@ public sealed class StrategyRegressionTests
     }
 
     [Fact]
+    public void N10M3K5_SearchWorkStaysWithinWideTopKBaseline()
+    {
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.Generate(10, 3, 5)",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.Generate(10, 3, 5, cancellationToken));
+
+        Assert.Equal(6, plan.MaxStep);
+        Assert.True(plan.SearchStatistics.SearchedStates <= 1311, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
+        Assert.True(plan.SearchStatistics.OutputStates <= 8, $"output states regressed to {plan.SearchStatistics.OutputStates}");
+        Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 5, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
+    }
+
+    [Fact]
+    public void N12M4K5_SearchWorkStaysWithinWideTopKBaseline()
+    {
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.Generate(12, 4, 5)",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.Generate(12, 4, 5, cancellationToken));
+
+        Assert.Equal(6, plan.MaxStep);
+        Assert.True(plan.SearchStatistics.SearchedStates <= 1562, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
+        Assert.True(plan.SearchStatistics.OutputStates <= 24, $"output states regressed to {plan.SearchStatistics.OutputStates}");
+        Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 8, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
+    }
+
+    [Fact]
     public void N12M4K4_PreservesRepresentativeAliasCompression()
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
