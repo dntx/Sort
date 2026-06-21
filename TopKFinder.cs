@@ -320,6 +320,76 @@ class ComparisonState
         return _canonicalKeyCache.Value;
     }
 
+    public IntSequenceKey GetDisplayCanonicalKey(ulong fixedTopMask)
+    {
+        ulong combinedMask = ActiveMask | fixedTopMask;
+        int n = Ancestors.Length;
+        var labels = Enumerable.Range(0, n)
+            .Select(i => (combinedMask & Bit(i)) == 0 ? 0 : 1)
+            .ToArray();
+
+        bool changed;
+        do
+        {
+            changed = false;
+            int classCount = labels.Max() + 1;
+            var signatures = new IntSequenceKey[n];
+            for (int i = 0; i < n; i++)
+            {
+                signatures[i] = (combinedMask & Bit(i)) == 0
+                    ? new IntSequenceKey(new[] { 0 })
+                    : BuildElementSignature(labels[i], Ancestors[i] & combinedMask, Descendants[i] & combinedMask, labels, classCount);
+            }
+
+            var orderedSignatures = signatures
+                .Distinct()
+                .OrderBy(signature => signature)
+                .ToList();
+
+            var signatureToColor = new Dictionary<IntSequenceKey, int>(orderedSignatures.Count);
+            for (int index = 0; index < orderedSignatures.Count; index++)
+                signatureToColor[orderedSignatures[index]] = index;
+
+            var nextLabels = signatures.Select(signature => signatureToColor[signature]).ToArray();
+            changed = !labels.SequenceEqual(nextLabels);
+            labels = nextLabels;
+        }
+        while (changed);
+
+        var activeClassIds = Enumerable.Range(0, n)
+            .Where(i => (combinedMask & Bit(i)) != 0)
+            .Select(i => labels[i])
+            .Distinct()
+            .OrderBy(x => x)
+            .ToList();
+
+        var parts = new List<int> { activeClassIds.Count };
+        foreach (int classId in activeClassIds)
+        {
+            var members = Enumerable.Range(0, n).Where(i => labels[i] == classId).ToList();
+            parts.Add(members.Count);
+            parts.Add(1);
+
+            foreach (int otherClass in activeClassIds)
+            {
+                var counts = members
+                    .Select(member => CountNeighborsWithLabel(Ancestors[member] & combinedMask, labels, otherClass))
+                    .OrderBy(x => x);
+                parts.AddRange(counts);
+            }
+
+            foreach (int otherClass in activeClassIds)
+            {
+                var counts = members
+                    .Select(member => CountNeighborsWithLabel(Descendants[member] & combinedMask, labels, otherClass))
+                    .OrderBy(x => x);
+                parts.AddRange(counts);
+            }
+        }
+
+        return new IntSequenceKey(parts.ToArray());
+    }
+
     private static IntSequenceKey BuildElementSignature(
         int currentLabel,
         ulong ancestorMask,
@@ -563,8 +633,8 @@ class StrategyBuilder
     private readonly int _m;
     private readonly int _k;
     private readonly CancellationToken _cancellationToken;
-    private readonly Dictionary<BuildStateKey, int> _stateIds = new();
-    private readonly HashSet<BuildStateKey> _expandedStates = new();
+    private readonly Dictionary<IntSequenceKey, int> _stateIds = new();
+    private readonly HashSet<IntSequenceKey> _expandedStates = new();
     private readonly Dictionary<SearchStateKey, int> _minWorstCaseStepsCache = new();
     private readonly Dictionary<SearchStateKey, int> _lowerBoundStepsCache = new();
     private readonly Dictionary<SearchStateKey, FeasibleTopSetInfo> _feasibleTopSetCache = new();
@@ -603,8 +673,8 @@ class StrategyBuilder
         ThrowIfCancellationRequested();
         NormalizeState(state, ref fixedTopMask, ref remainingSlots);
 
-        BuildStateKey key = GetBuildStateKey(state, fixedTopMask, remainingSlots);
-        int stateId = GetStateId(key);
+        IntSequenceKey displayKey = GetDisplayStateKey(state, fixedTopMask);
+        int stateId = GetStateId(displayKey);
 
         if (remainingSlots == 0)
             return StrategyNode.Terminal(stateId, ComparisonState.MaskToOrderedList(fixedTopMask));
@@ -629,10 +699,10 @@ class StrategyBuilder
                     remainingSlots));
         }
 
-        if (_expandedStates.Contains(key))
+        if (_expandedStates.Contains(displayKey))
             return StrategyNode.Reference(stateId);
 
-        _expandedStates.Add(key);
+        _expandedStates.Add(displayKey);
 
         var group = ChooseGroup(state, remainingSlots);
         var branches = BuildBranches(state, fixedTopMask, remainingSlots, group, step + 1);
@@ -643,7 +713,7 @@ class StrategyBuilder
     private List<StrategyBranch> BuildBranches(ComparisonState state, ulong fixedTopMask, int remainingSlots, IReadOnlyList<int> group, int nextStep)
     {
         ThrowIfCancellationRequested();
-        var groupedBranches = new Dictionary<BuildStateKey, BranchInfo>();
+        var groupedBranches = new Dictionary<IntSequenceKey, BranchInfo>();
         foreach (var order in EnumerateFeasibleOrders(state, group))
         {
             ThrowIfCancellationRequested();
@@ -655,7 +725,7 @@ class StrategyBuilder
             int nextRemainingSlots = remainingSlots;
             NormalizeState(next, ref nextFixedTopMask, ref nextRemainingSlots);
 
-            BuildStateKey nextKey = GetBuildStateKey(next, nextFixedTopMask, nextRemainingSlots);
+            IntSequenceKey nextKey = GetDisplayStateKey(next, nextFixedTopMask);
             if (!groupedBranches.TryGetValue(nextKey, out BranchInfo? branch))
             {
                 groupedBranches[nextKey] = new BranchInfo(next, nextFixedTopMask, nextRemainingSlots, FormatOrder(order));
@@ -1111,7 +1181,7 @@ class StrategyBuilder
         }
     }
 
-    private int GetStateId(BuildStateKey key)
+    private int GetStateId(IntSequenceKey key)
     {
         ThrowIfCancellationRequested();
         if (_stateIds.TryGetValue(key, out int id))
@@ -1127,9 +1197,9 @@ class StrategyBuilder
         return new SearchStateKey(remainingSlots, state.GetCanonicalKey());
     }
 
-    private BuildStateKey GetBuildStateKey(ComparisonState state, ulong fixedTopMask, int remainingSlots)
+    private IntSequenceKey GetDisplayStateKey(ComparisonState state, ulong fixedTopMask)
     {
-        return new BuildStateKey(fixedTopMask, GetSearchStateKey(state, remainingSlots));
+        return state.GetDisplayCanonicalKey(fixedTopMask);
     }
 
     private void NormalizeState(ComparisonState state, ref ulong fixedTopMask, ref int remainingSlots)
