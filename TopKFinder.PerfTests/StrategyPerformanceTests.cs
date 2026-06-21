@@ -2,6 +2,8 @@ using Xunit;
 
 public sealed class StrategyPerformanceTests
 {
+    private static readonly TimeSpan PerfTestTimeout = TimeSpan.FromSeconds(30);
+
     [Fact]
     public void N10M9K9_CompletesWithinLooseBudget()
     {
@@ -32,12 +34,18 @@ public sealed class StrategyPerformanceTests
 
     private static double MeasureMedianElapsedMilliseconds(int n, int m, int k, int iterations)
     {
-        _ = StrategyBuilder.Generate(n, m, k);
+        _ = TestTimeoutHelper.RunWithTimeout(
+            $"StrategyBuilder.Generate({n}, {m}, {k}) warmup",
+            PerfTestTimeout,
+            cancellationToken => StrategyBuilder.Generate(n, m, k, cancellationToken));
 
         var samples = new List<double>(iterations);
         for (int i = 0; i < iterations; i++)
         {
-            StrategyPlan plan = StrategyBuilder.Generate(n, m, k);
+            StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+                $"StrategyBuilder.Generate({n}, {m}, {k}) iteration {i + 1}",
+                PerfTestTimeout,
+                cancellationToken => StrategyBuilder.Generate(n, m, k, cancellationToken));
             samples.Add(plan.Elapsed.TotalMilliseconds);
         }
 
