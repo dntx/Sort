@@ -35,9 +35,9 @@ static class StrategyTextRenderer
                 return;
             case StrategyNodeKind.Decision:
                 writer.WriteLine($"{prefix}S{node.StateId} [step {node.Step}] sort({FormatSet(node.Group)})");
-                if (StrategyNodeAnalysis.TryGetCompressedFinalChoice(node, out FinalChoiceSummary finalChoice))
+                if (node.FinalChoice is not null)
                 {
-                    writer.WriteLine($"{prefix}  {FormatCompressedFinalChoice(finalChoice, k)}");
+                    writer.WriteLine($"{prefix}  {FormatCompressedFinalChoice(node.FinalChoice, k)}");
                     return;
                 }
 

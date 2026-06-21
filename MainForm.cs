@@ -337,12 +337,12 @@ class MainForm : Form
             Tag = BuildStateDetails(node),
         };
 
-        if (StrategyNodeAnalysis.TryGetCompressedFinalChoice(node, out FinalChoiceSummary finalChoice))
+        if (node.FinalChoice is not null)
         {
-            treeNode.Nodes.Add(new TreeNode(BuildCompressedFinalChoiceText(finalChoice, k))
+            treeNode.Nodes.Add(new TreeNode(BuildCompressedFinalChoiceText(node.FinalChoice, k))
             {
                 ForeColor = _palette.ResultColor,
-                Tag = BuildCompressedFinalChoiceDetails(finalChoice, k),
+                Tag = BuildCompressedFinalChoiceDetails(node.FinalChoice, k),
             });
             return treeNode;
         }
@@ -438,12 +438,12 @@ class MainForm : Form
             $"Step: {node.Step}\n" +
             $"Comparison group: ({StrategyTextRenderer.FormatSet(node.Group)})";
 
-        if (StrategyNodeAnalysis.TryGetCompressedFinalChoice(node, out FinalChoiceSummary finalChoice))
+        if (node.FinalChoice is not null)
         {
-            int k = finalChoice.FixedTopSet.Count + finalChoice.RemainingSlots;
+            int k = node.FinalChoice.FixedTopSet.Count + node.FinalChoice.RemainingSlots;
             details += "\n" +
                 "Compressed final choice: yes\n" +
-                BuildCompressedFinalChoiceDetails(finalChoice, k);
+                BuildCompressedFinalChoiceDetails(node.FinalChoice, k);
         }
 
         return details;
