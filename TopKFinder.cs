@@ -105,48 +105,6 @@ partial class StrategyBuilder
         return StrategyNode.Decision(stateId, step, chosenGroup.Group, branches);
     }
 
-    private List<StrategyBranch> BuildBranches(ComparisonState state, ulong fixedTopMask, int remainingSlots, SelectedComparisonGroup chosenGroup, int nextStep)
-    {
-        ThrowIfCancellationRequested();
-
-        var groupedBranches = new Dictionary<IntSequenceKey, MergedBranch>();
-        foreach (ComparisonOutcome outcome in chosenGroup.Outcomes)
-        {
-            ThrowIfCancellationRequested();
-            ulong nextFixedTopMask = fixedTopMask | outcome.AddedFixedTopMask;
-            ComparisonState next = outcome.NextState;
-
-            IntSequenceKey nextKey = GetDisplayStateKey(next, nextFixedTopMask);
-            if (!groupedBranches.TryGetValue(nextKey, out MergedBranch? branch))
-            {
-                groupedBranches[nextKey] = new MergedBranch(next, nextFixedTopMask, outcome.NextRemainingSlots, outcome.OrderFamily);
-            }
-            else
-            {
-                branch.OrderFamilies.Add(outcome.OrderFamily);
-            }
-        }
-
-        return groupedBranches.Values
-            .OrderBy(v => v.RepresentativeOrder, StringComparer.Ordinal)
-            .Select(v => new StrategyBranch(
-                v.RepresentativeOrder,
-                BuildEquivalentOrderSummary(v.OrderFamilies),
-                BuildComparisonEffect(state, fixedTopMask, v.NextState, v.NextFixedTopMask),
-                BuildState(v.NextState, v.NextFixedTopMask, v.NextRemainingSlots, nextStep)))
-            .ToList();
-    }
-
-    private StrategyEffect BuildComparisonEffect(ComparisonState before, ulong beforeFixedTopMask, ComparisonState after, ulong afterFixedTopMask)
-    {
-        var newlyGuaranteedTop = ComparisonState.MaskToOrderedList(afterFixedTopMask & ~beforeFixedTopMask);
-        var newlyExcluded = ComparisonState.MaskToOrderedList(before.ActiveMask & ~after.ActiveMask & ~afterFixedTopMask);
-        var fixedCandidates = ComparisonState.MaskToOrderedList(afterFixedTopMask);
-        var possibleCandidates = after.GetActiveItemsOrdered();
-
-        return new StrategyEffect(newlyGuaranteedTop, newlyExcluded, fixedCandidates, possibleCandidates);
-    }
-
     private List<int> GetPossibleCandidates(ComparisonState state)
     {
         return state.GetActiveItemsOrdered();
@@ -256,63 +214,6 @@ partial class StrategyBuilder
             currentKey: null,
             collectAllOutcomes: true,
             onUsefulOutcome: _ => true).AllOutcomes;
-    }
-
-    private ComparisonOutcome CreateComparisonOutcome(ComparisonState state, int remainingSlots, OrderFamilyDescriptor orderFamily)
-    {
-        ComparisonState next = state.Clone();
-        next.ApplyOrder(orderFamily.RepresentativeOrderItems);
-        next.Eliminate(remainingSlots);
-
-        ulong addedFixedTopMask = 0;
-        int nextRemainingSlots = remainingSlots;
-        NormalizeState(next, ref addedFixedTopMask, ref nextRemainingSlots);
-
-        return new ComparisonOutcome(
-            next,
-            addedFixedTopMask,
-            nextRemainingSlots,
-            GetSearchStateKey(next, nextRemainingSlots),
-            state.ActiveCount - next.ActiveCount,
-            orderFamily);
-    }
-
-    private OutcomeTraversalSummary VisitComparisonOutcomes(
-        ComparisonState state,
-        int remainingSlots,
-        IReadOnlyList<int> group,
-        SearchStateKey? currentKey,
-        bool collectAllOutcomes,
-        Func<ComparisonOutcome, bool> onUsefulOutcome)
-    {
-        ThrowIfCancellationRequested();
-        var nextStateKeys = new HashSet<SearchStateKey>();
-        var allOutcomes = collectAllOutcomes ? new List<ComparisonOutcome>() : null;
-        int totalReduction = 0;
-        bool isUseful = false;
-
-        foreach (OrderFamilyDescriptor orderFamily in EnumerateFeasibleOrderFamilies(state, group))
-        {
-            ThrowIfCancellationRequested();
-            ComparisonOutcome outcome = CreateComparisonOutcome(state, remainingSlots, orderFamily);
-            allOutcomes?.Add(outcome);
-
-            if (currentKey is not null && outcome.NextSearchKey.Equals(currentKey.Value))
-                continue;
-
-            isUseful = true;
-            totalReduction += outcome.Reduction;
-            nextStateKeys.Add(outcome.NextSearchKey);
-
-            if (!onUsefulOutcome(outcome))
-                break;
-        }
-
-        return new OutcomeTraversalSummary(
-            allOutcomes is not null ? allOutcomes : Array.Empty<ComparisonOutcome>(),
-            isUseful,
-            totalReduction,
-            nextStateKeys.Count);
     }
 
     private static ComparisonGroupScore BuildComparisonGroupScore(
@@ -503,24 +404,6 @@ partial class StrategyBuilder
         _cancellationToken.ThrowIfCancellationRequested();
     }
 
-    private sealed class MergedBranch
-    {
-        public ComparisonState NextState { get; }
-        public ulong NextFixedTopMask { get; }
-        public int NextRemainingSlots { get; }
-        public string RepresentativeOrder { get; }
-        public List<OrderFamilyDescriptor> OrderFamilies { get; }
-
-        public MergedBranch(ComparisonState nextState, ulong nextFixedTopMask, int nextRemainingSlots, OrderFamilyDescriptor representativeFamily)
-        {
-            NextState = nextState;
-            NextFixedTopMask = nextFixedTopMask;
-            NextRemainingSlots = nextRemainingSlots;
-            RepresentativeOrder = representativeFamily.RepresentativeOrder;
-            OrderFamilies = new List<OrderFamilyDescriptor> { representativeFamily };
-        }
-    }
-
     private sealed class SelectedComparisonGroup
     {
         public SelectedComparisonGroup(IReadOnlyList<int> group, IReadOnlyList<ComparisonOutcome> outcomes)
@@ -604,29 +487,4 @@ partial class StrategyBuilder
         }
     }
 
-    private sealed class ComparisonOutcome
-    {
-        public ComparisonOutcome(
-            ComparisonState nextState,
-            ulong addedFixedTopMask,
-            int nextRemainingSlots,
-            SearchStateKey nextSearchKey,
-            int reduction,
-            OrderFamilyDescriptor orderFamily)
-        {
-            NextState = nextState;
-            AddedFixedTopMask = addedFixedTopMask;
-            NextRemainingSlots = nextRemainingSlots;
-            NextSearchKey = nextSearchKey;
-            Reduction = reduction;
-            OrderFamily = orderFamily;
-        }
-
-        public ComparisonState NextState { get; }
-        public ulong AddedFixedTopMask { get; }
-        public int NextRemainingSlots { get; }
-        public SearchStateKey NextSearchKey { get; }
-        public int Reduction { get; }
-        public OrderFamilyDescriptor OrderFamily { get; }
-    }
 }
