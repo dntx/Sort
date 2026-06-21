@@ -1359,6 +1359,37 @@ class StrategyBuilder
                 fullPermutationCount);
         }
 
+        int commonPrefixLength = GetCommonPrefixLength(orders);
+        int commonSuffixLength = GetCommonSuffixLength(orders, commonPrefixLength);
+        if (commonPrefixLength > 0 || commonSuffixLength > 0)
+        {
+            var prefixItems = orders[0].Take(commonPrefixLength).ToArray();
+            var suffixItems = commonSuffixLength == 0
+                ? Array.Empty<int>()
+                : orders[0].Skip(orders[0].Count - commonSuffixLength).ToArray();
+            var middleOrders = orders
+                .Select(order => order
+                    .Skip(commonPrefixLength)
+                    .Take(order.Count - commonPrefixLength - commonSuffixLength)
+                    .ToArray())
+                .ToList();
+            var middleItems = orders[0]
+                .Skip(commonPrefixLength)
+                .Take(orders[0].Count - commonPrefixLength - commonSuffixLength)
+                .ToArray();
+
+            EquivalentPatternSummary middleSummary = BuildEquivalentPatternSummary(middleOrders, middleItems, representativePositions);
+            string patternText = JoinPatternSegments(
+                prefixItems.Select(item => $"#{item + 1}")
+                    .Concat(string.IsNullOrEmpty(middleSummary.PatternText) ? Array.Empty<string>() : new[] { middleSummary.PatternText })
+                    .Concat(suffixItems.Select(item => $"#{item + 1}")));
+            return new EquivalentPatternSummary(patternText, middleSummary.TotalCountFormula, middleSummary.TotalCount);
+        }
+
+        EquivalentPatternSummary? anchoredPermutationSummary = TryBuildAnchoredPermutationSummary(orders, remainingItems);
+        if (anchoredPermutationSummary is not null)
+            return anchoredPermutationSummary;
+
         var groups = orders
             .GroupBy(order => order[0])
             .OrderBy(group => representativePositions[group.Key])
@@ -1398,6 +1429,115 @@ class StrategyBuilder
         string pattern = "(" + string.Join(" | ", patternParts) + ")";
         string formula = CombineFormulaParts(formulaParts);
         return new EquivalentPatternSummary(pattern, formula, totalCount);
+    }
+
+    private static int GetCommonPrefixLength(IReadOnlyList<IReadOnlyList<int>> orders)
+    {
+        int length = 0;
+        while (length < orders[0].Count && orders.All(order => order[length] == orders[0][length]))
+            length++;
+        return length;
+    }
+
+    private static int GetCommonSuffixLength(IReadOnlyList<IReadOnlyList<int>> orders, int prefixLength)
+    {
+        int length = 0;
+        while (prefixLength + length < orders[0].Count &&
+            orders.All(order => order[order.Count - 1 - length] == orders[0][orders[0].Count - 1 - length]))
+        {
+            length++;
+        }
+
+        return length;
+    }
+
+    private static EquivalentPatternSummary? TryBuildAnchoredPermutationSummary(
+        IReadOnlyList<IReadOnlyList<int>> orders,
+        IReadOnlyList<int> remainingItems)
+    {
+        int orderLength = orders[0].Count;
+        for (int anchorPosition = 0; anchorPosition < orderLength; anchorPosition++)
+        {
+            int anchorItem = orders[0][anchorPosition];
+            if (!orders.All(order => order[anchorPosition] == anchorItem))
+                continue;
+
+            var poolItems = remainingItems.Where(item => item != anchorItem).ToArray();
+            var reducedOrders = orders
+                .Select(order => order.Where((_, index) => index != anchorPosition).ToArray())
+                .ToList();
+            if (!IsCompletePermutationSet(reducedOrders, poolItems))
+                continue;
+
+            string patternText = BuildAnchoredPermutationPattern(poolItems, anchorItem, anchorPosition, poolItems.Length - anchorPosition);
+            string formula = poolItems.Length <= 1 ? "1" : $"{poolItems.Length}!";
+            return new EquivalentPatternSummary(patternText, formula, Factorial(poolItems.Length));
+        }
+
+        return null;
+    }
+
+    private static bool IsCompletePermutationSet(
+        IReadOnlyList<IReadOnlyList<int>> orders,
+        IReadOnlyList<int> items)
+    {
+        BigInteger permutationCount = Factorial(items.Count);
+        if (orders.Count != (int)permutationCount)
+            return false;
+
+        string expectedKey = string.Join(",", items.OrderBy(x => x));
+        var uniqueOrders = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var order in orders)
+        {
+            if (string.Join(",", order.OrderBy(x => x)) != expectedKey)
+                return false;
+
+            uniqueOrders.Add(string.Join(",", order));
+        }
+
+        return uniqueOrders.Count == orders.Count;
+    }
+
+    private static string BuildAnchoredPermutationPattern(
+        IReadOnlyList<int> poolItems,
+        int anchorItem,
+        int beforeCount,
+        int afterCount)
+    {
+        string poolText = FormatBraceSet(poolItems);
+        string anchorText = $"#{anchorItem + 1}";
+        if (beforeCount == 0)
+            return $"{anchorText} > {FormatPermutationSegment(poolText, afterCount, poolItems.Count, isRemaining: false)}";
+
+        if (afterCount == 0)
+            return $"{FormatPermutationSegment(poolText, beforeCount, poolItems.Count, isRemaining: false)} > {anchorText}";
+
+        return $"{FormatPermutationSegment(poolText, beforeCount, poolItems.Count, isRemaining: false)} > {anchorText} > {FormatPermutationSegment(poolText, afterCount, poolItems.Count, isRemaining: true)}";
+    }
+
+    private static string FormatPermutationSegment(string poolText, int count, int poolSize, bool isRemaining)
+    {
+        if (count <= 0)
+            return string.Empty;
+
+        if (count == poolSize)
+            return $"permute {poolText}";
+
+        if (!isRemaining && count > 1)
+            return $"{count} of {poolText} in any order";
+
+        if (!isRemaining)
+            return $"1 of {poolText}";
+
+        if (count == 1)
+            return $"remaining 1 of {poolText}";
+
+        return $"remaining {count} of {poolText} in any order";
+    }
+
+    private static string JoinPatternSegments(IEnumerable<string> segments)
+    {
+        return string.Join(" > ", segments.Where(segment => !string.IsNullOrEmpty(segment)));
     }
 
     private static string CombineFormulaParts(IReadOnlyList<string> formulaParts)
