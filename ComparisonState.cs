@@ -124,8 +124,8 @@ class ComparisonState
     private static readonly IntSequenceKey InactiveSignature = new(new[] { 0 });
     private readonly int _n;
     private readonly ulong _allMask;
-    public ulong[] Ancestors { get; }
-    public ulong[] Descendants { get; }
+    private readonly ulong[] _ancestors;
+    private readonly ulong[] _descendants;
     public ulong ActiveMask { get; private set; }
     public int ActiveCount { get; private set; }
     private int[]? _structuralLabelsCache;
@@ -135,8 +135,8 @@ class ComparisonState
     {
         _n = n;
         _allMask = CreateFullMask(n);
-        Ancestors = new ulong[n];
-        Descendants = new ulong[n];
+        _ancestors = new ulong[n];
+        _descendants = new ulong[n];
         ActiveMask = _allMask;
         ActiveCount = n;
     }
@@ -145,8 +145,8 @@ class ComparisonState
     {
         _n = n;
         _allMask = CreateFullMask(n);
-        Ancestors = ancestors;
-        Descendants = descendants;
+        _ancestors = ancestors;
+        _descendants = descendants;
         ActiveMask = activeMask;
         ActiveCount = activeCount;
     }
@@ -155,8 +155,8 @@ class ComparisonState
     {
         return new ComparisonState(
             _n,
-            (ulong[])Ancestors.Clone(),
-            (ulong[])Descendants.Clone(),
+            (ulong[])_ancestors.Clone(),
+            (ulong[])_descendants.Clone(),
             ActiveMask,
             ActiveCount);
     }
@@ -171,23 +171,23 @@ class ComparisonState
     {
         ulong greaterBit = Bit(greater);
         ulong lesserBit = Bit(lesser);
-        if ((Ancestors[lesser] & greaterBit) != 0)
+        if ((_ancestors[lesser] & greaterBit) != 0)
             return;
 
         InvalidateDerivedCaches();
 
-        ulong newAncestorsForLesser = (Ancestors[greater] | greaterBit) & ~Ancestors[lesser] & _allMask;
+        ulong newAncestorsForLesser = (_ancestors[greater] | greaterBit) & ~_ancestors[lesser] & _allMask;
         if (newAncestorsForLesser != 0)
         {
-            foreach (int below in EnumerateBits(Descendants[lesser] | lesserBit))
-                Ancestors[below] |= newAncestorsForLesser;
+            foreach (int below in EnumerateBits(_descendants[lesser] | lesserBit))
+                _ancestors[below] |= newAncestorsForLesser;
         }
 
-        ulong newDescendantsForGreater = (Descendants[lesser] | lesserBit) & ~Descendants[greater] & _allMask;
+        ulong newDescendantsForGreater = (_descendants[lesser] | lesserBit) & ~_descendants[greater] & _allMask;
         if (newDescendantsForGreater != 0)
         {
-            foreach (int above in EnumerateBits(Ancestors[greater] | greaterBit))
-                Descendants[above] |= newDescendantsForGreater;
+            foreach (int above in EnumerateBits(_ancestors[greater] | greaterBit))
+                _descendants[above] |= newDescendantsForGreater;
         }
     }
 
@@ -205,7 +205,7 @@ class ComparisonState
         ulong removedMask = 0;
         foreach (int item in EnumerateBits(ActiveMask))
         {
-            if (BitOperations.PopCount(Ancestors[item] & ActiveMask) >= k)
+            if (BitOperations.PopCount(_ancestors[item] & ActiveMask) >= k)
                 removedMask |= Bit(item);
         }
 
@@ -233,41 +233,8 @@ class ComparisonState
         if (_structuralLabelsCache is not null)
             return _structuralLabelsCache;
 
-        int n = Ancestors.Length;
-        var labels = Enumerable.Range(0, n)
-            .Select(i => IsActive(i) ? 1 : 0)
-            .ToArray();
-
-        bool changed;
-        do
-        {
-            changed = false;
-            int classCount = labels.Max() + 1;
-            var signatures = new IntSequenceKey[n];
-            for (int i = 0; i < n; i++)
-            {
-                signatures[i] = IsActive(i)
-                    ? BuildElementSignature(labels[i], Ancestors[i] & ActiveMask, Descendants[i] & ActiveMask, labels, classCount)
-                    : InactiveSignature;
-            }
-
-            var orderedSignatures = signatures
-                .Distinct()
-                .OrderBy(signature => signature)
-                .ToList();
-
-            var signatureToColor = new Dictionary<IntSequenceKey, int>(orderedSignatures.Count);
-            for (int index = 0; index < orderedSignatures.Count; index++)
-                signatureToColor[orderedSignatures[index]] = index;
-
-            var nextLabels = signatures.Select(signature => signatureToColor[signature]).ToArray();
-            changed = !labels.SequenceEqual(nextLabels);
-            labels = nextLabels;
-        }
-        while (changed);
-
-        _structuralLabelsCache = labels;
-        return labels;
+        _structuralLabelsCache = ComputeStructuralLabels(ActiveMask);
+        return _structuralLabelsCache;
     }
 
     public IntSequenceKey GetCanonicalKey()
@@ -275,55 +242,32 @@ class ComparisonState
         if (_canonicalKeyCache is not null)
             return _canonicalKeyCache.Value;
 
-        int n = Ancestors.Length;
         var labels = GetStructuralLabels();
-        var activeClassIds = Enumerable.Range(0, n)
-            .Where(IsActive)
-            .Select(i => labels[i])
-            .Distinct()
-            .OrderBy(x => x)
-            .ToList();
-
-        var parts = new List<int> { activeClassIds.Count };
-
-        foreach (int classId in activeClassIds)
-        {
-            var members = Enumerable.Range(0, n).Where(i => labels[i] == classId).ToList();
-            int memberCount = members.Count;
-            int representative = members[0];
-
-            parts.Add(memberCount);
-            parts.Add(IsActive(representative) ? 1 : 0);
-
-            foreach (int otherClass in activeClassIds)
-            {
-                var counts = members
-                    .Select(member => CountNeighborsWithLabel(Ancestors[member] & ActiveMask, labels, otherClass))
-                    .OrderBy(x => x);
-
-                parts.AddRange(counts);
-            }
-
-            foreach (int otherClass in activeClassIds)
-            {
-                var counts = members
-                    .Select(member => CountNeighborsWithLabel(Descendants[member] & ActiveMask, labels, otherClass))
-                    .OrderBy(x => x);
-
-                parts.AddRange(counts);
-            }
-        }
-
-        _canonicalKeyCache = new IntSequenceKey(parts.ToArray());
+        _canonicalKeyCache = BuildCanonicalKey(ActiveMask, labels);
         return _canonicalKeyCache.Value;
     }
 
     public IntSequenceKey GetDisplayCanonicalKey(ulong fixedTopMask)
     {
         ulong combinedMask = ActiveMask | fixedTopMask;
-        int n = Ancestors.Length;
-        var labels = Enumerable.Range(0, n)
-            .Select(i => (combinedMask & Bit(i)) == 0 ? 0 : 1)
+        int[] labels = ComputeStructuralLabels(combinedMask);
+        return BuildCanonicalKey(combinedMask, labels);
+    }
+
+    internal ulong GetAncestorMask(int item)
+    {
+        return _ancestors[item];
+    }
+
+    internal ulong GetDescendantMask(int item)
+    {
+        return _descendants[item];
+    }
+
+    private int[] ComputeStructuralLabels(ulong includedMask)
+    {
+        var labels = Enumerable.Range(0, _n)
+            .Select(i => (includedMask & Bit(i)) == 0 ? 0 : 1)
             .ToArray();
 
         bool changed;
@@ -331,12 +275,12 @@ class ComparisonState
         {
             changed = false;
             int classCount = labels.Max() + 1;
-            var signatures = new IntSequenceKey[n];
-            for (int i = 0; i < n; i++)
+            var signatures = new IntSequenceKey[_n];
+            for (int i = 0; i < _n; i++)
             {
-                signatures[i] = (combinedMask & Bit(i)) == 0
-                    ? new IntSequenceKey(new[] { 0 })
-                    : BuildElementSignature(labels[i], Ancestors[i] & combinedMask, Descendants[i] & combinedMask, labels, classCount);
+                signatures[i] = (includedMask & Bit(i)) == 0
+                    ? InactiveSignature
+                    : BuildElementSignature(labels[i], _ancestors[i] & includedMask, _descendants[i] & includedMask, labels, classCount);
             }
 
             var orderedSignatures = signatures
@@ -354,32 +298,40 @@ class ComparisonState
         }
         while (changed);
 
-        var activeClassIds = Enumerable.Range(0, n)
-            .Where(i => (combinedMask & Bit(i)) != 0)
+        return labels;
+    }
+
+    private IntSequenceKey BuildCanonicalKey(ulong includedMask, IReadOnlyList<int> labels)
+    {
+        var includedClassIds = Enumerable.Range(0, _n)
+            .Where(i => (includedMask & Bit(i)) != 0)
             .Select(i => labels[i])
             .Distinct()
             .OrderBy(x => x)
             .ToList();
 
-        var parts = new List<int> { activeClassIds.Count };
-        foreach (int classId in activeClassIds)
+        var parts = new List<int> { includedClassIds.Count };
+        foreach (int classId in includedClassIds)
         {
-            var members = Enumerable.Range(0, n).Where(i => labels[i] == classId).ToList();
+            var members = Enumerable.Range(0, _n)
+                .Where(i => (includedMask & Bit(i)) != 0 && labels[i] == classId)
+                .ToList();
+
             parts.Add(members.Count);
             parts.Add(1);
 
-            foreach (int otherClass in activeClassIds)
+            foreach (int otherClass in includedClassIds)
             {
                 var counts = members
-                    .Select(member => CountNeighborsWithLabel(Ancestors[member] & combinedMask, labels, otherClass))
+                    .Select(member => CountNeighborsWithLabel(_ancestors[member] & includedMask, labels, otherClass))
                     .OrderBy(x => x);
                 parts.AddRange(counts);
             }
 
-            foreach (int otherClass in activeClassIds)
+            foreach (int otherClass in includedClassIds)
             {
                 var counts = members
-                    .Select(member => CountNeighborsWithLabel(Descendants[member] & combinedMask, labels, otherClass))
+                    .Select(member => CountNeighborsWithLabel(_descendants[member] & includedMask, labels, otherClass))
                     .OrderBy(x => x);
                 parts.AddRange(counts);
             }
@@ -415,17 +367,17 @@ class ComparisonState
 
     public bool HasAncestor(int item, int possibleAncestor)
     {
-        return (Ancestors[item] & Bit(possibleAncestor)) != 0;
+        return (_ancestors[item] & Bit(possibleAncestor)) != 0;
     }
 
     public int GetAncestorCount(int item)
     {
-        return BitOperations.PopCount(Ancestors[item] & ActiveMask);
+        return BitOperations.PopCount(_ancestors[item] & ActiveMask);
     }
 
     public int GetDescendantCount(int item)
     {
-        return BitOperations.PopCount(Descendants[item] & ActiveMask);
+        return BitOperations.PopCount(_descendants[item] & ActiveMask);
     }
 
     public List<int> GetActiveItemsOrdered()

@@ -59,7 +59,7 @@ partial class StrategyBuilder
     {
         ulong activeMask = state.ActiveMask;
         var groupedItems = group
-            .GroupBy(item => new SymmetrySignature(state.Ancestors[item] & activeMask, state.Descendants[item] & activeMask))
+            .GroupBy(item => new SymmetrySignature(state.GetAncestorMask(item) & activeMask, state.GetDescendantMask(item) & activeMask))
             .OrderBy(grouping => grouping.Min())
             .ToList();
 
@@ -67,7 +67,7 @@ partial class StrategyBuilder
             .Select((grouping, index) =>
             {
                 int[] items = grouping.OrderBy(item => item).ToArray();
-                return new GroupSymmetryClass(index, items, state.Ancestors[items[0]] & activeMask);
+                return new GroupSymmetryClass(index, items, state.GetAncestorMask(items[0]) & activeMask);
             })
             .ToList();
 

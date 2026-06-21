@@ -83,7 +83,7 @@ partial class StrategyBuilder
         }
 
         if (bestWorstCase == int.MaxValue)
-            bestWorstCase = 0;
+            throw new InvalidOperationException("Expected at least one useful comparison group when unresolved candidates exceed comparison size.");
 
         _minWorstCaseStepsCache[key] = bestWorstCase;
         return bestWorstCase;
@@ -189,7 +189,7 @@ partial class StrategyBuilder
             remainingSlots - 1,
             memo);
 
-        ulong excludedMask = pivotBit | (state.Descendants[pivot] & candidateMask);
+        ulong excludedMask = pivotBit | (state.GetDescendantMask(pivot) & candidateMask);
         FeasibleTopSetInfo excludeInfo = CountFeasibleTopSets(
             state,
             candidateMask & ~excludedMask,
@@ -220,10 +220,10 @@ partial class StrategyBuilder
         {
             int item = BitOperations.TrailingZeroCount(remaining);
             remaining &= remaining - 1;
-            if ((state.Ancestors[item] & candidateMask) != 0)
+            if ((state.GetAncestorMask(item) & candidateMask) != 0)
                 continue;
 
-            int excludedCount = BitOperations.PopCount((state.Descendants[item] & candidateMask) | (1UL << item));
+            int excludedCount = BitOperations.PopCount((state.GetDescendantMask(item) & candidateMask) | (1UL << item));
             if (excludedCount > bestExcludedCount || (excludedCount == bestExcludedCount && item < bestItem))
             {
                 bestItem = item;
@@ -241,5 +241,20 @@ partial class StrategyBuilder
         for (int i = 2; i <= maxGroupSize; i++)
             outcomes *= i;
         return outcomes;
+    }
+
+    internal ulong GetGuaranteedTopMaskForTesting(ComparisonState state, int remainingSlots)
+    {
+        return GetGuaranteedTopMask(state, remainingSlots);
+    }
+
+    internal int GetMinWorstCaseLowerBoundForTesting(ComparisonState state, int remainingSlots)
+    {
+        return GetMinWorstCaseLowerBound(state, remainingSlots);
+    }
+
+    internal FeasibleTopSetInfo GetFeasibleTopSetInfoForTesting(ComparisonState state, int remainingSlots)
+    {
+        return GetFeasibleTopSetInfo(state, remainingSlots);
     }
 }
