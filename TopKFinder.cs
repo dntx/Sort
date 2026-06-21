@@ -669,12 +669,41 @@ sealed class FinalChoiceSummary
 
 readonly struct FeasibleTopSetInfo
 {
-    public FeasibleTopSetInfo(int count)
+    public FeasibleTopSetInfo(int count, ulong uniqueMask)
     {
         Count = count;
+        UniqueMask = uniqueMask;
     }
 
     public int Count { get; }
+    public ulong UniqueMask { get; }
+}
+
+readonly struct FeasibleTopSetSubproblemKey : IEquatable<FeasibleTopSetSubproblemKey>
+{
+    public FeasibleTopSetSubproblemKey(ulong candidateMask, int remainingSlots)
+    {
+        CandidateMask = candidateMask;
+        RemainingSlots = remainingSlots;
+    }
+
+    public ulong CandidateMask { get; }
+    public int RemainingSlots { get; }
+
+    public bool Equals(FeasibleTopSetSubproblemKey other)
+    {
+        return CandidateMask == other.CandidateMask && RemainingSlots == other.RemainingSlots;
+    }
+
+    public override bool Equals(object? obj)
+    {
+        return obj is FeasibleTopSetSubproblemKey other && Equals(other);
+    }
+
+    public override int GetHashCode()
+    {
+        return HashCode.Combine(CandidateMask, RemainingSlots);
+    }
 }
 
 readonly struct BestGroupPattern
@@ -1080,9 +1109,9 @@ class StrategyBuilder
     {
         ThrowIfCancellationRequested();
         FeasibleTopSetInfo info = GetFeasibleTopSetInfo(state, remainingSlots);
-        if (info.Count == 1 && TryGetUniqueTopSetMask(state, remainingSlots, out ulong uniqueMask))
+        if (info.Count == 1)
         {
-            topMask = uniqueMask;
+            topMask = info.UniqueMask;
             return true;
         }
 
@@ -1098,72 +1127,86 @@ class StrategyBuilder
         if (_feasibleTopSetCache.TryGetValue(key, out FeasibleTopSetInfo cached))
             return cached;
 
-        int count = CountFeasibleTopSets(state, remainingSlots);
-        FeasibleTopSetInfo info = new(count);
+        var memo = new Dictionary<FeasibleTopSetSubproblemKey, FeasibleTopSetInfo>();
+        FeasibleTopSetInfo info = CountFeasibleTopSets(state, state.ActiveMask, remainingSlots, memo);
 
         _feasibleTopSetCache[key] = info;
         return info;
     }
 
-    private bool TryGetUniqueTopSetMask(ComparisonState state, int remainingSlots, out ulong uniqueMask)
+    private FeasibleTopSetInfo CountFeasibleTopSets(
+        ComparisonState state,
+        ulong candidateMask,
+        int remainingSlots,
+        Dictionary<FeasibleTopSetSubproblemKey, FeasibleTopSetInfo> memo)
     {
         ThrowIfCancellationRequested();
-        uniqueMask = 0;
-        bool found = false;
-        var possibleCandidates = GetPossibleCandidates(state);
-        foreach (var combination in EnumerateCombinations(possibleCandidates, remainingSlots))
-        {
-            ThrowIfCancellationRequested();
-            ulong candidateMask = 0;
-            foreach (int item in combination)
-                candidateMask |= 1UL << item;
+        int candidateCount = BitOperations.PopCount(candidateMask);
+        if (remainingSlots < 0 || candidateCount < remainingSlots)
+            return new FeasibleTopSetInfo(0, 0);
 
-            if (!IsFeasibleTopSet(state, candidateMask))
+        if (remainingSlots == 0)
+            return new FeasibleTopSetInfo(1, 0);
+
+        if (candidateCount == remainingSlots)
+            return new FeasibleTopSetInfo(1, candidateMask);
+
+        var key = new FeasibleTopSetSubproblemKey(candidateMask, remainingSlots);
+        if (memo.TryGetValue(key, out FeasibleTopSetInfo cached))
+            return cached;
+
+        int pivot = ChooseFeasibleTopSetPivot(state, candidateMask);
+        ulong pivotBit = 1UL << pivot;
+
+        FeasibleTopSetInfo includeInfo = CountFeasibleTopSets(
+            state,
+            candidateMask & ~pivotBit,
+            remainingSlots - 1,
+            memo);
+
+        ulong excludedMask = pivotBit | (state.Descendants[pivot] & candidateMask);
+        FeasibleTopSetInfo excludeInfo = CountFeasibleTopSets(
+            state,
+            candidateMask & ~excludedMask,
+            remainingSlots,
+            memo);
+
+        int totalCount = checked(includeInfo.Count + excludeInfo.Count);
+        ulong uniqueMask = 0;
+        if (totalCount == 1)
+        {
+            uniqueMask = includeInfo.Count == 1
+                ? includeInfo.UniqueMask | pivotBit
+                : excludeInfo.UniqueMask;
+        }
+
+        FeasibleTopSetInfo info = new(totalCount, uniqueMask);
+        memo[key] = info;
+        return info;
+    }
+
+    private int ChooseFeasibleTopSetPivot(ComparisonState state, ulong candidateMask)
+    {
+        ThrowIfCancellationRequested();
+        int bestItem = -1;
+        int bestExcludedCount = -1;
+        ulong remaining = candidateMask;
+        while (remaining != 0)
+        {
+            int item = BitOperations.TrailingZeroCount(remaining);
+            remaining &= remaining - 1;
+            if ((state.Ancestors[item] & candidateMask) != 0)
                 continue;
 
-            if (found)
+            int excludedCount = BitOperations.PopCount((state.Descendants[item] & candidateMask) | (1UL << item));
+            if (excludedCount > bestExcludedCount || (excludedCount == bestExcludedCount && item < bestItem))
             {
-                uniqueMask = 0;
-                return false;
+                bestItem = item;
+                bestExcludedCount = excludedCount;
             }
-
-            uniqueMask = candidateMask;
-            found = true;
         }
 
-        return found;
-    }
-
-    private int CountFeasibleTopSets(ComparisonState state, int remainingSlots)
-    {
-        ThrowIfCancellationRequested();
-        int count = 0;
-        var possibleCandidates = GetPossibleCandidates(state);
-        foreach (var combination in EnumerateCombinations(possibleCandidates, remainingSlots))
-        {
-            ThrowIfCancellationRequested();
-            ulong candidateMask = 0;
-            foreach (int item in combination)
-                candidateMask |= 1UL << item;
-
-            if (IsFeasibleTopSet(state, candidateMask))
-                count++;
-        }
-
-        return count;
-    }
-
-    private bool IsFeasibleTopSet(ComparisonState state, ulong candidateMask)
-    {
-        ThrowIfCancellationRequested();
-        foreach (int item in ComparisonState.MaskToOrderedList(candidateMask))
-        {
-            ulong activeAncestorsOutsideSet = state.Ancestors[item] & state.ActiveMask & ~candidateMask;
-            if (activeAncestorsOutsideSet != 0)
-                return false;
-        }
-
-        return true;
+        return bestItem;
     }
 
     private int GetMaxOutcomesPerStep(ComparisonState state)
