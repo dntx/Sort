@@ -1,6 +1,9 @@
 using System;
+using System.Diagnostics;
 using System.Drawing;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 class MainForm : Form
@@ -70,13 +73,18 @@ class MainForm : Form
     private readonly TextBox _kTextBox;
     private readonly ComboBox _themeComboBox;
     private readonly Button _runButton;
+    private readonly Button _stopButton;
     private readonly Button _expandAllButton;
     private readonly Button _collapseAllButton;
+    private readonly Label _elapsedLabel;
     private readonly Label _summaryLabel;
     private readonly TreeView _treeView;
     private readonly RichTextBox _detailsTextBox;
+    private readonly System.Windows.Forms.Timer _elapsedTimer;
     private ThemePalette _palette = DarkPalette;
     private StrategyPlan? _currentPlan;
+    private Stopwatch? _runStopwatch;
+    private CancellationTokenSource? _runCancellationSource;
 
     public MainForm()
     {
@@ -126,6 +134,16 @@ class MainForm : Form
         };
         _runButton.Click += (_, _) => RunStrategy();
 
+        _stopButton = new Button
+        {
+            Text = "Stop",
+            AutoSize = true,
+            Height = 30,
+            Margin = new Padding(8, 18, 0, 0),
+            Enabled = false,
+        };
+        _stopButton.Click += (_, _) => StopStrategy();
+
         _expandAllButton = new Button
         {
             Text = "Expand All",
@@ -142,18 +160,28 @@ class MainForm : Form
             Margin = new Padding(8, 18, 0, 0),
         };
 
+        _elapsedLabel = new Label
+        {
+            AutoSize = true,
+            Margin = new Padding(12, 24, 0, 0),
+            Text = "elapsed: 0.0 s",
+        };
+
         toolbar.Controls.Add(CreateLabeledInput("n", _nTextBox));
         toolbar.Controls.Add(CreateLabeledInput("m", _mTextBox));
         toolbar.Controls.Add(CreateLabeledInput("k", _kTextBox));
         toolbar.Controls.Add(CreateLabeledInput("theme", _themeComboBox));
         toolbar.Controls.Add(_runButton);
+        toolbar.Controls.Add(_stopButton);
         toolbar.Controls.Add(_expandAllButton);
         toolbar.Controls.Add(_collapseAllButton);
+        toolbar.Controls.Add(_elapsedLabel);
 
         _summaryLabel = new Label
         {
             AutoSize = true,
             Margin = new Padding(0, 0, 0, 8),
+            Text = $"Ready. theme={ParseSelectedTheme()}",
         };
 
         var split = new SplitContainer
@@ -190,6 +218,8 @@ class MainForm : Form
 
         Controls.Add(layout);
         AcceptButton = _runButton;
+        _elapsedTimer = new System.Windows.Forms.Timer { Interval = 100 };
+        _elapsedTimer.Tick += (_, _) => UpdateElapsedLabel();
         ApplyTheme(ColorTheme.Dark);
     }
 
@@ -222,7 +252,7 @@ class MainForm : Form
         };
     }
 
-    private void RunStrategy()
+    private async void RunStrategy()
     {
         if (!Program.TryParseAndValidate(_nTextBox.Text, _mTextBox.Text, _kTextBox.Text, out int n, out int m, out int k, out string? error))
         {
@@ -230,24 +260,41 @@ class MainForm : Form
             return;
         }
 
-        UseWaitCursor = true;
-        _runButton.Enabled = false;
-        _expandAllButton.Enabled = false;
-        _collapseAllButton.Enabled = false;
+        _runCancellationSource?.Dispose();
+        _runCancellationSource = new CancellationTokenSource();
+        CancellationToken cancellationToken = _runCancellationSource.Token;
+        _runStopwatch = Stopwatch.StartNew();
+        UpdateElapsedLabel();
+        _elapsedTimer.Start();
+        SetRunningState(isRunning: true);
+        _summaryLabel.Text = $"Running n={n}, m={m}, k={k}... theme={ParseSelectedTheme()}";
 
         try
         {
-            var plan = StrategyBuilder.Generate(n, m, k);
+            var plan = await Task.Run(() => StrategyBuilder.Generate(n, m, k, cancellationToken), cancellationToken);
+            _runStopwatch?.Stop();
             _currentPlan = plan;
             PopulateTree(plan);
             UpdateSummaryText(plan);
         }
+        catch (OperationCanceledException)
+        {
+            _runStopwatch?.Stop();
+            _summaryLabel.Text = $"Stopped after {GetElapsedSeconds():F1} s. theme={ParseSelectedTheme()}";
+        }
+        catch (Exception ex)
+        {
+            _runStopwatch?.Stop();
+            _summaryLabel.Text = $"Run failed after {GetElapsedSeconds():F1} s. theme={ParseSelectedTheme()}";
+            MessageBox.Show(this, ex.Message, "Run failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
         finally
         {
-            _runButton.Enabled = true;
-            _expandAllButton.Enabled = true;
-            _collapseAllButton.Enabled = true;
-            UseWaitCursor = false;
+            _elapsedTimer.Stop();
+            UpdateElapsedLabel();
+            SetRunningState(isRunning: false);
+            _runCancellationSource?.Dispose();
+            _runCancellationSource = null;
         }
     }
 
@@ -399,11 +446,12 @@ class MainForm : Form
         if (_currentPlan is not null)
         {
             PopulateTree(_currentPlan);
-            UpdateSummaryText(_currentPlan);
+            if (_runCancellationSource is null)
+                UpdateSummaryText(_currentPlan);
         }
-        else
+        else if (_runCancellationSource is null)
         {
-            _summaryLabel.Text = $"theme={theme}. Colors: state, branch, in, out, cand fixed, cand possible, result, goto.";
+            _summaryLabel.Text = $"Ready. theme={theme}";
         }
     }
 
@@ -462,6 +510,31 @@ class MainForm : Form
     private void UpdateSummaryText(StrategyPlan plan)
     {
         _summaryLabel.Text = $"n={plan.N}, m={plan.M}, k={plan.K}, elapsed={plan.Elapsed.TotalMilliseconds:F1} ms, max step={plan.MaxStep}, theme={ParseSelectedTheme()}. Colors: state, branch, in, out, cand fixed, cand possible, result, goto.";
+    }
+
+    private void StopStrategy()
+    {
+        _stopButton.Enabled = false;
+        _runCancellationSource?.Cancel();
+    }
+
+    private void SetRunningState(bool isRunning)
+    {
+        UseWaitCursor = isRunning;
+        _runButton.Enabled = !isRunning;
+        _stopButton.Enabled = isRunning;
+        _expandAllButton.Enabled = !isRunning;
+        _collapseAllButton.Enabled = !isRunning;
+    }
+
+    private void UpdateElapsedLabel()
+    {
+        _elapsedLabel.Text = $"elapsed: {GetElapsedSeconds():F1} s";
+    }
+
+    private double GetElapsedSeconds()
+    {
+        return _runStopwatch?.Elapsed.TotalSeconds ?? 0;
     }
 
     private void ShowNodeDetails(TreeNode? node)
