@@ -77,6 +77,7 @@ class MainForm : Form
     private readonly Button _expandAllButton;
     private readonly Button _collapseAllButton;
     private readonly Label _elapsedLabel;
+    private readonly Label _searchStatsLabel;
     private readonly Label _summaryLabel;
     private readonly TreeView _treeView;
     private readonly RichTextBox _detailsTextBox;
@@ -85,6 +86,7 @@ class MainForm : Form
     private StrategyPlan? _currentPlan;
     private Stopwatch? _runStopwatch;
     private CancellationTokenSource? _runCancellationSource;
+    private SearchProgressSnapshot _latestProgress;
 
     public MainForm()
     {
@@ -166,6 +168,12 @@ class MainForm : Form
             Margin = new Padding(12, 24, 0, 0),
             Text = "elapsed: 0.0 s",
         };
+        _searchStatsLabel = new Label
+        {
+            AutoSize = true,
+            Margin = new Padding(12, 24, 0, 0),
+            Text = "searched: 0, pending: 0",
+        };
 
         toolbar.Controls.Add(CreateLabeledInput("n", _nTextBox));
         toolbar.Controls.Add(CreateLabeledInput("m", _mTextBox));
@@ -176,6 +184,7 @@ class MainForm : Form
         toolbar.Controls.Add(_expandAllButton);
         toolbar.Controls.Add(_collapseAllButton);
         toolbar.Controls.Add(_elapsedLabel);
+        toolbar.Controls.Add(_searchStatsLabel);
 
         _summaryLabel = new Label
         {
@@ -263,29 +272,38 @@ class MainForm : Form
         _runCancellationSource?.Dispose();
         _runCancellationSource = new CancellationTokenSource();
         CancellationToken cancellationToken = _runCancellationSource.Token;
+        IProgress<SearchProgressSnapshot> progress = new Progress<SearchProgressSnapshot>(UpdateSearchProgress);
+        _latestProgress = new SearchProgressSnapshot(0, 0, 0, 0);
         _runStopwatch = Stopwatch.StartNew();
         UpdateElapsedLabel();
+        UpdateSearchStatsLabel();
         _elapsedTimer.Start();
         SetRunningState(isRunning: true);
         _summaryLabel.Text = $"Running n={n}, m={m}, k={k}... theme={ParseSelectedTheme()}";
 
         try
         {
-            var plan = await Task.Run(() => StrategyBuilder.Generate(n, m, k, cancellationToken), cancellationToken);
+            var plan = await Task.Run(() => StrategyBuilder.Generate(n, m, k, cancellationToken, snapshot => progress.Report(snapshot)), cancellationToken);
             _runStopwatch?.Stop();
             _currentPlan = plan;
+            _latestProgress = new SearchProgressSnapshot(
+                plan.SearchStatistics.SearchedStates,
+                plan.SearchStatistics.PendingStates,
+                plan.SearchStatistics.PeakPendingStates,
+                plan.SearchStatistics.StrategyStates);
             PopulateTree(plan);
             UpdateSummaryText(plan);
+            UpdateSearchStatsLabel();
         }
         catch (OperationCanceledException)
         {
             _runStopwatch?.Stop();
-            _summaryLabel.Text = $"Stopped after {GetElapsedSeconds():F1} s. theme={ParseSelectedTheme()}";
+            _summaryLabel.Text = $"Stopped after {GetElapsedSeconds():F1} s. {FormatSearchStatsSummary(_latestProgress, includeStrategyStates: true)}. theme={ParseSelectedTheme()}";
         }
         catch (Exception ex)
         {
             _runStopwatch?.Stop();
-            _summaryLabel.Text = $"Run failed after {GetElapsedSeconds():F1} s. theme={ParseSelectedTheme()}";
+            _summaryLabel.Text = $"Run failed after {GetElapsedSeconds():F1} s. {FormatSearchStatsSummary(_latestProgress, includeStrategyStates: true)}. theme={ParseSelectedTheme()}";
             MessageBox.Show(this, ex.Message, "Run failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         finally
@@ -303,7 +321,8 @@ class MainForm : Form
         _treeView.BeginUpdate();
         _treeView.Nodes.Clear();
 
-        var root = new TreeNode($"n={plan.N}, m={plan.M}, k={plan.K}, elapsed={plan.Elapsed.TotalMilliseconds:F1} ms, max step={plan.MaxStep}")
+        var root = new TreeNode(
+            $"n={plan.N}, m={plan.M}, k={plan.K}, elapsed={plan.Elapsed.TotalMilliseconds:F1} ms, max step={plan.MaxStep}, searched={plan.SearchStatistics.SearchedStates}, peak pending={plan.SearchStatistics.PeakPendingStates}")
         {
             Tag = StrategyTextRenderer.Render(plan).TrimEnd(),
             NodeFont = new Font(_treeView.Font, FontStyle.Bold),
@@ -529,7 +548,9 @@ class MainForm : Form
 
     private void UpdateSummaryText(StrategyPlan plan)
     {
-        _summaryLabel.Text = $"n={plan.N}, m={plan.M}, k={plan.K}, elapsed={plan.Elapsed.TotalMilliseconds:F1} ms, max step={plan.MaxStep}, theme={ParseSelectedTheme()}. Colors: state, branch, in, out, cand fixed, cand possible, result, goto.";
+        _summaryLabel.Text =
+            $"n={plan.N}, m={plan.M}, k={plan.K}, elapsed={plan.Elapsed.TotalMilliseconds:F1} ms, max step={plan.MaxStep}, " +
+            $"{FormatSearchStatsSummary(plan.SearchStatistics)}, theme={ParseSelectedTheme()}. Colors: state, branch, in, out, cand fixed, cand possible, result, goto.";
     }
 
     private static string BuildCompressedFinalChoiceText(FinalChoiceSummary summary, int k)
@@ -562,6 +583,28 @@ class MainForm : Form
     private void UpdateElapsedLabel()
     {
         _elapsedLabel.Text = $"elapsed: {GetElapsedSeconds():F1} s";
+    }
+
+    private void UpdateSearchProgress(SearchProgressSnapshot snapshot)
+    {
+        _latestProgress = snapshot;
+        UpdateSearchStatsLabel();
+    }
+
+    private void UpdateSearchStatsLabel()
+    {
+        _searchStatsLabel.Text = $"searched: {_latestProgress.SearchedStates}, pending: {_latestProgress.PendingStates}, peak: {_latestProgress.PeakPendingStates}, strategy: {_latestProgress.StrategyStates}";
+    }
+
+    private static string FormatSearchStatsSummary(SearchStatistics statistics)
+    {
+        return $"searched={statistics.SearchedStates}, pending={statistics.PendingStates}, peak pending={statistics.PeakPendingStates}, strategy states={statistics.StrategyStates}";
+    }
+
+    private static string FormatSearchStatsSummary(SearchProgressSnapshot snapshot, bool includeStrategyStates)
+    {
+        string strategyText = includeStrategyStates ? $", strategy={snapshot.StrategyStates}" : string.Empty;
+        return $"searched={snapshot.SearchedStates}, pending={snapshot.PendingStates}, peak pending={snapshot.PeakPendingStates}{strategyText}";
     }
 
     private double GetElapsedSeconds()

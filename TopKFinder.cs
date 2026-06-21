@@ -488,8 +488,9 @@ sealed class StrategyPlan
     public StrategyNode Root { get; }
     public TimeSpan Elapsed { get; }
     public int MaxStep { get; }
+    public SearchStatistics SearchStatistics { get; }
 
-    public StrategyPlan(int n, int m, int k, StrategyNode root, TimeSpan elapsed)
+    public StrategyPlan(int n, int m, int k, StrategyNode root, TimeSpan elapsed, SearchStatistics searchStatistics)
     {
         N = n;
         M = m;
@@ -497,6 +498,7 @@ sealed class StrategyPlan
         Root = root;
         Elapsed = elapsed;
         MaxStep = GetMaxStep(root);
+        SearchStatistics = searchStatistics;
     }
 
     private static int GetMaxStep(StrategyNode node)
@@ -507,6 +509,51 @@ sealed class StrategyPlan
 
         return Math.Max(selfStep, node.Branches.Max(branch => GetMaxStep(branch.Next)));
     }
+}
+
+readonly struct SearchProgressSnapshot
+{
+    public SearchProgressSnapshot(int searchedStates, int pendingStates, int peakPendingStates, int strategyStates)
+    {
+        SearchedStates = searchedStates;
+        PendingStates = pendingStates;
+        PeakPendingStates = peakPendingStates;
+        StrategyStates = strategyStates;
+    }
+
+    public int SearchedStates { get; }
+    public int PendingStates { get; }
+    public int PeakPendingStates { get; }
+    public int StrategyStates { get; }
+}
+
+sealed class SearchStatistics
+{
+    public SearchStatistics(
+        int searchedStates,
+        int pendingStates,
+        int peakPendingStates,
+        int strategyStates,
+        int expandedStrategyStates,
+        int lowerBoundStates,
+        int feasibleTopSetStates)
+    {
+        SearchedStates = searchedStates;
+        PendingStates = pendingStates;
+        PeakPendingStates = peakPendingStates;
+        StrategyStates = strategyStates;
+        ExpandedStrategyStates = expandedStrategyStates;
+        LowerBoundStates = lowerBoundStates;
+        FeasibleTopSetStates = feasibleTopSetStates;
+    }
+
+    public int SearchedStates { get; }
+    public int PendingStates { get; }
+    public int PeakPendingStates { get; }
+    public int StrategyStates { get; }
+    public int ExpandedStrategyStates { get; }
+    public int LowerBoundStates { get; }
+    public int FeasibleTopSetStates { get; }
 }
 
 sealed class StrategyNode
@@ -629,33 +676,44 @@ readonly struct BestGroupPattern
 
 class StrategyBuilder
 {
+    private const int ProgressReportIntervalMs = 100;
     private readonly int _n;
     private readonly int _m;
     private readonly int _k;
     private readonly CancellationToken _cancellationToken;
+    private readonly Action<SearchProgressSnapshot>? _progressCallback;
     private readonly Dictionary<IntSequenceKey, int> _stateIds = new();
     private readonly HashSet<IntSequenceKey> _expandedStates = new();
+    private readonly HashSet<SearchStateKey> _visitedSearchStates = new();
     private readonly Dictionary<SearchStateKey, int> _minWorstCaseStepsCache = new();
     private readonly Dictionary<SearchStateKey, int> _lowerBoundStepsCache = new();
     private readonly Dictionary<SearchStateKey, FeasibleTopSetInfo> _feasibleTopSetCache = new();
     private readonly Dictionary<SearchStateKey, BestGroupPattern> _bestGroupPatternCache = new();
+    private readonly Stopwatch _progressStopwatch = Stopwatch.StartNew();
     private int _nextStateId = 1;
+    private int _searchedStates;
+    private int _pendingStates;
+    private int _peakPendingStates;
+    private long _lastProgressReportMs = -ProgressReportIntervalMs;
 
-    public StrategyBuilder(int n, int m, int k, CancellationToken cancellationToken = default)
+    public StrategyBuilder(int n, int m, int k, CancellationToken cancellationToken = default, Action<SearchProgressSnapshot>? progressCallback = null)
     {
         _n = n;
         _m = m;
         _k = k;
         _cancellationToken = cancellationToken;
+        _progressCallback = progressCallback;
     }
 
     public StrategyPlan Build()
     {
         var stopwatch = Stopwatch.StartNew();
+        ReportProgress(force: true);
         var initial = new ComparisonState(_n);
         var root = BuildState(initial, 0, _k, 1);
         stopwatch.Stop();
-        return new StrategyPlan(_n, _m, _k, root, stopwatch.Elapsed);
+        ReportProgress(force: true);
+        return new StrategyPlan(_n, _m, _k, root, stopwatch.Elapsed, CreateSearchStatistics());
     }
 
     public static StrategyPlan Generate(int n, int m, int k)
@@ -668,10 +726,16 @@ class StrategyBuilder
         return new StrategyBuilder(n, m, k, cancellationToken).Build();
     }
 
+    public static StrategyPlan Generate(int n, int m, int k, CancellationToken cancellationToken, Action<SearchProgressSnapshot> progressCallback)
+    {
+        return new StrategyBuilder(n, m, k, cancellationToken, progressCallback).Build();
+    }
+
     private StrategyNode BuildState(ComparisonState state, ulong fixedTopMask, int remainingSlots, int step)
     {
         ThrowIfCancellationRequested();
         NormalizeState(state, ref fixedTopMask, ref remainingSlots);
+        ObserveSearchState(state, remainingSlots);
 
         IntSequenceKey displayKey = GetDisplayStateKey(state, fixedTopMask);
         int stateId = GetStateId(displayKey);
@@ -872,6 +936,7 @@ class StrategyBuilder
         ThrowIfCancellationRequested();
         ulong ignoredFixedTopMask = 0;
         NormalizeState(state, ref ignoredFixedTopMask, ref remainingSlots);
+        ObserveSearchState(state, remainingSlots);
 
         if (remainingSlots == 0)
             return 0;
@@ -889,57 +954,65 @@ class StrategyBuilder
         if (_minWorstCaseStepsCache.TryGetValue(key, out int cached))
             return cached;
 
+        EnterSearchState();
+
         var candidates = state.GetActiveItemsOrdered();
         int maxGroupSize = Math.Min(_m, candidates.Count);
         var labels = state.GetStructuralLabels();
         int bestWorstCase = int.MaxValue;
-
-        for (int groupSize = 2; groupSize <= maxGroupSize; groupSize++)
+        try
         {
-            ThrowIfCancellationRequested();
-            var seenGroupPatterns = new HashSet<IntSequenceKey>();
-            foreach (var group in EnumerateCombinations(candidates, groupSize))
+            for (int groupSize = 2; groupSize <= maxGroupSize; groupSize++)
             {
                 ThrowIfCancellationRequested();
-                if (!seenGroupPatterns.Add(GetGroupPattern(group, labels)))
-                    continue;
-
-                int groupWorstCase = 0;
-                bool isUseful = false;
-
-                foreach (var order in EnumerateFeasibleOrders(state, group))
+                var seenGroupPatterns = new HashSet<IntSequenceKey>();
+                foreach (var group in EnumerateCombinations(candidates, groupSize))
                 {
                     ThrowIfCancellationRequested();
-                    var next = state.Clone();
-                    next.ApplyOrder(order);
-                    next.Eliminate(remainingSlots);
-
-                    ulong nextIgnoredFixedTopMask = 0;
-                    int nextRemainingSlots = remainingSlots;
-                    NormalizeState(next, ref nextIgnoredFixedTopMask, ref nextRemainingSlots);
-
-                    SearchStateKey nextKey = GetSearchStateKey(next, nextRemainingSlots);
-                    if (nextKey.Equals(key))
+                    if (!seenGroupPatterns.Add(GetGroupPattern(group, labels)))
                         continue;
 
-                    isUseful = true;
-                    int branchLowerBound = 1 + GetMinWorstCaseLowerBound(next, nextRemainingSlots);
-                    if (branchLowerBound >= bestWorstCase)
+                    int groupWorstCase = 0;
+                    bool isUseful = false;
+
+                    foreach (var order in EnumerateFeasibleOrders(state, group))
                     {
-                        groupWorstCase = branchLowerBound;
-                        break;
+                        ThrowIfCancellationRequested();
+                        var next = state.Clone();
+                        next.ApplyOrder(order);
+                        next.Eliminate(remainingSlots);
+
+                        ulong nextIgnoredFixedTopMask = 0;
+                        int nextRemainingSlots = remainingSlots;
+                        NormalizeState(next, ref nextIgnoredFixedTopMask, ref nextRemainingSlots);
+
+                        SearchStateKey nextKey = GetSearchStateKey(next, nextRemainingSlots);
+                        if (nextKey.Equals(key))
+                            continue;
+
+                        isUseful = true;
+                        int branchLowerBound = 1 + GetMinWorstCaseLowerBound(next, nextRemainingSlots);
+                        if (branchLowerBound >= bestWorstCase)
+                        {
+                            groupWorstCase = branchLowerBound;
+                            break;
+                        }
+
+                        int branchSteps = 1 + GetMinWorstCaseSteps(next, nextRemainingSlots);
+                        groupWorstCase = Math.Max(groupWorstCase, branchSteps);
+
+                        if (groupWorstCase >= bestWorstCase)
+                            break;
                     }
 
-                    int branchSteps = 1 + GetMinWorstCaseSteps(next, nextRemainingSlots);
-                    groupWorstCase = Math.Max(groupWorstCase, branchSteps);
-
-                    if (groupWorstCase >= bestWorstCase)
-                        break;
+                    if (isUseful)
+                        bestWorstCase = Math.Min(bestWorstCase, groupWorstCase);
                 }
-
-                if (isUseful)
-                    bestWorstCase = Math.Min(bestWorstCase, groupWorstCase);
             }
+        }
+        finally
+        {
+            ExitSearchState();
         }
 
         if (bestWorstCase == int.MaxValue)
@@ -954,6 +1027,7 @@ class StrategyBuilder
         ThrowIfCancellationRequested();
         ulong ignoredFixedTopMask = 0;
         NormalizeState(state, ref ignoredFixedTopMask, ref remainingSlots);
+        ObserveSearchState(state, remainingSlots);
 
         if (remainingSlots == 0)
             return 0;
@@ -1007,6 +1081,7 @@ class StrategyBuilder
     {
         ThrowIfCancellationRequested();
         SearchStateKey key = GetSearchStateKey(state, remainingSlots);
+        _visitedSearchStates.Add(key);
         if (_feasibleTopSetCache.TryGetValue(key, out FeasibleTopSetInfo cached))
             return cached;
 
@@ -1219,6 +1294,55 @@ class StrategyBuilder
     private static string FormatOrder(IEnumerable<int> items)
     {
         return string.Join(" > ", items.Select(i => $"#{i + 1}"));
+    }
+
+    private void EnterSearchState()
+    {
+        _pendingStates++;
+        _peakPendingStates = Math.Max(_peakPendingStates, _pendingStates);
+        ReportProgress();
+    }
+
+    private void ExitSearchState()
+    {
+        _pendingStates--;
+        ReportProgress();
+    }
+
+    private SearchStatistics CreateSearchStatistics()
+    {
+        _searchedStates = _visitedSearchStates.Count;
+        return new SearchStatistics(
+            _searchedStates,
+            _pendingStates,
+            _peakPendingStates,
+            _stateIds.Count,
+            _expandedStates.Count,
+            _lowerBoundStepsCache.Count,
+            _feasibleTopSetCache.Count);
+    }
+
+    private void ReportProgress(bool force = false)
+    {
+        if (_progressCallback is null)
+            return;
+
+        _searchedStates = _visitedSearchStates.Count;
+        long elapsedMs = _progressStopwatch.ElapsedMilliseconds;
+        if (!force && elapsedMs - _lastProgressReportMs < ProgressReportIntervalMs)
+            return;
+
+        _lastProgressReportMs = elapsedMs;
+        _progressCallback(new SearchProgressSnapshot(
+            _searchedStates,
+            _pendingStates,
+            _peakPendingStates,
+            _stateIds.Count));
+    }
+
+    private void ObserveSearchState(ComparisonState state, int remainingSlots)
+    {
+        _visitedSearchStates.Add(GetSearchStateKey(state, remainingSlots));
     }
 
     private void ThrowIfCancellationRequested()
