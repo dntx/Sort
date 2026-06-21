@@ -53,27 +53,27 @@ partial class StrategyBuilder
             {
                 ThrowIfCancellationRequested();
                 int groupWorstCase = 0;
-                GroupTransitionVisitResult visitResult = VisitGroupTransitions(
+                OutcomeTraversalSummary traversal = VisitComparisonOutcomes(
                     state,
                     remainingSlots,
                     group,
                     key,
-                    collectAllTransitions: false,
-                    onUsefulTransition: transition =>
+                    collectAllOutcomes: false,
+                    onUsefulOutcome: outcome =>
                     {
-                        int branchLowerBound = 1 + GetMinWorstCaseLowerBound(transition.NextState, transition.NextRemainingSlots);
+                        int branchLowerBound = 1 + GetMinWorstCaseLowerBound(outcome.NextState, outcome.NextRemainingSlots);
                         if (branchLowerBound >= bestWorstCase)
                         {
                             groupWorstCase = branchLowerBound;
                             return false;
                         }
 
-                        int branchSteps = 1 + GetMinWorstCaseSteps(transition.NextState, transition.NextRemainingSlots);
+                        int branchSteps = 1 + GetMinWorstCaseSteps(outcome.NextState, outcome.NextRemainingSlots);
                         groupWorstCase = Math.Max(groupWorstCase, branchSteps);
                         return groupWorstCase < bestWorstCase;
                     });
 
-                if (visitResult.IsUseful)
+                if (traversal.IsUseful)
                     bestWorstCase = Math.Min(bestWorstCase, groupWorstCase);
             }
         }
