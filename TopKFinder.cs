@@ -411,6 +411,8 @@ class ComparisonState
             target[offset + labels[item]]++;
     }
 
+
+
     public bool IsActive(int item)
     {
         return (ActiveMask & Bit(item)) != 0;
@@ -812,36 +814,31 @@ class StrategyBuilder
 
         _expandedStates.Add(displayKey);
 
-        var group = ChooseGroup(state, remainingSlots);
-        var branches = BuildBranches(state, fixedTopMask, remainingSlots, group, step + 1);
+        ChosenGroupResult chosenGroup = ChooseGroup(state, remainingSlots);
+        var branches = BuildBranches(state, fixedTopMask, remainingSlots, chosenGroup, step + 1);
 
-        return StrategyNode.Decision(stateId, step, group, branches);
+        return StrategyNode.Decision(stateId, step, chosenGroup.Group, branches);
     }
 
-    private List<StrategyBranch> BuildBranches(ComparisonState state, ulong fixedTopMask, int remainingSlots, IReadOnlyList<int> group, int nextStep)
+    private List<StrategyBranch> BuildBranches(ComparisonState state, ulong fixedTopMask, int remainingSlots, ChosenGroupResult chosenGroup, int nextStep)
     {
         ThrowIfCancellationRequested();
 
         var groupedBranches = new Dictionary<IntSequenceKey, BranchInfo>();
-        foreach (var orderFamily in EnumerateFeasibleOrderFamilies(state, group))
+        foreach (GroupTransition transition in chosenGroup.Transitions)
         {
             ThrowIfCancellationRequested();
-            var next = state.Clone();
-            next.ApplyOrder(orderFamily.RepresentativeOrderItems);
-            next.Eliminate(remainingSlots);
-
-            ulong nextFixedTopMask = fixedTopMask;
-            int nextRemainingSlots = remainingSlots;
-            NormalizeState(next, ref nextFixedTopMask, ref nextRemainingSlots);
+            ulong nextFixedTopMask = fixedTopMask | transition.AddedFixedTopMask;
+            ComparisonState next = transition.NextState;
 
             IntSequenceKey nextKey = GetDisplayStateKey(next, nextFixedTopMask);
             if (!groupedBranches.TryGetValue(nextKey, out BranchInfo? branch))
             {
-                groupedBranches[nextKey] = new BranchInfo(next, nextFixedTopMask, nextRemainingSlots, orderFamily);
+                groupedBranches[nextKey] = new BranchInfo(next, nextFixedTopMask, transition.NextRemainingSlots, transition.OrderFamily);
             }
             else
             {
-                branch.OrderFamilies.Add(orderFamily);
+                branch.OrderFamilies.Add(transition.OrderFamily);
             }
         }
 
@@ -883,7 +880,7 @@ class StrategyBuilder
         return state.GetActiveItemsOrdered();
     }
 
-    private List<int> ChooseGroup(ComparisonState state, int remainingSlots)
+    private ChosenGroupResult ChooseGroup(ComparisonState state, int remainingSlots)
     {
         ThrowIfCancellationRequested();
         var candidates = state.GetActiveItemsOrdered();
@@ -896,11 +893,12 @@ class StrategyBuilder
             foreach (var group in EnumerateCombinations(candidates, cachedPattern.GroupSize))
             {
                 if (GetGroupPattern(group, labels) == cachedPattern.Pattern)
-                    return group;
+                    return new ChosenGroupResult(group, BuildAllGroupTransitions(state, remainingSlots, group));
             }
         }
 
         List<int>? bestGroup = null;
+        IReadOnlyList<GroupTransition>? bestTransitions = null;
         (int negWorstCaseSteps, int negFreshItems, int negUnrelatedScore, int negGroupSize, int distinctStates, int totalReduction, int unresolvedPairs) bestScore =
             (int.MinValue, int.MinValue, int.MinValue, int.MinValue, int.MinValue, int.MinValue, int.MinValue);
 
@@ -920,35 +918,44 @@ class StrategyBuilder
             int totalReduction = 0;
             bool isUseful = false;
             int bestKnownWorstCase = bestGroup is null ? int.MaxValue : -bestScore.negWorstCaseSteps;
+            var transitions = new List<GroupTransition>();
 
-            foreach (var orderFamily in EnumerateFeasibleOrderFamilies(state, group))
+            foreach (OrderFamilyDescriptor orderFamily in EnumerateFeasibleOrderFamilies(state, group))
             {
                 ThrowIfCancellationRequested();
-                var next = state.Clone();
+                ComparisonState next = state.Clone();
                 next.ApplyOrder(orderFamily.RepresentativeOrderItems);
                 next.Eliminate(remainingSlots);
 
-                ulong ignoredFixedTopMask = 0;
+                ulong addedFixedTopMask = 0;
                 int nextRemainingSlots = remainingSlots;
-                NormalizeState(next, ref ignoredFixedTopMask, ref nextRemainingSlots);
+                NormalizeState(next, ref addedFixedTopMask, ref nextRemainingSlots);
 
-                SearchStateKey nextKey = GetSearchStateKey(next, nextRemainingSlots);
+                var transition = new GroupTransition(
+                    next,
+                    addedFixedTopMask,
+                    nextRemainingSlots,
+                    GetSearchStateKey(next, nextRemainingSlots),
+                    state.ActiveCount - next.ActiveCount,
+                    orderFamily);
+                transitions.Add(transition);
+
+                SearchStateKey nextKey = transition.NextSearchKey;
                 if (nextKey.Equals(currentKey))
                     continue;
 
                 isUseful = true;
-                int reduction = state.ActiveCount - next.ActiveCount;
-                totalReduction += reduction;
+                totalReduction += transition.Reduction;
                 nextStateKeys.Add(nextKey);
 
-                int branchLowerBound = 1 + GetMinWorstCaseLowerBound(next, nextRemainingSlots);
+                int branchLowerBound = 1 + GetMinWorstCaseLowerBound(transition.NextState, transition.NextRemainingSlots);
                 if (branchLowerBound > bestKnownWorstCase)
                 {
                     worstCaseSteps = branchLowerBound;
                     break;
                 }
 
-                int branchSteps = 1 + GetMinWorstCaseSteps(next, nextRemainingSlots);
+                int branchSteps = 1 + GetMinWorstCaseSteps(transition.NextState, transition.NextRemainingSlots);
                 worstCaseSteps = Math.Max(worstCaseSteps, branchSteps);
             }
 
@@ -963,17 +970,19 @@ class StrategyBuilder
             if (bestGroup is null || score.CompareTo(bestScore) > 0)
             {
                 bestGroup = group;
+                bestTransitions = transitions;
                 bestScore = score;
             }
         }
 
-        if (bestGroup is not null)
+        if (bestGroup is not null && bestTransitions is not null)
         {
             _bestGroupPatternCache[currentKey] = new BestGroupPattern(bestGroup.Count, GetGroupPattern(bestGroup, labels));
-            return bestGroup;
+            return new ChosenGroupResult(bestGroup, bestTransitions);
         }
 
-        return candidates.Take(groupSize).ToList();
+        List<int> fallbackGroup = candidates.Take(groupSize).ToList();
+        return new ChosenGroupResult(fallbackGroup, BuildAllGroupTransitions(state, remainingSlots, fallbackGroup));
     }
 
     private int GetMinWorstCaseSteps(ComparisonState state, int remainingSlots)
@@ -1103,6 +1112,33 @@ class StrategyBuilder
 
         _lowerBoundStepsCache[key] = steps;
         return steps;
+    }
+
+    private IReadOnlyList<GroupTransition> BuildAllGroupTransitions(ComparisonState state, int remainingSlots, IReadOnlyList<int> group)
+    {
+        ThrowIfCancellationRequested();
+        var transitions = new List<GroupTransition>();
+        foreach (OrderFamilyDescriptor orderFamily in EnumerateFeasibleOrderFamilies(state, group))
+        {
+            ThrowIfCancellationRequested();
+            ComparisonState next = state.Clone();
+            next.ApplyOrder(orderFamily.RepresentativeOrderItems);
+            next.Eliminate(remainingSlots);
+
+            ulong addedFixedTopMask = 0;
+            int nextRemainingSlots = remainingSlots;
+            NormalizeState(next, ref addedFixedTopMask, ref nextRemainingSlots);
+
+            transitions.Add(new GroupTransition(
+                next,
+                addedFixedTopMask,
+                nextRemainingSlots,
+                GetSearchStateKey(next, nextRemainingSlots),
+                state.ActiveCount - next.ActiveCount,
+                orderFamily));
+        }
+
+        return transitions;
     }
 
     private bool TryGetDeterminedTopSet(ComparisonState state, int remainingSlots, out ulong topMask)
@@ -2576,5 +2612,43 @@ class StrategyBuilder
             RepresentativeOrder = representativeFamily.RepresentativeOrder;
             OrderFamilies = new List<OrderFamilyDescriptor> { representativeFamily };
         }
+    }
+
+    private sealed class ChosenGroupResult
+    {
+        public ChosenGroupResult(IReadOnlyList<int> group, IReadOnlyList<GroupTransition> transitions)
+        {
+            Group = group;
+            Transitions = transitions;
+        }
+
+        public IReadOnlyList<int> Group { get; }
+        public IReadOnlyList<GroupTransition> Transitions { get; }
+    }
+
+    private sealed class GroupTransition
+    {
+        public GroupTransition(
+            ComparisonState nextState,
+            ulong addedFixedTopMask,
+            int nextRemainingSlots,
+            SearchStateKey nextSearchKey,
+            int reduction,
+            OrderFamilyDescriptor orderFamily)
+        {
+            NextState = nextState;
+            AddedFixedTopMask = addedFixedTopMask;
+            NextRemainingSlots = nextRemainingSlots;
+            NextSearchKey = nextSearchKey;
+            Reduction = reduction;
+            OrderFamily = orderFamily;
+        }
+
+        public ComparisonState NextState { get; }
+        public ulong AddedFixedTopMask { get; }
+        public int NextRemainingSlots { get; }
+        public SearchStateKey NextSearchKey { get; }
+        public int Reduction { get; }
+        public OrderFamilyDescriptor OrderFamily { get; }
     }
 }
