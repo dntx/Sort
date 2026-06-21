@@ -2,10 +2,15 @@ using Xunit;
 
 public sealed class StrategyRegressionTests
 {
+    private static readonly TimeSpan RegressionTestTimeout = TimeSpan.FromSeconds(30);
+
     [Fact]
     public void N10M9K9_RemainsTwoStepPermutationCase()
     {
-        StrategyPlan plan = StrategyBuilder.Generate(10, 9, 9);
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.Generate(10, 9, 9)",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.Generate(10, 9, 9, cancellationToken));
 
         Assert.Equal(2, plan.MaxStep);
         Assert.Equal(2, plan.SearchStatistics.SearchedStates);
@@ -21,7 +26,10 @@ public sealed class StrategyRegressionTests
     [Fact]
     public void N9M3K3_SearchWorkStaysWithinBaseline()
     {
-        StrategyPlan plan = StrategyBuilder.Generate(9, 3, 3);
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.Generate(9, 3, 3)",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.Generate(9, 3, 3, cancellationToken));
 
         Assert.Equal(6, plan.MaxStep);
         Assert.True(plan.SearchStatistics.SearchedStates <= 157, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
@@ -32,7 +40,10 @@ public sealed class StrategyRegressionTests
     [Fact]
     public void N12M3K3_SearchWorkStaysWithinBaseline()
     {
-        StrategyPlan plan = StrategyBuilder.Generate(12, 3, 3);
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.Generate(12, 3, 3)",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.Generate(12, 3, 3, cancellationToken));
 
         Assert.Equal(7, plan.MaxStep);
         Assert.True(plan.SearchStatistics.SearchedStates <= 1442, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
@@ -43,7 +54,10 @@ public sealed class StrategyRegressionTests
     [Fact]
     public void N12M4K4_PreservesRepresentativeAliasCompression()
     {
-        StrategyPlan plan = StrategyBuilder.Generate(12, 4, 4);
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.Generate(12, 4, 4)",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.Generate(12, 4, 4, cancellationToken));
 
         Assert.Equal(5, plan.MaxStep);
         Assert.True(plan.SearchStatistics.SearchedStates <= 1136, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");

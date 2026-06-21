@@ -19,4 +19,8 @@
   <ItemGroup>
     <ProjectReference Include="..\TopKFinder.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\TopKFinder.Tests\TestTimeoutHelper.cs" Link="TestTimeoutHelper.cs" />
+  </ItemGroup>
 </Project>
