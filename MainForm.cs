@@ -374,16 +374,16 @@ class MainForm : Form
                 Tag = BuildBranchDetails(branch),
             };
 
-            if (branch.EquivalentOrderTexts.Count > 0)
+            if (branch.EquivalentOrders is not null)
             {
-                string equivalentText = branch.EquivalentOrderTexts.Count == 1
-                    ? $"equivalent form {branch.EquivalentOrderTexts[0]}"
-                    : $"equivalent forms {branch.EquivalentOrderTexts.Count}";
+                string equivalentText = $"equivalent forms: {branch.EquivalentOrders.Count} = {branch.EquivalentOrders.CountFormula}";
 
                 branchNode.Nodes.Add(new TreeNode(equivalentText)
                 {
                     ForeColor = _palette.MutedForeColor,
-                    Tag = $"Equivalent merged branch forms: {string.Join("; ", branch.EquivalentOrderTexts)}",
+                    Tag =
+                        $"Equivalent forms: {branch.EquivalentOrders.Count} = {branch.EquivalentOrders.CountFormula}\n" +
+                        $"Pattern: {StrategyTextRenderer.FormatEquivalentPattern(branch.EquivalentOrders)}",
                 });
             }
 
@@ -444,8 +444,12 @@ class MainForm : Form
             $"cand fixed    {StrategyTextRenderer.FormatOptionalSet(branch.Effect.FixedCandidates)}\n" +
             $"cand possible {StrategyTextRenderer.FormatOptionalSet(branch.Effect.PossibleCandidates)}";
 
-        if (branch.EquivalentOrderTexts.Count > 0)
-            details += $"\nmerged equivalent forms: {string.Join("; ", branch.EquivalentOrderTexts)}";
+        if (branch.EquivalentOrders is not null)
+        {
+            details += "\n" +
+                $"equivalent forms: {branch.EquivalentOrders.Count} = {branch.EquivalentOrders.CountFormula}\n" +
+                $"pattern: {StrategyTextRenderer.FormatEquivalentPattern(branch.EquivalentOrders)}";
+        }
 
         return details;
     }

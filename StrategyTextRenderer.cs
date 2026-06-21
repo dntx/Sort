@@ -89,15 +89,18 @@ static class StrategyTextRenderer
 
     private static void WriteEquivalentOrders(StrategyBranch branch, TextWriter writer, int indent)
     {
-        if (branch.EquivalentOrderTexts.Count == 0)
+        if (branch.EquivalentOrders is null)
             return;
 
         string prefix = new string(' ', indent * 2);
-        writer.WriteLine($"{prefix}equivalent forms: {string.Join("; ", branch.EquivalentOrderTexts)}");
+        writer.WriteLine($"{prefix}equivalent forms: {branch.EquivalentOrders.Count} = {branch.EquivalentOrders.CountFormula}");
+        writer.WriteLine($"{prefix}pattern: {branch.EquivalentOrders.PatternText}");
     }
 
     private static string FormatCompressedFinalChoice(FinalChoiceSummary summary, int k)
     {
         return $"fixed ({FormatSet(summary.FixedTopSet)}); choose {summary.RemainingSlots} of ({FormatSet(summary.CandidatePool)}) into top {k}";
     }
+
+    public static string FormatEquivalentPattern(EquivalentOrderSummary summary) => summary.PatternText;
 }

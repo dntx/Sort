@@ -602,17 +602,31 @@ sealed class StrategyNode
 sealed class StrategyBranch
 {
     public string OrderText { get; }
-    public IReadOnlyList<string> EquivalentOrderTexts { get; }
+    public EquivalentOrderSummary? EquivalentOrders { get; }
     public StrategyEffect Effect { get; }
     public StrategyNode Next { get; }
 
-    public StrategyBranch(string orderText, IReadOnlyList<string> equivalentOrderTexts, StrategyEffect effect, StrategyNode next)
+    public StrategyBranch(string orderText, EquivalentOrderSummary? equivalentOrders, StrategyEffect effect, StrategyNode next)
     {
         OrderText = orderText;
-        EquivalentOrderTexts = equivalentOrderTexts;
+        EquivalentOrders = equivalentOrders;
         Effect = effect;
         Next = next;
     }
+}
+
+sealed class EquivalentOrderSummary
+{
+    public EquivalentOrderSummary(int count, string patternText, string countFormula)
+    {
+        Count = count;
+        PatternText = patternText;
+        CountFormula = countFormula;
+    }
+
+    public int Count { get; }
+    public string PatternText { get; }
+    public string CountFormula { get; }
 }
 
 sealed class StrategyEffect
@@ -792,11 +806,11 @@ class StrategyBuilder
             IntSequenceKey nextKey = GetDisplayStateKey(next, nextFixedTopMask);
             if (!groupedBranches.TryGetValue(nextKey, out BranchInfo? branch))
             {
-                groupedBranches[nextKey] = new BranchInfo(next, nextFixedTopMask, nextRemainingSlots, FormatOrder(order));
+                groupedBranches[nextKey] = new BranchInfo(next, nextFixedTopMask, nextRemainingSlots, order);
             }
             else
             {
-                branch.EquivalentOrders.Add(FormatOrder(order));
+                branch.EquivalentOrders.Add(order.ToArray());
             }
         }
 
@@ -804,7 +818,7 @@ class StrategyBuilder
             .OrderBy(v => v.RepresentativeOrder, StringComparer.Ordinal)
             .Select(v => new StrategyBranch(
                 v.RepresentativeOrder,
-                v.EquivalentOrders.OrderBy(order => order, StringComparer.Ordinal).ToList(),
+                BuildEquivalentOrderSummary(v.RepresentativeOrderItems, v.EquivalentOrders),
                 BuildComparisonEffect(state, fixedTopMask, v.NextState, v.NextFixedTopMask),
                 BuildState(v.NextState, v.NextFixedTopMask, v.NextRemainingSlots, nextStep)))
             .ToList();
@@ -1293,6 +1307,153 @@ class StrategyBuilder
         return string.Join(" > ", items.Select(i => $"#{i + 1}"));
     }
 
+    private static EquivalentOrderSummary? BuildEquivalentOrderSummary(
+        IReadOnlyList<int> representativeOrder,
+        IReadOnlyList<IReadOnlyList<int>> equivalentOrders)
+    {
+        if (equivalentOrders.Count == 0)
+            return null;
+
+        var allOrders = new List<IReadOnlyList<int>>(equivalentOrders.Count + 1) { representativeOrder };
+        allOrders.AddRange(equivalentOrders);
+
+        var positionMasks = new Dictionary<int, ulong>();
+        foreach (var order in allOrders)
+        {
+            for (int position = 0; position < order.Count; position++)
+            {
+                int item = order[position];
+                positionMasks[item] = positionMasks.GetValueOrDefault(item) | (1UL << position);
+            }
+        }
+
+        var representativePositions = representativeOrder
+            .Select((item, index) => (item, index))
+            .ToDictionary(x => x.item, x => x.index);
+
+        var positionSets = Enumerable.Range(0, representativeOrder.Count)
+            .Select(position => allOrders
+                .Select(order => order[position])
+                .Distinct()
+                .OrderBy(item => representativePositions[item])
+                .ToList())
+            .ToList();
+
+        string patternText = BuildEquivalentPatternText(positionSets);
+        string formula = BuildEquivalentCountFormula(positionSets);
+        return new EquivalentOrderSummary(equivalentOrders.Count, patternText, formula);
+    }
+
+    private static string BuildEquivalentPatternText(IReadOnlyList<List<int>> positionSets)
+    {
+        var tokens = new List<string>();
+        var seenPoolOccurrences = new Dictionary<string, int>();
+        var totalPoolOccurrences = positionSets
+            .Where(set => set.Count > 1)
+            .GroupBy(FormatBraceSet)
+            .ToDictionary(group => group.Key, group => group.Count());
+
+        int position = 0;
+        while (position < positionSets.Count)
+        {
+            var currentSet = positionSets[position];
+            if (currentSet.Count == 1)
+            {
+                tokens.Add($"#{currentSet[0] + 1}");
+                position++;
+                continue;
+            }
+
+            string poolKey = FormatBraceSet(currentSet);
+            int segmentLength = 1;
+            while (position + segmentLength < positionSets.Count &&
+                positionSets[position + segmentLength].SequenceEqual(currentSet))
+            {
+                segmentLength++;
+            }
+
+            int seenBefore = seenPoolOccurrences.GetValueOrDefault(poolKey);
+            int totalOccurrences = totalPoolOccurrences[poolKey];
+            int remainingAfter = totalOccurrences - seenBefore - segmentLength;
+            tokens.Add(FormatPoolSegment(currentSet, segmentLength, seenBefore, remainingAfter));
+            seenPoolOccurrences[poolKey] = seenBefore + segmentLength;
+            position += segmentLength;
+        }
+
+        return string.Join(" > ", tokens);
+    }
+
+    private static string BuildEquivalentCountFormula(IReadOnlyList<List<int>> positionSets)
+    {
+        var terms = new List<string>();
+        var seenPoolOccurrences = new Dictionary<string, int>();
+        var totalPoolOccurrences = positionSets
+            .Where(set => set.Count > 1)
+            .GroupBy(FormatBraceSet)
+            .ToDictionary(group => group.Key, group => group.Count());
+
+        int position = 0;
+        while (position < positionSets.Count)
+        {
+            var currentSet = positionSets[position];
+            if (currentSet.Count == 1)
+            {
+                position++;
+                continue;
+            }
+
+            string poolKey = FormatBraceSet(currentSet);
+            int segmentLength = 1;
+            while (position + segmentLength < positionSets.Count &&
+                positionSets[position + segmentLength].SequenceEqual(currentSet))
+            {
+                segmentLength++;
+            }
+
+            int seenBefore = seenPoolOccurrences.GetValueOrDefault(poolKey);
+            int totalOccurrences = totalPoolOccurrences[poolKey];
+            int available = totalOccurrences - seenBefore;
+            terms.Add(FormatSegmentFactor(available, segmentLength));
+            seenPoolOccurrences[poolKey] = seenBefore + segmentLength;
+            position += segmentLength;
+        }
+
+        return $"{string.Join(" x ", terms)} - 1";
+    }
+
+    private static string FormatPoolSegment(IReadOnlyList<int> items, int segmentLength, int seenBefore, int remainingAfter)
+    {
+        string setText = FormatBraceSet(items);
+        if (segmentLength == items.Count && seenBefore == 0 && remainingAfter == 0)
+            return $"permute {setText}";
+
+        if (seenBefore == 0 && remainingAfter == 0)
+            return $"{segmentLength} of {setText} in any order";
+
+        if (seenBefore == 0)
+            return segmentLength == 1
+                ? $"1 of {setText}"
+                : $"{segmentLength} of {setText} in any order";
+
+        if (remainingAfter == 0)
+            return $"remaining {segmentLength} of {setText} in any order";
+
+        return $"{segmentLength} of remaining {setText} in any order";
+    }
+
+    private static string FormatSegmentFactor(int available, int segmentLength)
+    {
+        if (segmentLength == available)
+            return $"{available}!";
+
+        return string.Join(" x ", Enumerable.Range(0, segmentLength).Select(offset => (available - offset).ToString()));
+    }
+
+    private static string FormatBraceSet(IEnumerable<int> items)
+    {
+        return "{" + string.Join(", ", items.Select(i => $"#{i + 1}")) + "}";
+    }
+
     private void EnterSearchState()
     {
         _pendingStates++;
@@ -1352,16 +1513,18 @@ class StrategyBuilder
         public ComparisonState NextState { get; }
         public ulong NextFixedTopMask { get; }
         public int NextRemainingSlots { get; }
+        public IReadOnlyList<int> RepresentativeOrderItems { get; }
         public string RepresentativeOrder { get; }
-        public List<string> EquivalentOrders { get; }
+        public List<IReadOnlyList<int>> EquivalentOrders { get; }
 
-        public BranchInfo(ComparisonState nextState, ulong nextFixedTopMask, int nextRemainingSlots, string representativeOrder)
+        public BranchInfo(ComparisonState nextState, ulong nextFixedTopMask, int nextRemainingSlots, IReadOnlyList<int> representativeOrderItems)
         {
             NextState = nextState;
             NextFixedTopMask = nextFixedTopMask;
             NextRemainingSlots = nextRemainingSlots;
-            RepresentativeOrder = representativeOrder;
-            EquivalentOrders = new List<string>();
+            RepresentativeOrderItems = representativeOrderItems.ToArray();
+            RepresentativeOrder = FormatOrder(RepresentativeOrderItems);
+            EquivalentOrders = new List<IReadOnlyList<int>>();
         }
     }
 }
