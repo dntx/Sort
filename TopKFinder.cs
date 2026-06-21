@@ -459,32 +459,39 @@ partial class StrategyBuilder
     {
         public int CompareTo(ComparisonGroupScore other)
         {
-            int result = other.WorstCaseSteps.CompareTo(WorstCaseSteps);
-            if (result != 0)
-                return result;
-
-            result = FreshItems.CompareTo(other.FreshItems);
-            if (result != 0)
-                return result;
-
-            result = UnrelatedScore.CompareTo(other.UnrelatedScore);
-            if (result != 0)
-                return result;
-
-            result = GroupSize.CompareTo(other.GroupSize);
-            if (result != 0)
-                return result;
-
-            result = DistinctStates.CompareTo(other.DistinctStates);
-            if (result != 0)
-                return result;
-
-            result = TotalReduction.CompareTo(other.TotalReduction);
-            if (result != 0)
-                return result;
-
-            return UnresolvedPairs.CompareTo(other.UnresolvedPairs);
+            return CompareByLowerWorstCaseSteps(other)
+                ?? CompareByMoreFreshItems(other)
+                ?? CompareByMoreUnrelatedItems(other)
+                ?? CompareByLargerGroup(other)
+                ?? CompareByMoreDistinctStates(other)
+                ?? CompareByMoreTotalReduction(other)
+                ?? CompareByMoreUnresolvedPairs(other)
+                ?? 0;
         }
+
+        private int? CompareByLowerWorstCaseSteps(ComparisonGroupScore other)
+            => ComparePreference(other.WorstCaseSteps.CompareTo(WorstCaseSteps));
+
+        private int? CompareByMoreFreshItems(ComparisonGroupScore other)
+            => ComparePreference(FreshItems.CompareTo(other.FreshItems));
+
+        private int? CompareByMoreUnrelatedItems(ComparisonGroupScore other)
+            => ComparePreference(UnrelatedScore.CompareTo(other.UnrelatedScore));
+
+        private int? CompareByLargerGroup(ComparisonGroupScore other)
+            => ComparePreference(GroupSize.CompareTo(other.GroupSize));
+
+        private int? CompareByMoreDistinctStates(ComparisonGroupScore other)
+            => ComparePreference(DistinctStates.CompareTo(other.DistinctStates));
+
+        private int? CompareByMoreTotalReduction(ComparisonGroupScore other)
+            => ComparePreference(TotalReduction.CompareTo(other.TotalReduction));
+
+        private int? CompareByMoreUnresolvedPairs(ComparisonGroupScore other)
+            => ComparePreference(UnresolvedPairs.CompareTo(other.UnresolvedPairs));
+
+        private static int? ComparePreference(int comparison)
+            => comparison == 0 ? null : comparison;
     }
 
 }
