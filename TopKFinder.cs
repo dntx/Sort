@@ -1386,6 +1386,10 @@ class StrategyBuilder
             return new EquivalentPatternSummary(patternText, middleSummary.TotalCountFormula, middleSummary.TotalCount);
         }
 
+        EquivalentPatternSummary? permutationTemplateSummary = TryBuildPermutationTemplateSummary(orders, remainingItems, representativePositions);
+        if (permutationTemplateSummary is not null)
+            return permutationTemplateSummary;
+
         EquivalentPatternSummary? independentBlockSummary = TryBuildIndependentBlockSummary(orders, remainingItems, representativePositions);
         if (independentBlockSummary is not null)
             return independentBlockSummary;
@@ -1441,6 +1445,99 @@ class StrategyBuilder
         while (length < orders[0].Count && orders.All(order => order[length] == orders[0][length]))
             length++;
         return length;
+    }
+
+    private static EquivalentPatternSummary? TryBuildPermutationTemplateSummary(
+        IReadOnlyList<IReadOnlyList<int>> orders,
+        IReadOnlyList<int> remainingItems,
+        IReadOnlyDictionary<int, int> representativePositions)
+    {
+        if (remainingItems.Count < 4)
+            return null;
+
+        PermutationTemplateCandidate? bestCandidate = null;
+        foreach (var partition in EnumeratePartitions(remainingItems.OrderBy(item => representativePositions[item]).ToArray()))
+        {
+            int multiBlockCount = partition.Count(block => block.Count > 1);
+            if (multiBlockCount == 0)
+                continue;
+
+            if (multiBlockCount == 1 && partition.Count == 1)
+                continue;
+
+            var blockLookup = new Dictionary<int, int>();
+            for (int blockIndex = 0; blockIndex < partition.Count; blockIndex++)
+            {
+                foreach (int item in partition[blockIndex])
+                    blockLookup[item] = blockIndex;
+            }
+
+            var template = orders[0].Select(item => blockLookup[item]).ToArray();
+            if (!orders.All(order => order.Select(item => blockLookup[item]).SequenceEqual(template)))
+                continue;
+
+            var permutationCounts = new int[partition.Count];
+            bool valid = true;
+            foreach (int blockIndex in Enumerable.Range(0, partition.Count))
+            {
+                var uniqueProjections = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var order in orders)
+                {
+                    var projection = order.Where(item => blockLookup[item] == blockIndex);
+                    uniqueProjections.Add(string.Join(",", projection));
+                }
+
+                int expectedCount = partition[blockIndex].Count <= 1 ? 1 : (int)Factorial(partition[blockIndex].Count);
+                if (uniqueProjections.Count != expectedCount)
+                {
+                    valid = false;
+                    break;
+                }
+
+                permutationCounts[blockIndex] = expectedCount;
+            }
+
+            if (!valid)
+                continue;
+
+            BigInteger expectedTotal = BigInteger.One;
+            foreach (int count in permutationCounts)
+                expectedTotal *= count;
+            if (orders.Count != (int)expectedTotal)
+                continue;
+
+            var combinationKeys = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var order in orders)
+            {
+                var keyParts = new string[partition.Count];
+                for (int blockIndex = 0; blockIndex < partition.Count; blockIndex++)
+                    keyParts[blockIndex] = string.Join(",", order.Where(item => blockLookup[item] == blockIndex));
+                combinationKeys.Add(string.Join("|", keyParts));
+            }
+
+            if (combinationKeys.Count != orders.Count)
+                continue;
+
+            var candidate = new PermutationTemplateCandidate(partition, template, permutationCounts);
+            if (bestCandidate is null || candidate.CompareTo(bestCandidate) > 0)
+                bestCandidate = candidate;
+        }
+
+        if (bestCandidate is null)
+            return null;
+
+        string patternText = BuildPermutationTemplateText(bestCandidate.Partition, bestCandidate.Template);
+        string formula = string.Join(" x ", bestCandidate.PermutationCounts
+            .Where(count => count > 1)
+            .Select(count => FactorialNotationFromCount(count)));
+        if (string.IsNullOrEmpty(formula))
+            formula = "1";
+
+        BigInteger totalCount = BigInteger.One;
+        foreach (int count in bestCandidate.PermutationCounts)
+            totalCount *= count;
+
+        return new EquivalentPatternSummary(patternText, formula, totalCount);
     }
 
     private static EquivalentPatternSummary? TryBuildIndependentBlockSummary(
@@ -1635,6 +1732,51 @@ class StrategyBuilder
         return $"{ParenthesizeSum(left)} x {ParenthesizeSum(right)}";
     }
 
+    private static string BuildPermutationTemplateText(
+        IReadOnlyList<IReadOnlyList<int>> partition,
+        IReadOnlyList<int> template)
+    {
+        var aliases = new string[partition.Count];
+        for (int blockIndex = 0; blockIndex < partition.Count; blockIndex++)
+            aliases[blockIndex] = partition[blockIndex].Count > 1 ? ((char)('A' + blockIndex)).ToString() : string.Empty;
+
+        var definitions = partition
+            .Select((block, index) => (block, index))
+            .Where(x => x.block.Count > 1)
+            .Select(x => $"{aliases[x.index]}=permute{FormatBraceSet(x.block)}")
+            .ToList();
+
+        var seenCounts = new int[partition.Count];
+        var tokens = new List<string>(template.Count);
+        foreach (int blockIndex in template)
+        {
+            seenCounts[blockIndex]++;
+            if (partition[blockIndex].Count == 1)
+            {
+                tokens.Add($"#{partition[blockIndex][0] + 1}");
+            }
+            else
+            {
+                tokens.Add($"{aliases[blockIndex]}{seenCounts[blockIndex]}");
+            }
+        }
+
+        return $"{string.Join(", ", definitions)}; {string.Join(" > ", tokens)}";
+    }
+
+    private static string FactorialNotationFromCount(int count)
+    {
+        int n = 1;
+        int factorial = 1;
+        while (factorial < count)
+        {
+            n++;
+            factorial *= n;
+        }
+
+        return factorial == count ? $"{n}!" : count.ToString();
+    }
+
     private static string ParenthesizeSum(string formula)
     {
         return formula.Contains(" + ", StringComparison.Ordinal) ? $"({formula})" : formula;
@@ -1700,6 +1842,71 @@ class StrategyBuilder
             foreach (int item in items)
                 hash.Add(item);
             return hash.ToHashCode();
+        }
+    }
+
+    private static IEnumerable<List<List<int>>> EnumeratePartitions(IReadOnlyList<int> items)
+    {
+        var blocks = new List<List<int>>();
+        foreach (var partition in EnumeratePartitions(items, 0, blocks))
+            yield return partition;
+    }
+
+    private static IEnumerable<List<List<int>>> EnumeratePartitions(
+        IReadOnlyList<int> items,
+        int index,
+        List<List<int>> blocks)
+    {
+        if (index == items.Count)
+        {
+            yield return blocks.Select(block => block.ToList()).ToList();
+            yield break;
+        }
+
+        int item = items[index];
+        for (int blockIndex = 0; blockIndex < blocks.Count; blockIndex++)
+        {
+            blocks[blockIndex].Add(item);
+            foreach (var partition in EnumeratePartitions(items, index + 1, blocks))
+                yield return partition;
+            blocks[blockIndex].RemoveAt(blocks[blockIndex].Count - 1);
+        }
+
+        blocks.Add(new List<int> { item });
+        foreach (var partition in EnumeratePartitions(items, index + 1, blocks))
+            yield return partition;
+        blocks.RemoveAt(blocks.Count - 1);
+    }
+
+    private sealed class PermutationTemplateCandidate
+    {
+        public PermutationTemplateCandidate(
+            IReadOnlyList<IReadOnlyList<int>> partition,
+            IReadOnlyList<int> template,
+            IReadOnlyList<int> permutationCounts)
+        {
+            Partition = partition.Select(block => (IReadOnlyList<int>)block.ToList()).ToList();
+            Template = template.ToArray();
+            PermutationCounts = permutationCounts.ToArray();
+        }
+
+        public IReadOnlyList<IReadOnlyList<int>> Partition { get; }
+        public IReadOnlyList<int> Template { get; }
+        public IReadOnlyList<int> PermutationCounts { get; }
+
+        public int CompareTo(PermutationTemplateCandidate other)
+        {
+            int thisMulti = Partition.Count(block => block.Count > 1);
+            int otherMulti = other.Partition.Count(block => block.Count > 1);
+            if (thisMulti != otherMulti)
+                return thisMulti.CompareTo(otherMulti);
+
+            int thisMax = Partition.Max(block => block.Count);
+            int otherMax = other.Partition.Max(block => block.Count);
+            if (thisMax != otherMax)
+                return thisMax.CompareTo(otherMax);
+
+            return other.Partition.Count.CompareTo(Partition.Count);
         }
     }
 
