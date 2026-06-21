@@ -1,0 +1,29 @@
+name: required-pr-tests
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  required-tests:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Run structural regression tests
+        run: dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --configuration Release --nologo
+
+      - name: Run lightweight performance tests
+        run: dotnet test .\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --configuration Release --nologo
