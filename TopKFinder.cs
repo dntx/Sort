@@ -256,6 +256,35 @@ partial class StrategyBuilder
         }
     }
 
+    private IEnumerable<List<int>> EnumeratePrioritizedGroups(
+        ComparisonState state,
+        int remainingSlots,
+        IReadOnlyList<int> candidates,
+        int groupSize,
+        IReadOnlyList<int> labels)
+    {
+        var scoredGroups = new List<(List<int> Group, HeuristicGroupScore Score)>();
+        foreach (var group in EnumerateDistinctGroups(candidates, groupSize, labels))
+        {
+            ThrowIfCancellationRequested();
+            scoredGroups.Add((group, BuildHeuristicGroupScore(state, remainingSlots, group)));
+        }
+
+        foreach (var entry in scoredGroups.OrderByDescending(entry => entry.Score))
+            yield return entry.Group;
+    }
+
+    private static HeuristicGroupScore BuildHeuristicGroupScore(ComparisonState state, int remainingSlots, IReadOnlyList<int> group)
+    {
+        int guaranteedTopHits = group.Count(item => state.ActiveCount - 1 - state.GetDescendantCount(item) <= remainingSlots - 1);
+        return new HeuristicGroupScore(
+            guaranteedTopHits,
+            CountFreshItems(state, group),
+            CalculateUnrelatedScore(state, group),
+            CountUnresolvedPairs(state, group),
+            group.Count);
+    }
+
     private static int CountFreshItems(ComparisonState state, IReadOnlyList<int> group)
     {
         return group.Count(i => state.GetAncestorCount(i) == 0 && state.GetDescendantCount(i) == 0);
@@ -496,6 +525,35 @@ partial class StrategyBuilder
 
         private static int? ComparePreference(int comparison)
             => comparison == 0 ? null : comparison;
+    }
+
+    private readonly record struct HeuristicGroupScore(
+        int GuaranteedTopHits,
+        int FreshItems,
+        int UnrelatedScore,
+        int UnresolvedPairs,
+        int GroupSize) : IComparable<HeuristicGroupScore>
+    {
+        public int CompareTo(HeuristicGroupScore other)
+        {
+            int result = GuaranteedTopHits.CompareTo(other.GuaranteedTopHits);
+            if (result != 0)
+                return result;
+
+            result = FreshItems.CompareTo(other.FreshItems);
+            if (result != 0)
+                return result;
+
+            result = UnrelatedScore.CompareTo(other.UnrelatedScore);
+            if (result != 0)
+                return result;
+
+            result = UnresolvedPairs.CompareTo(other.UnresolvedPairs);
+            if (result != 0)
+                return result;
+
+            return GroupSize.CompareTo(other.GroupSize);
+        }
     }
 
 }
