@@ -376,36 +376,41 @@ class MainForm : Form
 
             if (branch.EquivalentOrders is not null)
             {
-                string equivalentText = $"equivalent forms: {branch.EquivalentOrders.Count} = {branch.EquivalentOrders.CountFormula}";
+                string equivalentText = StrategyTextRenderer.FormatEquivalentFormsSummary(branch.EquivalentOrders);
+                string patternText = StrategyTextRenderer.FormatEquivalentPatternLine(branch.EquivalentOrders);
 
                 branchNode.Nodes.Add(new TreeNode(equivalentText)
                 {
                     ForeColor = _palette.MutedForeColor,
-                    Tag =
-                        $"Equivalent forms: {branch.EquivalentOrders.Count} = {branch.EquivalentOrders.CountFormula}\n" +
-                        $"Pattern: {StrategyTextRenderer.FormatEquivalentPattern(branch.EquivalentOrders)}",
+                    Tag = StrategyTextRenderer.FormatEquivalentDetails(branch.EquivalentOrders),
+                });
+
+                branchNode.Nodes.Add(new TreeNode(patternText)
+                {
+                    ForeColor = _palette.MutedForeColor,
+                    Tag = StrategyTextRenderer.FormatEquivalentDetails(branch.EquivalentOrders),
                 });
             }
 
-            branchNode.Nodes.Add(new TreeNode($"in {StrategyTextRenderer.FormatOptionalSet(branch.Effect.NewlyGuaranteedTop)}")
+            branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatInEntry(branch.Effect.NewlyGuaranteedTop))
             {
                 ForeColor = _palette.InColor,
                 Tag = $"Newly confirmed in top-k: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.NewlyGuaranteedTop)}",
             });
 
-            branchNode.Nodes.Add(new TreeNode($"out {StrategyTextRenderer.FormatOptionalSet(branch.Effect.NewlyExcluded)}")
+            branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatOutEntry(branch.Effect.NewlyExcluded))
             {
                 ForeColor = _palette.OutColor,
                 Tag = $"Newly excluded from top-k: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.NewlyExcluded)}",
             });
 
-            branchNode.Nodes.Add(new TreeNode($"cand fixed {StrategyTextRenderer.FormatOptionalSet(branch.Effect.FixedCandidates)}")
+            branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatFixedEntry(branch.Effect.FixedCandidates))
             {
                 ForeColor = _palette.FixedColor,
                 Tag = $"Current fixed top-k candidates: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.FixedCandidates)}",
             });
 
-            branchNode.Nodes.Add(new TreeNode($"cand possible {StrategyTextRenderer.FormatOptionalSet(branch.Effect.PossibleCandidates)}")
+            branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatPossibleEntry(branch.Effect.PossibleCandidates))
             {
                 ForeColor = _palette.PossibleColor,
                 Tag = $"Current possible top-k candidates: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.PossibleCandidates)}",
@@ -438,17 +443,11 @@ class MainForm : Form
 
     private static string BuildBranchDetails(StrategyBranch branch)
     {
-        string details = $"{branch.OrderText}\n" +
-            $"in  {StrategyTextRenderer.FormatOptionalSet(branch.Effect.NewlyGuaranteedTop)}\n" +
-            $"out {StrategyTextRenderer.FormatOptionalSet(branch.Effect.NewlyExcluded)}\n" +
-            $"cand fixed    {StrategyTextRenderer.FormatOptionalSet(branch.Effect.FixedCandidates)}\n" +
-            $"cand possible {StrategyTextRenderer.FormatOptionalSet(branch.Effect.PossibleCandidates)}";
+        string details = $"{branch.OrderText}\n{StrategyTextRenderer.FormatEffectDetails(branch.Effect)}";
 
         if (branch.EquivalentOrders is not null)
         {
-            details += "\n" +
-                $"equivalent forms: {branch.EquivalentOrders.Count} = {branch.EquivalentOrders.CountFormula}\n" +
-                $"pattern: {StrategyTextRenderer.FormatEquivalentPattern(branch.EquivalentOrders)}";
+            details += "\n" + StrategyTextRenderer.FormatEquivalentDetails(branch.EquivalentOrders);
         }
 
         return details;
@@ -554,7 +553,7 @@ class MainForm : Form
     {
         _summaryLabel.Text =
             $"n={plan.N}, m={plan.M}, k={plan.K}, elapsed={plan.Elapsed.TotalMilliseconds:F1} ms, max step={plan.MaxStep}, " +
-            $"{FormatSearchStatsSummary(plan.SearchStatistics)}, theme={ParseSelectedTheme()}. Colors: state, branch, in, out, cand fixed, cand possible, result, goto.";
+            $"{FormatSearchStatsSummary(plan.SearchStatistics)}, theme={ParseSelectedTheme()}. Colors: state, branch, in, out, fixed, possible, result, reference.";
     }
 
     private static string BuildCompressedFinalChoiceText(FinalChoiceSummary summary, int k)

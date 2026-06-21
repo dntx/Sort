@@ -5,6 +5,11 @@ using System.Linq;
 
 static class StrategyTextRenderer
 {
+    private const string InLabel = "in";
+    private const string OutLabel = "out";
+    private const string FixedLabel = "fixed";
+    private const string PossibleLabel = "possible";
+
     public static string Render(StrategyPlan plan)
     {
         using var writer = new StringWriter();
@@ -84,8 +89,36 @@ static class StrategyTextRenderer
 
     public static string FormatEffect(StrategyEffect effect)
     {
-        return $"[in {FormatOptionalSet(effect.NewlyGuaranteedTop)}, out {FormatOptionalSet(effect.NewlyExcluded)}, cand fixed {FormatOptionalSet(effect.FixedCandidates)}, possible {FormatOptionalSet(effect.PossibleCandidates)}]";
+        return $"[{FormatInEntry(effect.NewlyGuaranteedTop)}, {FormatOutEntry(effect.NewlyExcluded)}, {FormatFixedEntry(effect.FixedCandidates)}, {FormatPossibleEntry(effect.PossibleCandidates)}]";
     }
+
+    public static string FormatInEntry(IEnumerable<int> items) => $"{InLabel} {FormatOptionalSet(items)}";
+
+    public static string FormatOutEntry(IEnumerable<int> items) => $"{OutLabel} {FormatOptionalSet(items)}";
+
+    public static string FormatFixedEntry(IEnumerable<int> items) => $"{FixedLabel} {FormatOptionalSet(items)}";
+
+    public static string FormatPossibleEntry(IEnumerable<int> items) => $"{PossibleLabel} {FormatOptionalSet(items)}";
+
+    public static string FormatEffectDetails(StrategyEffect effect)
+    {
+        return string.Join("\n", new[]
+        {
+            FormatInEntry(effect.NewlyGuaranteedTop),
+            FormatOutEntry(effect.NewlyExcluded),
+            FormatFixedEntry(effect.FixedCandidates),
+            FormatPossibleEntry(effect.PossibleCandidates),
+        });
+    }
+
+    public static string FormatEquivalentFormsSummary(EquivalentOrderSummary summary)
+        => $"equivalent forms: {summary.Count} = {summary.CountFormula}";
+
+    public static string FormatEquivalentPatternLine(EquivalentOrderSummary summary)
+        => $"pattern: {summary.PatternText}";
+
+    public static string FormatEquivalentDetails(EquivalentOrderSummary summary)
+        => $"{FormatEquivalentFormsSummary(summary)}\n{FormatEquivalentPatternLine(summary)}";
 
     private static void WriteEquivalentOrders(StrategyBranch branch, TextWriter writer, int indent)
     {
@@ -93,8 +126,8 @@ static class StrategyTextRenderer
             return;
 
         string prefix = new string(' ', indent * 2);
-        writer.WriteLine($"{prefix}equivalent forms: {branch.EquivalentOrders.Count} = {branch.EquivalentOrders.CountFormula}");
-        writer.WriteLine($"{prefix}pattern: {branch.EquivalentOrders.PatternText}");
+        writer.WriteLine($"{prefix}{FormatEquivalentFormsSummary(branch.EquivalentOrders)}");
+        writer.WriteLine($"{prefix}{FormatEquivalentPatternLine(branch.EquivalentOrders)}");
     }
 
     private static string FormatCompressedFinalChoice(FinalChoiceSummary summary, int k)
