@@ -792,12 +792,13 @@ class StrategyBuilder
     private List<StrategyBranch> BuildBranches(ComparisonState state, ulong fixedTopMask, int remainingSlots, IReadOnlyList<int> group, int nextStep)
     {
         ThrowIfCancellationRequested();
+
         var groupedBranches = new Dictionary<IntSequenceKey, BranchInfo>();
-        foreach (var order in EnumerateFeasibleOrders(state, group))
+        foreach (var orderFamily in EnumerateFeasibleOrderFamilies(state, group))
         {
             ThrowIfCancellationRequested();
             var next = state.Clone();
-            next.ApplyOrder(order);
+            next.ApplyOrder(orderFamily.RepresentativeOrderItems);
             next.Eliminate(remainingSlots);
 
             ulong nextFixedTopMask = fixedTopMask;
@@ -807,11 +808,11 @@ class StrategyBuilder
             IntSequenceKey nextKey = GetDisplayStateKey(next, nextFixedTopMask);
             if (!groupedBranches.TryGetValue(nextKey, out BranchInfo? branch))
             {
-                groupedBranches[nextKey] = new BranchInfo(next, nextFixedTopMask, nextRemainingSlots, order);
+                groupedBranches[nextKey] = new BranchInfo(next, nextFixedTopMask, nextRemainingSlots, orderFamily);
             }
             else
             {
-                branch.EquivalentOrders.Add(order.ToArray());
+                branch.OrderFamilies.Add(orderFamily);
             }
         }
 
@@ -819,7 +820,7 @@ class StrategyBuilder
             .OrderBy(v => v.RepresentativeOrder, StringComparer.Ordinal)
             .Select(v => new StrategyBranch(
                 v.RepresentativeOrder,
-                BuildEquivalentOrderSummary(v.RepresentativeOrderItems, v.EquivalentOrders),
+                BuildEquivalentOrderSummary(v.OrderFamilies),
                 BuildComparisonEffect(state, fixedTopMask, v.NextState, v.NextFixedTopMask),
                 BuildState(v.NextState, v.NextFixedTopMask, v.NextRemainingSlots, nextStep)))
             .ToList();
@@ -891,11 +892,11 @@ class StrategyBuilder
             bool isUseful = false;
             int bestKnownWorstCase = bestGroup is null ? int.MaxValue : -bestScore.negWorstCaseSteps;
 
-            foreach (var order in EnumerateFeasibleOrders(state, group))
+            foreach (var orderFamily in EnumerateFeasibleOrderFamilies(state, group))
             {
                 ThrowIfCancellationRequested();
                 var next = state.Clone();
-                next.ApplyOrder(order);
+                next.ApplyOrder(orderFamily.RepresentativeOrderItems);
                 next.Eliminate(remainingSlots);
 
                 ulong ignoredFixedTopMask = 0;
@@ -988,11 +989,11 @@ class StrategyBuilder
                 int groupWorstCase = 0;
                 bool isUseful = false;
 
-                foreach (var order in EnumerateFeasibleOrders(state, group))
+                foreach (var orderFamily in EnumerateFeasibleOrderFamilies(state, group))
                 {
                     ThrowIfCancellationRequested();
                     var next = state.Clone();
-                    next.ApplyOrder(order);
+                    next.ApplyOrder(orderFamily.RepresentativeOrderItems);
                     next.Eliminate(remainingSlots);
 
                     ulong nextIgnoredFixedTopMask = 0;
@@ -1179,14 +1180,22 @@ class StrategyBuilder
         return new IntSequenceKey(group.Select(i => labels[i]).OrderBy(x => x).ToArray());
     }
 
-    private IEnumerable<List<int>> EnumerateFeasibleOrders(ComparisonState state, IReadOnlyList<int> group)
+    private IEnumerable<OrderFamilyDescriptor> EnumerateFeasibleOrderFamilies(ComparisonState state, IReadOnlyList<int> group)
     {
         ThrowIfCancellationRequested();
-        var remaining = new HashSet<int>(group);
-        var current = new List<int>(group.Count);
+        GroupSymmetryInfo symmetryInfo = BuildGroupSymmetryInfo(state, group);
+        if (symmetryInfo.Classes.All(@class => @class.Items.Length == 1))
+        {
+            var remaining = new HashSet<int>(group);
+            var current = new List<int>(group.Count);
 
-        foreach (var order in EnumerateFeasibleOrders(state, remaining, current))
-            yield return order;
+            foreach (var order in EnumerateFeasibleOrders(state, remaining, current))
+                yield return OrderFamilyDescriptor.CreateSingleton(order);
+            yield break;
+        }
+
+        foreach (var family in EnumerateSymmetricOrderFamilies(symmetryInfo))
+            yield return family;
     }
 
     private IEnumerable<List<int>> EnumerateFeasibleOrders(
@@ -1218,6 +1227,134 @@ class StrategyBuilder
             current.RemoveAt(current.Count - 1);
             remaining.Add(next);
         }
+    }
+
+    private GroupSymmetryInfo BuildGroupSymmetryInfo(ComparisonState state, IReadOnlyList<int> group)
+    {
+        ulong activeMask = state.ActiveMask;
+        var groupedItems = group
+            .GroupBy(item => new SymmetrySignature(state.Ancestors[item] & activeMask, state.Descendants[item] & activeMask))
+            .OrderBy(grouping => grouping.Min())
+            .ToList();
+
+        var classes = groupedItems
+            .Select((grouping, index) =>
+            {
+                int[] items = grouping.OrderBy(item => item).ToArray();
+                return new GroupSymmetryClass(index, items, state.Ancestors[items[0]] & activeMask);
+            })
+            .ToList();
+
+        var itemToClassIndex = new Dictionary<int, int>(group.Count);
+        foreach (var @class in classes)
+        {
+            foreach (int item in @class.Items)
+                itemToClassIndex[item] = @class.Index;
+        }
+
+        return new GroupSymmetryInfo(classes, itemToClassIndex);
+    }
+
+    private IEnumerable<OrderFamilyDescriptor> EnumerateSymmetricOrderFamilies(GroupSymmetryInfo symmetryInfo)
+    {
+        ThrowIfCancellationRequested();
+        BigInteger multiplicity = BigInteger.One;
+        foreach (var @class in symmetryInfo.Classes)
+            multiplicity *= Factorial(@class.Items.Length);
+
+        ulong remainingMask = 0;
+        foreach (var @class in symmetryInfo.Classes)
+        {
+            foreach (int item in @class.Items)
+                remainingMask |= 1UL << item;
+        }
+
+        var nextItemIndices = symmetryInfo.Classes.Select(_ => 0).ToArray();
+        var remainingCounts = symmetryInfo.Classes.Select(@class => @class.Items.Length).ToArray();
+        var classSequence = new List<int>(symmetryInfo.Classes.Sum(@class => @class.Items.Length));
+        var representativeOrder = new List<int>(classSequence.Capacity);
+
+        foreach (var family in EnumerateSymmetricOrderFamilies(
+            symmetryInfo,
+            remainingMask,
+            nextItemIndices,
+            remainingCounts,
+            classSequence,
+            representativeOrder,
+            multiplicity))
+        {
+            yield return family;
+        }
+    }
+
+    private IEnumerable<OrderFamilyDescriptor> EnumerateSymmetricOrderFamilies(
+        GroupSymmetryInfo symmetryInfo,
+        ulong remainingMask,
+        int[] nextItemIndices,
+        int[] remainingCounts,
+        List<int> classSequence,
+        List<int> representativeOrder,
+        BigInteger multiplicity)
+    {
+        ThrowIfCancellationRequested();
+        if (remainingMask == 0)
+        {
+            yield return OrderFamilyDescriptor.CreateSymmetric(
+                representativeOrder,
+                BuildSymmetricFamilyPatternText(symmetryInfo, classSequence),
+                BuildMultiplicityFormula(symmetryInfo.Classes.Select(@class => @class.Items.Length)),
+                checked((int)multiplicity),
+                symmetryInfo.Classes.Select(@class => (IReadOnlyList<int>)@class.Items).ToList(),
+                classSequence.ToArray());
+            yield break;
+        }
+
+        foreach (var @class in symmetryInfo.Classes)
+        {
+            if (remainingCounts[@class.Index] == 0 || (@class.AncestorMask & remainingMask) != 0)
+                continue;
+
+            int item = @class.Items[nextItemIndices[@class.Index]];
+            nextItemIndices[@class.Index]++;
+            remainingCounts[@class.Index]--;
+            classSequence.Add(@class.Index);
+            representativeOrder.Add(item);
+
+            foreach (var family in EnumerateSymmetricOrderFamilies(
+                symmetryInfo,
+                remainingMask & ~(1UL << item),
+                nextItemIndices,
+                remainingCounts,
+                classSequence,
+                representativeOrder,
+                multiplicity))
+            {
+                yield return family;
+            }
+
+            representativeOrder.RemoveAt(representativeOrder.Count - 1);
+            classSequence.RemoveAt(classSequence.Count - 1);
+            remainingCounts[@class.Index]++;
+            nextItemIndices[@class.Index]--;
+        }
+    }
+
+    private static string BuildSymmetricFamilyPatternText(GroupSymmetryInfo symmetryInfo, IReadOnlyList<int> classSequence)
+    {
+        if (symmetryInfo.Classes.Count == 1)
+            return $"permute {FormatBraceSet(symmetryInfo.Classes[0].Items)}";
+
+        return BuildPermutationTemplateText(
+            symmetryInfo.Classes.Select(@class => (IReadOnlyList<int>)@class.Items).ToList(),
+            classSequence);
+    }
+
+    private static string BuildMultiplicityFormula(IEnumerable<int> classSizes)
+    {
+        string formula = string.Join(" x ", classSizes
+            .Where(size => size > 1)
+            .Select(size => $"{size}!"));
+        return string.IsNullOrEmpty(formula) ? "1" : formula;
     }
 
     private static int CountUnresolvedPairs(ComparisonState state, IReadOnlyList<int> group)
@@ -1309,27 +1446,20 @@ class StrategyBuilder
     }
 
     private static EquivalentOrderSummary? BuildEquivalentOrderSummary(
-        IReadOnlyList<int> representativeOrder,
-        IReadOnlyList<IReadOnlyList<int>> equivalentOrders)
+        IReadOnlyList<OrderFamilyDescriptor> orderFamilies)
     {
-        if (equivalentOrders.Count == 0)
+        if (orderFamilies.Count == 0)
             return null;
 
-        var allOrders = new List<IReadOnlyList<int>>(equivalentOrders.Count + 1) { representativeOrder };
-        allOrders.AddRange(equivalentOrders);
+        int totalCount = orderFamilies.Sum(family => family.Count);
+        if (totalCount <= 1)
+            return null;
 
-        var representativePositions = representativeOrder
-            .Select((item, index) => (item, index))
-            .ToDictionary(x => x.item, x => x.index);
-
-        EquivalentPatternSummary summary = BuildEquivalentPatternSummary(
-            allOrders.Select(order => order.ToArray()).ToList(),
-            representativeOrder.ToArray(),
-            representativePositions);
-        return new EquivalentOrderSummary(
-            equivalentOrders.Count,
-            summary.PatternText,
-            $"{summary.TotalCountFormula} - 1");
+        string patternText = orderFamilies.Count == 1
+            ? orderFamilies[0].PatternText
+            : "(" + string.Join(" | ", orderFamilies.Select(family => family.PatternText)) + ")";
+        string countFormula = $"{CombineFormulaParts(orderFamilies.Select(family => family.CountFormula).ToList())} - 1";
+        return new EquivalentOrderSummary(totalCount - 1, patternText, countFormula);
     }
 
     private static string FormatBraceSet(IEnumerable<int> items)
@@ -2248,6 +2378,91 @@ class StrategyBuilder
         public int Savings => OrderIndices.Count - 1;
     }
 
+    private readonly record struct SymmetrySignature(ulong AncestorMask, ulong DescendantMask);
+
+    private sealed class GroupSymmetryClass
+    {
+        public GroupSymmetryClass(int index, int[] items, ulong ancestorMask)
+        {
+            Index = index;
+            Items = items;
+            AncestorMask = ancestorMask;
+        }
+
+        public int Index { get; }
+        public int[] Items { get; }
+        public ulong AncestorMask { get; }
+    }
+
+    private sealed class GroupSymmetryInfo
+    {
+        public GroupSymmetryInfo(
+            IReadOnlyList<GroupSymmetryClass> classes,
+            IReadOnlyDictionary<int, int> itemToClassIndex)
+        {
+            Classes = classes;
+            ItemToClassIndex = itemToClassIndex;
+        }
+
+        public IReadOnlyList<GroupSymmetryClass> Classes { get; }
+        public IReadOnlyDictionary<int, int> ItemToClassIndex { get; }
+    }
+
+    private sealed class OrderFamilyDescriptor
+    {
+        private OrderFamilyDescriptor(
+            IReadOnlyList<int> representativeOrderItems,
+            string representativeOrder,
+            string patternText,
+            string countFormula,
+            int count,
+            IReadOnlyList<IReadOnlyList<int>>? partitionBlocks,
+            IReadOnlyList<int>? template)
+        {
+            RepresentativeOrderItems = representativeOrderItems;
+            RepresentativeOrder = representativeOrder;
+            PatternText = patternText;
+            CountFormula = countFormula;
+            Count = count;
+            PartitionBlocks = partitionBlocks;
+            Template = template;
+        }
+
+        public IReadOnlyList<int> RepresentativeOrderItems { get; }
+        public string RepresentativeOrder { get; }
+        public string PatternText { get; }
+        public string CountFormula { get; }
+        public int Count { get; }
+        public IReadOnlyList<IReadOnlyList<int>>? PartitionBlocks { get; }
+        public IReadOnlyList<int>? Template { get; }
+
+        public static OrderFamilyDescriptor CreateSingleton(IReadOnlyList<int> order)
+        {
+            int[] copied = order.ToArray();
+            string orderText = FormatOrder(copied);
+            return new OrderFamilyDescriptor(copied, orderText, orderText, "1", 1, null, null);
+        }
+
+        public static OrderFamilyDescriptor CreateSymmetric(
+            IReadOnlyList<int> representativeOrder,
+            string patternText,
+            string countFormula,
+            int count,
+            IReadOnlyList<IReadOnlyList<int>> partitionBlocks,
+            IReadOnlyList<int> template)
+        {
+            int[] copied = representativeOrder.ToArray();
+            return new OrderFamilyDescriptor(
+                copied,
+                FormatOrder(copied),
+                patternText,
+                countFormula,
+                count,
+                partitionBlocks.Select(block => (IReadOnlyList<int>)block.ToArray()).ToList(),
+                template.ToArray());
+        }
+    }
+
     private void EnterSearchState()
     {
         _pendingStates++;
@@ -2307,18 +2522,16 @@ class StrategyBuilder
         public ComparisonState NextState { get; }
         public ulong NextFixedTopMask { get; }
         public int NextRemainingSlots { get; }
-        public IReadOnlyList<int> RepresentativeOrderItems { get; }
         public string RepresentativeOrder { get; }
-        public List<IReadOnlyList<int>> EquivalentOrders { get; }
+        public List<OrderFamilyDescriptor> OrderFamilies { get; }
 
-        public BranchInfo(ComparisonState nextState, ulong nextFixedTopMask, int nextRemainingSlots, IReadOnlyList<int> representativeOrderItems)
+        public BranchInfo(ComparisonState nextState, ulong nextFixedTopMask, int nextRemainingSlots, OrderFamilyDescriptor representativeFamily)
         {
             NextState = nextState;
             NextFixedTopMask = nextFixedTopMask;
             NextRemainingSlots = nextRemainingSlots;
-            RepresentativeOrderItems = representativeOrderItems.ToArray();
-            RepresentativeOrder = FormatOrder(RepresentativeOrderItems);
-            EquivalentOrders = new List<IReadOnlyList<int>>();
+            RepresentativeOrder = representativeFamily.RepresentativeOrder;
+            OrderFamilies = new List<OrderFamilyDescriptor> { representativeFamily };
         }
     }
 }
