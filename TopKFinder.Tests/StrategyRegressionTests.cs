@@ -111,6 +111,41 @@ public sealed class StrategyRegressionTests
             }
         }
     }
+
+    [Fact]
+    public void N5M3K2_RenderedTextMatchesSnapshot()
+    {
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.Generate(5, 3, 2)",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.Generate(5, 3, 2, cancellationToken));
+
+        string rendered = StrategyTestHelpers.NormalizeRenderedSnapshot(StrategyTextRenderer.Render(plan));
+        const string expected = """
+            n=5, m=3, k=2
+            elapsed = <elapsed>
+            max step = 3
+            searched states = 4
+            pending states = 0 (peak 1)
+            output states = 4 (expanded 2)
+
+            S1 [step 1] sort(#1, #2, #3)
+              #1 > #2 > #3: [in -, out (#3), fixed -, possible (#1, #2, #4, #5)]
+                equivalent forms: 5 = 3! - 1
+                pattern: permute {#1, #2, #3}
+                S2 [step 2] sort(#1, #4, #5)
+                  #1 > #4 > #5: [in (#1), out (#5), fixed (#1), possible (#2, #4)]
+                    equivalent forms: 1 = 2! - 1
+                    pattern: B=permute{#4, #5}; #1 > B1 > B2
+                    S3 [step 3] sort(#2, #4)
+                      fixed (#1); choose 1 of (#2, #4) into top 2
+                  #4 > #1 > #5: [in (#1, #4), out (#2, #5), fixed (#1, #4), possible -] S4: top 2 = (#1, #4)
+                    equivalent forms: 3 = 2 x 2! - 1
+                    pattern: (B=permute{#4, #5}; B1 > #1 > B2 | B=permute{#4, #5}; B1 > B2 > #1)
+            """;
+
+        Assert.Equal(StrategyTestHelpers.NormalizeRenderedSnapshot(expected), rendered);
+    }
 }
 
 internal static class StrategyTestHelpers
@@ -133,6 +168,15 @@ internal static class StrategyTestHelpers
             if (node.Kind == StrategyNodeKind.Decision)
                 yield return node;
         }
+    }
+
+    public static string NormalizeRenderedSnapshot(string rendered)
+    {
+        string normalized = rendered.Replace("\r\n", "\n").TrimEnd();
+        string[] lines = normalized.Split('\n');
+        if (lines.Length > 1 && lines[1].StartsWith("elapsed = ", StringComparison.Ordinal))
+            lines[1] = "elapsed = <elapsed>";
+        return string.Join("\n", lines);
     }
 
     private static IEnumerable<StrategyBranch> EnumerateBranches(StrategyNode node)
