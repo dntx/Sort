@@ -171,8 +171,7 @@ partial class StrategyBuilder
 
         List<int>? bestGroup = null;
         IReadOnlyList<GroupTransition>? bestTransitions = null;
-        (int negWorstCaseSteps, int negFreshItems, int negUnrelatedScore, int negGroupSize, int distinctStates, int totalReduction, int unresolvedPairs) bestScore =
-            (int.MinValue, int.MinValue, int.MinValue, int.MinValue, int.MinValue, int.MinValue, int.MinValue);
+        GroupEvaluationScore? bestScore = null;
 
         ThrowIfCancellationRequested();
         // Under the current cost model, a size-m comparison weakly dominates any smaller
@@ -185,65 +184,20 @@ partial class StrategyBuilder
             if (!seenGroupPatterns.Add(GetGroupPattern(group, labels)))
                 continue;
 
-            var nextStateKeys = new HashSet<SearchStateKey>();
-            int worstCaseSteps = 0;
-            int totalReduction = 0;
-            bool isUseful = false;
-            int bestKnownWorstCase = bestGroup is null ? int.MaxValue : -bestScore.negWorstCaseSteps;
-            var transitions = new List<GroupTransition>();
-
-            foreach (OrderFamilyDescriptor orderFamily in EnumerateFeasibleOrderFamilies(state, group))
-            {
-                ThrowIfCancellationRequested();
-                ComparisonState next = state.Clone();
-                next.ApplyOrder(orderFamily.RepresentativeOrderItems);
-                next.Eliminate(remainingSlots);
-
-                ulong addedFixedTopMask = 0;
-                int nextRemainingSlots = remainingSlots;
-                NormalizeState(next, ref addedFixedTopMask, ref nextRemainingSlots);
-
-                var transition = new GroupTransition(
-                    next,
-                    addedFixedTopMask,
-                    nextRemainingSlots,
-                    GetSearchStateKey(next, nextRemainingSlots),
-                    state.ActiveCount - next.ActiveCount,
-                    orderFamily);
-                transitions.Add(transition);
-
-                SearchStateKey nextKey = transition.NextSearchKey;
-                if (nextKey.Equals(currentKey))
-                    continue;
-
-                isUseful = true;
-                totalReduction += transition.Reduction;
-                nextStateKeys.Add(nextKey);
-
-                int branchLowerBound = 1 + GetMinWorstCaseLowerBound(transition.NextState, transition.NextRemainingSlots);
-                if (branchLowerBound > bestKnownWorstCase)
-                {
-                    worstCaseSteps = branchLowerBound;
-                    break;
-                }
-
-                int branchSteps = 1 + GetMinWorstCaseSteps(transition.NextState, transition.NextRemainingSlots);
-                worstCaseSteps = Math.Max(worstCaseSteps, branchSteps);
-            }
-
-            if (!isUseful)
+            GroupEvaluation? evaluation = EvaluateGroup(
+                state,
+                remainingSlots,
+                group,
+                currentKey,
+                bestScore?.WorstCaseSteps ?? int.MaxValue);
+            if (evaluation is null)
                 continue;
 
-            int freshItems = group.Count(i => state.GetAncestorCount(i) == 0 && state.GetDescendantCount(i) == 0);
-            int unrelatedScore = -group.Sum(i => state.GetAncestorCount(i) + state.GetDescendantCount(i));
-            int unresolvedPairs = CountUnresolvedPairs(state, group);
-            var score = (-worstCaseSteps, freshItems, unrelatedScore, group.Count, nextStateKeys.Count, totalReduction, unresolvedPairs);
-
-            if (bestGroup is null || score.CompareTo(bestScore) > 0)
+            if (bestScore is null || evaluation.Score.CompareTo(bestScore.Value) > 0)
             {
                 bestGroup = group;
-                bestTransitions = transitions;
-                bestScore = score;
+                bestTransitions = evaluation.Transitions;
+                bestScore = evaluation.Score;
             }
         }
 
@@ -257,6 +211,51 @@ partial class StrategyBuilder
         return new ChosenGroupResult(fallbackGroup, BuildAllGroupTransitions(state, remainingSlots, fallbackGroup));
     }
 
+    private GroupEvaluation? EvaluateGroup(
+        ComparisonState state,
+        int remainingSlots,
+        IReadOnlyList<int> group,
+        SearchStateKey currentKey,
+        int bestKnownWorstCase)
+    {
+        var nextStateKeys = new HashSet<SearchStateKey>();
+        int worstCaseSteps = 0;
+        int totalReduction = 0;
+        bool isUseful = false;
+        var transitions = new List<GroupTransition>();
+
+        foreach (OrderFamilyDescriptor orderFamily in EnumerateFeasibleOrderFamilies(state, group))
+        {
+            ThrowIfCancellationRequested();
+            GroupTransition transition = CreateGroupTransition(state, remainingSlots, orderFamily);
+            transitions.Add(transition);
+
+            SearchStateKey nextKey = transition.NextSearchKey;
+            if (nextKey.Equals(currentKey))
+                continue;
+
+            isUseful = true;
+            totalReduction += transition.Reduction;
+            nextStateKeys.Add(nextKey);
+
+            int branchLowerBound = 1 + GetMinWorstCaseLowerBound(transition.NextState, transition.NextRemainingSlots);
+            if (branchLowerBound > bestKnownWorstCase)
+            {
+                worstCaseSteps = branchLowerBound;
+                break;
+            }
+
+            int branchSteps = 1 + GetMinWorstCaseSteps(transition.NextState, transition.NextRemainingSlots);
+            worstCaseSteps = Math.Max(worstCaseSteps, branchSteps);
+        }
+
+        if (!isUseful)
+            return null;
+
+        GroupEvaluationScore score = BuildGroupEvaluationScore(state, group, worstCaseSteps, nextStateKeys.Count, totalReduction);
+        return new GroupEvaluation(transitions, score);
+    }
+
     private IReadOnlyList<GroupTransition> BuildAllGroupTransitions(ComparisonState state, int remainingSlots, IReadOnlyList<int> group)
     {
         ThrowIfCancellationRequested();
@@ -264,29 +263,61 @@ partial class StrategyBuilder
         foreach (OrderFamilyDescriptor orderFamily in EnumerateFeasibleOrderFamilies(state, group))
         {
             ThrowIfCancellationRequested();
-            ComparisonState next = state.Clone();
-            next.ApplyOrder(orderFamily.RepresentativeOrderItems);
-            next.Eliminate(remainingSlots);
-
-            ulong addedFixedTopMask = 0;
-            int nextRemainingSlots = remainingSlots;
-            NormalizeState(next, ref addedFixedTopMask, ref nextRemainingSlots);
-
-            transitions.Add(new GroupTransition(
-                next,
-                addedFixedTopMask,
-                nextRemainingSlots,
-                GetSearchStateKey(next, nextRemainingSlots),
-                state.ActiveCount - next.ActiveCount,
-                orderFamily));
+            transitions.Add(CreateGroupTransition(state, remainingSlots, orderFamily));
         }
 
         return transitions;
     }
 
+    private GroupTransition CreateGroupTransition(ComparisonState state, int remainingSlots, OrderFamilyDescriptor orderFamily)
+    {
+        ComparisonState next = state.Clone();
+        next.ApplyOrder(orderFamily.RepresentativeOrderItems);
+        next.Eliminate(remainingSlots);
+
+        ulong addedFixedTopMask = 0;
+        int nextRemainingSlots = remainingSlots;
+        NormalizeState(next, ref addedFixedTopMask, ref nextRemainingSlots);
+
+        return new GroupTransition(
+            next,
+            addedFixedTopMask,
+            nextRemainingSlots,
+            GetSearchStateKey(next, nextRemainingSlots),
+            state.ActiveCount - next.ActiveCount,
+            orderFamily);
+    }
+
+    private static GroupEvaluationScore BuildGroupEvaluationScore(
+        ComparisonState state,
+        IReadOnlyList<int> group,
+        int worstCaseSteps,
+        int distinctStates,
+        int totalReduction)
+    {
+        return new GroupEvaluationScore(
+            worstCaseSteps,
+            CountFreshItems(state, group),
+            CalculateUnrelatedScore(state, group),
+            group.Count,
+            distinctStates,
+            totalReduction,
+            CountUnresolvedPairs(state, group));
+    }
+
     private static IntSequenceKey GetGroupPattern(IReadOnlyList<int> group, IReadOnlyList<int> labels)
     {
         return new IntSequenceKey(group.Select(i => labels[i]).OrderBy(x => x).ToArray());
+    }
+
+    private static int CountFreshItems(ComparisonState state, IReadOnlyList<int> group)
+    {
+        return group.Count(i => state.GetAncestorCount(i) == 0 && state.GetDescendantCount(i) == 0);
+    }
+
+    private static int CalculateUnrelatedScore(ComparisonState state, IReadOnlyList<int> group)
+    {
+        return -group.Sum(i => state.GetAncestorCount(i) + state.GetDescendantCount(i));
     }
 
     private static int CountUnresolvedPairs(ComparisonState state, IReadOnlyList<int> group)
@@ -459,6 +490,57 @@ partial class StrategyBuilder
 
         public IReadOnlyList<int> Group { get; }
         public IReadOnlyList<GroupTransition> Transitions { get; }
+    }
+
+    private sealed class GroupEvaluation
+    {
+        public GroupEvaluation(IReadOnlyList<GroupTransition> transitions, GroupEvaluationScore score)
+        {
+            Transitions = transitions;
+            Score = score;
+        }
+
+        public IReadOnlyList<GroupTransition> Transitions { get; }
+        public GroupEvaluationScore Score { get; }
+    }
+
+    private readonly record struct GroupEvaluationScore(
+        int WorstCaseSteps,
+        int FreshItems,
+        int UnrelatedScore,
+        int GroupSize,
+        int DistinctStates,
+        int TotalReduction,
+        int UnresolvedPairs) : IComparable<GroupEvaluationScore>
+    {
+        public int CompareTo(GroupEvaluationScore other)
+        {
+            int result = other.WorstCaseSteps.CompareTo(WorstCaseSteps);
+            if (result != 0)
+                return result;
+
+            result = FreshItems.CompareTo(other.FreshItems);
+            if (result != 0)
+                return result;
+
+            result = UnrelatedScore.CompareTo(other.UnrelatedScore);
+            if (result != 0)
+                return result;
+
+            result = GroupSize.CompareTo(other.GroupSize);
+            if (result != 0)
+                return result;
+
+            result = DistinctStates.CompareTo(other.DistinctStates);
+            if (result != 0)
+                return result;
+
+            result = TotalReduction.CompareTo(other.TotalReduction);
+            if (result != 0)
+                return result;
+
+            return UnresolvedPairs.CompareTo(other.UnresolvedPairs);
+        }
     }
 
     private sealed class GroupTransition
