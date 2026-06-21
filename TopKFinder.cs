@@ -448,7 +448,7 @@ partial class StrategyBuilder
         public int DistinctNextStateCount { get; }
     }
 
-    private readonly record struct ComparisonGroupScore(
+    internal readonly record struct ComparisonGroupScore(
         int WorstCaseSteps,
         int FreshItems,
         int UnrelatedScore,
