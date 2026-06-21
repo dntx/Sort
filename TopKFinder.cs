@@ -382,6 +382,7 @@ sealed class StrategyNode
     public IReadOnlyList<int> Group { get; }
     public IReadOnlyList<int> TopSet { get; }
     public IReadOnlyList<StrategyBranch> Branches { get; }
+    public FinalChoiceSummary? FinalChoice { get; }
 
     private StrategyNode(
         StrategyNodeKind kind,
@@ -389,7 +390,8 @@ sealed class StrategyNode
         int? step,
         IReadOnlyList<int>? group,
         IReadOnlyList<int>? topSet,
-        IReadOnlyList<StrategyBranch>? branches)
+        IReadOnlyList<StrategyBranch>? branches,
+        FinalChoiceSummary? finalChoice)
     {
         Kind = kind;
         StateId = stateId;
@@ -397,20 +399,22 @@ sealed class StrategyNode
         Group = group ?? Array.Empty<int>();
         TopSet = topSet ?? Array.Empty<int>();
         Branches = branches ?? Array.Empty<StrategyBranch>();
+        FinalChoice = finalChoice;
     }
 
     public static StrategyNode Decision(
         int stateId,
         int step,
         IReadOnlyList<int> group,
-        IReadOnlyList<StrategyBranch> branches)
-        => new(StrategyNodeKind.Decision, stateId, step, group, null, branches);
+        IReadOnlyList<StrategyBranch> branches,
+        FinalChoiceSummary? finalChoice = null)
+        => new(StrategyNodeKind.Decision, stateId, step, group, null, branches, finalChoice);
 
     public static StrategyNode Terminal(int stateId, IReadOnlyList<int> topSet)
-        => new(StrategyNodeKind.Terminal, stateId, null, null, topSet, null);
+        => new(StrategyNodeKind.Terminal, stateId, null, null, topSet, null, null);
 
     public static StrategyNode Reference(int stateId)
-        => new(StrategyNodeKind.Reference, stateId, null, null, null, null);
+        => new(StrategyNodeKind.Reference, stateId, null, null, null, null, null);
 }
 
 sealed class StrategyBranch
@@ -464,52 +468,6 @@ sealed class FinalChoiceSummary
     public IReadOnlyList<int> FixedTopSet { get; }
     public IReadOnlyList<int> CandidatePool { get; }
     public int RemainingSlots { get; }
-}
-
-static class StrategyNodeAnalysis
-{
-    public static bool TryGetCompressedFinalChoice(StrategyNode node, out FinalChoiceSummary summary)
-    {
-        summary = null!;
-        if (node.Kind != StrategyNodeKind.Decision || node.Branches.Count < 2)
-            return false;
-
-        var terminalBranches = node.Branches.Where(branch => branch.Next.Kind == StrategyNodeKind.Terminal).ToList();
-        if (terminalBranches.Count != node.Branches.Count)
-            return false;
-
-        int topSetSize = terminalBranches[0].Next.TopSet.Count;
-        var common = new HashSet<int>(terminalBranches[0].Next.TopSet);
-        var union = new HashSet<int>(terminalBranches[0].Next.TopSet);
-
-        foreach (var branch in terminalBranches.Skip(1))
-        {
-            if (branch.Next.TopSet.Count != topSetSize)
-                return false;
-
-            common.IntersectWith(branch.Next.TopSet);
-            union.UnionWith(branch.Next.TopSet);
-        }
-
-        int remainingSlots = topSetSize - common.Count;
-        if (remainingSlots <= 0)
-            return false;
-
-        foreach (var branch in terminalBranches)
-        {
-            int varyingCount = branch.Next.TopSet.Count(item => !common.Contains(item));
-            if (varyingCount != remainingSlots)
-                return false;
-        }
-
-        var fixedTopSet = common.OrderBy(x => x).ToList();
-        var candidatePool = union.Where(item => !common.Contains(item)).OrderBy(x => x).ToList();
-        if (candidatePool.Count <= remainingSlots)
-            return false;
-
-        summary = new FinalChoiceSummary(fixedTopSet, candidatePool, remainingSlots);
-        return true;
-    }
 }
 
 readonly struct FeasibleTopSetInfo
@@ -573,6 +531,21 @@ class StrategyBuilder
 
         if (state.ActiveCount <= _k)
             return StrategyNode.Terminal(stateId, state.GetActiveItemsOrdered());
+
+        var possibleCandidates = GetPossibleCandidates(state);
+        int remainingSlots = GetRemainingSlots(state);
+        if (possibleCandidates.Count > remainingSlots && possibleCandidates.Count <= _m)
+        {
+            return StrategyNode.Decision(
+                stateId,
+                step,
+                possibleCandidates,
+                Array.Empty<StrategyBranch>(),
+                new FinalChoiceSummary(
+                    ComparisonState.MaskToOrderedList(GetGuaranteedTopMask(state)),
+                    possibleCandidates,
+                    remainingSlots));
+        }
 
         if (_expandedStates.Contains(key))
             return StrategyNode.Reference(stateId);
