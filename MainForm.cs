@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Linq;
@@ -88,6 +89,8 @@ class MainForm : Form
     private Stopwatch? _runStopwatch;
     private CancellationTokenSource? _runCancellationSource;
     private StrategyDepthIndex? _depthIndex;
+    private readonly Dictionary<int, TreeNode> _stateNodesById = new();
+    private readonly Dictionary<TreeNode, int> _referenceTargets = new();
     private SearchProgressSnapshot _latestProgress;
 
     public MainForm()
@@ -259,6 +262,7 @@ class MainForm : Form
             Font = new Font(FontFamily.GenericSansSerif, 10),
         };
         _treeView.AfterSelect += (_, e) => ShowNodeDetails(e.Node);
+        _treeView.NodeMouseDoubleClick += (_, e) => TryJumpToReferenceTarget(e.Node);
         _expandAllButton.Click += (_, _) => _treeView.ExpandAll();
         _collapseAllButton.Click += (_, _) => _treeView.CollapseAll();
 
@@ -427,6 +431,8 @@ class MainForm : Form
     {
         _treeView.BeginUpdate();
         _treeView.Nodes.Clear();
+        _stateNodesById.Clear();
+        _referenceTargets.Clear();
         _depthIndex = StrategyDepthIndex.Build(plan.Root);
 
         var root = new TreeNode(
@@ -468,6 +474,7 @@ class MainForm : Form
             ForeColor = _palette.StateColor,
             Tag = BuildStateDetails(node),
         };
+        _stateNodesById[node.StateId] = treeNode;
 
         if (node.FinalChoice is not null)
         {
@@ -538,11 +545,13 @@ class MainForm : Form
 
     private TreeNode CreateTerminalNode(StrategyNode node, int k)
     {
-        return new TreeNode($"S{node.StateId}: top {k} = ({StrategyTextRenderer.FormatSet(node.TopSet)})")
+        var treeNode = new TreeNode($"S{node.StateId}: top {k} = ({StrategyTextRenderer.FormatSet(node.TopSet)})")
         {
             ForeColor = _palette.ResultColor,
             Tag = $"Result state S{node.StateId}\nTop {k} = ({StrategyTextRenderer.FormatSet(node.TopSet)})",
         };
+        _stateNodesById[node.StateId] = treeNode;
+        return treeNode;
     }
 
     private TreeNode CreateReferenceNode(StrategyNode node)
@@ -559,12 +568,28 @@ class MainForm : Form
                 node.ReferenceRelabeling.Select(r => $"#{r.ReferencedItem + 1}->#{r.CurrentItem + 1}"));
             tag += $"\nMap S{node.StateId}'s item numbers to the current ones: {pairs}";
         }
+        tag += $"\nDouble-click to jump to state S{node.StateId}.";
 
-        return new TreeNode(label)
+        var treeNode = new TreeNode(label)
         {
             ForeColor = _palette.ReferenceColor,
             Tag = tag,
         };
+        _referenceTargets[treeNode] = node.StateId;
+        return treeNode;
+    }
+
+    private void TryJumpToReferenceTarget(TreeNode node)
+    {
+        if (!_referenceTargets.TryGetValue(node, out int targetStateId))
+            return;
+
+        if (!_stateNodesById.TryGetValue(targetStateId, out TreeNode? targetNode))
+            return;
+
+        targetNode.EnsureVisible();
+        _treeView.SelectedNode = targetNode;
+        _treeView.Focus();
     }
 
     private static string BuildBranchDetails(StrategyBranch branch)
