@@ -223,11 +223,11 @@ public sealed class StrategyRegressionTests
             output states = 3 (expanded 2)
 
             S1 [step 1] sort(#1, #2, #3)
-              #1 > #2 > #3: [+in -, +out (#3), fixed -, possible (#1, #2, #4, #5)]
+              #1 > #2 > #3: [+ (), - (#3), fixed (), possible (#1, #2, #4, #5)]
                 equivalent forms: 5 = 3! - 1
                 pattern: permute {#1, #2, #3}
                 S2 [step 2] sort(#1, #2, #4)
-                  #1 > #2 > #4: [+in (#1), +out (#4), fixed (#1), possible (#2, #5)]
+                  #1 > #2 > #4: [+ (#1), - (#4), fixed (#1), possible (#2, #5)]
                     equivalent forms: 2 = 3 - 1
                     pattern: (#1 > #2 > #4 | #1 > #4 > #2 | #4 > #1 > #2)
                     [step 3] sort(#2, #5)
@@ -400,11 +400,11 @@ public sealed class StrategyRegressionTests
 
         const string expected = """
                     S3 [step 3] sort(#2, #5, #8, #9)
-                      #2 > #5 > #8 > #9: [+in (#1), +out (#7, #9), fixed (#1), possible (#2, #3, #4, #5, #6, #8, #10, #11, #12)]
+                      #2 > #5 > #8 > #9: [+ (#1), - (#7, #9), fixed (#1), possible (#2, #3, #4, #5, #6, #8, #10, #11, #12)]
                         equivalent forms: 3 = 2 x 2! - 1
                         pattern: (C=permute{#8, #9}; #2 > #5 > C1 > C2 | C=permute{#8, #9}; #5 > #2 > C1 > C2)
                         S4 [step 4] sort(#3, #5, #10, #11)
-                          #10 > #11 > #3 > #5: [+in (#10), +out (#3, #4, #5, #6, #8), fixed (#1, #10), possible (#2, #11, #12)]
+                          #10 > #11 > #3 > #5: [+ (#10), - (#3, #4, #5, #6, #8), fixed (#1, #10), possible (#2, #11, #12)]
                             equivalent forms: 3 = 2 x 2! - 1
                             pattern: (C=permute{#10, #11}; C1 > C2 > #3 > #5 | C=permute{#10, #11}; C1 > C2 > #5 > #3)
                             [step 5] sort(#2, #11, #12)

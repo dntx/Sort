@@ -5,8 +5,8 @@ using System.Linq;
 
 static class StrategyTextRenderer
 {
-    private const string InLabel = "+in";
-    private const string OutLabel = "+out";
+    private const string InLabel = "+";
+    private const string OutLabel = "-";
     private const string FixedLabel = "fixed";
     private const string PossibleLabel = "possible";
 
@@ -86,7 +86,7 @@ static class StrategyTextRenderer
     public static string FormatOptionalSet(IEnumerable<int> items)
     {
         var list = items.ToList();
-        return list.Count == 0 ? "-" : $"({FormatSet(list)})";
+        return list.Count == 0 ? "()" : $"({FormatSet(list)})";
     }
 
     public static string FormatEffect(StrategyEffect effect)
