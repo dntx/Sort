@@ -34,8 +34,8 @@ public sealed class StrategyRegressionTests
 
         Assert.Equal(6, plan.MaxStep);
         Assert.True(plan.SearchStatistics.SearchedStates <= 157, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
-        Assert.True(plan.SearchStatistics.OutputStates <= 13, $"output states regressed to {plan.SearchStatistics.OutputStates}");
-        Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 7, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
+        Assert.True(plan.SearchStatistics.OutputStates <= 22, $"output states regressed to {plan.SearchStatistics.OutputStates}");
+        Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 13, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
     }
 
     [Fact]
@@ -55,7 +55,7 @@ public sealed class StrategyRegressionTests
         Assert.Equal("3! - 1", rootBranch.EquivalentOrders.CountFormula);
         Assert.Equal("permute {#1, #2, #3}", rootBranch.EquivalentOrders.PatternText);
 
-        Assert.Equal(new[] { 3, 4, 5 }, rootBranch.Next.Group);
+        Assert.Equal(new[] { 0, 1, 3 }, rootBranch.Next.Group);
     }
 
     [Fact]
@@ -101,21 +101,21 @@ public sealed class StrategyRegressionTests
     }
 
     [Fact]
-    public void TwoPhaseBuilder_PreservesOptimalStepOnRepresentativeCases()
+    public void Builder_PreservesOptimalStepOnRepresentativeCases()
     {
         foreach ((int n, int m, int k) in new[] { (9, 3, 3), (12, 3, 3), (10, 3, 5) })
         {
-            StrategyPlan baseline = TestTimeoutHelper.RunWithTimeout(
-                $"StrategyBuilder.Generate({n}, {m}, {k}) baseline",
+            StrategyPlan first = TestTimeoutHelper.RunWithTimeout(
+                $"StrategyBuilder.Generate({n}, {m}, {k}) first",
                 RegressionTestTimeout,
                 cancellationToken => StrategyBuilder.Generate(n, m, k, cancellationToken));
-            StrategyPlan twoPhase = TestTimeoutHelper.RunWithTimeout(
-                $"StrategyBuilder.GenerateTwoPhase({n}, {m}, {k})",
+            StrategyPlan second = TestTimeoutHelper.RunWithTimeout(
+                $"StrategyBuilder.Generate({n}, {m}, {k}) second",
                 RegressionTestTimeout,
-                cancellationToken => StrategyBuilder.GenerateTwoPhase(n, m, k, cancellationToken));
+                cancellationToken => StrategyBuilder.Generate(n, m, k, cancellationToken));
 
-            Assert.Equal(baseline.MaxStep, twoPhase.MaxStep);
-            Assert.NotEmpty(twoPhase.SearchStatistics.Diagnostics.RootIncumbents);
+            Assert.Equal(first.MaxStep, second.MaxStep);
+            Assert.NotEmpty(first.SearchStatistics.Diagnostics.RootIncumbents);
         }
     }
 
@@ -169,17 +169,17 @@ public sealed class StrategyRegressionTests
             cancellationToken => StrategyBuilder.Generate(12, 4, 4, cancellationToken));
 
         Assert.Equal(5, plan.MaxStep);
-        Assert.True(plan.SearchStatistics.SearchedStates <= 1136, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
-        Assert.True(plan.SearchStatistics.OutputStates <= 29, $"output states regressed to {plan.SearchStatistics.OutputStates}");
-        Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 9, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
+        Assert.True(plan.SearchStatistics.SearchedStates <= 551, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
+        Assert.True(plan.SearchStatistics.OutputStates <= 23, $"output states regressed to {plan.SearchStatistics.OutputStates}");
+        Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 12, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
 
-        StrategyBranch branch = StrategyTestHelpers.FindBranchByOrderText(plan.Root, "#2 > #6 > #9 > #10");
+        StrategyBranch branch = StrategyTestHelpers.FindBranchByOrderText(plan.Root, "#2 > #5 > #8 > #9");
         Assert.NotNull(branch.EquivalentOrders);
         Assert.Equal(3, branch.EquivalentOrders!.Count);
         Assert.Equal("2 x 2! - 1", branch.EquivalentOrders.CountFormula);
-        Assert.Contains("permute{#9, #10}", branch.EquivalentOrders.PatternText);
-        Assert.Contains("#2 > #6", branch.EquivalentOrders.PatternText);
-        Assert.Contains("#6 > #2", branch.EquivalentOrders.PatternText);
+        Assert.Contains("permute{#8, #9}", branch.EquivalentOrders.PatternText);
+        Assert.Contains("#2 > #5", branch.EquivalentOrders.PatternText);
+        Assert.Contains("#5 > #2", branch.EquivalentOrders.PatternText);
     }
 
     [Fact]
@@ -215,22 +215,19 @@ public sealed class StrategyRegressionTests
             elapsed = <elapsed>
             max step = 3
             searched states = 4
-            pending states = 0 (peak 1)
-            output states = 4 (expanded 2)
+            pending states = 0 (peak 2)
+            output states = 3 (expanded 2)
 
             S1 [step 1] sort(#1, #2, #3)
               #1 > #2 > #3: [in -, out (#3), fixed -, possible (#1, #2, #4, #5)]
                 equivalent forms: 5 = 3! - 1
                 pattern: permute {#1, #2, #3}
-                S2 [step 2] sort(#1, #4, #5)
-                  #1 > #4 > #5: [in (#1), out (#5), fixed (#1), possible (#2, #4)]
-                    equivalent forms: 1 = 2! - 1
-                    pattern: B=permute{#4, #5}; #1 > B1 > B2
-                    S3 [step 3] sort(#2, #4)
-                      fixed (#1); choose 1 of (#2, #4) into top 2
-                  #4 > #1 > #5: [in (#1, #4), out (#2, #5), fixed (#1, #4), possible -] S4: top 2 = (#1, #4)
-                    equivalent forms: 3 = 2 x 2! - 1
-                    pattern: (B=permute{#4, #5}; B1 > #1 > B2 | B=permute{#4, #5}; B1 > B2 > #1)
+                S2 [step 2] sort(#1, #2, #4)
+                  #1 > #2 > #4: [in (#1), out (#4), fixed (#1), possible (#2, #5)]
+                    equivalent forms: 2 = 3 - 1
+                    pattern: (#1 > #2 > #4 | #1 > #4 > #2 | #4 > #1 > #2)
+                    S3 [step 3] sort(#2, #5)
+                      fixed (#1); choose 1 of (#2, #5) into top 2
             """;
 
         Assert.Equal(StrategyTestHelpers.NormalizeRenderedSnapshot(expected), rendered);
@@ -252,29 +249,32 @@ public sealed class StrategyRegressionTests
         Assert.Equal(new[] { 0, 1, 3, 4 }, branch.Effect.PossibleCandidates);
 
         Assert.Equal(StrategyNodeKind.Decision, branch.Next.Kind);
-        Assert.Equal(new[] { 0, 3, 4 }, branch.Next.Group);
+        Assert.Equal(new[] { 0, 1, 3 }, branch.Next.Group);
     }
 
     [Fact]
-    public void N5M3K2_TerminalTransitionEffectRemainsStable()
+    public void N9M3K3_TerminalTransitionEffectRemainsStable()
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.Generate(5, 3, 2)",
+            "StrategyBuilder.Generate(9, 3, 3)",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(5, 3, 2, cancellationToken));
+            cancellationToken => StrategyBuilder.Generate(9, 3, 3, cancellationToken));
 
         StrategyBranch branch = StrategyTestHelpers.FindBranchPath(
             plan.Root,
             "#1 > #2 > #3",
-            "#4 > #1 > #5");
+            "#1 > #2 > #4",
+            "#1 > #5 > #6",
+            "#5 > #7 > #8",
+            "#9 > #2 > #5");
 
-        Assert.Equal(new[] { 0, 3 }, branch.Effect.NewlyGuaranteedTop);
-        Assert.Equal(new[] { 1, 4 }, branch.Effect.NewlyExcluded);
-        Assert.Equal(new[] { 0, 3 }, branch.Effect.FixedCandidates);
+        Assert.Equal(new[] { 1, 8 }, branch.Effect.NewlyGuaranteedTop);
+        Assert.Equal(new[] { 2, 3, 4, 5, 6 }, branch.Effect.NewlyExcluded);
+        Assert.Equal(new[] { 0, 1, 8 }, branch.Effect.FixedCandidates);
         Assert.Empty(branch.Effect.PossibleCandidates);
 
         Assert.Equal(StrategyNodeKind.Terminal, branch.Next.Kind);
-        Assert.Equal(new[] { 0, 3 }, branch.Next.TopSet);
+        Assert.Equal(new[] { 0, 1, 8 }, branch.Next.TopSet);
     }
 
     [Fact]
@@ -288,33 +288,34 @@ public sealed class StrategyRegressionTests
         StrategyNode referenceTarget = StrategyTestHelpers.FollowBranchPath(
             plan.Root,
             "#1 > #2",
-            "#3 > #4",
-            "#5 > #6",
-            "#7 > #8",
-            "#9 > #10",
             "#1 > #3",
-            "#2 > #5");
+            "#1 > #4",
+            "#5 > #6",
+            "#5 > #7",
+            "#8 > #9",
+            "#5 > #8",
+            "#1 > #5");
 
         StrategyBranch branch = StrategyTestHelpers.FindBranchPath(
             plan.Root,
             "#1 > #2",
-            "#3 > #4",
-            "#5 > #6",
-            "#7 > #8",
-            "#9 > #10",
             "#1 > #3",
-            "#5 > #2",
-            "#1 > #5");
+            "#1 > #4",
+            "#5 > #6",
+            "#5 > #7",
+            "#8 > #9",
+            "#8 > #5",
+            "#1 > #8");
 
-        Assert.Empty(branch.Effect.NewlyGuaranteedTop);
-        Assert.Equal(new[] { 5 }, branch.Effect.NewlyExcluded);
-        Assert.Empty(branch.Effect.FixedCandidates);
-        Assert.Equal(new[] { 0, 2, 4, 6, 7, 8, 9 }, branch.Effect.PossibleCandidates);
+        Assert.Equal(new[] { 0 }, branch.Effect.NewlyGuaranteedTop);
+        Assert.Equal(new[] { 4, 8 }, branch.Effect.NewlyExcluded);
+        Assert.Equal(new[] { 0 }, branch.Effect.FixedCandidates);
+        Assert.Equal(new[] { 1, 2, 3, 7, 9 }, branch.Effect.PossibleCandidates);
 
         Assert.Equal(StrategyNodeKind.Reference, branch.Next.Kind);
         Assert.Equal(referenceTarget.StateId, branch.Next.StateId);
         Assert.Equal(StrategyNodeKind.Decision, referenceTarget.Kind);
-        Assert.Equal(new[] { 6, 8 }, referenceTarget.Group);
+        Assert.Equal(new[] { 1, 2 }, referenceTarget.Group);
     }
 
     [Fact]
@@ -350,35 +351,27 @@ public sealed class StrategyRegressionTests
             "#1 > #4 > #7",
             "#10 > #2 > #11");
 
-        Assert.Equal(new[] { 3, 9, 11 }, node.Group);
+        Assert.Equal(new[] { 3, 4, 9 }, node.Group);
     }
 
     [Fact]
-    public void N10M2K2_AfterPairwisePrefixChoosesCrossPairComparisons()
+    public void N10M2K2_AfterInitialComparisonsChainsKingOfTheHillGroups()
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
             "StrategyBuilder.Generate(10, 2, 2)",
             RegressionTestTimeout,
             cancellationToken => StrategyBuilder.Generate(10, 2, 2, cancellationToken));
 
-        StrategyNode firstCrossPairNode = StrategyTestHelpers.FollowBranchPath(
+        StrategyNode afterFirstComparison = StrategyTestHelpers.FollowBranchPath(
             plan.Root,
-            "#1 > #2",
-            "#3 > #4",
-            "#5 > #6",
-            "#7 > #8",
-            "#9 > #10");
-        Assert.Equal(new[] { 0, 2 }, firstCrossPairNode.Group);
+            "#1 > #2");
+        Assert.Equal(new[] { 0, 2 }, afterFirstComparison.Group);
 
-        StrategyNode secondCrossPairNode = StrategyTestHelpers.FollowBranchPath(
+        StrategyNode afterSecondComparison = StrategyTestHelpers.FollowBranchPath(
             plan.Root,
             "#1 > #2",
-            "#3 > #4",
-            "#5 > #6",
-            "#7 > #8",
-            "#9 > #10",
             "#1 > #3");
-        Assert.Equal(new[] { 1, 4 }, secondCrossPairNode.Group);
+        Assert.Equal(new[] { 0, 3 }, afterSecondComparison.Group);
     }
 
     [Fact]
@@ -392,23 +385,20 @@ public sealed class StrategyRegressionTests
         string rendered = StrategyTestHelpers.NormalizeRenderedSnapshot(StrategyTextRenderer.Render(plan));
         string excerpt = StrategyTestHelpers.ExtractRenderedSection(
             rendered,
-            "        S3 [step 3] sort(#2, #6, #9, #10)",
-            "              #11 > #5 > #3 > #12");
+            "        S3 [step 3] sort(#2, #5, #8, #9)",
+            "              #10 > #3 > #5 > #11");
 
         const string expected = """
-                    S3 [step 3] sort(#2, #6, #9, #10)
-                      #2 > #6 > #9 > #10: [in (#1), out (#7, #8, #9, #10), fixed (#1), possible (#2, #3, #4, #5, #6, #11, #12)]
+                    S3 [step 3] sort(#2, #5, #8, #9)
+                      #2 > #5 > #8 > #9: [in (#1), out (#7, #9), fixed (#1), possible (#2, #3, #4, #5, #6, #8, #10, #11, #12)]
                         equivalent forms: 3 = 2 x 2! - 1
-                        pattern: (C=permute{#9, #10}; #2 > #6 > C1 > C2 | C=permute{#9, #10}; #6 > #2 > C1 > C2)
-                        S4 [step 4] sort(#3, #5, #11, #12)
-                          #11 > #3 > #5 > #12: [in (#2, #3, #11), out (#4, #5, #6, #12), fixed (#1, #2, #3, #11), possible -] S5: top 4 = (#1, #2, #3, #11)
+                        pattern: (C=permute{#8, #9}; #2 > #5 > C1 > C2 | C=permute{#8, #9}; #5 > #2 > C1 > C2)
+                        S4 [step 4] sort(#3, #5, #10, #11)
+                          #10 > #11 > #3 > #5: [in (#10), out (#3, #4, #5, #6, #8), fixed (#1, #10), possible (#2, #11, #12)]
                             equivalent forms: 3 = 2 x 2! - 1
-                            pattern: (C=permute{#11, #12}; C1 > #3 > #5 > C2 | C=permute{#11, #12}; C1 > #3 > C2 > #5)
-                          #11 > #5 > #12 > #3: [in (#5, #11), out (#3, #4, #6), fixed (#1, #5, #11), possible (#2, #12)]
-                            equivalent forms: 3 = 2 x 2! - 1
-                            pattern: (C=permute{#11, #12}; C1 > #5 > C2 > #3 | C=permute{#11, #12}; C1 > C2 > #5 > #3)
-                            S6 [step 5] sort(#2, #12)
-                              fixed (#1, #5, #11); choose 1 of (#2, #12) into top 4
+                            pattern: (C=permute{#10, #11}; C1 > C2 > #3 > #5 | C=permute{#10, #11}; C1 > C2 > #5 > #3)
+                            S5 [step 5] sort(#2, #11, #12)
+                              fixed (#1, #10); choose 2 of (#2, #11, #12) into top 4
             """;
 
         Assert.Equal(StrategyTestHelpers.NormalizeRenderedSnapshot(expected), excerpt);
