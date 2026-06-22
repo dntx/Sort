@@ -447,17 +447,21 @@ partial class StrategyBuilder
         int UnresolvedPairs,
         int GroupSize) : IComparable<HeuristicGroupScore>
     {
+        // Among groups that achieve the optimal worst-case (the solver only ever caches an
+        // optimal group), prefer the most independent/symmetric comparison: more fresh items
+        // and fewer existing order relations. This keeps the worst-case step count optimal
+        // while producing smaller, more symmetric, and easier-to-verify strategy trees.
         public int CompareTo(HeuristicGroupScore other)
         {
-            int result = GuaranteedTopHits.CompareTo(other.GuaranteedTopHits);
-            if (result != 0)
-                return result;
-
-            result = FreshItems.CompareTo(other.FreshItems);
+            int result = FreshItems.CompareTo(other.FreshItems);
             if (result != 0)
                 return result;
 
             result = UnrelatedScore.CompareTo(other.UnrelatedScore);
+            if (result != 0)
+                return result;
+
+            result = GuaranteedTopHits.CompareTo(other.GuaranteedTopHits);
             if (result != 0)
                 return result;
 
