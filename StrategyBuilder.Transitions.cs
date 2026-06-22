@@ -14,7 +14,7 @@ partial class StrategyBuilder
             .ToList();
     }
 
-    private static void AddMergedBranch(
+    private void AddMergedBranch(
         ComparisonState state,
         ulong fixedTopMask,
         ComparisonOutcome outcome,
@@ -34,6 +34,7 @@ partial class StrategyBuilder
         }
 
         branch.AddOrderFamily(outcome.OrderFamily);
+        _mergedOutcomeCollisions++;
     }
 
     private StrategyBranch BuildTransitionBranch(ComparisonState state, ulong fixedTopMask, MergedBranch branch, int nextStep)
@@ -105,7 +106,10 @@ partial class StrategyBuilder
             nextStateKeys.Add(outcome.NextSearchKey);
 
             if (!evaluatedStateKeys.Add(outcome.NextSearchKey))
+            {
+                _duplicateOutcomeSkips++;
                 continue;
+            }
 
             if (!onUsefulOutcome(outcome))
                 break;
