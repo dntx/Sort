@@ -32,9 +32,19 @@ static class StrategyTextRenderer
 
     public static string FormatReference(StrategyNode node, StrategyDepthIndex depthIndex)
     {
-        return depthIndex.TryGetReferenceRemaining(node.StateId, out int remaining)
-            ? $"→S{node.StateId} (+{remaining} steps)"
-            : $"→S{node.StateId}";
+        string suffix = depthIndex.TryGetReferenceRemaining(node.StateId, out int remaining)
+            ? $" (+{remaining} steps)"
+            : string.Empty;
+        return $"→S{node.StateId}{suffix}{FormatRelabeling(node.ReferenceRelabeling)}";
+    }
+
+    public static string FormatRelabeling(IReadOnlyList<ItemRelabel> relabeling)
+    {
+        if (relabeling.Count == 0)
+            return string.Empty;
+
+        string pairs = string.Join(", ", relabeling.Select(r => $"#{r.ReferencedItem + 1}→#{r.CurrentItem + 1}"));
+        return $"  [map: {pairs}]";
     }
 
     private static void RenderNode(StrategyNode node, int k, TextWriter writer, int indent, StrategyDepthIndex depthIndex)

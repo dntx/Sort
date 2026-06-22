@@ -14,7 +14,7 @@ partial class StrategyBuilder
     private readonly CancellationToken _cancellationToken;
     private readonly Action<SearchProgressSnapshot>? _progressCallback;
     private readonly Dictionary<IntSequenceKey, int> _stateIds = new();
-    private readonly HashSet<IntSequenceKey> _expandedStates = new();
+    private readonly Dictionary<IntSequenceKey, ExpandedStateSnapshot> _expandedStates = new();
     private readonly HashSet<SearchStateKey> _visitedSearchStates = new();
     private readonly Dictionary<SearchStateKey, int> _minWorstCaseStepsCache = new();
     private readonly Dictionary<SearchStateKey, int> _lowerBoundStepsCache = new();
@@ -108,10 +108,14 @@ partial class StrategyBuilder
                     remainingSlots));
         }
 
-        if (_expandedStates.Contains(displayKey))
-            return StrategyNode.Reference(stateId);
+        if (_expandedStates.TryGetValue(displayKey, out ExpandedStateSnapshot snapshot))
+        {
+            IReadOnlyList<ItemRelabel>? relabeling =
+                snapshot.State.TryBuildDisplayRelabeling(snapshot.FixedTopMask, state, fixedTopMask);
+            return StrategyNode.Reference(stateId, relabeling);
+        }
 
-        _expandedStates.Add(displayKey);
+        _expandedStates.Add(displayKey, new ExpandedStateSnapshot(state.Clone(), fixedTopMask));
 
         SelectedComparisonGroup chosenGroup = ChooseGroup(state, fixedTopMask, remainingSlots);
         var branches = BuildBranches(state, fixedTopMask, remainingSlots, chosenGroup, step + 1);
@@ -408,6 +412,18 @@ partial class StrategyBuilder
 
         public IReadOnlyList<int> Group { get; }
         public IReadOnlyList<MergedBranch> Branches { get; }
+    }
+
+    private readonly struct ExpandedStateSnapshot
+    {
+        public ExpandedStateSnapshot(ComparisonState state, ulong fixedTopMask)
+        {
+            State = state;
+            FixedTopMask = fixedTopMask;
+        }
+
+        public ComparisonState State { get; }
+        public ulong FixedTopMask { get; }
     }
 
     private sealed class OutcomeTraversalSummary

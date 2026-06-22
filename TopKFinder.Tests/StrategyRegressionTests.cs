@@ -377,6 +377,67 @@ public sealed class StrategyRegressionTests
     }
 
     [Fact]
+    public void N10M2K2_ReferenceRelabelingIsAnIsomorphismOfDisplayedSets()
+    {
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.Generate(10, 2, 2)",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.Generate(10, 2, 2, cancellationToken));
+
+        // Branch leading into the reference site and the branch leading into its target.
+        StrategyBranch referenceBranch = StrategyTestHelpers.FindBranchPath(
+            plan.Root,
+            "#1 > #2",
+            "#1 > #3",
+            "#1 > #4",
+            "#5 > #6",
+            "#5 > #7",
+            "#8 > #9",
+            "#8 > #5",
+            "#1 > #8");
+
+        StrategyBranch targetBranch = StrategyTestHelpers.FindBranchPath(
+            plan.Root,
+            "#1 > #2",
+            "#1 > #3",
+            "#1 > #4",
+            "#5 > #6",
+            "#5 > #7",
+            "#8 > #9",
+            "#5 > #8",
+            "#1 > #5");
+
+        StrategyNode reference = referenceBranch.Next;
+        Assert.Equal(StrategyNodeKind.Reference, reference.Kind);
+        Assert.Equal(targetBranch.Next.StateId, reference.StateId);
+
+        // The differing comparison paths mean the numbering must differ, so a relabeling is expected.
+        Assert.NotEmpty(reference.ReferenceRelabeling);
+
+        // The relabeling must be a partial bijection with no identity entries.
+        Assert.Equal(
+            reference.ReferenceRelabeling.Count,
+            reference.ReferenceRelabeling.Select(r => r.ReferencedItem).Distinct().Count());
+        Assert.Equal(
+            reference.ReferenceRelabeling.Count,
+            reference.ReferenceRelabeling.Select(r => r.CurrentItem).Distinct().Count());
+        Assert.DoesNotContain(reference.ReferenceRelabeling, r => r.ReferencedItem == r.CurrentItem);
+
+        // Applying the relabeling to the target's displayed sets must reproduce the reference site's sets.
+        var map = reference.ReferenceRelabeling.ToDictionary(r => r.ReferencedItem, r => r.CurrentItem);
+        int Map(int item) => map.TryGetValue(item, out int mapped) ? mapped : item;
+
+        var mappedPossible = targetBranch.Effect.PossibleCandidates.Select(Map).OrderBy(x => x).ToArray();
+        var mappedFixed = targetBranch.Effect.FixedCandidates.Select(Map).OrderBy(x => x).ToArray();
+
+        Assert.Equal(referenceBranch.Effect.PossibleCandidates.OrderBy(x => x).ToArray(), mappedPossible);
+        Assert.Equal(referenceBranch.Effect.FixedCandidates.OrderBy(x => x).ToArray(), mappedFixed);
+
+        string rendered = StrategyTextRenderer.Render(plan);
+        Assert.Contains("[map: ", rendered);
+    }
+
+    [Fact]
     public void N12M3K3_AfterInitialPrefixesChoosesCrossBlockGroup()
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(

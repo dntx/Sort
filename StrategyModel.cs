@@ -195,6 +195,7 @@ sealed class StrategyNode
     public IReadOnlyList<int> TopSet { get; }
     public IReadOnlyList<StrategyBranch> Branches { get; }
     public FinalChoiceSummary? FinalChoice { get; }
+    public IReadOnlyList<ItemRelabel> ReferenceRelabeling { get; }
 
     private StrategyNode(
         StrategyNodeKind kind,
@@ -203,7 +204,8 @@ sealed class StrategyNode
         IReadOnlyList<int>? group,
         IReadOnlyList<int>? topSet,
         IReadOnlyList<StrategyBranch>? branches,
-        FinalChoiceSummary? finalChoice)
+        FinalChoiceSummary? finalChoice,
+        IReadOnlyList<ItemRelabel>? referenceRelabeling = null)
     {
         Kind = kind;
         StateId = stateId;
@@ -212,6 +214,7 @@ sealed class StrategyNode
         TopSet = topSet ?? Array.Empty<int>();
         Branches = branches ?? Array.Empty<StrategyBranch>();
         FinalChoice = finalChoice;
+        ReferenceRelabeling = referenceRelabeling ?? Array.Empty<ItemRelabel>();
     }
 
     public static StrategyNode Decision(
@@ -225,8 +228,20 @@ sealed class StrategyNode
     public static StrategyNode Terminal(int stateId, IReadOnlyList<int> topSet)
         => new(StrategyNodeKind.Terminal, stateId, null, null, topSet, null, null);
 
-    public static StrategyNode Reference(int stateId)
-        => new(StrategyNodeKind.Reference, stateId, null, null, null, null, null);
+    public static StrategyNode Reference(int stateId, IReadOnlyList<ItemRelabel>? relabeling = null)
+        => new(StrategyNodeKind.Reference, stateId, null, null, null, null, null, relabeling);
+}
+
+readonly struct ItemRelabel
+{
+    public ItemRelabel(int referencedItem, int currentItem)
+    {
+        ReferencedItem = referencedItem;
+        CurrentItem = currentItem;
+    }
+
+    public int ReferencedItem { get; }
+    public int CurrentItem { get; }
 }
 
 sealed class StrategyBranch

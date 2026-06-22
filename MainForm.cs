@@ -550,11 +550,20 @@ class MainForm : Form
         string label = _depthIndex!.TryGetReferenceRemaining(node.StateId, out int remaining)
             ? $"->S{node.StateId} (+{remaining} steps)"
             : $"->S{node.StateId}";
+        label += StrategyTextRenderer.FormatRelabeling(node.ReferenceRelabeling);
+
+        string tag = $"Reference to previously expanded state S{node.StateId}";
+        if (node.ReferenceRelabeling.Count > 0)
+        {
+            string pairs = string.Join(", ",
+                node.ReferenceRelabeling.Select(r => $"#{r.ReferencedItem + 1}->#{r.CurrentItem + 1}"));
+            tag += $"\nMap S{node.StateId}'s item numbers to the current ones: {pairs}";
+        }
 
         return new TreeNode(label)
         {
             ForeColor = _palette.ReferenceColor,
-            Tag = $"Reference to previously expanded state S{node.StateId}",
+            Tag = tag,
         };
     }
 

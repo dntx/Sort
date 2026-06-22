@@ -390,6 +390,103 @@ class ComparisonState
         return EnumerateBits(mask).ToList();
     }
 
+    // Builds a relabeling from this state's items (the referenced/original numbering) onto the
+    // target state's items, such that it is an isomorphism of the combined (active + fixed-top)
+    // partial order, mapping fixed-top items onto fixed-top items. Returns null if none is found,
+    // in which case callers should omit the relabeling rather than show an unverified one.
+    public IReadOnlyList<ItemRelabel>? TryBuildDisplayRelabeling(
+        ulong fixedTopMask,
+        ComparisonState target,
+        ulong targetFixedTopMask)
+    {
+        ulong fromMask = ActiveMask | fixedTopMask;
+        ulong toMask = target.ActiveMask | targetFixedTopMask;
+
+        if (BitOperations.PopCount(fromMask) != BitOperations.PopCount(toMask))
+            return null;
+
+        int[] fromLabels = ComputeStructuralLabels(fromMask);
+        int[] toLabels = target.ComputeStructuralLabels(toMask);
+
+        var fromItems = MaskToOrderedList(fromMask);
+        var toItems = MaskToOrderedList(toMask);
+
+        // Assign the most-constrained items first to keep the backtracking shallow.
+        fromItems.Sort((a, b) =>
+        {
+            int degreeA = BitOperations.PopCount(_ancestors[a] & fromMask) + BitOperations.PopCount(_descendants[a] & fromMask);
+            int degreeB = BitOperations.PopCount(_ancestors[b] & fromMask) + BitOperations.PopCount(_descendants[b] & fromMask);
+            return degreeB.CompareTo(degreeA);
+        });
+
+        var assignment = new Dictionary<int, int>(fromItems.Count);
+        ulong usedTargets = 0;
+
+        bool Assign(int index)
+        {
+            if (index == fromItems.Count)
+                return true;
+
+            int from = fromItems[index];
+            bool fromFixed = (fixedTopMask & Bit(from)) != 0;
+
+            foreach (int to in toItems)
+            {
+                if ((usedTargets & Bit(to)) != 0)
+                    continue;
+                if (fromLabels[from] != toLabels[to])
+                    continue;
+                if (((targetFixedTopMask & Bit(to)) != 0) != fromFixed)
+                    continue;
+                if (!IsRelabelingConsistent(from, to, assignment, target))
+                    continue;
+
+                assignment[from] = to;
+                usedTargets |= Bit(to);
+                if (Assign(index + 1))
+                    return true;
+                assignment.Remove(from);
+                usedTargets &= ~Bit(to);
+            }
+
+            return false;
+        }
+
+        if (!Assign(0))
+            return null;
+
+        var relabels = new List<ItemRelabel>();
+        foreach (int from in MaskToOrderedList(fromMask))
+        {
+            int to = assignment[from];
+            if (from != to)
+                relabels.Add(new ItemRelabel(from, to));
+        }
+
+        return relabels;
+    }
+
+    private bool IsRelabelingConsistent(int from, int to, Dictionary<int, int> assignment, ComparisonState target)
+    {
+        foreach (var pair in assignment)
+        {
+            int otherFrom = pair.Key;
+            int otherTo = pair.Value;
+
+            bool fromIsAncestor = (_ancestors[otherFrom] & Bit(from)) != 0;
+            bool toIsAncestor = (target._ancestors[otherTo] & Bit(to)) != 0;
+            if (fromIsAncestor != toIsAncestor)
+                return false;
+
+            bool fromIsDescendant = (_descendants[otherFrom] & Bit(from)) != 0;
+            bool toIsDescendant = (target._descendants[otherTo] & Bit(to)) != 0;
+            if (fromIsDescendant != toIsDescendant)
+                return false;
+        }
+
+        return true;
+    }
+
     private static ulong Bit(int item)
     {
         return 1UL << item;
