@@ -238,6 +238,31 @@ public sealed class StrategyRegressionTests
     }
 
     [Fact]
+    public void N12M3K3_DecisionTransitionEffectRemainsStable()
+    {
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.Generate(12, 3, 3)",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.Generate(12, 3, 3, cancellationToken));
+
+        StrategyBranch branch = StrategyTestHelpers.FindBranchPath(
+            plan.Root,
+            "#1 > #2 > #3",
+            "#4 > #5 > #6",
+            "#7 > #8 > #9",
+            "#1 > #4 > #7",
+            "#10 > #2 > #11");
+
+        Assert.Equal(new[] { 0 }, branch.Effect.NewlyGuaranteedTop);
+        Assert.Equal(new[] { 2, 10 }, branch.Effect.NewlyExcluded);
+        Assert.Equal(new[] { 0 }, branch.Effect.FixedCandidates);
+        Assert.Equal(new[] { 1, 3, 4, 6, 9, 11 }, branch.Effect.PossibleCandidates);
+
+        Assert.Equal(StrategyNodeKind.Decision, branch.Next.Kind);
+        Assert.Equal(new[] { 3, 4, 9 }, branch.Next.Group);
+    }
+
+    [Fact]
     public void N9M3K3_TerminalTransitionEffectRemainsStable()
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
