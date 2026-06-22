@@ -35,7 +35,6 @@ partial class StrategyBuilder
     private int _feasibleTopSetCacheHits;
     private int _bestGroupPatternCacheHits;
     private bool _rootSearchInitialized;
-    private bool _twoPhaseMode;
 
     public StrategyBuilder(int n, int m, int k, CancellationToken cancellationToken = default, Action<SearchProgressSnapshot>? progressCallback = null)
     {
@@ -50,21 +49,12 @@ partial class StrategyBuilder
     {
         var stopwatch = Stopwatch.StartNew();
         ReportProgress(force: true);
-        var initial = new ComparisonState(_n);
-        var root = BuildState(initial, 0, _k, 1);
-        stopwatch.Stop();
-        ReportProgress(force: true);
-        return new StrategyPlan(_n, _m, _k, root, stopwatch.Elapsed, CreateSearchStatistics());
-    }
 
-    internal StrategyPlan BuildTwoPhase()
-    {
-        var stopwatch = Stopwatch.StartNew();
-        ReportProgress(force: true);
-
-        _twoPhaseMode = true;
+        // Phase 1: solve the exact minimum worst-case cost for every reachable state,
+        // caching the optimal comparison-group pattern per state along the way.
         _ = GetMinWorstCaseSteps(new ComparisonState(_n), _k);
 
+        // Phase 2: materialize the strategy tree, reusing the cached group patterns.
         var root = BuildState(new ComparisonState(_n), 0, _k, 1);
         stopwatch.Stop();
         ReportProgress(force: true);
@@ -84,21 +74,6 @@ partial class StrategyBuilder
     public static StrategyPlan Generate(int n, int m, int k, CancellationToken cancellationToken, Action<SearchProgressSnapshot> progressCallback)
     {
         return new StrategyBuilder(n, m, k, cancellationToken, progressCallback).Build();
-    }
-
-    public static StrategyPlan GenerateTwoPhase(int n, int m, int k)
-    {
-        return new TwoPhaseStrategyBuilder(n, m, k).Build();
-    }
-
-    public static StrategyPlan GenerateTwoPhase(int n, int m, int k, CancellationToken cancellationToken)
-    {
-        return new TwoPhaseStrategyBuilder(n, m, k, cancellationToken).Build();
-    }
-
-    public static StrategyPlan GenerateTwoPhase(int n, int m, int k, CancellationToken cancellationToken, Action<SearchProgressSnapshot> progressCallback)
-    {
-        return new TwoPhaseStrategyBuilder(n, m, k, cancellationToken, progressCallback).Build();
     }
 
     private StrategyNode BuildState(ComparisonState state, ulong fixedTopMask, int remainingSlots, int step)

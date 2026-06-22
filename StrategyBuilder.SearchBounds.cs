@@ -107,7 +107,7 @@ partial class StrategyBuilder
         if (bestWorstCase == int.MaxValue)
             throw new InvalidOperationException("Expected at least one useful comparison group when unresolved candidates exceed comparison size.");
 
-        if (bestGroup is not null && (_twoPhaseMode || remainingSlots > _m))
+        if (bestGroup is not null)
             _bestGroupPatternCache[key] = new BestGroupPattern(bestGroup.Count, GetGroupPattern(bestGroup, labels));
 
         _minWorstCaseStepsCache[key] = bestWorstCase;
