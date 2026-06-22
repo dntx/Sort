@@ -77,6 +77,7 @@ class MainForm : Form
     private readonly Button _stopButton;
     private readonly Button _expandAllButton;
     private readonly Button _collapseAllButton;
+    private readonly Button _backButton;
     private readonly Label _elapsedLabel;
     private readonly Label _searchStatsLabel;
     private readonly Label _diagnosticsLabel;
@@ -91,6 +92,7 @@ class MainForm : Form
     private StrategyDepthIndex? _depthIndex;
     private readonly Dictionary<int, TreeNode> _stateNodesById = new();
     private readonly Dictionary<TreeNode, int> _referenceTargets = new();
+    private readonly Stack<TreeNode> _navigationHistory = new();
     private SearchProgressSnapshot _latestProgress;
 
     public MainForm()
@@ -170,6 +172,15 @@ class MainForm : Form
             Margin = new Padding(0, 4, 0, 0),
         };
 
+        _backButton = new Button
+        {
+            Text = "Back",
+            AutoSize = true,
+            Height = 30,
+            Enabled = false,
+            Margin = new Padding(8, 4, 0, 0),
+        };
+
         _elapsedLabel = new Label
         {
             AutoSize = true,
@@ -213,6 +224,7 @@ class MainForm : Form
         actionsPanel.Controls.Add(_stopButton);
         actionsPanel.Controls.Add(_expandAllButton);
         actionsPanel.Controls.Add(_collapseAllButton);
+        actionsPanel.Controls.Add(_backButton);
 
         var controlsLayout = new TableLayoutPanel
         {
@@ -265,6 +277,7 @@ class MainForm : Form
         _treeView.NodeMouseDoubleClick += (_, e) => TryJumpToReferenceTarget(e.Node);
         _expandAllButton.Click += (_, _) => _treeView.ExpandAll();
         _collapseAllButton.Click += (_, _) => _treeView.CollapseAll();
+        _backButton.Click += (_, _) => NavigateBack();
 
         _detailsTextBox = new RichTextBox
         {
@@ -433,6 +446,8 @@ class MainForm : Form
         _treeView.Nodes.Clear();
         _stateNodesById.Clear();
         _referenceTargets.Clear();
+        _navigationHistory.Clear();
+        _backButton.Enabled = false;
         _depthIndex = StrategyDepthIndex.Build(plan.Root);
 
         var root = new TreeNode(
@@ -587,8 +602,24 @@ class MainForm : Form
         if (!_stateNodesById.TryGetValue(targetStateId, out TreeNode? targetNode))
             return;
 
+        _navigationHistory.Push(node);
+        _backButton.Enabled = true;
+
         targetNode.EnsureVisible();
         _treeView.SelectedNode = targetNode;
+        _treeView.Focus();
+    }
+
+    private void NavigateBack()
+    {
+        if (_navigationHistory.Count == 0)
+            return;
+
+        TreeNode previous = _navigationHistory.Pop();
+        _backButton.Enabled = _navigationHistory.Count > 0;
+
+        previous.EnsureVisible();
+        _treeView.SelectedNode = previous;
         _treeView.Focus();
     }
 
@@ -735,6 +766,7 @@ class MainForm : Form
         _stopButton.Enabled = isRunning;
         _expandAllButton.Enabled = !isRunning;
         _collapseAllButton.Enabled = !isRunning;
+        _backButton.Enabled = !isRunning && _navigationHistory.Count > 0;
     }
 
     private void UpdateElapsedLabel()
