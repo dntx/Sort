@@ -71,6 +71,7 @@ class MainForm : Form
     private readonly TextBox _nTextBox;
     private readonly TextBox _mTextBox;
     private readonly TextBox _kTextBox;
+    private readonly CheckBox _useTwoPhaseCheckBox;
     private readonly ComboBox _themeComboBox;
     private readonly Button _runButton;
     private readonly Button _stopButton;
@@ -121,6 +122,12 @@ class MainForm : Form
         _nTextBox = CreateInputTextBox("4");
         _mTextBox = CreateInputTextBox("3");
         _kTextBox = CreateInputTextBox("3");
+        _useTwoPhaseCheckBox = new CheckBox
+        {
+            AutoSize = true,
+            Text = "Use two-phase builder",
+            Margin = new Padding(0, 8, 0, 0),
+        };
         _themeComboBox = new ComboBox
         {
             Width = 140,
@@ -196,6 +203,7 @@ class MainForm : Form
         inputsPanel.Controls.Add(CreateLabeledInput("n", _nTextBox));
         inputsPanel.Controls.Add(CreateLabeledInput("m", _mTextBox));
         inputsPanel.Controls.Add(CreateLabeledInput("k", _kTextBox));
+        inputsPanel.Controls.Add(_useTwoPhaseCheckBox);
         inputsPanel.Controls.Add(CreateLabeledInput("theme", _themeComboBox));
 
         var actionsPanel = new FlowLayoutPanel
@@ -240,7 +248,7 @@ class MainForm : Form
         {
             AutoSize = true,
             Margin = Padding.Empty,
-            Text = "Ready.",
+            Text = $"Ready. mode={GetSelectedBuilderModeText()}",
         };
 
         var split = new SplitContainer
@@ -369,12 +377,16 @@ class MainForm : Form
         UpdateDiagnosticsLabel();
         _elapsedTimer.Start();
         SetRunningState(isRunning: true);
-        _summaryLabel.Text = $"Running n={n}, m={m}, k={k}...";
+        _summaryLabel.Text = $"Running n={n}, m={m}, k={k}, mode={GetSelectedBuilderModeText()}...";
         _detailsTextBox.Text = BuildLiveDiagnosticsText(_latestProgress);
 
         try
         {
-            var plan = await Task.Run(() => StrategyBuilder.Generate(n, m, k, cancellationToken, snapshot => progress.Report(snapshot)), cancellationToken);
+            var plan = await Task.Run(
+                () => UseTwoPhaseBuilder()
+                    ? StrategyBuilder.GenerateTwoPhase(n, m, k, cancellationToken, snapshot => progress.Report(snapshot))
+                    : StrategyBuilder.Generate(n, m, k, cancellationToken, snapshot => progress.Report(snapshot)),
+                cancellationToken);
             _runStopwatch?.Stop();
             _currentPlan = plan;
             _latestProgress = new SearchProgressSnapshot(
@@ -400,13 +412,13 @@ class MainForm : Form
         catch (OperationCanceledException)
         {
             _runStopwatch?.Stop();
-            _summaryLabel.Text = $"Stopped after {GetElapsedSeconds():F1} s. {FormatSearchStatsSummary(_latestProgress, includeOutputStates: true)}. {FormatLiveDiagnosticsSummary(_latestProgress)}.";
+            _summaryLabel.Text = $"Stopped after {GetElapsedSeconds():F1} s. mode={GetSelectedBuilderModeText()}. {FormatSearchStatsSummary(_latestProgress, includeOutputStates: true)}. {FormatLiveDiagnosticsSummary(_latestProgress)}.";
             _detailsTextBox.Text = BuildLiveDiagnosticsText(_latestProgress);
         }
         catch (Exception ex)
         {
             _runStopwatch?.Stop();
-            _summaryLabel.Text = $"Run failed after {GetElapsedSeconds():F1} s. {FormatSearchStatsSummary(_latestProgress, includeOutputStates: true)}. {FormatLiveDiagnosticsSummary(_latestProgress)}.";
+            _summaryLabel.Text = $"Run failed after {GetElapsedSeconds():F1} s. mode={GetSelectedBuilderModeText()}. {FormatSearchStatsSummary(_latestProgress, includeOutputStates: true)}. {FormatLiveDiagnosticsSummary(_latestProgress)}.";
             _detailsTextBox.Text = BuildLiveDiagnosticsText(_latestProgress);
             MessageBox.Show(this, ex.Message, "Run failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
@@ -597,7 +609,7 @@ class MainForm : Form
         }
         else if (_runCancellationSource is null)
         {
-            _summaryLabel.Text = "Ready.";
+            _summaryLabel.Text = $"Ready. mode={GetSelectedBuilderModeText()}";
             _detailsTextBox.Text = BuildIdleDetailsText();
         }
     }
@@ -657,7 +669,7 @@ class MainForm : Form
     private void UpdateSummaryText(StrategyPlan plan)
     {
         _summaryLabel.Text =
-            $"n={plan.N}, m={plan.M}, k={plan.K}, elapsed={plan.Elapsed.TotalMilliseconds:F1} ms, max step={plan.MaxStep}, " +
+            $"n={plan.N}, m={plan.M}, k={plan.K}, mode={GetSelectedBuilderModeText()}, elapsed={plan.Elapsed.TotalMilliseconds:F1} ms, max step={plan.MaxStep}, " +
             $"{FormatSearchStatsSummary(plan.SearchStatistics)}, {FormatDiagnosticsSummary(plan.SearchStatistics.Diagnostics)}.";
     }
 
@@ -698,7 +710,7 @@ class MainForm : Form
         _latestProgress = snapshot;
         UpdateSearchStatsLabel();
         UpdateDiagnosticsLabel();
-        _summaryLabel.Text = $"Running... {FormatSearchStatsSummary(snapshot, includeOutputStates: true)}. {FormatLiveDiagnosticsSummary(snapshot)}.";
+        _summaryLabel.Text = $"Running... mode={GetSelectedBuilderModeText()}. {FormatSearchStatsSummary(snapshot, includeOutputStates: true)}. {FormatLiveDiagnosticsSummary(snapshot)}.";
         _detailsTextBox.Text = BuildLiveDiagnosticsText(snapshot);
     }
 
@@ -831,7 +843,7 @@ class MainForm : Form
         {
             "Top-K Strategy Explorer",
             string.Empty,
-            "1. Adjust n, m, k and theme in the Inputs section.",
+            "1. Adjust n, m, k, builder mode, and theme in the Inputs section.",
             "2. Use Run / Stop / Expand All / Collapse All from the Actions section.",
             "3. Watch the Search and Diagnostics panels for live progress.",
             string.Empty,
@@ -842,6 +854,16 @@ class MainForm : Form
             "- result: terminal top-k set",
             "- reference: previously expanded state",
         });
+    }
+
+    private bool UseTwoPhaseBuilder()
+    {
+        return _useTwoPhaseCheckBox.Checked;
+    }
+
+    private string GetSelectedBuilderModeText()
+    {
+        return UseTwoPhaseBuilder() ? "two-phase" : "default";
     }
 
     private double GetElapsedSeconds()
