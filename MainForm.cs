@@ -456,7 +456,11 @@ class MainForm : Form
 
     private TreeNode CreateDecisionNode(StrategyNode node, int k)
     {
-        var treeNode = new TreeNode($"S{node.StateId} [step {node.Step}] sort({StrategyTextRenderer.FormatSet(node.Group)})")
+        string headerText = node.FinalChoice is not null
+            ? $"[step {node.Step}] sort({StrategyTextRenderer.FormatSet(node.Group)})"
+            : $"S{node.StateId} [step {node.Step}] sort({StrategyTextRenderer.FormatSet(node.Group)})";
+
+        var treeNode = new TreeNode(headerText)
         {
             ForeColor = _palette.StateColor,
             Tag = BuildStateDetails(node),
@@ -561,10 +565,12 @@ class MainForm : Form
 
     private static string BuildStateDetails(StrategyNode node)
     {
-        string details =
-            $"State S{node.StateId}\n" +
-            $"Step: {node.Step}\n" +
-            $"Comparison group: ({StrategyTextRenderer.FormatSet(node.Group)})";
+        string details = node.FinalChoice is not null
+            ? $"Step: {node.Step}\n" +
+              $"Comparison group: ({StrategyTextRenderer.FormatSet(node.Group)})"
+            : $"State S{node.StateId}\n" +
+              $"Step: {node.Step}\n" +
+              $"Comparison group: ({StrategyTextRenderer.FormatSet(node.Group)})";
 
         if (node.FinalChoice is not null)
         {

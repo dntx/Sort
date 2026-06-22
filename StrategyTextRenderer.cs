@@ -5,8 +5,8 @@ using System.Linq;
 
 static class StrategyTextRenderer
 {
-    private const string InLabel = "in";
-    private const string OutLabel = "out";
+    private const string InLabel = "+";
+    private const string OutLabel = "-";
     private const string FixedLabel = "fixed";
     private const string PossibleLabel = "possible";
 
@@ -42,12 +42,14 @@ static class StrategyTextRenderer
                 writer.WriteLine($"{prefix}→S{node.StateId}");
                 return;
             case StrategyNodeKind.Decision:
-                writer.WriteLine($"{prefix}S{node.StateId} [step {node.Step}] sort({FormatSet(node.Group)})");
                 if (node.FinalChoice is not null)
                 {
+                    writer.WriteLine($"{prefix}[step {node.Step}] sort({FormatSet(node.Group)})");
                     writer.WriteLine($"{prefix}  {FormatCompressedFinalChoice(node.FinalChoice, k)}");
                     return;
                 }
+
+                writer.WriteLine($"{prefix}S{node.StateId} [step {node.Step}] sort({FormatSet(node.Group)})");
 
                 foreach (var branch in node.Branches)
                 {
@@ -84,7 +86,7 @@ static class StrategyTextRenderer
     public static string FormatOptionalSet(IEnumerable<int> items)
     {
         var list = items.ToList();
-        return list.Count == 0 ? "-" : $"({FormatSet(list)})";
+        return list.Count == 0 ? "()" : $"({FormatSet(list)})";
     }
 
     public static string FormatEffect(StrategyEffect effect)
