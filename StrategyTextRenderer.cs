@@ -26,10 +26,18 @@ static class StrategyTextRenderer
         writer.WriteLine($"pending states = {plan.SearchStatistics.PendingStates} (peak {plan.SearchStatistics.PeakPendingStates})");
         writer.WriteLine($"output states = {plan.SearchStatistics.OutputStates} (expanded {plan.SearchStatistics.ExpandedOutputStates})");
         writer.WriteLine();
-        RenderNode(plan.Root, plan.K, writer, 0);
+        var depthIndex = StrategyDepthIndex.Build(plan.Root);
+        RenderNode(plan.Root, plan.K, writer, 0, depthIndex);
     }
 
-    private static void RenderNode(StrategyNode node, int k, TextWriter writer, int indent)
+    public static string FormatReference(StrategyNode node, StrategyDepthIndex depthIndex)
+    {
+        return depthIndex.TryGetReferenceRemaining(node.StateId, out int remaining)
+            ? $"→S{node.StateId} (+{remaining} steps)"
+            : $"→S{node.StateId}";
+    }
+
+    private static void RenderNode(StrategyNode node, int k, TextWriter writer, int indent, StrategyDepthIndex depthIndex)
     {
         string prefix = new string(' ', indent * 2);
 
@@ -39,17 +47,18 @@ static class StrategyTextRenderer
                 writer.WriteLine($"{prefix}S{node.StateId}: top {k} = ({FormatSet(node.TopSet)})");
                 return;
             case StrategyNodeKind.Reference:
-                writer.WriteLine($"{prefix}→S{node.StateId}");
+                writer.WriteLine($"{prefix}{FormatReference(node, depthIndex)}");
                 return;
             case StrategyNodeKind.Decision:
+                int maxStep = depthIndex.SubtreeMaxStep(node);
                 if (node.FinalChoice is not null)
                 {
-                    writer.WriteLine($"{prefix}[step {node.Step}] sort({FormatSet(node.Group)})");
+                    writer.WriteLine($"{prefix}[step {node.Step}/{maxStep}] sort({FormatSet(node.Group)})");
                     writer.WriteLine($"{prefix}  {FormatCompressedFinalChoice(node.FinalChoice, k)}");
                     return;
                 }
 
-                writer.WriteLine($"{prefix}S{node.StateId} [step {node.Step}] sort({FormatSet(node.Group)})");
+                writer.WriteLine($"{prefix}S{node.StateId} [step {node.Step}/{maxStep}] sort({FormatSet(node.Group)})");
 
                 foreach (var branch in node.Branches)
                 {
@@ -58,7 +67,7 @@ static class StrategyTextRenderer
                     {
                         writer.WriteLine($"{prefix}  {branch.OrderText}: {effect}");
                         WriteEquivalentOrders(branch, writer, indent + 2);
-                        RenderNode(branch.Next, k, writer, indent + 2);
+                        RenderNode(branch.Next, k, writer, indent + 2, depthIndex);
                     }
                     else if (branch.Next.Kind == StrategyNodeKind.Terminal)
                     {
@@ -67,7 +76,7 @@ static class StrategyTextRenderer
                     }
                     else
                     {
-                        writer.WriteLine($"{prefix}  {branch.OrderText}: {effect} →S{branch.Next.StateId}");
+                        writer.WriteLine($"{prefix}  {branch.OrderText}: {effect} {FormatReference(branch.Next, depthIndex)}");
                         WriteEquivalentOrders(branch, writer, indent + 2);
                     }
                 }

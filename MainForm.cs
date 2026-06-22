@@ -87,6 +87,7 @@ class MainForm : Form
     private StrategyPlan? _currentPlan;
     private Stopwatch? _runStopwatch;
     private CancellationTokenSource? _runCancellationSource;
+    private StrategyDepthIndex? _depthIndex;
     private SearchProgressSnapshot _latestProgress;
 
     public MainForm()
@@ -426,6 +427,7 @@ class MainForm : Form
     {
         _treeView.BeginUpdate();
         _treeView.Nodes.Clear();
+        _depthIndex = StrategyDepthIndex.Build(plan.Root);
 
         var root = new TreeNode(
             $"n={plan.N}, m={plan.M}, k={plan.K}, elapsed={plan.Elapsed.TotalMilliseconds:F1} ms, max step={plan.MaxStep}, searched={plan.SearchStatistics.SearchedStates}, peak pending={plan.SearchStatistics.PeakPendingStates}")
@@ -456,9 +458,10 @@ class MainForm : Form
 
     private TreeNode CreateDecisionNode(StrategyNode node, int k)
     {
+        int maxStep = _depthIndex!.SubtreeMaxStep(node);
         string headerText = node.FinalChoice is not null
-            ? $"[step {node.Step}] sort({StrategyTextRenderer.FormatSet(node.Group)})"
-            : $"S{node.StateId} [step {node.Step}] sort({StrategyTextRenderer.FormatSet(node.Group)})";
+            ? $"[step {node.Step}/{maxStep}] sort({StrategyTextRenderer.FormatSet(node.Group)})"
+            : $"S{node.StateId} [step {node.Step}/{maxStep}] sort({StrategyTextRenderer.FormatSet(node.Group)})";
 
         var treeNode = new TreeNode(headerText)
         {
@@ -544,7 +547,11 @@ class MainForm : Form
 
     private TreeNode CreateReferenceNode(StrategyNode node)
     {
-        return new TreeNode($"->S{node.StateId}")
+        string label = _depthIndex!.TryGetReferenceRemaining(node.StateId, out int remaining)
+            ? $"->S{node.StateId} (+{remaining} steps)"
+            : $"->S{node.StateId}";
+
+        return new TreeNode(label)
         {
             ForeColor = _palette.ReferenceColor,
             Tag = $"Reference to previously expanded state S{node.StateId}",
