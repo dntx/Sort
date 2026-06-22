@@ -128,112 +128,28 @@ partial class StrategyBuilder
     {
         ThrowIfCancellationRequested();
         var candidates = state.GetActiveItemsOrdered();
-        int groupSize = Math.Min(_m, candidates.Count);
         SearchStateKey currentKey = GetSearchStateKey(state, remainingSlots);
         var labels = state.GetStructuralLabels();
-        bool isRootSearch = false;
 
-        if (!_rootSearchInitialized)
+        // Phase 1 solves the optimal worst-case for every reachable state and caches the
+        // chosen comparison-group pattern, so phase 2 always finds a populated entry here.
+        if (!_bestGroupPatternCache.TryGetValue(currentKey, out BestGroupPattern cachedPattern))
         {
-            _rootSearchInitialized = true;
-            isRootSearch = true;
+            throw new InvalidOperationException(
+                "Phase 1 must populate the best-group pattern cache for every state materialized in phase 2.");
         }
 
-        if (_bestGroupPatternCache.TryGetValue(currentKey, out BestGroupPattern cachedPattern))
+        foreach (var group in EnumerateCombinations(candidates, cachedPattern.GroupSize))
         {
-            foreach (var group in EnumerateCombinations(candidates, cachedPattern.GroupSize))
+            if (GetGroupPattern(group, labels) == cachedPattern.Pattern)
             {
-                if (GetGroupPattern(group, labels) == cachedPattern.Pattern)
-                {
-                    _bestGroupPatternCacheHits++;
-                    return new SelectedComparisonGroup(group, BuildMergedComparisonOutcomes(state, fixedTopMask, remainingSlots, group));
-                }
+                _bestGroupPatternCacheHits++;
+                return new SelectedComparisonGroup(group, BuildMergedComparisonOutcomes(state, fixedTopMask, remainingSlots, group));
             }
         }
 
-        List<int>? bestGroup = null;
-        IReadOnlyList<MergedBranch>? bestBranches = null;
-        ComparisonGroupScore? bestScore = null;
-
-        ThrowIfCancellationRequested();
-        // Under the current cost model, a size-m comparison weakly dominates any smaller
-        // non-terminal comparison because it costs the same one step and reveals a superset
-        // of ordering information.
-        foreach (var group in EnumerateDistinctGroups(candidates, groupSize, labels))
-        {
-            ThrowIfCancellationRequested();
-            ComparisonGroupEvaluation? evaluation = EvaluateComparisonGroup(
-                state,
-                fixedTopMask,
-                remainingSlots,
-                group,
-                currentKey,
-                bestScore?.WorstCaseSteps ?? int.MaxValue);
-            if (evaluation is null)
-                continue;
-
-            int currentBestWorstCase = bestScore?.WorstCaseSteps ?? int.MaxValue;
-            if (bestScore is null || evaluation.Score.CompareTo(bestScore.Value) > 0)
-            {
-                bestGroup = group;
-                bestBranches = evaluation.Branches;
-                bestScore = evaluation.Score;
-                if (isRootSearch && evaluation.Score.WorstCaseSteps < currentBestWorstCase)
-                    RecordRootIncumbent(evaluation.Score.WorstCaseSteps, group);
-            }
-        }
-
-        if (bestGroup is not null && bestBranches is not null)
-        {
-            _bestGroupPatternCache[currentKey] = new BestGroupPattern(bestGroup.Count, GetGroupPattern(bestGroup, labels));
-            return new SelectedComparisonGroup(bestGroup, bestBranches);
-        }
-
-        List<int> fallbackGroup = candidates.Take(groupSize).ToList();
-        return new SelectedComparisonGroup(fallbackGroup, BuildMergedComparisonOutcomes(state, fixedTopMask, remainingSlots, fallbackGroup));
-    }
-
-    private ComparisonGroupEvaluation? EvaluateComparisonGroup(
-        ComparisonState state,
-        ulong fixedTopMask,
-        int remainingSlots,
-        IReadOnlyList<int> group,
-        SearchStateKey currentKey,
-        int bestKnownWorstCase)
-    {
-        int worstCaseSteps = 0;
-        OutcomeTraversalSummary traversal = VisitComparisonOutcomes(
-            state,
-            fixedTopMask,
-            remainingSlots,
-            group,
-            currentKey,
-            collectMergedBranches: true,
-            onUsefulOutcome: outcome =>
-            {
-                int branchLowerBound = 1 + GetMinWorstCaseLowerBound(outcome.NextState, outcome.NextRemainingSlots);
-                if (branchLowerBound > bestKnownWorstCase)
-                {
-                    _lowerBoundPrunes++;
-                    worstCaseSteps = branchLowerBound;
-                    return false;
-                }
-
-                int branchSteps = 1 + GetMinWorstCaseSteps(outcome.NextState, outcome.NextRemainingSlots);
-                worstCaseSteps = Math.Max(worstCaseSteps, branchSteps);
-                return true;
-            });
-
-        if (!traversal.IsUseful)
-            return null;
-
-        ComparisonGroupScore score = BuildComparisonGroupScore(
-            state,
-            group,
-            worstCaseSteps,
-            traversal.DistinctNextStateCount,
-            traversal.TotalReduction);
-        return new ComparisonGroupEvaluation(traversal.MergedBranches, score);
+        throw new InvalidOperationException(
+            "Cached best-group pattern did not match any candidate combination in the current state.");
     }
 
     private IReadOnlyList<MergedBranch> BuildMergedComparisonOutcomes(ComparisonState state, ulong fixedTopMask, int remainingSlots, IReadOnlyList<int> group)
@@ -246,23 +162,6 @@ partial class StrategyBuilder
             currentKey: null,
             collectMergedBranches: true,
             onUsefulOutcome: _ => true).MergedBranches;
-    }
-
-    private static ComparisonGroupScore BuildComparisonGroupScore(
-        ComparisonState state,
-        IReadOnlyList<int> group,
-        int worstCaseSteps,
-        int distinctStates,
-        int totalReduction)
-    {
-        return new ComparisonGroupScore(
-            worstCaseSteps,
-            CountFreshItems(state, group),
-            CalculateUnrelatedScore(state, group),
-            group.Count,
-            distinctStates,
-            totalReduction,
-            CountUnresolvedPairs(state, group));
     }
 
     private static IntSequenceKey GetGroupPattern(IReadOnlyList<int> group, IReadOnlyList<int> labels)
@@ -511,82 +410,18 @@ partial class StrategyBuilder
         public IReadOnlyList<MergedBranch> Branches { get; }
     }
 
-    private sealed class ComparisonGroupEvaluation
-    {
-        public ComparisonGroupEvaluation(IReadOnlyList<MergedBranch> branches, ComparisonGroupScore score)
-        {
-            Branches = branches;
-            Score = score;
-        }
-
-        public IReadOnlyList<MergedBranch> Branches { get; }
-        public ComparisonGroupScore Score { get; }
-    }
-
     private sealed class OutcomeTraversalSummary
     {
         public OutcomeTraversalSummary(
             IReadOnlyList<MergedBranch> mergedBranches,
-            bool isUseful,
-            int totalReduction,
-            int distinctNextStateCount)
+            bool isUseful)
         {
             MergedBranches = mergedBranches;
             IsUseful = isUseful;
-            TotalReduction = totalReduction;
-            DistinctNextStateCount = distinctNextStateCount;
         }
 
         public IReadOnlyList<MergedBranch> MergedBranches { get; }
         public bool IsUseful { get; }
-        public int TotalReduction { get; }
-        public int DistinctNextStateCount { get; }
-    }
-
-    internal readonly record struct ComparisonGroupScore(
-        int WorstCaseSteps,
-        int FreshItems,
-        int UnrelatedScore,
-        int GroupSize,
-        int DistinctStates,
-        int TotalReduction,
-        int UnresolvedPairs) : IComparable<ComparisonGroupScore>
-    {
-        public int CompareTo(ComparisonGroupScore other)
-        {
-            return CompareByLowerWorstCaseSteps(other)
-                ?? CompareByMoreFreshItems(other)
-                ?? CompareByMoreUnrelatedItems(other)
-                ?? CompareByLargerGroup(other)
-                ?? CompareByMoreDistinctStates(other)
-                ?? CompareByMoreTotalReduction(other)
-                ?? CompareByMoreUnresolvedPairs(other)
-                ?? 0;
-        }
-
-        private int? CompareByLowerWorstCaseSteps(ComparisonGroupScore other)
-            => ComparePreference(other.WorstCaseSteps.CompareTo(WorstCaseSteps));
-
-        private int? CompareByMoreFreshItems(ComparisonGroupScore other)
-            => ComparePreference(FreshItems.CompareTo(other.FreshItems));
-
-        private int? CompareByMoreUnrelatedItems(ComparisonGroupScore other)
-            => ComparePreference(UnrelatedScore.CompareTo(other.UnrelatedScore));
-
-        private int? CompareByLargerGroup(ComparisonGroupScore other)
-            => ComparePreference(GroupSize.CompareTo(other.GroupSize));
-
-        private int? CompareByMoreDistinctStates(ComparisonGroupScore other)
-            => ComparePreference(DistinctStates.CompareTo(other.DistinctStates));
-
-        private int? CompareByMoreTotalReduction(ComparisonGroupScore other)
-            => ComparePreference(TotalReduction.CompareTo(other.TotalReduction));
-
-        private int? CompareByMoreUnresolvedPairs(ComparisonGroupScore other)
-            => ComparePreference(UnresolvedPairs.CompareTo(other.UnresolvedPairs));
-
-        private static int? ComparePreference(int comparison)
-            => comparison == 0 ? null : comparison;
     }
 
     private readonly record struct HeuristicGroupScore(
