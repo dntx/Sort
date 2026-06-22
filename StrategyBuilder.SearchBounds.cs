@@ -55,12 +55,12 @@ partial class StrategyBuilder
         var candidates = state.GetActiveItemsOrdered();
         int groupSize = Math.Min(_m, candidates.Count);
         var labels = state.GetStructuralLabels();
-        // Use the heuristic ordering for any state whose group fills a comparison (remainingSlots
-        // >= _m), so the independent/symmetric tie-break also applies when remainingSlots == _m
-        // (otherwise those states fall back to lexicographic combination order).
-        IEnumerable<List<int>> groups = remainingSlots >= _m
-            ? EnumeratePrioritizedGroups(state, remainingSlots, candidates, groupSize, labels)
-            : EnumerateDistinctGroups(candidates, groupSize, labels);
+        // Always rank candidate groups with the independent/symmetric heuristic, including at
+        // early nodes where remainingSlots < _m (e.g. before any winner is fixed). This makes the
+        // displayed optimal strategy prefer regular, fresh groupings (such as sorting an untouched
+        // block) over equally-optimal but less intuitive mixed groups.
+        IEnumerable<List<int>> groups =
+            EnumeratePrioritizedGroups(state, remainingSlots, candidates, groupSize, labels);
         List<int>? bestGroup = null;
         int bestWorstCase = int.MaxValue;
         try
