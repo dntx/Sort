@@ -43,6 +43,13 @@ partial class StrategyBuilder
             return cached;
         }
 
+        bool isRootSearch = false;
+        if (!_rootSearchInitialized)
+        {
+            _rootSearchInitialized = true;
+            isRootSearch = true;
+        }
+
         EnterSearchState();
 
         var candidates = state.GetActiveItemsOrdered();
@@ -84,8 +91,11 @@ partial class StrategyBuilder
 
                 if (traversal.IsUseful && groupWorstCase < bestWorstCase)
                 {
+                    int previousBestWorstCase = bestWorstCase;
                     bestWorstCase = Math.Min(bestWorstCase, groupWorstCase);
                     bestGroup = group;
+                    if (isRootSearch && bestWorstCase < previousBestWorstCase)
+                        RecordRootIncumbent(bestWorstCase, group);
                 }
             }
         }
@@ -97,7 +107,7 @@ partial class StrategyBuilder
         if (bestWorstCase == int.MaxValue)
             throw new InvalidOperationException("Expected at least one useful comparison group when unresolved candidates exceed comparison size.");
 
-        if (remainingSlots > _m && bestGroup is not null)
+        if (bestGroup is not null && (_twoPhaseMode || remainingSlots > _m))
             _bestGroupPatternCache[key] = new BestGroupPattern(bestGroup.Count, GetGroupPattern(bestGroup, labels));
 
         _minWorstCaseStepsCache[key] = bestWorstCase;
