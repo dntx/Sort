@@ -99,6 +99,7 @@ class MainForm : Form
     {
         Text = "Top-K Strategy Explorer";
         StartPosition = FormStartPosition.CenterScreen;
+        WindowState = FormWindowState.Maximized;
         MinimumSize = new Size(1100, 760);
         Size = new Size(1200, 820);
 
@@ -124,7 +125,7 @@ class MainForm : Form
         headerLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         headerLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
-        _nTextBox = CreateInputTextBox("4");
+        _nTextBox = CreateInputTextBox("9");
         _mTextBox = CreateInputTextBox("3");
         _kTextBox = CreateInputTextBox("3");
         _themeComboBox = new ComboBox
