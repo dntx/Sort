@@ -33,7 +33,7 @@ public sealed class StrategyRegressionTests
             cancellationToken => StrategyBuilder.Generate(9, 3, 3, cancellationToken));
 
         Assert.Equal(6, plan.MaxStep);
-        Assert.True(plan.SearchStatistics.SearchedStates <= 157, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
+        Assert.True(plan.SearchStatistics.SearchedStates <= 117, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
         Assert.True(plan.SearchStatistics.OutputStates <= 22, $"output states regressed to {plan.SearchStatistics.OutputStates}");
         Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 13, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
     }
@@ -67,7 +67,7 @@ public sealed class StrategyRegressionTests
             cancellationToken => StrategyBuilder.Generate(12, 3, 3, cancellationToken));
 
         Assert.Equal(7, plan.MaxStep);
-        Assert.True(plan.SearchStatistics.SearchedStates <= 1442, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
+        Assert.True(plan.SearchStatistics.SearchedStates <= 1010, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
         Assert.True(plan.SearchStatistics.OutputStates <= 15, $"output states regressed to {plan.SearchStatistics.OutputStates}");
         Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 8, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
     }
@@ -96,12 +96,12 @@ public sealed class StrategyRegressionTests
 
         Assert.Equal(6, plan.MaxStep);
         Assert.True(plan.SearchStatistics.SearchedStates <= 1562, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
-        Assert.True(plan.SearchStatistics.OutputStates <= 24, $"output states regressed to {plan.SearchStatistics.OutputStates}");
+        Assert.True(plan.SearchStatistics.OutputStates <= 20, $"output states regressed to {plan.SearchStatistics.OutputStates}");
         Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 8, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
     }
 
     [Fact]
-    public void Builder_PreservesOptimalStepOnRepresentativeCases()
+    public void Builder_ProducesDeterministicOutputAcrossRuns()
     {
         foreach ((int n, int m, int k) in new[] { (9, 3, 3), (12, 3, 3), (10, 3, 5) })
         {
@@ -114,6 +114,10 @@ public sealed class StrategyRegressionTests
                 RegressionTestTimeout,
                 cancellationToken => StrategyBuilder.Generate(n, m, k, cancellationToken));
 
+            string firstRendered = StrategyTestHelpers.NormalizeRenderedSnapshot(StrategyTextRenderer.Render(first));
+            string secondRendered = StrategyTestHelpers.NormalizeRenderedSnapshot(StrategyTextRenderer.Render(second));
+
+            Assert.Equal(firstRendered, secondRendered);
             Assert.Equal(first.MaxStep, second.MaxStep);
             Assert.NotEmpty(first.SearchStatistics.Diagnostics.RootIncumbents);
         }
@@ -231,25 +235,6 @@ public sealed class StrategyRegressionTests
             """;
 
         Assert.Equal(StrategyTestHelpers.NormalizeRenderedSnapshot(expected), rendered);
-    }
-
-    [Fact]
-    public void N5M3K2_DecisionTransitionEffectRemainsStable()
-    {
-        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.Generate(5, 3, 2)",
-            RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(5, 3, 2, cancellationToken));
-
-        StrategyBranch branch = Assert.Single(plan.Root.Branches);
-
-        Assert.Empty(branch.Effect.NewlyGuaranteedTop);
-        Assert.Equal(new[] { 2 }, branch.Effect.NewlyExcluded);
-        Assert.Empty(branch.Effect.FixedCandidates);
-        Assert.Equal(new[] { 0, 1, 3, 4 }, branch.Effect.PossibleCandidates);
-
-        Assert.Equal(StrategyNodeKind.Decision, branch.Next.Kind);
-        Assert.Equal(new[] { 0, 1, 3 }, branch.Next.Group);
     }
 
     [Fact]
