@@ -101,6 +101,25 @@ public sealed class StrategyRegressionTests
     }
 
     [Fact]
+    public void TwoPhaseBuilder_PreservesOptimalStepOnRepresentativeCases()
+    {
+        foreach ((int n, int m, int k) in new[] { (9, 3, 3), (12, 3, 3), (10, 3, 5) })
+        {
+            StrategyPlan baseline = TestTimeoutHelper.RunWithTimeout(
+                $"StrategyBuilder.Generate({n}, {m}, {k}) baseline",
+                RegressionTestTimeout,
+                cancellationToken => StrategyBuilder.Generate(n, m, k, cancellationToken));
+            StrategyPlan twoPhase = TestTimeoutHelper.RunWithTimeout(
+                $"StrategyBuilder.GenerateTwoPhase({n}, {m}, {k})",
+                RegressionTestTimeout,
+                cancellationToken => StrategyBuilder.GenerateTwoPhase(n, m, k, cancellationToken));
+
+            Assert.Equal(baseline.MaxStep, twoPhase.MaxStep);
+            Assert.NotEmpty(twoPhase.SearchStatistics.Diagnostics.RootIncumbents);
+        }
+    }
+
+    [Fact]
     public void N10M3K5_RecordsDescendingRootIncumbentMilestones()
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
