@@ -100,20 +100,23 @@ class MainForm : Form
         {
             Dock = DockStyle.Fill,
             ColumnCount = 1,
-            RowCount = 3,
+            RowCount = 2,
             Padding = new Padding(12),
         };
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-        var toolbar = new FlowLayoutPanel
+        var headerLayout = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
             AutoSize = true,
-            WrapContents = false,
-            Margin = new Padding(0, 0, 0, 8),
+            ColumnCount = 1,
+            RowCount = 3,
+            Margin = new Padding(0, 0, 0, 12),
         };
+        headerLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        headerLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        headerLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
         _nTextBox = CreateInputTextBox("4");
         _mTextBox = CreateInputTextBox("3");
@@ -133,7 +136,7 @@ class MainForm : Form
             Text = "Run",
             AutoSize = true,
             Height = 30,
-            Margin = new Padding(12, 18, 0, 0),
+            Margin = new Padding(0, 4, 8, 0),
         };
         _runButton.Click += (_, _) => RunStrategy();
 
@@ -142,7 +145,7 @@ class MainForm : Form
             Text = "Stop",
             AutoSize = true,
             Height = 30,
-            Margin = new Padding(8, 18, 0, 0),
+            Margin = new Padding(0, 4, 8, 0),
             Enabled = false,
         };
         _stopButton.Click += (_, _) => StopStrategy();
@@ -152,7 +155,7 @@ class MainForm : Form
             Text = "Expand All",
             AutoSize = true,
             Height = 30,
-            Margin = new Padding(12, 18, 0, 0),
+            Margin = new Padding(0, 4, 8, 0),
         };
 
         _collapseAllButton = new Button
@@ -160,45 +163,84 @@ class MainForm : Form
             Text = "Collapse All",
             AutoSize = true,
             Height = 30,
-            Margin = new Padding(8, 18, 0, 0),
+            Margin = new Padding(0, 4, 0, 0),
         };
 
         _elapsedLabel = new Label
         {
             AutoSize = true,
-            Margin = new Padding(12, 24, 0, 0),
-            Text = "elapsed: 0.0 s",
+            Margin = Padding.Empty,
+            Text = "0.0 s",
+            Font = new Font(Font.FontFamily, 14, FontStyle.Bold),
         };
         _searchStatsLabel = new Label
         {
             AutoSize = true,
-            Margin = new Padding(12, 24, 0, 0),
-            Text = "searched: 0, pending: 0",
+            Margin = Padding.Empty,
+            Text = "searched: 0\npending: 0\npeak: 0\noutput: 0",
         };
         _diagnosticsLabel = new Label
         {
             AutoSize = true,
-            Margin = new Padding(12, 24, 0, 0),
-            Text = "incumbent: -, prunes: 0",
+            Margin = Padding.Empty,
+            Text = "incumbent: -\nmilestones: 0\nprunes: 0\ncache: 0/0/0/0",
         };
 
-        toolbar.Controls.Add(CreateLabeledInput("n", _nTextBox));
-        toolbar.Controls.Add(CreateLabeledInput("m", _mTextBox));
-        toolbar.Controls.Add(CreateLabeledInput("k", _kTextBox));
-        toolbar.Controls.Add(CreateLabeledInput("theme", _themeComboBox));
-        toolbar.Controls.Add(_runButton);
-        toolbar.Controls.Add(_stopButton);
-        toolbar.Controls.Add(_expandAllButton);
-        toolbar.Controls.Add(_collapseAllButton);
-        toolbar.Controls.Add(_elapsedLabel);
-        toolbar.Controls.Add(_searchStatsLabel);
-        toolbar.Controls.Add(_diagnosticsLabel);
+        var inputsPanel = new FlowLayoutPanel
+        {
+            AutoSize = true,
+            WrapContents = false,
+            Dock = DockStyle.Fill,
+            Margin = Padding.Empty,
+        };
+        inputsPanel.Controls.Add(CreateLabeledInput("n", _nTextBox));
+        inputsPanel.Controls.Add(CreateLabeledInput("m", _mTextBox));
+        inputsPanel.Controls.Add(CreateLabeledInput("k", _kTextBox));
+        inputsPanel.Controls.Add(CreateLabeledInput("theme", _themeComboBox));
+
+        var actionsPanel = new FlowLayoutPanel
+        {
+            AutoSize = true,
+            WrapContents = false,
+            Dock = DockStyle.Fill,
+            Margin = Padding.Empty,
+        };
+        actionsPanel.Controls.Add(_runButton);
+        actionsPanel.Controls.Add(_stopButton);
+        actionsPanel.Controls.Add(_expandAllButton);
+        actionsPanel.Controls.Add(_collapseAllButton);
+
+        var controlsLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            ColumnCount = 2,
+            Margin = Padding.Empty,
+        };
+        controlsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55));
+        controlsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
+        controlsLayout.Controls.Add(CreateSectionPanel("Inputs", inputsPanel), 0, 0);
+        controlsLayout.Controls.Add(CreateSectionPanel("Actions", actionsPanel), 1, 0);
+
+        var statsLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            ColumnCount = 3,
+            Margin = Padding.Empty,
+        };
+        statsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20));
+        statsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40));
+        statsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40));
+        statsLayout.Controls.Add(CreateSectionPanel("Elapsed", _elapsedLabel), 0, 0);
+        statsLayout.Controls.Add(CreateSectionPanel("Search", _searchStatsLabel), 1, 0);
+        statsLayout.Controls.Add(CreateSectionPanel("Diagnostics", _diagnosticsLabel), 2, 0);
 
         _summaryLabel = new Label
         {
             AutoSize = true,
-            Margin = new Padding(0, 0, 0, 8),
-            Text = $"Ready. theme={ParseSelectedTheme()}",
+            Margin = Padding.Empty,
+            Text = "Ready.",
         };
 
         var split = new SplitContainer
@@ -229,14 +271,18 @@ class MainForm : Form
         split.Panel1.Controls.Add(_treeView);
         split.Panel2.Controls.Add(_detailsTextBox);
 
-        layout.Controls.Add(toolbar, 0, 0);
-        layout.Controls.Add(_summaryLabel, 0, 1);
-        layout.Controls.Add(split, 0, 2);
+        headerLayout.Controls.Add(controlsLayout, 0, 0);
+        headerLayout.Controls.Add(statsLayout, 0, 1);
+        headerLayout.Controls.Add(CreateSectionPanel("Status", _summaryLabel), 0, 2);
+
+        layout.Controls.Add(headerLayout, 0, 0);
+        layout.Controls.Add(split, 0, 1);
 
         Controls.Add(layout);
         AcceptButton = _runButton;
         _elapsedTimer = new System.Windows.Forms.Timer { Interval = 100 };
         _elapsedTimer.Tick += (_, _) => UpdateElapsedLabel();
+        _detailsTextBox.Text = BuildIdleDetailsText();
         ApplyTheme(ColorTheme.Dark);
     }
 
@@ -256,6 +302,41 @@ class MainForm : Form
             Margin = new Padding(0, 8, 6, 0),
         });
         panel.Controls.Add(inputControl);
+        return panel;
+    }
+
+    private static Panel CreateSectionPanel(string title, Control body)
+    {
+        var panel = new Panel
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            BorderStyle = BorderStyle.FixedSingle,
+            Padding = new Padding(10),
+            Margin = new Padding(0, 0, 8, 8),
+        };
+
+        var sectionLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            ColumnCount = 1,
+            RowCount = 2,
+            Margin = Padding.Empty,
+        };
+        sectionLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        sectionLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        sectionLayout.Controls.Add(new Label
+        {
+            Text = title,
+            AutoSize = true,
+            Margin = Padding.Empty,
+            Font = new Font(FontFamily.GenericSansSerif, 9f, FontStyle.Bold),
+        }, 0, 0);
+
+        body.Margin = new Padding(0, 8, 0, 0);
+        sectionLayout.Controls.Add(body, 0, 1);
+        panel.Controls.Add(sectionLayout);
         return panel;
     }
 
@@ -288,7 +369,7 @@ class MainForm : Form
         UpdateDiagnosticsLabel();
         _elapsedTimer.Start();
         SetRunningState(isRunning: true);
-        _summaryLabel.Text = $"Running n={n}, m={m}, k={k}... theme={ParseSelectedTheme()}";
+        _summaryLabel.Text = $"Running n={n}, m={m}, k={k}...";
         _detailsTextBox.Text = BuildLiveDiagnosticsText(_latestProgress);
 
         try
@@ -319,13 +400,13 @@ class MainForm : Form
         catch (OperationCanceledException)
         {
             _runStopwatch?.Stop();
-            _summaryLabel.Text = $"Stopped after {GetElapsedSeconds():F1} s. {FormatSearchStatsSummary(_latestProgress, includeOutputStates: true)}. {FormatLiveDiagnosticsSummary(_latestProgress)}. theme={ParseSelectedTheme()}";
+            _summaryLabel.Text = $"Stopped after {GetElapsedSeconds():F1} s. {FormatSearchStatsSummary(_latestProgress, includeOutputStates: true)}. {FormatLiveDiagnosticsSummary(_latestProgress)}.";
             _detailsTextBox.Text = BuildLiveDiagnosticsText(_latestProgress);
         }
         catch (Exception ex)
         {
             _runStopwatch?.Stop();
-            _summaryLabel.Text = $"Run failed after {GetElapsedSeconds():F1} s. {FormatSearchStatsSummary(_latestProgress, includeOutputStates: true)}. {FormatLiveDiagnosticsSummary(_latestProgress)}. theme={ParseSelectedTheme()}";
+            _summaryLabel.Text = $"Run failed after {GetElapsedSeconds():F1} s. {FormatSearchStatsSummary(_latestProgress, includeOutputStates: true)}. {FormatLiveDiagnosticsSummary(_latestProgress)}.";
             _detailsTextBox.Text = BuildLiveDiagnosticsText(_latestProgress);
             MessageBox.Show(this, ex.Message, "Run failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
@@ -516,7 +597,8 @@ class MainForm : Form
         }
         else if (_runCancellationSource is null)
         {
-            _summaryLabel.Text = $"Ready. theme={theme}";
+            _summaryLabel.Text = "Ready.";
+            _detailsTextBox.Text = BuildIdleDetailsText();
         }
     }
 
@@ -576,7 +658,7 @@ class MainForm : Form
     {
         _summaryLabel.Text =
             $"n={plan.N}, m={plan.M}, k={plan.K}, elapsed={plan.Elapsed.TotalMilliseconds:F1} ms, max step={plan.MaxStep}, " +
-            $"{FormatSearchStatsSummary(plan.SearchStatistics)}, {FormatDiagnosticsSummary(plan.SearchStatistics.Diagnostics)}, theme={ParseSelectedTheme()}. Colors: state, branch, in, out, fixed, possible, result, reference.";
+            $"{FormatSearchStatsSummary(plan.SearchStatistics)}, {FormatDiagnosticsSummary(plan.SearchStatistics.Diagnostics)}.";
     }
 
     private static string BuildCompressedFinalChoiceText(FinalChoiceSummary summary, int k)
@@ -608,7 +690,7 @@ class MainForm : Form
 
     private void UpdateElapsedLabel()
     {
-        _elapsedLabel.Text = $"elapsed: {GetElapsedSeconds():F1} s";
+        _elapsedLabel.Text = $"{GetElapsedSeconds():F1} s";
     }
 
     private void UpdateSearchProgress(SearchProgressSnapshot snapshot)
@@ -616,18 +698,22 @@ class MainForm : Form
         _latestProgress = snapshot;
         UpdateSearchStatsLabel();
         UpdateDiagnosticsLabel();
-        _summaryLabel.Text = $"Running... {FormatSearchStatsSummary(snapshot, includeOutputStates: true)}. {FormatLiveDiagnosticsSummary(snapshot)}. theme={ParseSelectedTheme()}";
+        _summaryLabel.Text = $"Running... {FormatSearchStatsSummary(snapshot, includeOutputStates: true)}. {FormatLiveDiagnosticsSummary(snapshot)}.";
         _detailsTextBox.Text = BuildLiveDiagnosticsText(snapshot);
     }
 
     private void UpdateSearchStatsLabel()
     {
-        _searchStatsLabel.Text = $"searched: {_latestProgress.SearchedStates}, pending: {_latestProgress.PendingStates}, peak: {_latestProgress.PeakPendingStates}, output: {_latestProgress.OutputStates}";
+        _searchStatsLabel.Text =
+            $"searched: {_latestProgress.SearchedStates}\n" +
+            $"pending: {_latestProgress.PendingStates}\n" +
+            $"peak: {_latestProgress.PeakPendingStates}\n" +
+            $"output: {_latestProgress.OutputStates}";
     }
 
     private void UpdateDiagnosticsLabel()
     {
-        _diagnosticsLabel.Text = FormatLiveDiagnosticsSummary(_latestProgress);
+        _diagnosticsLabel.Text = BuildDiagnosticsLabelText(_latestProgress);
     }
 
     private static string FormatSearchStatsSummary(SearchStatistics statistics)
@@ -725,6 +811,37 @@ class MainForm : Form
             ? "incumbent: -"
             : $"incumbent: <= {snapshot.LatestRootIncumbent.BestWorstCaseSteps}";
         return $"{incumbentText}, milestones: {snapshot.RootIncumbentCount}, prunes: {snapshot.LowerBoundPrunes}, cache hits: {snapshot.ExactCacheHits}/{snapshot.LowerBoundCacheHits}/{snapshot.FeasibleTopSetCacheHits}/{snapshot.BestGroupPatternCacheHits}";
+    }
+
+    private static string BuildDiagnosticsLabelText(SearchProgressSnapshot snapshot)
+    {
+        string incumbentText = snapshot.LatestRootIncumbent is null
+            ? "incumbent: -"
+            : $"incumbent: <= {snapshot.LatestRootIncumbent.BestWorstCaseSteps}";
+        return
+            $"{incumbentText}\n" +
+            $"milestones: {snapshot.RootIncumbentCount}\n" +
+            $"prunes: {snapshot.LowerBoundPrunes}\n" +
+            $"cache: {snapshot.ExactCacheHits}/{snapshot.LowerBoundCacheHits}/{snapshot.FeasibleTopSetCacheHits}/{snapshot.BestGroupPatternCacheHits}";
+    }
+
+    private static string BuildIdleDetailsText()
+    {
+        return string.Join(Environment.NewLine, new[]
+        {
+            "Top-K Strategy Explorer",
+            string.Empty,
+            "1. Adjust n, m, k and theme in the Inputs section.",
+            "2. Use Run / Stop / Expand All / Collapse All from the Actions section.",
+            "3. Watch the Search and Diagnostics panels for live progress.",
+            string.Empty,
+            "Tree legend:",
+            "- state: comparison node",
+            "- branch: outcome branch",
+            "- in / out / fixed / possible: branch effect categories",
+            "- result: terminal top-k set",
+            "- reference: previously expanded state",
+        });
     }
 
     private double GetElapsedSeconds()
