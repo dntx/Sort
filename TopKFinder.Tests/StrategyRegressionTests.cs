@@ -100,6 +100,114 @@ public sealed class StrategyRegressionTests
         Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 8, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
     }
 
+    // The following cases deliberately exercise k < m (find a few winners using wide
+    // comparisons) and k > m (find more winners than a single comparison can rank).
+
+    [Fact]
+    public void N8M4K2_NarrowTopKWithinWideGroupBaseline()
+    {
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.Generate(8, 4, 2)",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.Generate(8, 4, 2, cancellationToken));
+
+        Assert.Equal(3, plan.MaxStep);
+        Assert.Equal(4, plan.Root.Group.Count);
+        Assert.True(plan.SearchStatistics.SearchedStates <= 6, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
+        Assert.True(plan.SearchStatistics.OutputStates <= 3, $"output states regressed to {plan.SearchStatistics.OutputStates}");
+        Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 2, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
+    }
+
+    [Fact]
+    public void N9M4K3_NarrowTopKBaseline()
+    {
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.Generate(9, 4, 3)",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.Generate(9, 4, 3, cancellationToken));
+
+        Assert.Equal(4, plan.MaxStep);
+        Assert.Equal(4, plan.Root.Group.Count);
+        Assert.True(plan.SearchStatistics.SearchedStates <= 23, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
+        Assert.True(plan.SearchStatistics.OutputStates <= 7, $"output states regressed to {plan.SearchStatistics.OutputStates}");
+        Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 3, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
+    }
+
+    [Fact]
+    public void N12M4K3_NarrowTopKBaseline()
+    {
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.Generate(12, 4, 3)",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.Generate(12, 4, 3, cancellationToken));
+
+        Assert.Equal(5, plan.MaxStep);
+        Assert.Equal(4, plan.Root.Group.Count);
+        Assert.True(plan.SearchStatistics.SearchedStates <= 88, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
+        Assert.True(plan.SearchStatistics.OutputStates <= 15, $"output states regressed to {plan.SearchStatistics.OutputStates}");
+        Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 9, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
+    }
+
+    [Fact]
+    public void N8M3K4_WideTopKBeyondGroupBaseline()
+    {
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.Generate(8, 3, 4)",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.Generate(8, 3, 4, cancellationToken));
+
+        Assert.Equal(5, plan.MaxStep);
+        Assert.Equal(3, plan.Root.Group.Count);
+        Assert.True(plan.SearchStatistics.SearchedStates <= 70, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
+        Assert.True(plan.SearchStatistics.OutputStates <= 17, $"output states regressed to {plan.SearchStatistics.OutputStates}");
+        Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 6, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
+    }
+
+    [Fact]
+    public void N9M3K4_WideTopKBaseline()
+    {
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.Generate(9, 3, 4)",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.Generate(9, 3, 4, cancellationToken));
+
+        Assert.Equal(6, plan.MaxStep);
+        Assert.Equal(3, plan.Root.Group.Count);
+        Assert.True(plan.SearchStatistics.SearchedStates <= 228, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
+        Assert.True(plan.SearchStatistics.OutputStates <= 7, $"output states regressed to {plan.SearchStatistics.OutputStates}");
+        Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 5, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
+    }
+
+    [Fact]
+    public void N8M2K3_PairwiseWideTopKBaseline()
+    {
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.Generate(8, 2, 3)",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.Generate(8, 2, 3, cancellationToken));
+
+        Assert.Equal(10, plan.MaxStep);
+        Assert.Equal(2, plan.Root.Group.Count);
+        Assert.True(plan.SearchStatistics.SearchedStates <= 345, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
+        Assert.True(plan.SearchStatistics.OutputStates <= 12, $"output states regressed to {plan.SearchStatistics.OutputStates}");
+        Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 10, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
+    }
+
+    [Fact]
+    public void N10M3K6_WideTopKBaseline()
+    {
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.Generate(10, 3, 6)",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.Generate(10, 3, 6, cancellationToken));
+
+        Assert.Equal(7, plan.MaxStep);
+        Assert.Equal(3, plan.Root.Group.Count);
+        Assert.True(plan.SearchStatistics.SearchedStates <= 815, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
+        Assert.True(plan.SearchStatistics.OutputStates <= 54, $"output states regressed to {plan.SearchStatistics.OutputStates}");
+        Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 18, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
+    }
+
     [Fact]
     public void Builder_ProducesDeterministicOutputAcrossRuns()
     {
