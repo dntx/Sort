@@ -71,7 +71,6 @@ partial class StrategyBuilder
             addedFixedTopMask,
             nextRemainingSlots,
             GetSearchStateKey(next, nextRemainingSlots),
-            state.ActiveCount - next.ActiveCount,
             orderFamily);
     }
 
@@ -85,10 +84,8 @@ partial class StrategyBuilder
         Func<ComparisonOutcome, bool> onUsefulOutcome)
     {
         ThrowIfCancellationRequested();
-        var nextStateKeys = new HashSet<SearchStateKey>();
         var evaluatedStateKeys = new HashSet<SearchStateKey>();
         var groupedBranches = collectMergedBranches ? new Dictionary<IntSequenceKey, MergedBranch>() : null;
-        int totalReduction = 0;
         bool isUseful = false;
 
         foreach (OrderFamilyDescriptor orderFamily in EnumerateFeasibleOrderFamilies(state, group))
@@ -102,8 +99,6 @@ partial class StrategyBuilder
                 continue;
 
             isUseful = true;
-            totalReduction += outcome.Reduction;
-            nextStateKeys.Add(outcome.NextSearchKey);
 
             if (!evaluatedStateKeys.Add(outcome.NextSearchKey))
             {
@@ -117,9 +112,7 @@ partial class StrategyBuilder
 
         return new OutcomeTraversalSummary(
             groupedBranches is not null ? groupedBranches.Values.ToList() : Array.Empty<MergedBranch>(),
-            isUseful,
-            totalReduction,
-            nextStateKeys.Count);
+            isUseful);
     }
 
     private sealed class MergedBranch
@@ -152,14 +145,12 @@ partial class StrategyBuilder
             ulong addedFixedTopMask,
             int nextRemainingSlots,
             SearchStateKey nextSearchKey,
-            int reduction,
             OrderFamilyDescriptor orderFamily)
         {
             NextState = nextState;
             AddedFixedTopMask = addedFixedTopMask;
             NextRemainingSlots = nextRemainingSlots;
             NextSearchKey = nextSearchKey;
-            Reduction = reduction;
             OrderFamily = orderFamily;
         }
 
@@ -167,7 +158,6 @@ partial class StrategyBuilder
         public ulong AddedFixedTopMask { get; }
         public int NextRemainingSlots { get; }
         public SearchStateKey NextSearchKey { get; }
-        public int Reduction { get; }
         public OrderFamilyDescriptor OrderFamily { get; }
     }
 }
