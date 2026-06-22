@@ -276,6 +276,9 @@ class MainForm : Form
         };
         _treeView.AfterSelect += (_, e) => ShowNodeDetails(e.Node);
         _treeView.NodeMouseDoubleClick += (_, e) => TryJumpToReferenceTarget(e.Node);
+        _treeView.MouseDown += TreeView_MouseDown;
+        _treeView.KeyDown += TreeView_KeyDown;
+        _treeView.ContextMenuStrip = CreateTreeContextMenu();
         _expandAllButton.Click += (_, _) => _treeView.ExpandAll();
         _collapseAllButton.Click += (_, _) => _treeView.CollapseAll();
         _backButton.Click += (_, _) => NavigateBack();
@@ -622,6 +625,90 @@ class MainForm : Form
         previous.EnsureVisible();
         _treeView.SelectedNode = previous;
         _treeView.Focus();
+    }
+
+    private ContextMenuStrip CreateTreeContextMenu()
+    {
+        var menu = new ContextMenuStrip();
+
+        var copyText = new ToolStripMenuItem("Copy text") { ShortcutKeyDisplayString = "Ctrl+C" };
+        copyText.Click += (_, _) => CopySelectedNodeText();
+
+        var copySubtree = new ToolStripMenuItem("Copy subtree");
+        copySubtree.Click += (_, _) => CopySelectedNodeSubtree();
+
+        menu.Items.Add(copyText);
+        menu.Items.Add(copySubtree);
+
+        menu.Opening += (_, e) =>
+        {
+            bool hasNode = _treeView.SelectedNode is not null;
+            copyText.Enabled = hasNode;
+            copySubtree.Enabled = hasNode;
+            if (!hasNode)
+                e.Cancel = true;
+        };
+
+        return menu;
+    }
+
+    private void TreeView_MouseDown(object? sender, MouseEventArgs e)
+    {
+        if (e.Button == MouseButtons.Right)
+        {
+            TreeNode? node = _treeView.GetNodeAt(e.X, e.Y);
+            if (node is not null)
+                _treeView.SelectedNode = node;
+        }
+    }
+
+    private void TreeView_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Control && e.KeyCode == Keys.C)
+        {
+            CopySelectedNodeText();
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+        }
+    }
+
+    private void CopySelectedNodeText()
+    {
+        if (_treeView.SelectedNode is { } node)
+            SetClipboardText(node.Text);
+    }
+
+    private void CopySelectedNodeSubtree()
+    {
+        if (_treeView.SelectedNode is not { } node)
+            return;
+
+        var builder = new System.Text.StringBuilder();
+        AppendNodeSubtree(node, 0, builder);
+        SetClipboardText(builder.ToString().TrimEnd());
+    }
+
+    private static void AppendNodeSubtree(TreeNode node, int indent, System.Text.StringBuilder builder)
+    {
+        builder.Append(' ', indent * 2).AppendLine(node.Text);
+        foreach (TreeNode child in node.Nodes)
+            AppendNodeSubtree(child, indent + 1, builder);
+    }
+
+    private void SetClipboardText(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return;
+
+        try
+        {
+            Clipboard.SetText(text);
+            _summaryLabel.Text = "Copied to clipboard.";
+        }
+        catch (Exception ex)
+        {
+            _summaryLabel.Text = $"Copy failed: {ex.Message}";
+        }
     }
 
     private static string BuildBranchDetails(StrategyBranch branch)
