@@ -21,11 +21,20 @@ partial class StrategyBuilder
     private readonly Dictionary<SearchStateKey, FeasibleTopSetInfo> _feasibleTopSetCache = new();
     private readonly Dictionary<SearchStateKey, BestGroupPattern> _bestGroupPatternCache = new();
     private readonly Stopwatch _progressStopwatch = Stopwatch.StartNew();
+    private readonly List<SearchMilestone> _rootIncumbents = new();
     private int _nextStateId = 1;
     private int _searchedStates;
     private int _pendingStates;
     private int _peakPendingStates;
     private long _lastProgressReportMs = -ProgressReportIntervalMs;
+    private int _lowerBoundPrunes;
+    private int _duplicateOutcomeSkips;
+    private int _mergedOutcomeCollisions;
+    private int _exactCacheHits;
+    private int _lowerBoundCacheHits;
+    private int _feasibleTopSetCacheHits;
+    private int _bestGroupPatternCacheHits;
+    private bool _rootSearchInitialized;
 
     public StrategyBuilder(int n, int m, int k, CancellationToken cancellationToken = default, Action<SearchProgressSnapshot>? progressCallback = null)
     {
@@ -117,13 +126,23 @@ partial class StrategyBuilder
         int groupSize = Math.Min(_m, candidates.Count);
         SearchStateKey currentKey = GetSearchStateKey(state, remainingSlots);
         var labels = state.GetStructuralLabels();
+        bool isRootSearch = false;
+
+        if (!_rootSearchInitialized)
+        {
+            _rootSearchInitialized = true;
+            isRootSearch = true;
+        }
 
         if (_bestGroupPatternCache.TryGetValue(currentKey, out BestGroupPattern cachedPattern))
         {
             foreach (var group in EnumerateCombinations(candidates, cachedPattern.GroupSize))
             {
                 if (GetGroupPattern(group, labels) == cachedPattern.Pattern)
+                {
+                    _bestGroupPatternCacheHits++;
                     return new SelectedComparisonGroup(group, BuildMergedComparisonOutcomes(state, fixedTopMask, remainingSlots, group));
+                }
             }
         }
 
@@ -148,11 +167,14 @@ partial class StrategyBuilder
             if (evaluation is null)
                 continue;
 
+            int currentBestWorstCase = bestScore?.WorstCaseSteps ?? int.MaxValue;
             if (bestScore is null || evaluation.Score.CompareTo(bestScore.Value) > 0)
             {
                 bestGroup = group;
                 bestBranches = evaluation.Branches;
                 bestScore = evaluation.Score;
+                if (isRootSearch && evaluation.Score.WorstCaseSteps < currentBestWorstCase)
+                    RecordRootIncumbent(evaluation.Score.WorstCaseSteps, group);
             }
         }
 
@@ -187,6 +209,7 @@ partial class StrategyBuilder
                 int branchLowerBound = 1 + GetMinWorstCaseLowerBound(outcome.NextState, outcome.NextRemainingSlots);
                 if (branchLowerBound > bestKnownWorstCase)
                 {
+                    _lowerBoundPrunes++;
                     worstCaseSteps = branchLowerBound;
                     return false;
                 }
@@ -406,7 +429,16 @@ partial class StrategyBuilder
             _stateIds.Count,
             _expandedStates.Count,
             _lowerBoundStepsCache.Count,
-            _feasibleTopSetCache.Count);
+            _feasibleTopSetCache.Count,
+            new SearchDiagnostics(
+                _rootIncumbents.ToArray(),
+                _lowerBoundPrunes,
+                _duplicateOutcomeSkips,
+                _mergedOutcomeCollisions,
+                _exactCacheHits,
+                _lowerBoundCacheHits,
+                _feasibleTopSetCacheHits,
+                _bestGroupPatternCacheHits));
     }
 
     private void ReportProgress(bool force = false)
@@ -421,15 +453,40 @@ partial class StrategyBuilder
 
         _lastProgressReportMs = elapsedMs;
         _progressCallback(new SearchProgressSnapshot(
+            elapsedMs,
             _searchedStates,
             _pendingStates,
             _peakPendingStates,
-            _stateIds.Count));
+            _stateIds.Count,
+            _rootIncumbents.Count == 0 ? null : _rootIncumbents[^1],
+            _rootIncumbents.Count,
+            _lowerBoundPrunes,
+            _duplicateOutcomeSkips,
+            _mergedOutcomeCollisions,
+            _exactCacheHits,
+            _lowerBoundCacheHits,
+            _feasibleTopSetCacheHits,
+            _bestGroupPatternCacheHits));
     }
 
     private void ObserveSearchState(ComparisonState state, int remainingSlots)
     {
         _visitedSearchStates.Add(GetSearchStateKey(state, remainingSlots));
+    }
+
+    private void RecordRootIncumbent(int bestWorstCaseSteps, IReadOnlyList<int> group)
+    {
+        _searchedStates = _visitedSearchStates.Count;
+        _rootIncumbents.Add(new SearchMilestone(
+            bestWorstCaseSteps,
+            $"sort({StrategyTextRenderer.FormatSet(group)})",
+            _progressStopwatch.ElapsedMilliseconds,
+            _searchedStates,
+            _pendingStates,
+            _peakPendingStates,
+            _stateIds.Count,
+            _lowerBoundPrunes));
+        ReportProgress(force: true);
     }
 
     private void ThrowIfCancellationRequested()

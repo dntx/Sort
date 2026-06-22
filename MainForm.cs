@@ -78,6 +78,7 @@ class MainForm : Form
     private readonly Button _collapseAllButton;
     private readonly Label _elapsedLabel;
     private readonly Label _searchStatsLabel;
+    private readonly Label _diagnosticsLabel;
     private readonly Label _summaryLabel;
     private readonly TreeView _treeView;
     private readonly RichTextBox _detailsTextBox;
@@ -174,6 +175,12 @@ class MainForm : Form
             Margin = new Padding(12, 24, 0, 0),
             Text = "searched: 0, pending: 0",
         };
+        _diagnosticsLabel = new Label
+        {
+            AutoSize = true,
+            Margin = new Padding(12, 24, 0, 0),
+            Text = "incumbent: -, prunes: 0",
+        };
 
         toolbar.Controls.Add(CreateLabeledInput("n", _nTextBox));
         toolbar.Controls.Add(CreateLabeledInput("m", _mTextBox));
@@ -185,6 +192,7 @@ class MainForm : Form
         toolbar.Controls.Add(_collapseAllButton);
         toolbar.Controls.Add(_elapsedLabel);
         toolbar.Controls.Add(_searchStatsLabel);
+        toolbar.Controls.Add(_diagnosticsLabel);
 
         _summaryLabel = new Label
         {
@@ -273,13 +281,15 @@ class MainForm : Form
         _runCancellationSource = new CancellationTokenSource();
         CancellationToken cancellationToken = _runCancellationSource.Token;
         IProgress<SearchProgressSnapshot> progress = new Progress<SearchProgressSnapshot>(UpdateSearchProgress);
-        _latestProgress = new SearchProgressSnapshot(0, 0, 0, 0);
+        _latestProgress = CreateInitialProgressSnapshot();
         _runStopwatch = Stopwatch.StartNew();
         UpdateElapsedLabel();
         UpdateSearchStatsLabel();
+        UpdateDiagnosticsLabel();
         _elapsedTimer.Start();
         SetRunningState(isRunning: true);
         _summaryLabel.Text = $"Running n={n}, m={m}, k={k}... theme={ParseSelectedTheme()}";
+        _detailsTextBox.Text = BuildLiveDiagnosticsText(_latestProgress);
 
         try
         {
@@ -287,23 +297,36 @@ class MainForm : Form
             _runStopwatch?.Stop();
             _currentPlan = plan;
             _latestProgress = new SearchProgressSnapshot(
+                (long)plan.Elapsed.TotalMilliseconds,
                 plan.SearchStatistics.SearchedStates,
                 plan.SearchStatistics.PendingStates,
                 plan.SearchStatistics.PeakPendingStates,
-                plan.SearchStatistics.OutputStates);
+                plan.SearchStatistics.OutputStates,
+                plan.SearchStatistics.Diagnostics.RootIncumbents.LastOrDefault(),
+                plan.SearchStatistics.Diagnostics.RootIncumbents.Count,
+                plan.SearchStatistics.Diagnostics.LowerBoundPrunes,
+                plan.SearchStatistics.Diagnostics.DuplicateOutcomeSkips,
+                plan.SearchStatistics.Diagnostics.MergedOutcomeCollisions,
+                plan.SearchStatistics.Diagnostics.ExactCacheHits,
+                plan.SearchStatistics.Diagnostics.LowerBoundCacheHits,
+                plan.SearchStatistics.Diagnostics.FeasibleTopSetCacheHits,
+                plan.SearchStatistics.Diagnostics.BestGroupPatternCacheHits);
             PopulateTree(plan);
             UpdateSummaryText(plan);
             UpdateSearchStatsLabel();
+            UpdateDiagnosticsLabel();
         }
         catch (OperationCanceledException)
         {
             _runStopwatch?.Stop();
-            _summaryLabel.Text = $"Stopped after {GetElapsedSeconds():F1} s. {FormatSearchStatsSummary(_latestProgress, includeOutputStates: true)}. theme={ParseSelectedTheme()}";
+            _summaryLabel.Text = $"Stopped after {GetElapsedSeconds():F1} s. {FormatSearchStatsSummary(_latestProgress, includeOutputStates: true)}. {FormatLiveDiagnosticsSummary(_latestProgress)}. theme={ParseSelectedTheme()}";
+            _detailsTextBox.Text = BuildLiveDiagnosticsText(_latestProgress);
         }
         catch (Exception ex)
         {
             _runStopwatch?.Stop();
-            _summaryLabel.Text = $"Run failed after {GetElapsedSeconds():F1} s. {FormatSearchStatsSummary(_latestProgress, includeOutputStates: true)}. theme={ParseSelectedTheme()}";
+            _summaryLabel.Text = $"Run failed after {GetElapsedSeconds():F1} s. {FormatSearchStatsSummary(_latestProgress, includeOutputStates: true)}. {FormatLiveDiagnosticsSummary(_latestProgress)}. theme={ParseSelectedTheme()}";
+            _detailsTextBox.Text = BuildLiveDiagnosticsText(_latestProgress);
             MessageBox.Show(this, ex.Message, "Run failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         finally
@@ -324,7 +347,7 @@ class MainForm : Form
         var root = new TreeNode(
             $"n={plan.N}, m={plan.M}, k={plan.K}, elapsed={plan.Elapsed.TotalMilliseconds:F1} ms, max step={plan.MaxStep}, searched={plan.SearchStatistics.SearchedStates}, peak pending={plan.SearchStatistics.PeakPendingStates}")
         {
-            Tag = StrategyTextRenderer.Render(plan).TrimEnd(),
+            Tag = BuildPlanDetails(plan),
             NodeFont = new Font(_treeView.Font, FontStyle.Bold),
             ForeColor = _palette.ForeColor,
         };
@@ -553,7 +576,7 @@ class MainForm : Form
     {
         _summaryLabel.Text =
             $"n={plan.N}, m={plan.M}, k={plan.K}, elapsed={plan.Elapsed.TotalMilliseconds:F1} ms, max step={plan.MaxStep}, " +
-            $"{FormatSearchStatsSummary(plan.SearchStatistics)}, theme={ParseSelectedTheme()}. Colors: state, branch, in, out, fixed, possible, result, reference.";
+            $"{FormatSearchStatsSummary(plan.SearchStatistics)}, {FormatDiagnosticsSummary(plan.SearchStatistics.Diagnostics)}, theme={ParseSelectedTheme()}. Colors: state, branch, in, out, fixed, possible, result, reference.";
     }
 
     private static string BuildCompressedFinalChoiceText(FinalChoiceSummary summary, int k)
@@ -592,11 +615,19 @@ class MainForm : Form
     {
         _latestProgress = snapshot;
         UpdateSearchStatsLabel();
+        UpdateDiagnosticsLabel();
+        _summaryLabel.Text = $"Running... {FormatSearchStatsSummary(snapshot, includeOutputStates: true)}. {FormatLiveDiagnosticsSummary(snapshot)}. theme={ParseSelectedTheme()}";
+        _detailsTextBox.Text = BuildLiveDiagnosticsText(snapshot);
     }
 
     private void UpdateSearchStatsLabel()
     {
         _searchStatsLabel.Text = $"searched: {_latestProgress.SearchedStates}, pending: {_latestProgress.PendingStates}, peak: {_latestProgress.PeakPendingStates}, output: {_latestProgress.OutputStates}";
+    }
+
+    private void UpdateDiagnosticsLabel()
+    {
+        _diagnosticsLabel.Text = FormatLiveDiagnosticsSummary(_latestProgress);
     }
 
     private static string FormatSearchStatsSummary(SearchStatistics statistics)
@@ -608,6 +639,92 @@ class MainForm : Form
     {
         string outputText = includeOutputStates ? $", output={snapshot.OutputStates}" : string.Empty;
         return $"searched={snapshot.SearchedStates}, pending={snapshot.PendingStates}, peak pending={snapshot.PeakPendingStates}{outputText}";
+    }
+
+    private static SearchProgressSnapshot CreateInitialProgressSnapshot()
+    {
+        return new SearchProgressSnapshot(0, 0, 0, 0, 0, null, 0, 0, 0, 0, 0, 0, 0, 0);
+    }
+
+    private static string BuildPlanDetails(StrategyPlan plan)
+    {
+        string rendered = StrategyTextRenderer.Render(plan).TrimEnd();
+        string diagnostics = BuildDiagnosticsDetails(plan.SearchStatistics.Diagnostics);
+        return diagnostics.Length == 0 ? rendered : $"{rendered}\n\n{diagnostics}";
+    }
+
+    private static string BuildDiagnosticsDetails(SearchDiagnostics diagnostics)
+    {
+        var lines = new System.Collections.Generic.List<string>
+        {
+            "Search diagnostics:",
+            $"  root incumbents = {diagnostics.RootIncumbents.Count}",
+            $"  lower-bound prunes = {diagnostics.LowerBoundPrunes}",
+            $"  duplicate outcome skips = {diagnostics.DuplicateOutcomeSkips}",
+            $"  merged outcome collisions = {diagnostics.MergedOutcomeCollisions}",
+            $"  cache hits = exact {diagnostics.ExactCacheHits}, lower-bound {diagnostics.LowerBoundCacheHits}, feasible-top-set {diagnostics.FeasibleTopSetCacheHits}, best-group-pattern {diagnostics.BestGroupPatternCacheHits}",
+        };
+
+        if (diagnostics.RootIncumbents.Count > 0)
+        {
+            lines.Add(string.Empty);
+            lines.Add("Root incumbent timeline:");
+            foreach (SearchMilestone milestone in diagnostics.RootIncumbents)
+            {
+                lines.Add(
+                    $"  {milestone.ElapsedMilliseconds / 1000.0:F1}s: max step <= {milestone.BestWorstCaseSteps} via {milestone.ComparisonGroupText} " +
+                    $"(searched {milestone.SearchedStates}, pending {milestone.PendingStates}, peak {milestone.PeakPendingStates}, output {milestone.OutputStates}, prunes {milestone.LowerBoundPrunes})");
+            }
+        }
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static string BuildLiveDiagnosticsText(SearchProgressSnapshot snapshot)
+    {
+        var lines = new System.Collections.Generic.List<string>
+        {
+            "Live search diagnostics",
+            $"elapsed: {snapshot.ElapsedMilliseconds / 1000.0:F1} s",
+            $"searched states: {snapshot.SearchedStates}",
+            $"pending states: {snapshot.PendingStates} (peak {snapshot.PeakPendingStates})",
+            $"output states: {snapshot.OutputStates}",
+            $"lower-bound prunes: {snapshot.LowerBoundPrunes}",
+            $"duplicate outcome skips: {snapshot.DuplicateOutcomeSkips}",
+            $"merged outcome collisions: {snapshot.MergedOutcomeCollisions}",
+            $"cache hits: exact {snapshot.ExactCacheHits}, lower-bound {snapshot.LowerBoundCacheHits}, feasible-top-set {snapshot.FeasibleTopSetCacheHits}, best-group-pattern {snapshot.BestGroupPatternCacheHits}",
+            $"root incumbents found: {snapshot.RootIncumbentCount}",
+        };
+
+        if (snapshot.LatestRootIncumbent is null)
+        {
+            lines.Add("latest incumbent: not found yet");
+        }
+        else
+        {
+            SearchMilestone latest = snapshot.LatestRootIncumbent;
+            lines.Add($"latest incumbent: max step <= {latest.BestWorstCaseSteps} via {latest.ComparisonGroupText}");
+            lines.Add(
+                $"latest incumbent stats: t={latest.ElapsedMilliseconds / 1000.0:F1}s, searched={latest.SearchedStates}, pending={latest.PendingStates}, peak={latest.PeakPendingStates}, output={latest.OutputStates}, prunes={latest.LowerBoundPrunes}");
+        }
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static string FormatDiagnosticsSummary(SearchDiagnostics diagnostics)
+    {
+        string incumbentText = diagnostics.RootIncumbents.Count == 0
+            ? "incumbent=-"
+            : $"incumbent<={diagnostics.RootIncumbents[^1].BestWorstCaseSteps}";
+        return $"{incumbentText}, root milestones={diagnostics.RootIncumbents.Count}, prunes={diagnostics.LowerBoundPrunes}";
+    }
+
+    private static string FormatLiveDiagnosticsSummary(SearchProgressSnapshot snapshot)
+    {
+        string incumbentText = snapshot.LatestRootIncumbent is null
+            ? "incumbent: -"
+            : $"incumbent: <= {snapshot.LatestRootIncumbent.BestWorstCaseSteps}";
+        return $"{incumbentText}, milestones: {snapshot.RootIncumbentCount}, prunes: {snapshot.LowerBoundPrunes}, cache hits: {snapshot.ExactCacheHits}/{snapshot.LowerBoundCacheHits}/{snapshot.FeasibleTopSetCacheHits}/{snapshot.BestGroupPatternCacheHits}";
     }
 
     private double GetElapsedSeconds()

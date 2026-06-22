@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Xunit;
 
 public sealed class StrategyRegressionTests
@@ -97,6 +98,47 @@ public sealed class StrategyRegressionTests
         Assert.True(plan.SearchStatistics.SearchedStates <= 1562, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
         Assert.True(plan.SearchStatistics.OutputStates <= 24, $"output states regressed to {plan.SearchStatistics.OutputStates}");
         Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 8, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
+    }
+
+    [Fact]
+    public void N10M3K5_RecordsDescendingRootIncumbentMilestones()
+    {
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.Generate(10, 3, 5)",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.Generate(10, 3, 5, cancellationToken));
+
+        SearchDiagnostics diagnostics = plan.SearchStatistics.Diagnostics;
+        Assert.NotEmpty(diagnostics.RootIncumbents);
+        Assert.Equal(plan.MaxStep, diagnostics.RootIncumbents[^1].BestWorstCaseSteps);
+        Assert.True(diagnostics.LowerBoundPrunes > 0);
+
+        int previousSteps = int.MaxValue;
+        foreach (SearchMilestone milestone in diagnostics.RootIncumbents)
+        {
+            Assert.True(milestone.BestWorstCaseSteps < previousSteps, "root incumbent steps should strictly decrease");
+            previousSteps = milestone.BestWorstCaseSteps;
+        }
+    }
+
+    [Fact]
+    public void N5M3K2_ProgressSnapshotsExposeLiveDiagnostics()
+    {
+        var snapshots = new List<SearchProgressSnapshot>();
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.Generate(5, 3, 2) with progress",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.Generate(5, 3, 2, cancellationToken, snapshot => snapshots.Add(snapshot)));
+
+        Assert.NotEmpty(snapshots);
+        Assert.True(snapshots.Exists(snapshot => snapshot.RootIncumbentCount > 0));
+
+        SearchProgressSnapshot finalSnapshot = snapshots[^1];
+        Assert.Equal(plan.SearchStatistics.SearchedStates, finalSnapshot.SearchedStates);
+        Assert.Equal(plan.SearchStatistics.OutputStates, finalSnapshot.OutputStates);
+        Assert.Equal(plan.SearchStatistics.Diagnostics.RootIncumbents.Count, finalSnapshot.RootIncumbentCount);
+        Assert.NotNull(finalSnapshot.LatestRootIncumbent);
+        Assert.Equal(plan.MaxStep, finalSnapshot.LatestRootIncumbent!.BestWorstCaseSteps);
     }
 
     [Fact]

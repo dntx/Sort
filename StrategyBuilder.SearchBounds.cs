@@ -38,7 +38,10 @@ partial class StrategyBuilder
 
         SearchStateKey key = GetSearchStateKey(state, remainingSlots);
         if (_minWorstCaseStepsCache.TryGetValue(key, out int cached))
+        {
+            _exactCacheHits++;
             return cached;
+        }
 
         EnterSearchState();
 
@@ -69,6 +72,7 @@ partial class StrategyBuilder
                         int branchLowerBound = 1 + GetMinWorstCaseLowerBound(outcome.NextState, outcome.NextRemainingSlots);
                         if (branchLowerBound >= bestWorstCase)
                         {
+                            _lowerBoundPrunes++;
                             groupWorstCase = branchLowerBound;
                             return false;
                         }
@@ -121,7 +125,10 @@ partial class StrategyBuilder
 
         SearchStateKey key = GetSearchStateKey(state, remainingSlots);
         if (_lowerBoundStepsCache.TryGetValue(key, out int cached))
+        {
+            _lowerBoundCacheHits++;
             return cached;
+        }
 
         FeasibleTopSetInfo info = GetFeasibleTopSetInfo(state, remainingSlots);
         int maxOutcomesPerStep = GetMaxOutcomesPerStep(state);
@@ -161,7 +168,10 @@ partial class StrategyBuilder
         SearchStateKey key = GetSearchStateKey(state, remainingSlots);
         _visitedSearchStates.Add(key);
         if (_feasibleTopSetCache.TryGetValue(key, out FeasibleTopSetInfo cached))
+        {
+            _feasibleTopSetCacheHits++;
             return cached;
+        }
 
         var memo = new Dictionary<FeasibleTopSetSubproblemKey, FeasibleTopSetInfo>();
         FeasibleTopSetInfo info = CountFeasibleTopSets(state, state.ActiveMask, remainingSlots, memo);

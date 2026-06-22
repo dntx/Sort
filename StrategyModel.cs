@@ -40,20 +40,118 @@ sealed class StrategyPlan
     }
 }
 
-readonly struct SearchProgressSnapshot
+sealed class SearchMilestone
 {
-    public SearchProgressSnapshot(int searchedStates, int pendingStates, int peakPendingStates, int outputStates)
+    public SearchMilestone(
+        int bestWorstCaseSteps,
+        string comparisonGroupText,
+        long elapsedMilliseconds,
+        int searchedStates,
+        int pendingStates,
+        int peakPendingStates,
+        int outputStates,
+        int lowerBoundPrunes)
     {
+        BestWorstCaseSteps = bestWorstCaseSteps;
+        ComparisonGroupText = comparisonGroupText;
+        ElapsedMilliseconds = elapsedMilliseconds;
         SearchedStates = searchedStates;
         PendingStates = pendingStates;
         PeakPendingStates = peakPendingStates;
         OutputStates = outputStates;
+        LowerBoundPrunes = lowerBoundPrunes;
     }
 
+    public int BestWorstCaseSteps { get; }
+    public string ComparisonGroupText { get; }
+    public long ElapsedMilliseconds { get; }
     public int SearchedStates { get; }
     public int PendingStates { get; }
     public int PeakPendingStates { get; }
     public int OutputStates { get; }
+    public int LowerBoundPrunes { get; }
+}
+
+sealed class SearchDiagnostics
+{
+    public SearchDiagnostics(
+        IReadOnlyList<SearchMilestone> rootIncumbents,
+        int lowerBoundPrunes,
+        int duplicateOutcomeSkips,
+        int mergedOutcomeCollisions,
+        int exactCacheHits,
+        int lowerBoundCacheHits,
+        int feasibleTopSetCacheHits,
+        int bestGroupPatternCacheHits)
+    {
+        RootIncumbents = rootIncumbents;
+        LowerBoundPrunes = lowerBoundPrunes;
+        DuplicateOutcomeSkips = duplicateOutcomeSkips;
+        MergedOutcomeCollisions = mergedOutcomeCollisions;
+        ExactCacheHits = exactCacheHits;
+        LowerBoundCacheHits = lowerBoundCacheHits;
+        FeasibleTopSetCacheHits = feasibleTopSetCacheHits;
+        BestGroupPatternCacheHits = bestGroupPatternCacheHits;
+    }
+
+    public IReadOnlyList<SearchMilestone> RootIncumbents { get; }
+    public int LowerBoundPrunes { get; }
+    public int DuplicateOutcomeSkips { get; }
+    public int MergedOutcomeCollisions { get; }
+    public int ExactCacheHits { get; }
+    public int LowerBoundCacheHits { get; }
+    public int FeasibleTopSetCacheHits { get; }
+    public int BestGroupPatternCacheHits { get; }
+}
+
+readonly struct SearchProgressSnapshot
+{
+    public SearchProgressSnapshot(
+        long elapsedMilliseconds,
+        int searchedStates,
+        int pendingStates,
+        int peakPendingStates,
+        int outputStates,
+        SearchMilestone? latestRootIncumbent,
+        int rootIncumbentCount,
+        int lowerBoundPrunes,
+        int duplicateOutcomeSkips,
+        int mergedOutcomeCollisions,
+        int exactCacheHits,
+        int lowerBoundCacheHits,
+        int feasibleTopSetCacheHits,
+        int bestGroupPatternCacheHits)
+    {
+        ElapsedMilliseconds = elapsedMilliseconds;
+        SearchedStates = searchedStates;
+        PendingStates = pendingStates;
+        PeakPendingStates = peakPendingStates;
+        OutputStates = outputStates;
+        LatestRootIncumbent = latestRootIncumbent;
+        RootIncumbentCount = rootIncumbentCount;
+        LowerBoundPrunes = lowerBoundPrunes;
+        DuplicateOutcomeSkips = duplicateOutcomeSkips;
+        MergedOutcomeCollisions = mergedOutcomeCollisions;
+        ExactCacheHits = exactCacheHits;
+        LowerBoundCacheHits = lowerBoundCacheHits;
+        FeasibleTopSetCacheHits = feasibleTopSetCacheHits;
+        BestGroupPatternCacheHits = bestGroupPatternCacheHits;
+    }
+
+    public long ElapsedMilliseconds { get; }
+    public int SearchedStates { get; }
+    public int PendingStates { get; }
+    public int PeakPendingStates { get; }
+    public int OutputStates { get; }
+    public SearchMilestone? LatestRootIncumbent { get; }
+    public int RootIncumbentCount { get; }
+    public int LowerBoundPrunes { get; }
+    public int DuplicateOutcomeSkips { get; }
+    public int MergedOutcomeCollisions { get; }
+    public int ExactCacheHits { get; }
+    public int LowerBoundCacheHits { get; }
+    public int FeasibleTopSetCacheHits { get; }
+    public int BestGroupPatternCacheHits { get; }
 }
 
 sealed class SearchStatistics
@@ -65,7 +163,8 @@ sealed class SearchStatistics
         int outputStates,
         int expandedOutputStates,
         int lowerBoundStates,
-        int feasibleTopSetStates)
+        int feasibleTopSetStates,
+        SearchDiagnostics diagnostics)
     {
         SearchedStates = searchedStates;
         PendingStates = pendingStates;
@@ -74,6 +173,7 @@ sealed class SearchStatistics
         ExpandedOutputStates = expandedOutputStates;
         LowerBoundStates = lowerBoundStates;
         FeasibleTopSetStates = feasibleTopSetStates;
+        Diagnostics = diagnostics;
     }
 
     public int SearchedStates { get; }
@@ -83,6 +183,7 @@ sealed class SearchStatistics
     public int ExpandedOutputStates { get; }
     public int LowerBoundStates { get; }
     public int FeasibleTopSetStates { get; }
+    public SearchDiagnostics Diagnostics { get; }
 }
 
 sealed class StrategyNode

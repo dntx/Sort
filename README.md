@@ -78,6 +78,16 @@ n=10, m=4, k=3
 
 For small inputs such as `n=8, m=3, k=3`, the full strategy tree is readable. For larger inputs, the tree can grow quickly because each sort may have multiple feasible outcomes.
 
+### Desktop UI
+
+Running without redirected input opens the WinForms explorer. During a run it now shows live:
+
+- searched / pending / output state counts
+- the current best root worst-case bound as incumbents improve
+- lower-bound pruning and cache-hit counters
+
+After the run finishes, the details pane also includes a root-incumbent timeline so you can see when the search first found `x` steps, then improved to a smaller bound.
+
 ## Requirements
 
 - .NET 8.0 SDK
