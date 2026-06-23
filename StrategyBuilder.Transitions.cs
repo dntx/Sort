@@ -29,11 +29,11 @@ partial class StrategyBuilder
                 outcome.NextState,
                 nextFixedTopMask,
                 outcome.NextRemainingSlots,
-                outcome.OrderFamily);
+                outcome.OrderFamily!);
             return;
         }
 
-        branch.AddOrderFamily(outcome.OrderFamily);
+        branch.AddOrderFamily(outcome.OrderFamily!);
         _mergedOutcomeCollisions++;
     }
 
@@ -56,11 +56,15 @@ partial class StrategyBuilder
         return new StrategyEffect(newlyGuaranteedTop, newlyExcluded, fixedCandidates, possibleCandidates);
     }
 
-    private ComparisonOutcome CreateComparisonOutcome(ComparisonState state, int remainingSlots, OrderFamilyDescriptor orderFamily)
+    private ComparisonOutcome CreateComparisonOutcome(
+        ComparisonState state,
+        int remainingSlots,
+        IReadOnlyList<int> order,
+        OrderFamilyDescriptor? orderFamily)
     {
         _outcomesConstructed++;
         ComparisonState next = state.Clone();
-        next.ApplyOrder(orderFamily.RepresentativeOrderItems);
+        next.ApplyOrder(order);
         next.Eliminate(remainingSlots);
 
         ulong addedFixedTopMask = 0;
@@ -90,15 +94,16 @@ partial class StrategyBuilder
         bool isUseful = false;
 
         // The display path (collectMergedBranches) needs every order family to count equivalent
-        // orderings, so it must enumerate them all. The search and compact paths only need the
-        // set of distinct next states, so they prune orderings whose only differences are among
-        // group items destined for elimination (which collapse to the same next search-state).
-        bool pruneDoomedTails = !collectMergedBranches;
+        // orderings, so it enumerates the full family descriptors. The search and compact paths
+        // only need the set of distinct next states, so they use a lean enumerator that skips the
+        // family/descriptor machinery and prunes orderings that collapse to the same next state.
+        IEnumerable<ComparisonOutcome> outcomes = collectMergedBranches
+            ? EnumerateDisplayOutcomes(state, remainingSlots, group)
+            : EnumerateSearchOutcomes(state, remainingSlots, group);
 
-        foreach (OrderFamilyDescriptor orderFamily in EnumerateFeasibleOrderFamilies(state, group, remainingSlots, pruneDoomedTails))
+        foreach (ComparisonOutcome outcome in outcomes)
         {
             ThrowIfCancellationRequested();
-            ComparisonOutcome outcome = CreateComparisonOutcome(state, remainingSlots, orderFamily);
             if (groupedBranches is not null)
                 AddMergedBranch(outcome.NextState, fixedTopMask, outcome, groupedBranches);
 
@@ -120,6 +125,18 @@ partial class StrategyBuilder
         return new OutcomeTraversalSummary(
             groupedBranches is not null ? groupedBranches.Values.ToList() : Array.Empty<MergedBranch>(),
             isUseful);
+    }
+
+    private IEnumerable<ComparisonOutcome> EnumerateDisplayOutcomes(ComparisonState state, int remainingSlots, IReadOnlyList<int> group)
+    {
+        foreach (OrderFamilyDescriptor orderFamily in EnumerateFeasibleOrderFamilies(state, group))
+            yield return CreateComparisonOutcome(state, remainingSlots, orderFamily.RepresentativeOrderItems, orderFamily);
+    }
+
+    private IEnumerable<ComparisonOutcome> EnumerateSearchOutcomes(ComparisonState state, int remainingSlots, IReadOnlyList<int> group)
+    {
+        foreach (IReadOnlyList<int> order in EnumerateSearchOrders(state, group, remainingSlots))
+            yield return CreateComparisonOutcome(state, remainingSlots, order, null);
     }
 
     private sealed class MergedBranch
@@ -152,7 +169,7 @@ partial class StrategyBuilder
             ulong addedFixedTopMask,
             int nextRemainingSlots,
             SearchStateKey nextSearchKey,
-            OrderFamilyDescriptor orderFamily)
+            OrderFamilyDescriptor? orderFamily)
         {
             NextState = nextState;
             AddedFixedTopMask = addedFixedTopMask;
@@ -165,6 +182,6 @@ partial class StrategyBuilder
         public ulong AddedFixedTopMask { get; }
         public int NextRemainingSlots { get; }
         public SearchStateKey NextSearchKey { get; }
-        public OrderFamilyDescriptor OrderFamily { get; }
+        public OrderFamilyDescriptor? OrderFamily { get; }
     }
 }
