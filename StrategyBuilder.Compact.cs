@@ -57,12 +57,19 @@ partial class StrategyBuilder
 
         // Gathers the distinct step-optimal child states for a group, or returns null if
         // the group is not useful or would not preserve the optimal worst-case step count.
+        //
+        // A group is step-optimal iff every branch can be resolved within the remaining
+        // budget (optimalSteps - 1 further steps); since optimalSteps is the global minimum,
+        // any group has 1 + max(branchSteps) >= optimalSteps, so "no branch exceeds the
+        // budget" is exactly the step-optimal condition. We therefore bail out of the outcome
+        // enumeration as soon as a single branch breaks the budget, mirroring phase 1's
+        // lower-bound pruning. This avoids fully expanding the many non-optimal groups.
         List<(ComparisonState State, int RemainingSlots)>? GetStepOptimalChildren(IReadOnlyList<int> group)
         {
-            int branchStepsMax = 0;
-            bool isUseful = false;
+            int branchBudget = optimalSteps - 1;
+            bool rejected = false;
             var children = new List<(ComparisonState State, int RemainingSlots)>();
-            VisitComparisonOutcomes(
+            OutcomeTraversalSummary traversal = VisitComparisonOutcomes(
                 state,
                 fixedTopMask: 0,
                 remainingSlots,
@@ -71,13 +78,20 @@ partial class StrategyBuilder
                 collectMergedBranches: false,
                 onUsefulOutcome: outcome =>
                 {
-                    isUseful = true;
-                    branchStepsMax = Math.Max(branchStepsMax, GetMinWorstCaseSteps(outcome.NextState, outcome.NextRemainingSlots));
+                    // Cheap lower bound first; only fall back to the exact (cached) step count
+                    // when the lower bound cannot already rule the branch out of budget.
+                    if (GetMinWorstCaseLowerBound(outcome.NextState, outcome.NextRemainingSlots) > branchBudget ||
+                        GetMinWorstCaseSteps(outcome.NextState, outcome.NextRemainingSlots) > branchBudget)
+                    {
+                        rejected = true;
+                        return false;
+                    }
+
                     children.Add((outcome.NextState, outcome.NextRemainingSlots));
                     return true;
                 });
 
-            if (!isUseful || 1 + branchStepsMax != optimalSteps)
+            if (rejected || !traversal.IsUseful)
                 return null;
             return children;
         }
