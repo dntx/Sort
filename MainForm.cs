@@ -428,7 +428,13 @@ class MainForm : Form
                 plan.SearchStatistics.Diagnostics.ExactCacheHits,
                 plan.SearchStatistics.Diagnostics.LowerBoundCacheHits,
                 plan.SearchStatistics.Diagnostics.FeasibleTopSetCacheHits,
-                plan.SearchStatistics.Diagnostics.BestGroupPatternCacheHits);
+                plan.SearchStatistics.Diagnostics.BestGroupPatternCacheHits,
+                plan.SearchStatistics.OutcomesConstructed,
+                plan.SearchStatistics.LowerBoundStates,
+                plan.SearchStatistics.FeasibleTopSetStates,
+                plan.SearchStatistics.CompactStatesSolved,
+                plan.SearchStatistics.CompactGroupsEnumerated,
+                plan.SearchStatistics.CompactStepOptimalGroups);
             PopulateTree(plan);
             UpdateSummaryText(plan);
             UpdateSearchStatsLabel();
@@ -887,11 +893,16 @@ class MainForm : Form
 
     private void UpdateSearchStatsLabel()
     {
+        string compactText = _latestProgress.CompactStatesSolved > 0
+            ? $"\ncompact solved: {_latestProgress.CompactStatesSolved}"
+            : string.Empty;
         _searchStatsLabel.Text =
             $"searched: {_latestProgress.SearchedStates}\n" +
             $"pending: {_latestProgress.PendingStates}\n" +
             $"peak: {_latestProgress.PeakPendingStates}\n" +
-            $"output: {_latestProgress.OutputStates}";
+            $"output: {_latestProgress.OutputStates}\n" +
+            $"outcomes: {_latestProgress.OutcomesConstructed}" +
+            compactText;
     }
 
     private void UpdateDiagnosticsLabel()
@@ -912,7 +923,7 @@ class MainForm : Form
 
     private static SearchProgressSnapshot CreateInitialProgressSnapshot()
     {
-        return new SearchProgressSnapshot(0, 0, 0, 0, 0, null, 0, 0, 0, 0, 0, 0, 0, 0);
+        return new SearchProgressSnapshot(0, 0, 0, 0, 0, null, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     }
 
     private static string BuildPlanDetails(StrategyPlan plan)
@@ -958,12 +969,20 @@ class MainForm : Form
             $"searched states: {snapshot.SearchedStates}",
             $"pending states: {snapshot.PendingStates} (peak {snapshot.PeakPendingStates})",
             $"output states: {snapshot.OutputStates}",
+            $"lower-bound states: {snapshot.LowerBoundStates}, feasible-top-set states: {snapshot.FeasibleTopSetStates}",
+            $"outcomes constructed: {snapshot.OutcomesConstructed}",
             $"lower-bound prunes: {snapshot.LowerBoundPrunes}",
             $"duplicate outcome skips: {snapshot.DuplicateOutcomeSkips}",
             $"merged outcome collisions: {snapshot.MergedOutcomeCollisions}",
             $"cache hits: exact {snapshot.ExactCacheHits}, lower-bound {snapshot.LowerBoundCacheHits}, feasible-top-set {snapshot.FeasibleTopSetCacheHits}, best-group-pattern {snapshot.BestGroupPatternCacheHits}",
             $"root incumbents found: {snapshot.RootIncumbentCount}",
         };
+
+        if (snapshot.CompactStatesSolved > 0)
+        {
+            lines.Add(
+                $"compact pass: {snapshot.CompactStatesSolved} states solved, {snapshot.CompactGroupsEnumerated} groups enumerated ({snapshot.CompactStepOptimalGroups} step-optimal)");
+        }
 
         if (snapshot.LatestRootIncumbent is null)
         {

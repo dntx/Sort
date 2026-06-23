@@ -120,7 +120,13 @@ readonly struct SearchProgressSnapshot
         int exactCacheHits,
         int lowerBoundCacheHits,
         int feasibleTopSetCacheHits,
-        int bestGroupPatternCacheHits)
+        int bestGroupPatternCacheHits,
+        int outcomesConstructed,
+        int lowerBoundStates,
+        int feasibleTopSetStates,
+        int compactStatesSolved,
+        int compactGroupsEnumerated,
+        int compactStepOptimalGroups)
     {
         ElapsedMilliseconds = elapsedMilliseconds;
         SearchedStates = searchedStates;
@@ -136,6 +142,12 @@ readonly struct SearchProgressSnapshot
         LowerBoundCacheHits = lowerBoundCacheHits;
         FeasibleTopSetCacheHits = feasibleTopSetCacheHits;
         BestGroupPatternCacheHits = bestGroupPatternCacheHits;
+        OutcomesConstructed = outcomesConstructed;
+        LowerBoundStates = lowerBoundStates;
+        FeasibleTopSetStates = feasibleTopSetStates;
+        CompactStatesSolved = compactStatesSolved;
+        CompactGroupsEnumerated = compactGroupsEnumerated;
+        CompactStepOptimalGroups = compactStepOptimalGroups;
     }
 
     public long ElapsedMilliseconds { get; }
@@ -152,6 +164,12 @@ readonly struct SearchProgressSnapshot
     public int LowerBoundCacheHits { get; }
     public int FeasibleTopSetCacheHits { get; }
     public int BestGroupPatternCacheHits { get; }
+    public int OutcomesConstructed { get; }
+    public int LowerBoundStates { get; }
+    public int FeasibleTopSetStates { get; }
+    public int CompactStatesSolved { get; }
+    public int CompactGroupsEnumerated { get; }
+    public int CompactStepOptimalGroups { get; }
 }
 
 sealed class SearchStatistics

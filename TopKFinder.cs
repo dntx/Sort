@@ -399,7 +399,13 @@ partial class StrategyBuilder
             _exactCacheHits,
             _lowerBoundCacheHits,
             _feasibleTopSetCacheHits,
-            _bestGroupPatternCacheHits));
+            _bestGroupPatternCacheHits,
+            _outcomesConstructed,
+            _lowerBoundStepsCache.Count,
+            _feasibleTopSetCache.Count,
+            _compactStatesSolved,
+            _compactGroupsEnumerated,
+            _compactStepOptimalGroups));
     }
 
     private void ObserveSearchState(ComparisonState state, int remainingSlots)
