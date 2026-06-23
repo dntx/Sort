@@ -54,6 +54,7 @@ partial class StrategyBuilder
 
         int optimalSteps = GetMinWorstCaseSteps(state, remainingSlots);
         _compactStatesSolved++;
+        ReportProgress();
 
         var candidates = state.GetActiveItemsOrdered();
         int groupSize = Math.Min(_m, candidates.Count);
