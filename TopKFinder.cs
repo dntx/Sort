@@ -188,7 +188,12 @@ partial class StrategyBuilder
 
     private static IntSequenceKey GetGroupPattern(IReadOnlyList<int> group, IReadOnlyList<int> labels)
     {
-        return new IntSequenceKey(group.Select(i => labels[i]).OrderBy(x => x).ToArray());
+        int count = group.Count;
+        int[] parts = new int[count];
+        for (int i = 0; i < count; i++)
+            parts[i] = labels[group[i]];
+        Array.Sort(parts);
+        return new IntSequenceKey(parts);
     }
 
     private IEnumerable<List<int>> EnumerateDistinctGroups(
@@ -225,7 +230,13 @@ partial class StrategyBuilder
 
     private static HeuristicGroupScore BuildHeuristicGroupScore(ComparisonState state, int remainingSlots, IReadOnlyList<int> group)
     {
-        int guaranteedTopHits = group.Count(item => state.ActiveCount - 1 - state.GetDescendantCount(item) <= remainingSlots - 1);
+        int guaranteedTopHits = 0;
+        for (int i = 0; i < group.Count; i++)
+        {
+            if (state.ActiveCount - 1 - state.GetDescendantCount(group[i]) <= remainingSlots - 1)
+                guaranteedTopHits++;
+        }
+
         return new HeuristicGroupScore(
             guaranteedTopHits,
             CountFreshItems(state, group),
@@ -236,12 +247,27 @@ partial class StrategyBuilder
 
     private static int CountFreshItems(ComparisonState state, IReadOnlyList<int> group)
     {
-        return group.Count(i => state.GetAncestorCount(i) == 0 && state.GetDescendantCount(i) == 0);
+        int count = 0;
+        for (int i = 0; i < group.Count; i++)
+        {
+            int item = group[i];
+            if (state.GetAncestorCount(item) == 0 && state.GetDescendantCount(item) == 0)
+                count++;
+        }
+
+        return count;
     }
 
     private static int CalculateUnrelatedScore(ComparisonState state, IReadOnlyList<int> group)
     {
-        return -group.Sum(i => state.GetAncestorCount(i) + state.GetDescendantCount(i));
+        int sum = 0;
+        for (int i = 0; i < group.Count; i++)
+        {
+            int item = group[i];
+            sum += state.GetAncestorCount(item) + state.GetDescendantCount(item);
+        }
+
+        return -sum;
     }
 
     private static int CountUnresolvedPairs(ComparisonState state, IReadOnlyList<int> group)
