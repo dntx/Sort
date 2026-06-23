@@ -8,28 +8,28 @@ public sealed class StrategyPerformanceTests
     public void N10M9K9_CompletesWithinLooseBudget()
     {
         double medianMs = MeasureMedianElapsedMilliseconds(10, 9, 9, iterations: 5);
-        Assert.True(medianMs <= 250, $"Median elapsed regressed to {medianMs:F1} ms.");
+        Assert.True(medianMs <= 50, $"Median elapsed regressed to {medianMs:F1} ms.");
     }
 
     [Fact]
     public void N9M3K3_CompletesWithinLooseBudget()
     {
         double medianMs = MeasureMedianElapsedMilliseconds(9, 3, 3, iterations: 5);
-        Assert.True(medianMs <= 1500, $"Median elapsed regressed to {medianMs:F1} ms.");
+        Assert.True(medianMs <= 300, $"Median elapsed regressed to {medianMs:F1} ms.");
     }
 
     [Fact]
     public void N12M3K3_CompletesWithinLooseBudget()
     {
         double medianMs = MeasureMedianElapsedMilliseconds(12, 3, 3, iterations: 3);
-        Assert.True(medianMs <= 6000, $"Median elapsed regressed to {medianMs:F1} ms.");
+        Assert.True(medianMs <= 1500, $"Median elapsed regressed to {medianMs:F1} ms.");
     }
 
     [Fact]
     public void N12M5K5_CompletesWithinLooseBudget()
     {
         double medianMs = MeasureMedianElapsedMilliseconds(12, 5, 5, iterations: 3);
-        Assert.True(medianMs <= 3000, $"Median elapsed regressed to {medianMs:F1} ms.");
+        Assert.True(medianMs <= 400, $"Median elapsed regressed to {medianMs:F1} ms.");
     }
 
     private static double MeasureMedianElapsedMilliseconds(int n, int m, int k, int iterations)
