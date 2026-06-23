@@ -25,6 +25,16 @@ partial class StrategyBuilder
 
     private readonly List<DominanceEntry> _dominanceLibrary = new();
 
+    // Solved entries indexed by (remainingSlots, activeItemCount) so the always-on lower-bound
+    // lookup only scans same-shape candidates instead of the whole library.
+    private readonly Dictionary<(int RemainingSlots, int ActiveCount), List<DominanceEntry>> _dominanceBuckets = new();
+
+    private int _dominanceBoundRaises;
+    private long _dominanceBoundRaiseSlack;
+
+    public int DominanceBoundRaises => _dominanceBoundRaises;
+    public long DominanceBoundRaiseSlack => _dominanceBoundRaiseSlack;
+
     private int _dominanceProbes;
     private int _dominanceLowerFound;
     private int _dominanceUpperFound;
@@ -149,7 +159,54 @@ partial class StrategyBuilder
         if (state.ActiveCount <= _m || remainingSlots <= 0)
             return;
 
-        _dominanceLibrary.Add(new DominanceEntry(remainingSlots, BuildLocalRelation(state), cost));
+        var entry = new DominanceEntry(remainingSlots, BuildLocalRelation(state), cost);
+        _dominanceLibrary.Add(entry);
+
+        var bucketKey = (remainingSlots, entry.Relation.Count);
+        if (!_dominanceBuckets.TryGetValue(bucketKey, out List<DominanceEntry>? bucket))
+        {
+            bucket = new List<DominanceEntry>();
+            _dominanceBuckets[bucketKey] = bucket;
+        }
+
+        bucket.Add(entry);
+    }
+
+    // Raises a valid analytic step lower bound using verified dominance: if the current state's
+    // known-relation edge set embeds into an already-solved state of the same shape (same active
+    // count and remaining slots), the current state carries no more information, so its worst-case
+    // step count is at least that solved state's cost. The embedding is verified (never assumed), so
+    // the result is always a sound lower bound; budget exhaustion only forgoes a tighter bound.
+    private int ApplyDominanceLowerBound(ComparisonState state, int remainingSlots, int analyticLowerBound)
+    {
+        if (state.ActiveCount <= _m || remainingSlots <= 0)
+            return analyticLowerBound;
+        if (!_dominanceBuckets.TryGetValue((remainingSlots, state.ActiveCount), out List<DominanceEntry>? bucket))
+            return analyticLowerBound;
+
+        LocalRelation current = BuildLocalRelation(state);
+        int best = analyticLowerBound;
+        _dominanceProbeBudgetRemaining = DominanceProbeBudget;
+
+        foreach (DominanceEntry entry in bucket)
+        {
+            if (entry.Cost <= best)
+                continue;                                       // cannot raise the bound
+            if (entry.Relation.EdgeCount < current.EdgeCount)
+                continue;                                       // current's relation cannot embed into a sparser one
+            if (TryEmbedRelation(current, entry.Relation))      // current <= entry in information
+                best = entry.Cost;                              // so cost(state) >= entry.Cost
+            if (_dominanceProbeBudgetRemaining <= 0)
+                break;
+        }
+
+        if (best > analyticLowerBound)
+        {
+            _dominanceBoundRaises++;
+            _dominanceBoundRaiseSlack += best - analyticLowerBound;
+        }
+
+        return best;
     }
 
     private DominanceProbeResult ProbeDominance(ComparisonState state, int remainingSlots)

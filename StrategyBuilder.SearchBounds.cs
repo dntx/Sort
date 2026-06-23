@@ -123,12 +123,9 @@ partial class StrategyBuilder
 
         _minWorstCaseStepsCache[key] = bestWorstCase;
 
-        if (EnableDominanceMetric)
-        {
-            if (dominanceProbed)
-                RecordDominanceProbe(dominanceProbe, bestWorstCase, state, remainingSlots);
-            AddDominanceLibraryEntry(state, remainingSlots, bestWorstCase);
-        }
+        if (EnableDominanceMetric && dominanceProbed)
+            RecordDominanceProbe(dominanceProbe, bestWorstCase, state, remainingSlots);
+        AddDominanceLibraryEntry(state, remainingSlots, bestWorstCase);
 
         return bestWorstCase;
     }
@@ -172,6 +169,8 @@ partial class StrategyBuilder
                 distinguishable *= maxOutcomesPerStep;
             }
         }
+
+        steps = ApplyDominanceLowerBound(state, remainingSlots, steps);
 
         _lowerBoundStepsCache[key] = steps;
         return steps;
