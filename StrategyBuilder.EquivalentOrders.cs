@@ -309,6 +309,31 @@ partial class StrategyBuilder
         if (totalCount <= 1)
             return null;
 
+        // When a branch merges several individually-distinct orders (all singleton families), the
+        // items involved fall in different symmetry classes yet every ordering still collapses to
+        // the same next state. Rendering each order separately produces a long disjunction such as
+        // "(#1 > #4 > #7 | #1 > #7 > #4 | ...)". Run the concrete orders through the holistic
+        // pattern engine instead so the common shapes (a full permutation, independent blocks, a
+        // shared prefix/suffix, ...) collapse to a compact form, e.g. "permute {#1, #4, #7}".
+        if (orderFamilies.Count > 1 && orderFamilies.All(family => family.Count == 1))
+        {
+            IReadOnlyList<int> representativeOrder = orderFamilies[0].RepresentativeOrderItems;
+            var representativePositions = new Dictionary<int, int>(representativeOrder.Count);
+            for (int index = 0; index < representativeOrder.Count; index++)
+                representativePositions[representativeOrder[index]] = index;
+
+            var orders = orderFamilies
+                .Select(family => (IReadOnlyList<int>)family.RepresentativeOrderItems.ToArray())
+                .ToList();
+
+            EquivalentPatternSummary summary = BuildEquivalentPatternSummary(
+                orders,
+                representativeOrder.ToArray(),
+                representativePositions);
+
+            return new EquivalentOrderSummary(totalCount - 1, summary.PatternText, $"{summary.TotalCountFormula} - 1");
+        }
+
         string patternText = orderFamilies.Count == 1
             ? orderFamilies[0].PatternText
             : "(" + string.Join(" | ", orderFamilies.Select(family => family.PatternText)) + ")";
