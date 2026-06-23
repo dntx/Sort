@@ -59,6 +59,26 @@ public sealed class StrategyRegressionTests
     }
 
     [Fact]
+    public void N9M3K3_DistinctClassPermutationRendersAsPermute()
+    {
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.Generate(9, 3, 3)",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.Generate(9, 3, 3, cancellationToken));
+
+        // At this node the compared items #1, #4 and #7 sit in different symmetry classes, yet all
+        // six orderings collapse to the same next state. The summary should compress them to a
+        // single "permute {...}" form rather than listing every order as a disjunction.
+        StrategyBranch branch = StrategyTestHelpers.FindBranchPath(
+            plan.Root, "#1 > #2 > #3", "#4 > #5 > #6", "#7 > #8 > #9", "#1 > #4 > #7");
+
+        Assert.NotNull(branch.EquivalentOrders);
+        Assert.Equal(5, branch.EquivalentOrders!.Count);
+        Assert.Equal("3! - 1", branch.EquivalentOrders.CountFormula);
+        Assert.Equal("permute {#1, #4, #7}", branch.EquivalentOrders.PatternText);
+    }
+
+    [Fact]
     public void N12M3K3_SearchWorkStaysWithinBaseline()
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
