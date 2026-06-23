@@ -12,10 +12,12 @@ partial class StrategyBuilder
         GroupSymmetryInfo symmetryInfo = BuildGroupSymmetryInfo(state, group);
         if (symmetryInfo.Classes.All(@class => @class.Items.Length == 1))
         {
-            var remaining = new HashSet<int>(group);
-            var current = new List<int>(group.Count);
+            ulong remainingMask = 0;
+            foreach (int item in group)
+                remainingMask |= 1UL << item;
 
-            foreach (var order in EnumerateFeasibleOrders(state, remaining, current))
+            var current = new List<int>(group.Count);
+            foreach (var order in EnumerateFeasibleOrders(state, remainingMask, group.Count, current))
                 yield return OrderFamilyDescriptor.CreateSingleton(order);
             yield break;
         }
@@ -26,32 +28,32 @@ partial class StrategyBuilder
 
     private IEnumerable<List<int>> EnumerateFeasibleOrders(
         ComparisonState state,
-        HashSet<int> remaining,
+        ulong remainingMask,
+        int total,
         List<int> current)
     {
         ThrowIfCancellationRequested();
-        if (remaining.Count == 0)
+        if (current.Count == total)
         {
             yield return new List<int>(current);
             yield break;
         }
 
-        var nextChoices = remaining
-            .Where(candidate => remaining.All(other => other == candidate || !state.HasAncestor(candidate, other)))
-            .OrderBy(x => x)
-            .ToList();
-
-        foreach (int next in nextChoices)
+        // A candidate may be placed next only if no still-remaining item is one of its ancestors
+        // (i.e. it is maximal among the remaining items). Bits are iterated ascending, matching
+        // the original OrderBy(x => x) tie-break.
+        ulong candidates = remainingMask;
+        while (candidates != 0)
         {
-            ThrowIfCancellationRequested();
-            remaining.Remove(next);
+            int next = BitOperations.TrailingZeroCount(candidates);
+            candidates &= candidates - 1;
+            if ((state.GetAncestorMask(next) & remainingMask) != 0)
+                continue;
+
             current.Add(next);
-
-            foreach (var order in EnumerateFeasibleOrders(state, remaining, current))
+            foreach (var order in EnumerateFeasibleOrders(state, remainingMask & ~(1UL << next), total, current))
                 yield return order;
-
             current.RemoveAt(current.Count - 1);
-            remaining.Add(next);
         }
     }
 
@@ -127,10 +129,8 @@ partial class StrategyBuilder
         {
             yield return OrderFamilyDescriptor.CreateSymmetric(
                 representativeOrder,
-                BuildSymmetricFamilyPatternText(symmetryInfo, classSequence),
-                BuildMultiplicityFormula(symmetryInfo.Classes.Select(@class => @class.Items.Length)),
                 checked((int)multiplicity),
-                symmetryInfo.Classes.Select(@class => (IReadOnlyList<int>)@class.Items).ToList(),
+                symmetryInfo,
                 classSequence.ToArray());
             yield break;
         }
@@ -1150,56 +1150,55 @@ partial class StrategyBuilder
 
     private sealed class OrderFamilyDescriptor
     {
+        private readonly GroupSymmetryInfo? _symmetryInfo;
+        private readonly int[]? _classSequence;
+        private string? _representativeOrder;
+        private string? _patternText;
+        private string? _countFormula;
+
         private OrderFamilyDescriptor(
             IReadOnlyList<int> representativeOrderItems,
-            string representativeOrder,
-            string patternText,
-            string countFormula,
             int count,
-            IReadOnlyList<IReadOnlyList<int>>? partitionBlocks,
-            IReadOnlyList<int>? template)
+            GroupSymmetryInfo? symmetryInfo,
+            int[]? classSequence)
         {
             RepresentativeOrderItems = representativeOrderItems;
-            RepresentativeOrder = representativeOrder;
-            PatternText = patternText;
-            CountFormula = countFormula;
             Count = count;
-            PartitionBlocks = partitionBlocks;
-            Template = template;
+            _symmetryInfo = symmetryInfo;
+            _classSequence = classSequence;
         }
 
         public IReadOnlyList<int> RepresentativeOrderItems { get; }
-        public string RepresentativeOrder { get; }
-        public string PatternText { get; }
-        public string CountFormula { get; }
         public int Count { get; }
-        public IReadOnlyList<IReadOnlyList<int>>? PartitionBlocks { get; }
-        public IReadOnlyList<int>? Template { get; }
+
+        // The display strings below are only needed when materializing the strategy tree
+        // (phase 2). Phase-1 search touches hundreds of thousands of families but only reads
+        // RepresentativeOrderItems, so these are computed lazily to avoid that wasted work.
+        public string RepresentativeOrder =>
+            _representativeOrder ??= FormatOrder(RepresentativeOrderItems);
+
+        public string PatternText =>
+            _patternText ??= _symmetryInfo is null
+                ? RepresentativeOrder
+                : BuildSymmetricFamilyPatternText(_symmetryInfo, _classSequence!);
+
+        public string CountFormula =>
+            _countFormula ??= _symmetryInfo is null
+                ? "1"
+                : BuildMultiplicityFormula(_symmetryInfo.Classes.Select(@class => @class.Items.Length));
 
         public static OrderFamilyDescriptor CreateSingleton(IReadOnlyList<int> order)
         {
-            int[] copied = order.ToArray();
-            string orderText = FormatOrder(copied);
-            return new OrderFamilyDescriptor(copied, orderText, orderText, "1", 1, null, null);
+            return new OrderFamilyDescriptor(order.ToArray(), 1, null, null);
         }
 
         public static OrderFamilyDescriptor CreateSymmetric(
             IReadOnlyList<int> representativeOrder,
-            string patternText,
-            string countFormula,
             int count,
-            IReadOnlyList<IReadOnlyList<int>> partitionBlocks,
-            IReadOnlyList<int> template)
+            GroupSymmetryInfo symmetryInfo,
+            int[] classSequence)
         {
-            int[] copied = representativeOrder.ToArray();
-            return new OrderFamilyDescriptor(
-                copied,
-                FormatOrder(copied),
-                patternText,
-                countFormula,
-                count,
-                partitionBlocks.Select(block => (IReadOnlyList<int>)block.ToArray()).ToList(),
-                template.ToArray());
+            return new OrderFamilyDescriptor(representativeOrder.ToArray(), count, symmetryInfo, classSequence);
         }
     }
 }
