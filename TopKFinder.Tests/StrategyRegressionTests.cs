@@ -19,8 +19,8 @@ public sealed class StrategyRegressionTests
         StrategyBranch rootBranch = Assert.Single(plan.Root.Branches);
         Assert.Equal("#1 > #2 > #3 > #4 > #5 > #6 > #7 > #8 > #9", rootBranch.OrderText);
         Assert.NotNull(rootBranch.EquivalentOrders);
-        Assert.Equal(362879, rootBranch.EquivalentOrders!.Count);
-        Assert.Equal("9! - 1", rootBranch.EquivalentOrders.CountFormula);
+        Assert.Equal(362880, rootBranch.EquivalentOrders!.Count);
+        Assert.Equal("9!", rootBranch.EquivalentOrders.CountFormula);
         Assert.Equal("permute {#1, #2, #3, #4, #5, #6, #7, #8, #9}", rootBranch.EquivalentOrders.PatternText);
     }
 
@@ -51,8 +51,8 @@ public sealed class StrategyRegressionTests
         StrategyBranch rootBranch = Assert.Single(plan.Root.Branches);
         Assert.Equal("#1 > #2 > #3", rootBranch.OrderText);
         Assert.NotNull(rootBranch.EquivalentOrders);
-        Assert.Equal(5, rootBranch.EquivalentOrders!.Count);
-        Assert.Equal("3! - 1", rootBranch.EquivalentOrders.CountFormula);
+        Assert.Equal(6, rootBranch.EquivalentOrders!.Count);
+        Assert.Equal("3!", rootBranch.EquivalentOrders.CountFormula);
         Assert.Equal("permute {#1, #2, #3}", rootBranch.EquivalentOrders.PatternText);
 
         Assert.Equal(new[] { 3, 4, 5 }, rootBranch.Next.Group);
@@ -73,8 +73,8 @@ public sealed class StrategyRegressionTests
             plan.Root, "#1 > #2 > #3", "#4 > #5 > #6", "#7 > #8 > #9", "#1 > #4 > #7");
 
         Assert.NotNull(branch.EquivalentOrders);
-        Assert.Equal(5, branch.EquivalentOrders!.Count);
-        Assert.Equal("3! - 1", branch.EquivalentOrders.CountFormula);
+        Assert.Equal(6, branch.EquivalentOrders!.Count);
+        Assert.Equal("3!", branch.EquivalentOrders.CountFormula);
         Assert.Equal("permute {#1, #4, #7}", branch.EquivalentOrders.PatternText);
     }
 
@@ -307,8 +307,8 @@ public sealed class StrategyRegressionTests
 
         StrategyBranch branch = StrategyTestHelpers.FindBranchByOrderText(plan.Root, "#2 > #6 > #9 > #10");
         Assert.NotNull(branch.EquivalentOrders);
-        Assert.Equal(3, branch.EquivalentOrders!.Count);
-        Assert.Equal("2 x 2! - 1", branch.EquivalentOrders.CountFormula);
+        Assert.Equal(4, branch.EquivalentOrders!.Count);
+        Assert.Equal("2 x 2!", branch.EquivalentOrders.CountFormula);
         Assert.Contains("permute{#9, #10}", branch.EquivalentOrders.PatternText);
         Assert.Contains("#2 > #6", branch.EquivalentOrders.PatternText);
         Assert.Contains("#6 > #2", branch.EquivalentOrders.PatternText);
@@ -357,16 +357,16 @@ public sealed class StrategyRegressionTests
 
             S1 [step 1/3] sort(#1, #2, #3)
               #1 > #2 > #3: [+ (), - (#3), fixed (), possible (#1, #2, #4, #5)]
-                equivalent forms: 5 = 3! - 1
+                equivalent forms: 6 = 3!
                 pattern: permute {#1, #2, #3}
                 S2 [step 2/3] sort(#1, #4, #5)
                   #1 > #4 > #5: [+ (#1), - (#5), fixed (#1), possible (#2, #4)]
-                    equivalent forms: 1 = 2! - 1
+                    equivalent forms: 2 = 2!
                     pattern: B=permute{#4, #5}; #1 > B1 > B2
                     [step 3/3] sort(#2, #4)
                       fixed (#1); choose 1 of (#2, #4) into top 2
                   #4 > #1 > #5: [+ (#1, #4), - (#2, #5), fixed (#1, #4), possible ()] S4: top 2 = (#1, #4)
-                    equivalent forms: 3 = 2 x 2! - 1
+                    equivalent forms: 4 = 2 x 2!
                     pattern: (B=permute{#4, #5}; B1 > #1 > B2 | B=permute{#4, #5}; B1 > B2 > #1)
             """;
 
@@ -629,11 +629,11 @@ public sealed class StrategyRegressionTests
         const string expected = """
                     S3 [step 3/5] sort(#2, #6, #9, #10)
                       #2 > #6 > #9 > #10: [+ (#1), - (#7, #8, #9, #10), fixed (#1), possible (#2, #3, #4, #5, #6, #11, #12)]
-                        equivalent forms: 3 = 2 x 2! - 1
+                        equivalent forms: 4 = 2 x 2!
                         pattern: (C=permute{#9, #10}; #2 > #6 > C1 > C2 | C=permute{#9, #10}; #6 > #2 > C1 > C2)
                         S4 [step 4/5] sort(#3, #5, #11, #12)
                           #11 > #3 > #5 > #12: [+ (#2, #3, #11), - (#4, #5, #6, #12), fixed (#1, #2, #3, #11), possible ()] S5: top 4 = (#1, #2, #3, #11)
-                            equivalent forms: 3 = 2 x 2! - 1
+                            equivalent forms: 4 = 2 x 2!
                             pattern: (C=permute{#11, #12}; C1 > #3 > #5 > C2 | C=permute{#11, #12}; C1 > #3 > C2 > #5)
             """;
 
