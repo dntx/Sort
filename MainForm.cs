@@ -80,8 +80,9 @@ class MainForm : Form
     private readonly Button _collapseAllButton;
     private readonly Button _backButton;
     private readonly Label _elapsedLabel;
-    private readonly Label _searchStatsLabel;
-    private readonly Label _diagnosticsLabel;
+    private readonly Label _statesLabel;
+    private readonly Label _workLabel;
+    private readonly Label _progressLabel;
     private readonly Label _summaryLabel;
     private readonly TreeView _treeView;
     private readonly RichTextBox _detailsTextBox;
@@ -95,6 +96,7 @@ class MainForm : Form
     private readonly Dictionary<TreeNode, int> _referenceTargets = new();
     private readonly Stack<TreeNode> _navigationHistory = new();
     private SearchProgressSnapshot _latestProgress;
+    private SearchStatistics? _completedStats;
 
     public MainForm()
     {
@@ -198,17 +200,23 @@ class MainForm : Form
             Text = "0.0 s",
             Font = new Font(Font.FontFamily, 14, FontStyle.Bold),
         };
-        _searchStatsLabel = new Label
+        _statesLabel = new Label
         {
             AutoSize = true,
             Margin = Padding.Empty,
-            Text = "searched: 0\npending: 0\npeak: 0\noutput: 0",
+            Text = "searched: 0\npending: 0 (peak 0)\noutput: 0\nlower-bound: 0\nfeasible-top-set: 0",
         };
-        _diagnosticsLabel = new Label
+        _workLabel = new Label
         {
             AutoSize = true,
             Margin = Padding.Empty,
-            Text = "incumbent: -\nmilestones: 0\nprunes: 0\ncache: 0/0/0/0",
+            Text = "outcomes: 0\nduplicate skips: 0\nmerged collisions: 0\nprunes: 0",
+        };
+        _progressLabel = new Label
+        {
+            AutoSize = true,
+            Margin = Padding.Empty,
+            Text = "incumbent: -\nmilestones: 0\ncache: 0/0/0/0",
         };
 
         var inputsPanel = new FlowLayoutPanel
@@ -253,15 +261,17 @@ class MainForm : Form
         {
             Dock = DockStyle.Fill,
             AutoSize = true,
-            ColumnCount = 3,
+            ColumnCount = 4,
             Margin = Padding.Empty,
         };
-        statsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20));
-        statsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40));
-        statsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40));
+        statsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 22));
+        statsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 28));
+        statsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 26));
+        statsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 24));
         statsLayout.Controls.Add(CreateSectionPanel("Elapsed", _elapsedLabel), 0, 0);
-        statsLayout.Controls.Add(CreateSectionPanel("Search", _searchStatsLabel), 1, 0);
-        statsLayout.Controls.Add(CreateSectionPanel("Diagnostics", _diagnosticsLabel), 2, 0);
+        statsLayout.Controls.Add(CreateSectionPanel("States", _statesLabel), 1, 0);
+        statsLayout.Controls.Add(CreateSectionPanel("Work", _workLabel), 2, 0);
+        statsLayout.Controls.Add(CreateSectionPanel("Progress", _progressLabel), 3, 0);
 
         _summaryLabel = new Label
         {
@@ -395,10 +405,10 @@ class MainForm : Form
         CancellationToken cancellationToken = _runCancellationSource.Token;
         IProgress<SearchProgressSnapshot> progress = new Progress<SearchProgressSnapshot>(UpdateSearchProgress);
         _latestProgress = CreateInitialProgressSnapshot();
+        _completedStats = null;
         _runStopwatch = Stopwatch.StartNew();
         UpdateElapsedLabel();
-        UpdateSearchStatsLabel();
-        UpdateDiagnosticsLabel();
+        UpdateStatsPanels();
         _elapsedTimer.Start();
         SetRunningState(isRunning: true);
         _summaryLabel.Text = $"Running n={n}, m={m}, k={k}...";
@@ -436,9 +446,9 @@ class MainForm : Form
                 plan.SearchStatistics.CompactGroupsEnumerated,
                 plan.SearchStatistics.CompactStepOptimalGroups);
             PopulateTree(plan);
+            _completedStats = plan.SearchStatistics;
             UpdateSummaryText(plan);
-            UpdateSearchStatsLabel();
-            UpdateDiagnosticsLabel();
+            UpdateStatsPanels();
         }
         catch (OperationCanceledException)
         {
@@ -879,37 +889,60 @@ class MainForm : Form
 
     private void UpdateElapsedLabel()
     {
-        _elapsedLabel.Text = $"{GetElapsedSeconds():F1} s";
+        string text = $"{GetElapsedSeconds():F1} s";
+        if (_completedStats is { } stats)
+        {
+            text +=
+                $"\nexact-step: {stats.Phase1Milliseconds} ms" +
+                $"\ncompact: {stats.Phase1bMilliseconds} ms" +
+                $"\nbuild: {stats.Phase2Milliseconds} ms";
+        }
+
+        _elapsedLabel.Text = text;
     }
 
     private void UpdateSearchProgress(SearchProgressSnapshot snapshot)
     {
         _latestProgress = snapshot;
-        UpdateSearchStatsLabel();
-        UpdateDiagnosticsLabel();
-        _summaryLabel.Text = $"Running... {FormatSearchStatsSummary(snapshot, includeOutputStates: true)}. {FormatLiveDiagnosticsSummary(snapshot)}.";
+        UpdateStatsPanels();
+        string incumbent = snapshot.LatestRootIncumbent is null
+            ? "incumbent -"
+            : $"incumbent <= {snapshot.LatestRootIncumbent.BestWorstCaseSteps}";
+        _summaryLabel.Text = $"Running... {GetElapsedSeconds():F1} s, searched {snapshot.SearchedStates}, {incumbent}.";
         _detailsTextBox.Text = BuildLiveDiagnosticsText(snapshot);
     }
 
-    private void UpdateSearchStatsLabel()
+    // Updates the three live stat panels (States / Work / Progress) from the latest snapshot.
+    // Each metric lives in exactly one panel so the panels do not duplicate one another.
+    private void UpdateStatsPanels()
     {
-        string compactText = _latestProgress.CompactStatesSolved > 0
-            ? $"\ncompact solved: {_latestProgress.CompactStatesSolved}"
+        SearchProgressSnapshot p = _latestProgress;
+
+        _statesLabel.Text =
+            $"searched: {p.SearchedStates}\n" +
+            $"pending: {p.PendingStates} (peak {p.PeakPendingStates})\n" +
+            $"output: {p.OutputStates}\n" +
+            $"lower-bound: {p.LowerBoundStates}\n" +
+            $"feasible-top-set: {p.FeasibleTopSetStates}";
+
+        string compactText = p.CompactStatesSolved > 0
+            ? $"\ncompact: {p.CompactStatesSolved} solved, {p.CompactGroupsEnumerated} groups ({p.CompactStepOptimalGroups} opt)"
             : string.Empty;
-        _searchStatsLabel.Text =
-            $"searched: {_latestProgress.SearchedStates}\n" +
-            $"pending: {_latestProgress.PendingStates}\n" +
-            $"peak: {_latestProgress.PeakPendingStates}\n" +
-            $"output: {_latestProgress.OutputStates}\n" +
-            $"outcomes: {_latestProgress.OutcomesConstructed}" +
+        _workLabel.Text =
+            $"outcomes: {p.OutcomesConstructed}\n" +
+            $"duplicate skips: {p.DuplicateOutcomeSkips}\n" +
+            $"merged collisions: {p.MergedOutcomeCollisions}\n" +
+            $"prunes: {p.LowerBoundPrunes}" +
             compactText;
-    }
 
-    private void UpdateDiagnosticsLabel()
-    {
-        _diagnosticsLabel.Text = BuildDiagnosticsLabelText(_latestProgress);
+        string incumbent = p.LatestRootIncumbent is null
+            ? "-"
+            : $"<= {p.LatestRootIncumbent.BestWorstCaseSteps}";
+        _progressLabel.Text =
+            $"incumbent: {incumbent}\n" +
+            $"milestones: {p.RootIncumbentCount}\n" +
+            $"cache: {p.ExactCacheHits}/{p.LowerBoundCacheHits}/{p.FeasibleTopSetCacheHits}/{p.BestGroupPatternCacheHits}";
     }
-
     private static string FormatSearchStatsSummary(SearchStatistics statistics)
     {
         return $"searched={statistics.SearchedStates}, pending={statistics.PendingStates}, peak pending={statistics.PeakPendingStates}, output states={statistics.OutputStates}";
@@ -966,23 +999,9 @@ class MainForm : Form
         {
             "Live search diagnostics",
             $"elapsed: {snapshot.ElapsedMilliseconds / 1000.0:F1} s",
-            $"searched states: {snapshot.SearchedStates}",
-            $"pending states: {snapshot.PendingStates} (peak {snapshot.PeakPendingStates})",
-            $"output states: {snapshot.OutputStates}",
-            $"lower-bound states: {snapshot.LowerBoundStates}, feasible-top-set states: {snapshot.FeasibleTopSetStates}",
-            $"outcomes constructed: {snapshot.OutcomesConstructed}",
-            $"lower-bound prunes: {snapshot.LowerBoundPrunes}",
-            $"duplicate outcome skips: {snapshot.DuplicateOutcomeSkips}",
-            $"merged outcome collisions: {snapshot.MergedOutcomeCollisions}",
-            $"cache hits: exact {snapshot.ExactCacheHits}, lower-bound {snapshot.LowerBoundCacheHits}, feasible-top-set {snapshot.FeasibleTopSetCacheHits}, best-group-pattern {snapshot.BestGroupPatternCacheHits}",
-            $"root incumbents found: {snapshot.RootIncumbentCount}",
+            "(see the States / Work / Progress panels for live counters)",
+            string.Empty,
         };
-
-        if (snapshot.CompactStatesSolved > 0)
-        {
-            lines.Add(
-                $"compact pass: {snapshot.CompactStatesSolved} states solved, {snapshot.CompactGroupsEnumerated} groups enumerated ({snapshot.CompactStepOptimalGroups} step-optimal)");
-        }
 
         if (snapshot.LatestRootIncumbent is null)
         {
@@ -993,7 +1012,7 @@ class MainForm : Form
             SearchMilestone latest = snapshot.LatestRootIncumbent;
             lines.Add($"latest incumbent: max step <= {latest.BestWorstCaseSteps} via {latest.ComparisonGroupText}");
             lines.Add(
-                $"latest incumbent stats: t={latest.ElapsedMilliseconds / 1000.0:F1}s, searched={latest.SearchedStates}, pending={latest.PendingStates}, peak={latest.PeakPendingStates}, output={latest.OutputStates}, prunes={latest.LowerBoundPrunes}");
+                $"  found at t={latest.ElapsedMilliseconds / 1000.0:F1}s, searched={latest.SearchedStates}, output={latest.OutputStates}, prunes={latest.LowerBoundPrunes}");
         }
 
         return string.Join(Environment.NewLine, lines);
@@ -1015,17 +1034,6 @@ class MainForm : Form
         return $"{incumbentText}, milestones: {snapshot.RootIncumbentCount}, prunes: {snapshot.LowerBoundPrunes}, cache hits: {snapshot.ExactCacheHits}/{snapshot.LowerBoundCacheHits}/{snapshot.FeasibleTopSetCacheHits}/{snapshot.BestGroupPatternCacheHits}";
     }
 
-    private static string BuildDiagnosticsLabelText(SearchProgressSnapshot snapshot)
-    {
-        string incumbentText = snapshot.LatestRootIncumbent is null
-            ? "incumbent: -"
-            : $"incumbent: <= {snapshot.LatestRootIncumbent.BestWorstCaseSteps}";
-        return
-            $"{incumbentText}\n" +
-            $"milestones: {snapshot.RootIncumbentCount}\n" +
-            $"prunes: {snapshot.LowerBoundPrunes}\n" +
-            $"cache: {snapshot.ExactCacheHits}/{snapshot.LowerBoundCacheHits}/{snapshot.FeasibleTopSetCacheHits}/{snapshot.BestGroupPatternCacheHits}";
-    }
 
     private static string BuildIdleDetailsText()
     {
@@ -1035,7 +1043,7 @@ class MainForm : Form
             string.Empty,
             "1. Adjust n, m, k and theme in the Inputs section.",
             "2. Use Run / Stop / Expand All / Collapse All from the Actions section.",
-            "3. Watch the Search and Diagnostics panels for live progress.",
+            "3. Watch the States / Work / Progress panels for live progress.",
             string.Empty,
             "Tree legend:",
             "- state: comparison node",
