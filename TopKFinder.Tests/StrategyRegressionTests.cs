@@ -614,6 +614,60 @@ public sealed class StrategyRegressionTests
 
         Assert.Equal(StrategyTestHelpers.NormalizeRenderedSnapshot(expected), excerpt);
     }
+
+    // Compact selection (opt-in) keeps the optimal worst-case step count but, among the
+    // equally-optimal solutions, prefers the one with the smallest materialized tree. These
+    // tests pin the two invariants: max step is preserved and output states never regress
+    // above the default, plus the concrete shrink on cases known to have redundant trees.
+
+    [Theory]
+    [InlineData(9, 3, 3)]
+    [InlineData(11, 3, 3)]
+    [InlineData(12, 4, 4)]
+    [InlineData(10, 3, 4)]
+    [InlineData(12, 4, 3)]
+    public void Compact_PreservesMaxStepAndDoesNotRegressOutputStates(int n, int m, int k)
+    {
+        StrategyPlan baseline = TestTimeoutHelper.RunWithTimeout(
+            $"StrategyBuilder.Generate({n}, {m}, {k})",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.Generate(n, m, k, cancellationToken));
+
+        StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
+            $"StrategyBuilder.GenerateCompact({n}, {m}, {k})",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.GenerateCompact(n, m, k, cancellationToken));
+
+        Assert.Equal(baseline.MaxStep, compact.MaxStep);
+        Assert.True(
+            compact.SearchStatistics.OutputStates <= baseline.SearchStatistics.OutputStates,
+            $"compact output states {compact.SearchStatistics.OutputStates} exceeded baseline {baseline.SearchStatistics.OutputStates}");
+    }
+
+    [Theory]
+    [InlineData(11, 3, 3, 9)]
+    [InlineData(12, 4, 4, 21)]
+    [InlineData(10, 3, 4, 9)]
+    public void Compact_ShrinksTreesWithRedundantSolutions(int n, int m, int k, int expectedOutputStatesCap)
+    {
+        StrategyPlan baseline = TestTimeoutHelper.RunWithTimeout(
+            $"StrategyBuilder.Generate({n}, {m}, {k})",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.Generate(n, m, k, cancellationToken));
+
+        StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
+            $"StrategyBuilder.GenerateCompact({n}, {m}, {k})",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.GenerateCompact(n, m, k, cancellationToken));
+
+        Assert.Equal(baseline.MaxStep, compact.MaxStep);
+        Assert.True(
+            compact.SearchStatistics.OutputStates < baseline.SearchStatistics.OutputStates,
+            $"compact output states {compact.SearchStatistics.OutputStates} did not improve on baseline {baseline.SearchStatistics.OutputStates}");
+        Assert.True(
+            compact.SearchStatistics.OutputStates <= expectedOutputStatesCap,
+            $"compact output states regressed to {compact.SearchStatistics.OutputStates}");
+    }
 }
 
 internal static class StrategyTestHelpers

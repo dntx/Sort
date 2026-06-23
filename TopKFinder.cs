@@ -54,6 +54,11 @@ partial class StrategyBuilder
         // caching the optimal comparison-group pattern per state along the way.
         _ = GetMinWorstCaseSteps(new ComparisonState(_n), _k);
 
+        // Optional phase 1b (PoC): among equally-optimal groups, choose the ones that
+        // minimize the materialized subtree size (a proxy for displayed output states).
+        if (_useCompactSelection)
+            _ = SolveCompactSelection(new ComparisonState(_n), _k);
+
         // Phase 2: materialize the strategy tree, reusing the cached group patterns.
         var root = BuildState(new ComparisonState(_n), 0, _k, 1);
         stopwatch.Stop();
@@ -137,7 +142,13 @@ partial class StrategyBuilder
 
         // Phase 1 solves the optimal worst-case for every reachable state and caches the
         // chosen comparison-group pattern, so phase 2 always finds a populated entry here.
-        if (!_bestGroupPatternCache.TryGetValue(currentKey, out BestGroupPattern cachedPattern))
+        // The compact PoC overrides the choice with its size-minimizing pattern when enabled.
+        BestGroupPattern cachedPattern;
+        if (_useCompactSelection && _compactGroupPatternCache.TryGetValue(currentKey, out BestGroupPattern compactPattern))
+        {
+            cachedPattern = compactPattern;
+        }
+        else if (!_bestGroupPatternCache.TryGetValue(currentKey, out cachedPattern))
         {
             throw new InvalidOperationException(
                 "Phase 1 must populate the best-group pattern cache for every state materialized in phase 2.");
