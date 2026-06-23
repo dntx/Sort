@@ -822,6 +822,69 @@ public sealed class StrategyRegressionTests
             compact.SearchStatistics.OutcomesConstructed <= outcomesCap,
             $"compact outcomes constructed regressed to {compact.SearchStatistics.OutcomesConstructed} (cap {outcomesCap})");
     }
+
+    // Symmetry-redundancy monitor for the default pass. DuplicateOutcomeSkips counts, within a
+    // single group's outcome enumeration, how many constructed outcomes collapsed onto an
+    // already-seen canonical next-state key -- i.e. isomorphic/symmetric duplicates. These are
+    // precisely the redundant orders that an up-front orbit/block-symmetry detector could avoid
+    // constructing (e.g. the five extra orders of sort(1,4,7) in 9,3,3 that all map to the same
+    // next state). OutcomesConstructed measures total work; this counter isolates the portion of
+    // that work that is wasted on symmetry, so it is the direct lever for symmetry-collapse
+    // optimizations: a correct orbit detector must ratchet these caps DOWN. Caps pin the current
+    // deterministic counts; an increase is a regression, a deliberate decrease is an improvement.
+    [Theory]
+    [InlineData(9, 3, 3, 271)]
+    [InlineData(11, 3, 3, 1409)]
+    [InlineData(12, 3, 3, 3829)]
+    [InlineData(12, 4, 4, 10478)]
+    [InlineData(12, 4, 3, 391)]
+    [InlineData(10, 3, 4, 2819)]
+    [InlineData(10, 3, 5, 4166)]
+    [InlineData(13, 4, 3, 1293)]
+    [InlineData(8, 4, 2, 0)]
+    [InlineData(9, 4, 3, 47)]
+    [InlineData(8, 3, 4, 144)]
+    [InlineData(9, 3, 4, 586)]
+    [InlineData(10, 3, 6, 2271)]
+    [InlineData(5, 3, 2, 3)]
+    [InlineData(10, 2, 2, 26)]
+    public void Default_DuplicateOutcomeSkipsStaysWithinBaseline(int n, int m, int k, int duplicateSkipCap)
+    {
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            $"StrategyBuilder.Generate({n}, {m}, {k})",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.Generate(n, m, k, cancellationToken));
+
+        Assert.True(
+            plan.SearchStatistics.Diagnostics.DuplicateOutcomeSkips <= duplicateSkipCap,
+            $"default duplicate outcome skips regressed to {plan.SearchStatistics.Diagnostics.DuplicateOutcomeSkips} (cap {duplicateSkipCap})");
+    }
+
+    // Symmetry-redundancy monitor for the compact pass. The compact selection re-enumerates group
+    // outcomes on top of phase 1, so it surfaces more symmetric duplicates than the default pass;
+    // this is the primary symmetry-collapse target for compact search. Caps pin the current
+    // deterministic counts -- ratchet them down when an orbit/block-symmetry optimization lands.
+    [Theory]
+    [InlineData(9, 3, 3, 938)]
+    [InlineData(11, 3, 3, 3372)]
+    [InlineData(12, 4, 4, 15526)]
+    [InlineData(10, 3, 4, 8715)]
+    [InlineData(12, 4, 3, 2116)]
+    [InlineData(12, 3, 3, 3910)]
+    [InlineData(8, 4, 2, 9)]
+    [InlineData(10, 3, 5, 4708)]
+    [InlineData(13, 4, 3, 1391)]
+    public void Compact_DuplicateOutcomeSkipsStaysWithinBaseline(int n, int m, int k, int duplicateSkipCap)
+    {
+        StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
+            $"StrategyBuilder.GenerateCompact({n}, {m}, {k})",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.GenerateCompact(n, m, k, cancellationToken));
+
+        Assert.True(
+            compact.SearchStatistics.Diagnostics.DuplicateOutcomeSkips <= duplicateSkipCap,
+            $"compact duplicate outcome skips regressed to {compact.SearchStatistics.Diagnostics.DuplicateOutcomeSkips} (cap {duplicateSkipCap})");
+    }
 }
 
 internal static class StrategyTestHelpers
