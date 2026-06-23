@@ -735,6 +735,67 @@ public sealed class StrategyRegressionTests
             plan.SearchStatistics.SearchedStates <= searchedStateCap,
             $"default searched states regressed to {plan.SearchStatistics.SearchedStates} (cap {searchedStateCap})");
     }
+
+    // Outcome-construction monitor for the default (fast) pass. OutcomesConstructed counts every
+    // ComparisonOutcome materialized (Clone + ApplyOrder + Eliminate + Normalize) and is the
+    // dominant per-state search cost, so it is the most sensitive lever for raw search work --
+    // more so than searched states, since most constructed outcomes are duplicates discarded
+    // afterwards. These caps pin the current deterministic count so future algorithm changes
+    // surface any regression (an increase) or improvement (a deliberate cap update) as a diff.
+    [Theory]
+    [InlineData(9, 3, 3, 2172)]
+    [InlineData(11, 3, 3, 16318)]
+    [InlineData(12, 3, 3, 46659)]
+    [InlineData(12, 4, 4, 47843)]
+    [InlineData(12, 4, 3, 1632)]
+    [InlineData(10, 3, 4, 39928)]
+    [InlineData(10, 3, 5, 71007)]
+    [InlineData(13, 4, 3, 4836)]
+    [InlineData(8, 4, 2, 7)]
+    [InlineData(9, 4, 3, 164)]
+    [InlineData(8, 3, 4, 1148)]
+    [InlineData(9, 3, 4, 6372)]
+    [InlineData(10, 3, 6, 37317)]
+    [InlineData(5, 3, 2, 12)]
+    [InlineData(10, 2, 2, 1028)]
+    public void Default_OutcomesConstructedStaysWithinBaseline(int n, int m, int k, int outcomesCap)
+    {
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            $"StrategyBuilder.Generate({n}, {m}, {k})",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.Generate(n, m, k, cancellationToken));
+
+        Assert.True(
+            plan.SearchStatistics.OutcomesConstructed <= outcomesCap,
+            $"default outcomes constructed regressed to {plan.SearchStatistics.OutcomesConstructed} (cap {outcomesCap})");
+    }
+
+    // Outcome-construction monitor for the compact pass. The compact selection re-enumerates
+    // group outcomes on top of phase 1, so it constructs many more outcomes than the default;
+    // this count is the primary cost target for compact-search optimization. Caps are the
+    // current deterministic counts -- ratchet them down when an optimization legitimately cuts
+    // outcome construction.
+    [Theory]
+    [InlineData(9, 3, 3, 6173)]
+    [InlineData(11, 3, 3, 34081)]
+    [InlineData(12, 4, 4, 68144)]
+    [InlineData(10, 3, 4, 101789)]
+    [InlineData(12, 4, 3, 6304)]
+    [InlineData(12, 3, 3, 47802)]
+    [InlineData(8, 4, 2, 28)]
+    [InlineData(10, 3, 5, 80140)]
+    [InlineData(13, 4, 3, 5171)]
+    public void Compact_OutcomesConstructedStaysWithinBaseline(int n, int m, int k, int outcomesCap)
+    {
+        StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
+            $"StrategyBuilder.GenerateCompact({n}, {m}, {k})",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.GenerateCompact(n, m, k, cancellationToken));
+
+        Assert.True(
+            compact.SearchStatistics.OutcomesConstructed <= outcomesCap,
+            $"compact outcomes constructed regressed to {compact.SearchStatistics.OutcomesConstructed} (cap {outcomesCap})");
+    }
 }
 
 internal static class StrategyTestHelpers
