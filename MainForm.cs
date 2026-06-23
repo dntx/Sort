@@ -73,6 +73,7 @@ class MainForm : Form
     private readonly TextBox _mTextBox;
     private readonly TextBox _kTextBox;
     private readonly ComboBox _themeComboBox;
+    private readonly CheckBox _compactCheckBox;
     private readonly Button _runButton;
     private readonly Button _stopButton;
     private readonly Button _expandAllButton;
@@ -137,6 +138,14 @@ class MainForm : Form
         _themeComboBox.Items.AddRange(Enum.GetNames<ColorTheme>());
         _themeComboBox.SelectedItem = ColorTheme.Dark.ToString();
         _themeComboBox.SelectedIndexChanged += (_, _) => ApplyTheme(ParseSelectedTheme());
+
+        _compactCheckBox = new CheckBox
+        {
+            Text = "Compact",
+            AutoSize = true,
+            Checked = false,
+            Margin = new Padding(0, 6, 0, 0),
+        };
 
         _runButton = new Button
         {
@@ -213,6 +222,7 @@ class MainForm : Form
         inputsPanel.Controls.Add(CreateLabeledInput("m", _mTextBox));
         inputsPanel.Controls.Add(CreateLabeledInput("k", _kTextBox));
         inputsPanel.Controls.Add(CreateLabeledInput("theme", _themeComboBox));
+        inputsPanel.Controls.Add(CreateLabeledInput("options", _compactCheckBox));
 
         var actionsPanel = new FlowLayoutPanel
         {
@@ -396,8 +406,11 @@ class MainForm : Form
 
         try
         {
+            bool useCompact = _compactCheckBox.Checked;
             var plan = await Task.Run(
-                () => StrategyBuilder.Generate(n, m, k, cancellationToken, snapshot => progress.Report(snapshot)),
+                () => useCompact
+                    ? StrategyBuilder.GenerateCompact(n, m, k, cancellationToken, snapshot => progress.Report(snapshot))
+                    : StrategyBuilder.Generate(n, m, k, cancellationToken, snapshot => progress.Report(snapshot)),
                 cancellationToken);
             _runStopwatch?.Stop();
             _currentPlan = plan;
@@ -851,6 +864,7 @@ class MainForm : Form
     {
         UseWaitCursor = isRunning;
         _runButton.Enabled = !isRunning;
+        _compactCheckBox.Enabled = !isRunning;
         _stopButton.Enabled = isRunning;
         _expandAllButton.Enabled = !isRunning;
         _collapseAllButton.Enabled = !isRunning;
