@@ -89,7 +89,13 @@ partial class StrategyBuilder
         var groupedBranches = collectMergedBranches ? new Dictionary<IntSequenceKey, MergedBranch>() : null;
         bool isUseful = false;
 
-        foreach (OrderFamilyDescriptor orderFamily in EnumerateFeasibleOrderFamilies(state, group))
+        // The display path (collectMergedBranches) needs every order family to count equivalent
+        // orderings, so it must enumerate them all. The search and compact paths only need the
+        // set of distinct next states, so they prune orderings whose only differences are among
+        // group items destined for elimination (which collapse to the same next search-state).
+        bool pruneDoomedTails = !collectMergedBranches;
+
+        foreach (OrderFamilyDescriptor orderFamily in EnumerateFeasibleOrderFamilies(state, group, remainingSlots, pruneDoomedTails))
         {
             ThrowIfCancellationRequested();
             ComparisonOutcome outcome = CreateComparisonOutcome(state, remainingSlots, orderFamily);
