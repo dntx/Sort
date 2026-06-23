@@ -696,6 +696,40 @@ public sealed class StrategyRegressionTests
             compact.SearchStatistics.SearchedStates <= searchedStateCap,
             $"compact searched states regressed to {compact.SearchStatistics.SearchedStates} (cap {searchedStateCap})");
     }
+
+    // Searched-state monitor for the default (fast) pass. Several tests above already cap
+    // searched states for individual cases, but loosely; this consolidated theory pins the
+    // current deterministic count tightly across a spread of k=m, k<m and k>m shapes so that
+    // future algorithm changes surface any regression (an increase) or improvement (a
+    // deliberate cap update) as an explicit diff. Update values deliberately when the search
+    // work legitimately changes.
+    [Theory]
+    [InlineData(9, 3, 3, 120)]
+    [InlineData(11, 3, 3, 454)]
+    [InlineData(12, 3, 3, 959)]
+    [InlineData(12, 4, 4, 504)]
+    [InlineData(12, 4, 3, 84)]
+    [InlineData(10, 3, 4, 849)]
+    [InlineData(10, 3, 5, 1311)]
+    [InlineData(13, 4, 3, 143)]
+    [InlineData(8, 4, 2, 6)]
+    [InlineData(9, 4, 3, 20)]
+    [InlineData(8, 3, 4, 70)]
+    [InlineData(9, 3, 4, 228)]
+    [InlineData(10, 3, 6, 815)]
+    [InlineData(5, 3, 2, 4)]
+    [InlineData(10, 2, 2, 127)]
+    public void Default_SearchedStateCountStaysWithinBaseline(int n, int m, int k, int searchedStateCap)
+    {
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            $"StrategyBuilder.Generate({n}, {m}, {k})",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.Generate(n, m, k, cancellationToken));
+
+        Assert.True(
+            plan.SearchStatistics.SearchedStates <= searchedStateCap,
+            $"default searched states regressed to {plan.SearchStatistics.SearchedStates} (cap {searchedStateCap})");
+    }
 }
 
 internal static class StrategyTestHelpers
