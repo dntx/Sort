@@ -67,7 +67,7 @@ public sealed class StrategyRegressionTests
             cancellationToken => StrategyBuilder.Generate(12, 3, 3, cancellationToken));
 
         Assert.Equal(7, plan.MaxStep);
-        Assert.True(plan.SearchStatistics.SearchedStates <= 1010, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
+        Assert.True(plan.SearchStatistics.SearchedStates <= 959, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
         Assert.True(plan.SearchStatistics.OutputStates <= 15, $"output states regressed to {plan.SearchStatistics.OutputStates}");
         Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 8, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
     }
@@ -128,8 +128,8 @@ public sealed class StrategyRegressionTests
 
         Assert.Equal(4, plan.MaxStep);
         Assert.Equal(4, plan.Root.Group.Count);
-        Assert.True(plan.SearchStatistics.SearchedStates <= 23, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
-        Assert.True(plan.SearchStatistics.OutputStates <= 7, $"output states regressed to {plan.SearchStatistics.OutputStates}");
+        Assert.True(plan.SearchStatistics.SearchedStates <= 20, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
+        Assert.True(plan.SearchStatistics.OutputStates <= 6, $"output states regressed to {plan.SearchStatistics.OutputStates}");
         Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 3, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
     }
 
@@ -143,9 +143,9 @@ public sealed class StrategyRegressionTests
 
         Assert.Equal(5, plan.MaxStep);
         Assert.Equal(4, plan.Root.Group.Count);
-        Assert.True(plan.SearchStatistics.SearchedStates <= 88, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
-        Assert.True(plan.SearchStatistics.OutputStates <= 15, $"output states regressed to {plan.SearchStatistics.OutputStates}");
-        Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 9, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
+        Assert.True(plan.SearchStatistics.SearchedStates <= 84, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
+        Assert.True(plan.SearchStatistics.OutputStates <= 8, $"output states regressed to {plan.SearchStatistics.OutputStates}");
+        Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 4, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
     }
 
     [Fact]
@@ -281,9 +281,9 @@ public sealed class StrategyRegressionTests
             cancellationToken => StrategyBuilder.Generate(12, 4, 4, cancellationToken));
 
         Assert.Equal(5, plan.MaxStep);
-        Assert.True(plan.SearchStatistics.SearchedStates <= 551, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
+        Assert.True(plan.SearchStatistics.SearchedStates <= 504, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
         Assert.True(plan.SearchStatistics.OutputStates <= 29, $"output states regressed to {plan.SearchStatistics.OutputStates}");
-        Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 12, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
+        Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 9, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
 
         StrategyBranch branch = StrategyTestHelpers.FindBranchByOrderText(plan.Root, "#2 > #6 > #9 > #10");
         Assert.NotNull(branch.EquivalentOrders);
