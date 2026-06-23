@@ -43,6 +43,14 @@ partial class StrategyBuilder
             return cached;
         }
 
+        DominanceProbeResult dominanceProbe = default;
+        bool dominanceProbed = false;
+        if (EnableDominanceMetric && state.ActiveCount > _m && remainingSlots > 0)
+        {
+            dominanceProbe = ProbeDominance(state, remainingSlots);
+            dominanceProbed = true;
+        }
+
         bool isRootSearch = false;
         if (!_rootSearchInitialized)
         {
@@ -114,6 +122,14 @@ partial class StrategyBuilder
             _bestGroupPatternCache[key] = new BestGroupPattern(bestGroup.Count, GetGroupPattern(bestGroup, labels));
 
         _minWorstCaseStepsCache[key] = bestWorstCase;
+
+        if (EnableDominanceMetric)
+        {
+            if (dominanceProbed)
+                RecordDominanceProbe(dominanceProbe, bestWorstCase, state, remainingSlots);
+            AddDominanceLibraryEntry(state, remainingSlots, bestWorstCase);
+        }
+
         return bestWorstCase;
     }
 
