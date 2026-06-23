@@ -6,19 +6,33 @@ using System.Text.RegularExpressions;
 
 partial class StrategyBuilder
 {
-    private IEnumerable<OrderFamilyDescriptor> EnumerateFeasibleOrderFamilies(ComparisonState state, IReadOnlyList<int> group)
+    private IEnumerable<OrderFamilyDescriptor> EnumerateFeasibleOrderFamilies(
+        ComparisonState state,
+        IReadOnlyList<int> group,
+        int eliminationThreshold,
+        bool pruneDoomedTails)
     {
         ThrowIfCancellationRequested();
         GroupSymmetryInfo symmetryInfo = BuildGroupSymmetryInfo(state, group);
         if (symmetryInfo.Classes.All(@class => @class.Items.Length == 1))
         {
-            ulong remainingMask = 0;
+            ulong groupMask = 0;
             foreach (int item in group)
-                remainingMask |= 1UL << item;
+                groupMask |= 1UL << item;
+
+            // For each group item, the number of its active ancestors that lie OUTSIDE the group.
+            // After the group sort, an item placed at 0-indexed position p gains exactly p further
+            // ancestors (every group item ranked above it), so its total active-ancestor count is
+            // baseAncestors[item] + p. It is eliminated when that reaches the elimination threshold.
+            int[]? baseAncestors = pruneDoomedTails ? BuildOutsideAncestorCounts(state, group, groupMask) : null;
 
             var current = new List<int>(group.Count);
-            foreach (var order in EnumerateFeasibleOrders(state, remainingMask, group.Count, current))
+            foreach (var order in EnumerateFeasibleOrders(
+                state, groupMask, group.Count, current, baseAncestors, eliminationThreshold))
+            {
                 yield return OrderFamilyDescriptor.CreateSingleton(order);
+            }
+
             yield break;
         }
 
@@ -26,17 +40,51 @@ partial class StrategyBuilder
             yield return family;
     }
 
+    private static int[] BuildOutsideAncestorCounts(ComparisonState state, IReadOnlyList<int> group, ulong groupMask)
+    {
+        ulong outsideActiveMask = state.ActiveMask & ~groupMask;
+        int[] counts = new int[64];
+        foreach (int item in group)
+            counts[item] = BitOperations.PopCount(state.GetAncestorMask(item) & outsideActiveMask);
+        return counts;
+    }
+
     private IEnumerable<List<int>> EnumerateFeasibleOrders(
         ComparisonState state,
         ulong remainingMask,
         int total,
-        List<int> current)
+        List<int> current,
+        int[]? baseAncestors,
+        int eliminationThreshold)
     {
         ThrowIfCancellationRequested();
         if (current.Count == total)
         {
             yield return new List<int>(current);
             yield break;
+        }
+
+        // Search-path pruning: if every still-unplaced item is guaranteed to be eliminated no
+        // matter where it lands (baseAncestors[item] + position >= threshold, with position at
+        // least the current depth), then all completions of this prefix differ only in the order
+        // of doomed items. Eliminated items are masked out of the next state's canonical key, so
+        // every completion yields the identical next search-state; one representative suffices.
+        bool doomed = false;
+        if (baseAncestors is not null)
+        {
+            doomed = true;
+            int depth = current.Count;
+            ulong unplaced = remainingMask;
+            while (unplaced != 0)
+            {
+                int item = BitOperations.TrailingZeroCount(unplaced);
+                unplaced &= unplaced - 1;
+                if (baseAncestors[item] + depth < eliminationThreshold)
+                {
+                    doomed = false;
+                    break;
+                }
+            }
         }
 
         // A candidate may be placed next only if no still-remaining item is one of its ancestors
@@ -51,9 +99,18 @@ partial class StrategyBuilder
                 continue;
 
             current.Add(next);
-            foreach (var order in EnumerateFeasibleOrders(state, remainingMask & ~(1UL << next), total, current))
+            foreach (var order in EnumerateFeasibleOrders(
+                state, remainingMask & ~(1UL << next), total, current, baseAncestors, eliminationThreshold))
+            {
                 yield return order;
+            }
+
             current.RemoveAt(current.Count - 1);
+
+            // All remaining items are doomed, so the single completion just produced already
+            // represents every ordering of the unplaced tail; skip the rest.
+            if (doomed)
+                break;
         }
     }
 
