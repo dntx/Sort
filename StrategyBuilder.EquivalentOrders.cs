@@ -62,9 +62,12 @@ partial class StrategyBuilder
     // distinct next state by combining three sound reductions, all without the LINQ-heavy
     // GroupSymmetryInfo construction or per-order descriptor allocations of the display path:
     //   1. feasibility: only place an item that is maximal among the still-unplaced group items;
-    //   2. symmetry: within a class of items that share the same active ancestor/descendant masks
-    //      (genuine automorphisms), place members in increasing-id order only -- the permutations
-    //      collapse to isomorphic next states with identical canonical keys;
+    //   2. symmetry: within a class of items that are interchangeable under an automorphism of
+    //      the active DAG, place members in increasing-id order only -- the permutations collapse
+    //      to isomorphic next states with identical canonical keys. Classes cover both local
+    //      symmetry (identical active ancestor/descendant masks, a trivial transposition) and
+    //      block/orbit symmetry (e.g. the parallel chains 1>2>3, 4>5>6, 7>8>9 make the heads
+    //      1,4,7 interchangeable via a chain-permuting automorphism), see BuildSearchClassPredecessors;
     //   3. doomed-tail pruning: once every still-unplaced item is guaranteed to be eliminated
     //      regardless of its position (outsideAncestors + position >= eliminationThreshold), all
     //      completions yield the identical next state (eliminated items are masked out of the key),
@@ -83,29 +86,12 @@ partial class StrategyBuilder
         ulong activeMask = state.ActiveMask;
         ulong outsideActiveMask = activeMask & ~groupMask;
         var outsideAncestors = new int[_n];
-        var previousInClass = new int[_n];
         foreach (int item in group)
-        {
             outsideAncestors[item] = BitOperations.PopCount(state.GetAncestorMask(item) & outsideActiveMask);
 
-            // The nearest lower-id group item sharing this item's class (identical active ancestor
-            // and descendant masks), or -1. Placing an item is deferred until that predecessor is
-            // already placed, which fixes a single increasing-id representative per class ordering.
-            int previous = -1;
-            ulong itemAncestors = state.GetAncestorMask(item) & activeMask;
-            ulong itemDescendants = state.GetDescendantMask(item) & activeMask;
-            foreach (int other in group)
-            {
-                if (other < item && other > previous &&
-                    (state.GetAncestorMask(other) & activeMask) == itemAncestors &&
-                    (state.GetDescendantMask(other) & activeMask) == itemDescendants)
-                {
-                    previous = other;
-                }
-            }
-
-            previousInClass[item] = previous;
-        }
+        // Each item is deferred until the nearest lower-id member of its symmetry class is placed,
+        // which fixes a single increasing-id representative per class ordering.
+        int[] previousInClass = BuildSearchClassPredecessors(state, group, activeMask);
 
         var current = new List<int>(group.Count);
         foreach (var order in EnumerateSearchOrdersCore(
@@ -171,6 +157,268 @@ partial class StrategyBuilder
             if (doomed)
                 break;
         }
+    }
+
+    // Computes, for each group item, the nearest lower-id member of its symmetry class (or -1),
+    // which the lean enumerator uses to fix one increasing-id representative per class ordering.
+    // Two group items share a class iff there is an automorphism of the active DAG that swaps them
+    // while fixing every other group item -- a sufficient condition for all orderings differing
+    // only by permuting class members to collapse to isomorphic next states (identical canonical
+    // keys). This subsumes the local case (identical active ancestor/descendant masks, a trivial
+    // transposition) and additionally captures block/orbit symmetry such as the interchangeable
+    // heads 1,4,7 of the parallel chains in 9,3,3, which have different descendant sets and so are
+    // not locally symmetric but are related by a chain-permuting automorphism.
+    [ThreadStatic] private static int[]? _classParentScratch;
+
+    private static int ClassFind(int[] parent, int x)
+    {
+        while (parent[x] != x)
+        {
+            parent[x] = parent[parent[x]];
+            x = parent[x];
+        }
+
+        return x;
+    }
+
+    private static void ClassUnion(int[] parent, int a, int b)
+    {
+        int ra = ClassFind(parent, a);
+        int rb = ClassFind(parent, b);
+        if (ra == rb)
+            return;
+
+        // Keep the lower id as the representative so predecessors stay well-defined.
+        if (ra < rb)
+            parent[rb] = ra;
+        else
+            parent[ra] = rb;
+    }
+
+    private int[] BuildSearchClassPredecessors(ComparisonState state, IReadOnlyList<int> group, ulong activeMask)
+    {
+        int[] parent = _classParentScratch is { Length: var len } buffer && len >= _n
+            ? buffer
+            : (_classParentScratch = new int[_n]);
+        foreach (int item in group)
+            parent[item] = item;
+
+        // Local symmetry: identical active ancestor and descendant masks => the bare transposition
+        // (i j) is already an automorphism, so these items are interchangeable in every context.
+        for (int a = 0; a < group.Count; a++)
+        {
+            int i = group[a];
+            ulong iAnc = state.GetAncestorMask(i) & activeMask;
+            ulong iDesc = state.GetDescendantMask(i) & activeMask;
+            for (int b = a + 1; b < group.Count; b++)
+            {
+                int j = group[b];
+                if ((state.GetAncestorMask(j) & activeMask) == iAnc &&
+                    (state.GetDescendantMask(j) & activeMask) == iDesc)
+                {
+                    ClassUnion(parent, i, j);
+                }
+            }
+        }
+
+        // Block/orbit symmetry: for items not already merged locally, look for an automorphism of
+        // the active DAG that swaps them while fixing the rest of the group. Two items can only be
+        // related by such an automorphism if they share a stable WL color and relate identically to
+        // every other group item with matching ancestor/descendant degrees; those cheap (cached)
+        // tests gate the more expensive backtracking search so it runs only on genuine candidates.
+        int[] labels = state.GetStructuralLabels();
+        for (int a = 0; a < group.Count; a++)
+        {
+            int i = group[a];
+            for (int b = a + 1; b < group.Count; b++)
+            {
+                int j = group[b];
+                if (ClassFind(parent, i) == ClassFind(parent, j) || labels[i] != labels[j])
+                    continue;
+
+                if (!IsGroupSwapCandidate(state, activeMask, group, i, j))
+                    continue;
+
+                if (TryFindGroupFixingSwap(state, labels, activeMask, group, i, j))
+                    ClassUnion(parent, i, j);
+            }
+        }
+
+        var previousInClass = new int[_n];
+        foreach (int item in group)
+        {
+            int root = ClassFind(parent, item);
+            int previous = -1;
+            foreach (int other in group)
+            {
+                if (other < item && other > previous && ClassFind(parent, other) == root)
+                    previous = other;
+            }
+
+            previousInClass[item] = previous;
+        }
+
+        return previousInClass;
+    }
+
+    // Cheap necessary conditions for a group-fixing swap of i and j: matching ancestor/descendant
+    // degrees (an automorphism preserves them) and identical relationships to every other group
+    // item (the swap must fix those items). Rejects most non-symmetric pairs before backtracking.
+    private bool IsGroupSwapCandidate(ComparisonState state, ulong activeMask, IReadOnlyList<int> group, int i, int j)
+    {
+        ulong ai = state.GetAncestorMask(i) & activeMask;
+        ulong aj = state.GetAncestorMask(j) & activeMask;
+        ulong di = state.GetDescendantMask(i) & activeMask;
+        ulong dj = state.GetDescendantMask(j) & activeMask;
+        if (BitOperations.PopCount(ai) != BitOperations.PopCount(aj) ||
+            BitOperations.PopCount(di) != BitOperations.PopCount(dj))
+        {
+            return false;
+        }
+
+        foreach (int g in group)
+        {
+            if (g == i || g == j)
+                continue;
+
+            ulong gb = 1UL << g;
+            if (((ai & gb) != 0) != ((aj & gb) != 0) || ((di & gb) != 0) != ((dj & gb) != 0))
+                return false;
+        }
+
+        return true;
+    }
+
+    // Searches for an automorphism of the active DAG that swaps i and j while fixing every other
+    // group item. The swap's support is confined to items related to i or j (their cones and shared
+    // ancestors); every unrelated active item is left fixed. The candidate map is completed by
+    // color-guided backtracking over the related items and then fully verified to preserve the
+    // ancestor relation across all active pairs, so a success is a genuine automorphism -- making
+    // the resulting class merge sound regardless of WL completeness. A node budget bounds the
+    // search; exhausting it returns false (no merge), which only forgoes an optimization.
+    private bool TryFindGroupFixingSwap(
+        ComparisonState state,
+        int[] labels,
+        ulong activeMask,
+        IReadOnlyList<int> group,
+        int i,
+        int j)
+    {
+        int n = _n;
+        var map = new int[n];
+        var inv = new int[n];
+        Array.Fill(map, -1);
+        Array.Fill(inv, -1);
+        var assigned = new List<int>(n);
+
+        bool TryAssign(int x, int y)
+        {
+            if (labels[x] != labels[y] || inv[y] != -1 || map[x] != -1)
+                return false;
+
+            ulong ancX = state.GetAncestorMask(x);
+            ulong ancY = state.GetAncestorMask(y);
+            foreach (int z in assigned)
+            {
+                int w = map[z];
+                if (((ancX >> z) & 1) != ((ancY >> w) & 1) ||
+                    ((state.GetAncestorMask(z) >> x) & 1) != ((state.GetAncestorMask(w) >> y) & 1))
+                {
+                    return false;
+                }
+            }
+
+            map[x] = y;
+            inv[y] = x;
+            assigned.Add(x);
+            return true;
+        }
+
+        void Undo()
+        {
+            int x = assigned[assigned.Count - 1];
+            assigned.RemoveAt(assigned.Count - 1);
+            inv[map[x]] = -1;
+            map[x] = -1;
+        }
+
+        // Forced assignments: the swap plus every other group item fixed in place.
+        if (!TryAssign(i, j) || !TryAssign(j, i))
+            return false;
+
+        foreach (int g in group)
+        {
+            if (g != i && g != j && !TryAssign(g, g))
+                return false;
+        }
+
+        // Only items related to i or j may move; everything else stays fixed (verified at the end).
+        ulong relatedMask = (state.GetAncestorMask(i) | state.GetDescendantMask(i) |
+                             state.GetAncestorMask(j) | state.GetDescendantMask(j)) & activeMask;
+        var pending = new List<int>(n);
+        ulong remaining = relatedMask;
+        while (remaining != 0)
+        {
+            int x = BitOperations.TrailingZeroCount(remaining);
+            remaining &= remaining - 1;
+            if (map[x] == -1)
+                pending.Add(x);
+        }
+
+        int budget = 1024;
+
+        bool VerifyComplete()
+        {
+            ulong items = activeMask;
+            while (items != 0)
+            {
+                int x = BitOperations.TrailingZeroCount(items);
+                items &= items - 1;
+                int sx = map[x] >= 0 ? map[x] : x;
+                ulong inner = activeMask;
+                while (inner != 0)
+                {
+                    int y = BitOperations.TrailingZeroCount(inner);
+                    inner &= inner - 1;
+                    int sy = map[y] >= 0 ? map[y] : y;
+                    if (((state.GetAncestorMask(x) >> y) & 1) != ((state.GetAncestorMask(sx) >> sy) & 1))
+                        return false;
+                }
+            }
+
+            return true;
+        }
+
+        bool Extend(int index)
+        {
+            if (--budget < 0)
+                return false;
+
+            while (index < pending.Count && map[pending[index]] != -1)
+                index++;
+
+            if (index == pending.Count)
+                return VerifyComplete();
+
+            int x = pending[index];
+            ulong candidates = relatedMask;
+            while (candidates != 0)
+            {
+                int y = BitOperations.TrailingZeroCount(candidates);
+                candidates &= candidates - 1;
+                if (TryAssign(x, y))
+                {
+                    if (Extend(index + 1))
+                        return true;
+
+                    Undo();
+                }
+            }
+
+            return false;
+        }
+
+        return Extend(0);
     }
 
     private GroupSymmetryInfo BuildGroupSymmetryInfo(ComparisonState state, IReadOnlyList<int> group)
