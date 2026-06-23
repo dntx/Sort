@@ -121,7 +121,6 @@ readonly struct BuildStateKey : IEquatable<BuildStateKey>
 
 class ComparisonState
 {
-    private static readonly IntSequenceKey InactiveSignature = new(new[] { 0 });
     private readonly int _n;
     private readonly ulong _allMask;
     private readonly ulong[] _ancestors;
@@ -264,37 +263,140 @@ class ComparisonState
         return _descendants[item];
     }
 
+    [ThreadStatic] private static int[]? _scratchNextLabels;
+    [ThreadStatic] private static int[]? _scratchOrder;
+    [ThreadStatic] private static int[]? _scratchPerm;
+    [ThreadStatic] private static int[]? _scratchSig;
+
+    private static int[] EnsureScratch(ref int[]? buffer, int minLength)
+    {
+        if (buffer is null || buffer.Length < minLength)
+            buffer = new int[minLength];
+        return buffer;
+    }
+
+    private static int CompareSignatures(int[] sig, int posLeft, int posRight, int width)
+    {
+        int left = posLeft * width;
+        int right = posRight * width;
+        for (int t = 0; t < width; t++)
+        {
+            int diff = sig[left + t] - sig[right + t];
+            if (diff != 0)
+                return diff;
+        }
+
+        return 0;
+    }
+
     private int[] ComputeStructuralLabels(ulong includedMask)
     {
-        var labels = Enumerable.Range(0, _n)
-            .Select(i => (includedMask & Bit(i)) == 0 ? 0 : 1)
-            .ToArray();
+        int n = _n;
+        var labels = new int[n];
+        bool anyInactive = false;
+        for (int i = 0; i < n; i++)
+        {
+            if ((includedMask & (1UL << i)) == 0)
+            {
+                anyInactive = true;
+            }
+            else
+            {
+                labels[i] = 1;
+            }
+        }
+
+        int maxWidth = 1 + (2 * n);
+        int[] nextLabels = EnsureScratch(ref _scratchNextLabels, n);
+        int[] order = EnsureScratch(ref _scratchOrder, n);
+        int[] perm = EnsureScratch(ref _scratchPerm, n);
+        int[] sig = EnsureScratch(ref _scratchSig, n * maxWidth);
 
         bool changed;
         do
         {
-            changed = false;
-            int classCount = labels.Max() + 1;
-            var signatures = new IntSequenceKey[_n];
-            for (int i = 0; i < _n; i++)
+            int classCount = 0;
+            for (int i = 0; i < n; i++)
             {
-                signatures[i] = (includedMask & Bit(i)) == 0
-                    ? InactiveSignature
-                    : BuildElementSignature(labels[i], _ancestors[i] & includedMask, _descendants[i] & includedMask, labels, classCount);
+                if (labels[i] > classCount)
+                    classCount = labels[i];
+            }
+            classCount++;
+            int width = 1 + (2 * classCount);
+
+            // Build a per-element signature slice: [currentLabel, ancestor-counts-by-class,
+            // descendant-counts-by-class]. Inactive elements are excluded here; they always
+            // sort ahead of every active signature and therefore always receive color 0.
+            int activeCount = 0;
+            for (int i = 0; i < n; i++)
+            {
+                if ((includedMask & (1UL << i)) == 0)
+                    continue;
+
+                int baseIdx = activeCount * width;
+                for (int t = 0; t < width; t++)
+                    sig[baseIdx + t] = 0;
+                sig[baseIdx] = labels[i];
+
+                ulong anc = _ancestors[i] & includedMask;
+                while (anc != 0)
+                {
+                    int b = BitOperations.TrailingZeroCount(anc);
+                    anc &= anc - 1;
+                    sig[baseIdx + 1 + labels[b]]++;
+                }
+
+                ulong desc = _descendants[i] & includedMask;
+                while (desc != 0)
+                {
+                    int b = BitOperations.TrailingZeroCount(desc);
+                    desc &= desc - 1;
+                    sig[baseIdx + 1 + classCount + labels[b]]++;
+                }
+
+                order[activeCount] = i;
+                perm[activeCount] = activeCount;
+                activeCount++;
             }
 
-            var orderedSignatures = signatures
-                .Distinct()
-                .OrderBy(signature => signature)
-                .ToList();
+            // Insertion sort the active positions by lexicographic signature order (activeCount
+            // is at most 64, so the quadratic sort is negligible and allocation-free).
+            for (int a = 1; a < activeCount; a++)
+            {
+                int keyPos = perm[a];
+                int b = a - 1;
+                while (b >= 0 && CompareSignatures(sig, perm[b], keyPos, width) > 0)
+                {
+                    perm[b + 1] = perm[b];
+                    b--;
+                }
 
-            var signatureToColor = new Dictionary<IntSequenceKey, int>(orderedSignatures.Count);
-            for (int index = 0; index < orderedSignatures.Count; index++)
-                signatureToColor[orderedSignatures[index]] = index;
+                perm[b + 1] = keyPos;
+            }
 
-            var nextLabels = signatures.Select(signature => signatureToColor[signature]).ToArray();
-            changed = !labels.SequenceEqual(nextLabels);
-            labels = nextLabels;
+            for (int i = 0; i < n; i++)
+                nextLabels[i] = 0;
+
+            int color = anyInactive ? 1 : 0;
+            for (int r = 0; r < activeCount; r++)
+            {
+                if (r > 0 && CompareSignatures(sig, perm[r - 1], perm[r], width) != 0)
+                    color++;
+                nextLabels[order[perm[r]]] = color;
+            }
+
+            changed = false;
+            for (int i = 0; i < n; i++)
+            {
+                if (labels[i] != nextLabels[i])
+                {
+                    changed = true;
+                    break;
+                }
+            }
+
+            if (changed)
+                Array.Copy(nextLabels, labels, n);
         }
         while (changed);
 
@@ -303,61 +405,79 @@ class ComparisonState
 
     private IntSequenceKey BuildCanonicalKey(ulong includedMask, IReadOnlyList<int> labels)
     {
-        var includedClassIds = Enumerable.Range(0, _n)
-            .Where(i => (includedMask & Bit(i)) != 0)
-            .Select(i => labels[i])
-            .Distinct()
-            .OrderBy(x => x)
-            .ToList();
-
-        var parts = new List<int> { includedClassIds.Count };
-        foreach (int classId in includedClassIds)
+        int n = _n;
+        Span<bool> present = stackalloc bool[n];
+        ulong remaining = includedMask;
+        while (remaining != 0)
         {
-            var members = Enumerable.Range(0, _n)
-                .Where(i => (includedMask & Bit(i)) != 0 && labels[i] == classId)
-                .ToList();
+            int i = BitOperations.TrailingZeroCount(remaining);
+            remaining &= remaining - 1;
+            present[labels[i]] = true;
+        }
 
-            parts.Add(members.Count);
-            parts.Add(1);
+        Span<int> classIds = stackalloc int[n];
+        int classCount = 0;
+        for (int c = 0; c < n; c++)
+        {
+            if (present[c])
+                classIds[classCount++] = c;
+        }
 
-            foreach (int otherClass in includedClassIds)
+        var parts = new List<int> { classCount };
+        Span<int> members = stackalloc int[n];
+        Span<int> counts = stackalloc int[n];
+        for (int ci = 0; ci < classCount; ci++)
+        {
+            int classId = classIds[ci];
+            int memberCount = 0;
+            ulong memberMask = includedMask;
+            while (memberMask != 0)
             {
-                var counts = members
-                    .Select(member => CountNeighborsWithLabel(_ancestors[member] & includedMask, labels, otherClass))
-                    .OrderBy(x => x);
-                parts.AddRange(counts);
+                int i = BitOperations.TrailingZeroCount(memberMask);
+                memberMask &= memberMask - 1;
+                if (labels[i] == classId)
+                    members[memberCount++] = i;
             }
 
-            foreach (int otherClass in includedClassIds)
+            parts.Add(memberCount);
+            parts.Add(1);
+
+            for (int phase = 0; phase < 2; phase++)
             {
-                var counts = members
-                    .Select(member => CountNeighborsWithLabel(_descendants[member] & includedMask, labels, otherClass))
-                    .OrderBy(x => x);
-                parts.AddRange(counts);
+                for (int oci = 0; oci < classCount; oci++)
+                {
+                    int otherClass = classIds[oci];
+                    for (int mi = 0; mi < memberCount; mi++)
+                    {
+                        int member = members[mi];
+                        ulong neighborMask = (phase == 0 ? _ancestors[member] : _descendants[member]) & includedMask;
+                        counts[mi] = CountNeighborsWithLabel(neighborMask, labels, otherClass);
+                    }
+
+                    InsertionSort(counts, memberCount);
+                    for (int mi = 0; mi < memberCount; mi++)
+                        parts.Add(counts[mi]);
+                }
             }
         }
 
         return new IntSequenceKey(parts.ToArray());
     }
 
-    private static IntSequenceKey BuildElementSignature(
-        int currentLabel,
-        ulong ancestorMask,
-        ulong descendantMask,
-        IReadOnlyList<int> labels,
-        int classCount)
+    private static void InsertionSort(Span<int> values, int count)
     {
-        int[] parts = new int[1 + (2 * classCount)];
-        parts[0] = currentLabel;
-        AddNeighborCounts(parts, 1, ancestorMask, labels);
-        AddNeighborCounts(parts, 1 + classCount, descendantMask, labels);
-        return new IntSequenceKey(parts);
-    }
+        for (int a = 1; a < count; a++)
+        {
+            int key = values[a];
+            int b = a - 1;
+            while (b >= 0 && values[b] > key)
+            {
+                values[b + 1] = values[b];
+                b--;
+            }
 
-    private static void AddNeighborCounts(int[] target, int offset, ulong mask, IReadOnlyList<int> labels)
-    {
-        foreach (int item in EnumerateBits(mask))
-            target[offset + labels[item]]++;
+            values[b + 1] = key;
+        }
     }
 
     public bool IsActive(int item)
