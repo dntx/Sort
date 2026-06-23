@@ -668,6 +668,34 @@ public sealed class StrategyRegressionTests
             compact.SearchStatistics.OutputStates <= expectedOutputStatesCap,
             $"compact output states regressed to {compact.SearchStatistics.OutputStates}");
     }
+
+    // Searched-state monitor for the compact pass. Compact runs a second, less-prunable
+    // search on top of phase 1, so its searched-state count is the main lever for its cost.
+    // These caps pin the current work so that future algorithm changes surface any regression
+    // (an increase) or improvement (which should be ratcheted down here) as an explicit diff.
+    // Values are deterministic; update them deliberately when the search work legitimately
+    // changes.
+    [Theory]
+    [InlineData(9, 3, 3, 168)]
+    [InlineData(11, 3, 3, 719)]
+    [InlineData(12, 4, 4, 708)]
+    [InlineData(10, 3, 4, 1536)]
+    [InlineData(12, 4, 3, 137)]
+    [InlineData(12, 3, 3, 989)]
+    [InlineData(8, 4, 2, 7)]
+    [InlineData(10, 3, 5, 1436)]
+    [InlineData(13, 4, 3, 146)]
+    public void Compact_SearchedStateCountStaysWithinBaseline(int n, int m, int k, int searchedStateCap)
+    {
+        StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
+            $"StrategyBuilder.GenerateCompact({n}, {m}, {k})",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.GenerateCompact(n, m, k, cancellationToken));
+
+        Assert.True(
+            compact.SearchStatistics.SearchedStates <= searchedStateCap,
+            $"compact searched states regressed to {compact.SearchStatistics.SearchedStates} (cap {searchedStateCap})");
+    }
 }
 
 internal static class StrategyTestHelpers
