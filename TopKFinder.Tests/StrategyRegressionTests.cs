@@ -325,10 +325,15 @@ public sealed class StrategyRegressionTests
         const string expected = """
             n=5, m=3, k=2
             elapsed = <elapsed>
+              phases: <phases>
             max step = 3
             searched states = 4
             pending states = 0 (peak 2)
             output states = 4 (expanded 2)
+            lower-bound states = 1, feasible-top-set states = 3
+            outcomes constructed = 12 (duplicate skips 3, merged collisions 1)
+            lower-bound prunes = 2
+            cache hits = exact 0, lower-bound 0, feasible-top-set 8, best-group-pattern 2
 
             S1 [step 1/3] sort(#1, #2, #3)
               #1 > #2 > #3: [+ (), - (#3), fixed (), possible (#1, #2, #4, #5)]
@@ -790,8 +795,16 @@ internal static class StrategyTestHelpers
     {
         string normalized = rendered.Replace("\r\n", "\n").TrimEnd();
         string[] lines = normalized.Split('\n');
-        if (lines.Length > 1 && lines[1].StartsWith("elapsed = ", StringComparison.Ordinal))
-            lines[1] = "elapsed = <elapsed>";
+        for (int i = 0; i < lines.Length; i++)
+        {
+            // Wall-clock timing lines are inherently non-deterministic; canonicalize them so
+            // snapshot/determinism comparisons only assert on the deterministic counters.
+            if (lines[i].StartsWith("elapsed = ", StringComparison.Ordinal))
+                lines[i] = "elapsed = <elapsed>";
+            else if (lines[i].StartsWith("  phases: ", StringComparison.Ordinal))
+                lines[i] = "  phases: <phases>";
+        }
+
         return string.Join("\n", lines);
     }
 

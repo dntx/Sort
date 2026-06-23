@@ -58,6 +58,7 @@ partial class StrategyBuilder
 
     private ComparisonOutcome CreateComparisonOutcome(ComparisonState state, int remainingSlots, OrderFamilyDescriptor orderFamily)
     {
+        _outcomesConstructed++;
         ComparisonState next = state.Clone();
         next.ApplyOrder(orderFamily.RepresentativeOrderItems);
         next.Eliminate(remainingSlots);
