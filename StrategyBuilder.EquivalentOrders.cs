@@ -579,14 +579,14 @@ partial class StrategyBuilder
                 representativeOrder.ToArray(),
                 representativePositions);
 
-            return new EquivalentOrderSummary(totalCount - 1, summary.PatternText, $"{summary.TotalCountFormula} - 1");
+            return new EquivalentOrderSummary(totalCount, summary.PatternText, summary.TotalCountFormula);
         }
 
         string patternText = orderFamilies.Count == 1
             ? orderFamilies[0].PatternText
             : "(" + string.Join(" | ", orderFamilies.Select(family => family.PatternText)) + ")";
-        string countFormula = $"{CombineFormulaParts(orderFamilies.Select(family => family.CountFormula).ToList())} - 1";
-        return new EquivalentOrderSummary(totalCount - 1, patternText, countFormula);
+        string countFormula = CombineFormulaParts(orderFamilies.Select(family => family.CountFormula).ToList());
+        return new EquivalentOrderSummary(totalCount, patternText, countFormula);
     }
 
     private static string FormatBraceSet(IEnumerable<int> items)
