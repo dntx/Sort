@@ -10,6 +10,9 @@ partial class StrategyBuilder
     // (a proxy for the displayed output-state count). This lets us measure whether a
     // global "prefer the simplest equally-optimal solution" rule shrinks the trees.
     private bool _useCompactSelection;
+    private int _compactStatesSolved;
+    private int _compactGroupsEnumerated;
+    private int _compactStepOptimalGroups;
     private readonly Dictionary<SearchStateKey, BestGroupPattern> _compactGroupPatternCache = new();
     private readonly Dictionary<SearchStateKey, int> _compactCostMemo = new();
 
@@ -50,6 +53,7 @@ partial class StrategyBuilder
         _compactCostMemo[key] = int.MaxValue;
 
         int optimalSteps = GetMinWorstCaseSteps(state, remainingSlots);
+        _compactStatesSolved++;
 
         var candidates = state.GetActiveItemsOrdered();
         int groupSize = Math.Min(_m, candidates.Count);
@@ -105,10 +109,12 @@ partial class StrategyBuilder
         foreach (var group in EnumerateDistinctGroups(candidates, groupSize, labels))
         {
             ThrowIfCancellationRequested();
+            _compactGroupsEnumerated++;
 
             var children = GetStepOptimalChildren(group);
             if (children is null)
                 continue;
+            _compactStepOptimalGroups++;
 
             // A group cannot beat the incumbent if even its minimal possible cost (one
             // node per child) reaches it.

@@ -19,12 +19,21 @@ static class StrategyTextRenderer
 
     public static void Render(StrategyPlan plan, TextWriter writer)
     {
+        var stats = plan.SearchStatistics;
+        var diag = stats.Diagnostics;
         writer.WriteLine($"n={plan.N}, m={plan.M}, k={plan.K}");
         writer.WriteLine($"elapsed = {plan.Elapsed.TotalMilliseconds:F1} ms");
+        writer.WriteLine($"  phases: exact-step = {stats.Phase1Milliseconds} ms, compact = {stats.Phase1bMilliseconds} ms, build = {stats.Phase2Milliseconds} ms");
         writer.WriteLine($"max step = {plan.MaxStep}");
-        writer.WriteLine($"searched states = {plan.SearchStatistics.SearchedStates}");
-        writer.WriteLine($"pending states = {plan.SearchStatistics.PendingStates} (peak {plan.SearchStatistics.PeakPendingStates})");
-        writer.WriteLine($"output states = {plan.SearchStatistics.OutputStates} (expanded {plan.SearchStatistics.ExpandedOutputStates})");
+        writer.WriteLine($"searched states = {stats.SearchedStates}");
+        writer.WriteLine($"pending states = {stats.PendingStates} (peak {stats.PeakPendingStates})");
+        writer.WriteLine($"output states = {stats.OutputStates} (expanded {stats.ExpandedOutputStates})");
+        writer.WriteLine($"lower-bound states = {stats.LowerBoundStates}, feasible-top-set states = {stats.FeasibleTopSetStates}");
+        writer.WriteLine($"outcomes constructed = {stats.OutcomesConstructed} (duplicate skips {diag.DuplicateOutcomeSkips}, merged collisions {diag.MergedOutcomeCollisions})");
+        writer.WriteLine($"lower-bound prunes = {diag.LowerBoundPrunes}");
+        writer.WriteLine($"cache hits = exact {diag.ExactCacheHits}, lower-bound {diag.LowerBoundCacheHits}, feasible-top-set {diag.FeasibleTopSetCacheHits}, best-group-pattern {diag.BestGroupPatternCacheHits}");
+        if (stats.CompactStatesSolved > 0)
+            writer.WriteLine($"compact pass = {stats.CompactStatesSolved} states solved, {stats.CompactGroupsEnumerated} groups enumerated ({stats.CompactStepOptimalGroups} step-optimal)");
         writer.WriteLine();
         var depthIndex = StrategyDepthIndex.Build(plan.Root);
         RenderNode(plan.Root, plan.K, writer, 0, depthIndex);

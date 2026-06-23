@@ -34,6 +34,10 @@ partial class StrategyBuilder
     private int _lowerBoundCacheHits;
     private int _feasibleTopSetCacheHits;
     private int _bestGroupPatternCacheHits;
+    private int _outcomesConstructed;
+    private long _phase1Milliseconds;
+    private long _phase1bMilliseconds;
+    private long _phase2Milliseconds;
     private bool _rootSearchInitialized;
 
     public StrategyBuilder(int n, int m, int k, CancellationToken cancellationToken = default, Action<SearchProgressSnapshot>? progressCallback = null)
@@ -53,14 +57,17 @@ partial class StrategyBuilder
         // Phase 1: solve the exact minimum worst-case cost for every reachable state,
         // caching the optimal comparison-group pattern per state along the way.
         _ = GetMinWorstCaseSteps(new ComparisonState(_n), _k);
+        _phase1Milliseconds = stopwatch.ElapsedMilliseconds;
 
         // Optional phase 1b (PoC): among equally-optimal groups, choose the ones that
         // minimize the materialized subtree size (a proxy for displayed output states).
         if (_useCompactSelection)
             _ = SolveCompactSelection(new ComparisonState(_n), _k);
+        _phase1bMilliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds;
 
         // Phase 2: materialize the strategy tree, reusing the cached group patterns.
         var root = BuildState(new ComparisonState(_n), 0, _k, 1);
+        _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds - _phase1bMilliseconds;
         stopwatch.Stop();
         ReportProgress(force: true);
         return new StrategyPlan(_n, _m, _k, root, stopwatch.Elapsed, CreateSearchStatistics());
@@ -357,7 +364,14 @@ partial class StrategyBuilder
                 _exactCacheHits,
                 _lowerBoundCacheHits,
                 _feasibleTopSetCacheHits,
-                _bestGroupPatternCacheHits));
+                _bestGroupPatternCacheHits),
+            _phase1Milliseconds,
+            _phase1bMilliseconds,
+            _phase2Milliseconds,
+            _outcomesConstructed,
+            _compactStatesSolved,
+            _compactGroupsEnumerated,
+            _compactStepOptimalGroups);
     }
 
     private void ReportProgress(bool force = false)

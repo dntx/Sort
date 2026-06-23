@@ -164,7 +164,14 @@ sealed class SearchStatistics
         int expandedOutputStates,
         int lowerBoundStates,
         int feasibleTopSetStates,
-        SearchDiagnostics diagnostics)
+        SearchDiagnostics diagnostics,
+        long phase1Milliseconds,
+        long phase1bMilliseconds,
+        long phase2Milliseconds,
+        int outcomesConstructed,
+        int compactStatesSolved,
+        int compactGroupsEnumerated,
+        int compactStepOptimalGroups)
     {
         SearchedStates = searchedStates;
         PendingStates = pendingStates;
@@ -174,6 +181,13 @@ sealed class SearchStatistics
         LowerBoundStates = lowerBoundStates;
         FeasibleTopSetStates = feasibleTopSetStates;
         Diagnostics = diagnostics;
+        Phase1Milliseconds = phase1Milliseconds;
+        Phase1bMilliseconds = phase1bMilliseconds;
+        Phase2Milliseconds = phase2Milliseconds;
+        OutcomesConstructed = outcomesConstructed;
+        CompactStatesSolved = compactStatesSolved;
+        CompactGroupsEnumerated = compactGroupsEnumerated;
+        CompactStepOptimalGroups = compactStepOptimalGroups;
     }
 
     public int SearchedStates { get; }
@@ -184,6 +198,24 @@ sealed class SearchStatistics
     public int LowerBoundStates { get; }
     public int FeasibleTopSetStates { get; }
     public SearchDiagnostics Diagnostics { get; }
+
+    // Per-phase wall-clock split (ms): phase 1 is the exact worst-case step search shared
+    // with the default builder, phase 1b is the optional compact selection pass, and phase 2
+    // materializes the strategy tree. Useful for spotting which phase dominates a given run.
+    public long Phase1Milliseconds { get; }
+    public long Phase1bMilliseconds { get; }
+    public long Phase2Milliseconds { get; }
+
+    // Total ComparisonOutcome instances constructed (Clone + ApplyOrder + Eliminate +
+    // Normalize). Paired with Diagnostics.DuplicateOutcomeSkips this exposes how many
+    // constructed outcomes were discarded as duplicates -- the dominant search cost.
+    public int OutcomesConstructed { get; }
+
+    // Compact-pass-only counters (zero unless the compact selection is enabled). The shared
+    // SearchedStates/OutputStates totals do not otherwise reflect the compact pass's work.
+    public int CompactStatesSolved { get; }
+    public int CompactGroupsEnumerated { get; }
+    public int CompactStepOptimalGroups { get; }
 }
 
 sealed class StrategyNode
