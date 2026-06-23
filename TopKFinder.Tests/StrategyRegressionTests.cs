@@ -688,7 +688,7 @@ public sealed class StrategyRegressionTests
     [InlineData(12, 4, 3, 137)]
     [InlineData(12, 3, 3, 989)]
     [InlineData(8, 4, 2, 7)]
-    [InlineData(10, 3, 5, 1436)]
+    [InlineData(10, 3, 5, 1434)]
     [InlineData(13, 4, 3, 146)]
     public void Compact_SearchedStateCountStaysWithinBaseline(int n, int m, int k, int searchedStateCap)
     {
@@ -714,8 +714,8 @@ public sealed class StrategyRegressionTests
     [InlineData(12, 3, 3, 959)]
     [InlineData(12, 4, 4, 504)]
     [InlineData(12, 4, 3, 84)]
-    [InlineData(10, 3, 4, 849)]
-    [InlineData(10, 3, 5, 1311)]
+    [InlineData(10, 3, 4, 847)]
+    [InlineData(10, 3, 5, 1309)]
     [InlineData(13, 4, 3, 143)]
     [InlineData(8, 4, 2, 6)]
     [InlineData(9, 4, 3, 20)]
@@ -742,20 +742,26 @@ public sealed class StrategyRegressionTests
     // more so than searched states, since most constructed outcomes are duplicates discarded
     // afterwards. These caps pin the current deterministic count so future algorithm changes
     // surface any regression (an increase) or improvement (a deliberate cap update) as a diff.
+    // Caps are the current deterministic counts; ratchet them down when an optimization cuts
+    // construction. The lean search-path order enumerator can visit a group's representative
+    // orders in a different sequence than the display-path family enumerator, which shifts when
+    // the worst-case-step branch-and-bound exits early, so a few k>m caps move up slightly even
+    // though the search results (and the snapshot/output-state monitors) are byte-identical; the
+    // net effect on heavy cases is a large reduction in both outcomes and wall-clock time.
     [Theory]
-    [InlineData(9, 3, 3, 2171)]
-    [InlineData(11, 3, 3, 16275)]
-    [InlineData(12, 3, 3, 46544)]
-    [InlineData(12, 4, 4, 46912)]
-    [InlineData(12, 4, 3, 1581)]
-    [InlineData(10, 3, 4, 39913)]
-    [InlineData(10, 3, 5, 71005)]
-    [InlineData(13, 4, 3, 4706)]
+    [InlineData(9, 3, 3, 2169)]
+    [InlineData(11, 3, 3, 16263)]
+    [InlineData(12, 3, 3, 46536)]
+    [InlineData(12, 4, 4, 46323)]
+    [InlineData(12, 4, 3, 1515)]
+    [InlineData(10, 3, 4, 39969)]
+    [InlineData(10, 3, 5, 71095)]
+    [InlineData(13, 4, 3, 4581)]
     [InlineData(8, 4, 2, 7)]
-    [InlineData(9, 4, 3, 159)]
-    [InlineData(8, 3, 4, 1148)]
-    [InlineData(9, 3, 4, 6372)]
-    [InlineData(10, 3, 6, 37317)]
+    [InlineData(9, 4, 3, 149)]
+    [InlineData(8, 3, 4, 1154)]
+    [InlineData(9, 3, 4, 6395)]
+    [InlineData(10, 3, 6, 37362)]
     [InlineData(5, 3, 2, 12)]
     [InlineData(10, 2, 2, 1028)]
     public void Default_OutcomesConstructedStaysWithinBaseline(int n, int m, int k, int outcomesCap)
@@ -776,15 +782,15 @@ public sealed class StrategyRegressionTests
     // current deterministic counts -- ratchet them down when an optimization legitimately cuts
     // outcome construction.
     [Theory]
-    [InlineData(9, 3, 3, 6165)]
-    [InlineData(11, 3, 3, 34023)]
-    [InlineData(12, 4, 4, 67051)]
-    [InlineData(10, 3, 4, 101744)]
-    [InlineData(12, 4, 3, 6104)]
-    [InlineData(12, 3, 3, 47687)]
-    [InlineData(8, 4, 2, 28)]
-    [InlineData(10, 3, 5, 80138)]
-    [InlineData(13, 4, 3, 5039)]
+    [InlineData(9, 3, 3, 6159)]
+    [InlineData(11, 3, 3, 34004)]
+    [InlineData(12, 4, 4, 66374)]
+    [InlineData(10, 3, 4, 101817)]
+    [InlineData(12, 4, 3, 5928)]
+    [InlineData(12, 3, 3, 47679)]
+    [InlineData(8, 4, 2, 24)]
+    [InlineData(10, 3, 5, 80229)]
+    [InlineData(13, 4, 3, 4912)]
     public void Compact_OutcomesConstructedStaysWithinBaseline(int n, int m, int k, int outcomesCap)
     {
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
