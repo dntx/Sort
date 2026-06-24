@@ -98,6 +98,12 @@ class Program
             return false;
         }
 
+        if (m > n)
+        {
+            error = "Error: m must be <= n";
+            return false;
+        }
+
         error = null;
         return true;
     }
