@@ -484,7 +484,7 @@ class MainForm : Form
         _depthIndex = StrategyDepthIndex.Build(plan.Root);
 
         var root = new TreeNode(
-            $"n={plan.N}, m={plan.M}, k={plan.K}, elapsed={plan.Elapsed.TotalMilliseconds:F1} ms, max step={plan.MaxStep}, searched={plan.SearchStatistics.SearchedStates}, peak pending={plan.SearchStatistics.PeakPendingStates}")
+            $"n={plan.N}, m={plan.M}, k={plan.K}, elapsed={plan.Elapsed.TotalMilliseconds:F1} ms, worst-case steps={plan.MaxStep}, searched={plan.SearchStatistics.SearchedStates}, peak pending={plan.SearchStatistics.PeakPendingStates}")
         {
             Tag = BuildPlanDetails(plan),
             NodeFont = new Font(_treeView.Font, FontStyle.Bold),
@@ -852,7 +852,7 @@ class MainForm : Form
     private void UpdateSummaryText(StrategyPlan plan)
     {
         _summaryLabel.Text =
-            $"n={plan.N}, m={plan.M}, k={plan.K}, elapsed={plan.Elapsed.TotalMilliseconds:F1} ms, max step={plan.MaxStep}, " +
+            $"n={plan.N}, m={plan.M}, k={plan.K}, elapsed={plan.Elapsed.TotalMilliseconds:F1} ms, worst-case steps={plan.MaxStep}, " +
             $"{FormatSearchStatsSummary(plan.SearchStatistics)}, {FormatDiagnosticsSummary(plan.SearchStatistics.Diagnostics)}.";
     }
 
@@ -983,7 +983,7 @@ class MainForm : Form
             foreach (SearchMilestone milestone in diagnostics.RootIncumbents)
             {
                 lines.Add(
-                    $"  {milestone.ElapsedMilliseconds / 1000.0:F1}s: max step <= {milestone.BestWorstCaseSteps} via {milestone.ComparisonGroupText} " +
+                    $"  {milestone.ElapsedMilliseconds / 1000.0:F1}s: worst-case steps <= {milestone.BestWorstCaseSteps} via {milestone.ComparisonGroupText} " +
                     $"(searched {milestone.SearchedStates}, pending {milestone.PendingStates}, peak {milestone.PeakPendingStates}, output {milestone.OutputStates}, prunes {milestone.LowerBoundPrunes})");
             }
         }
@@ -1008,7 +1008,7 @@ class MainForm : Form
         else
         {
             SearchMilestone latest = snapshot.LatestRootIncumbent;
-            lines.Add($"latest incumbent: max step <= {latest.BestWorstCaseSteps} via {latest.ComparisonGroupText}");
+            lines.Add($"latest incumbent: worst-case steps <= {latest.BestWorstCaseSteps} via {latest.ComparisonGroupText}");
             lines.Add(
                 $"  found at t={latest.ElapsedMilliseconds / 1000.0:F1}s, searched={latest.SearchedStates}, output={latest.OutputStates}, prunes={latest.LowerBoundPrunes}");
         }
