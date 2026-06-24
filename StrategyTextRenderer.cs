@@ -70,14 +70,12 @@ static class StrategyTextRenderer
                 return;
             case StrategyNodeKind.Decision:
                 int maxStep = depthIndex.SubtreeMaxStep(node);
+                writer.WriteLine($"{prefix}S{node.StateId} [step {node.Step}/{maxStep}] sort({FormatSet(node.Group)})");
                 if (node.FinalChoice is not null)
                 {
-                    writer.WriteLine($"{prefix}[step {node.Step}/{maxStep}] sort({FormatSet(node.Group)})");
                     writer.WriteLine($"{prefix}  {FormatCompressedFinalChoice(node.FinalChoice, k)}");
                     return;
                 }
-
-                writer.WriteLine($"{prefix}S{node.StateId} [step {node.Step}/{maxStep}] sort({FormatSet(node.Group)})");
 
                 foreach (var branch in node.Branches)
                 {

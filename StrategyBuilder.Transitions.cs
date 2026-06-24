@@ -8,10 +8,61 @@ partial class StrategyBuilder
     {
         ThrowIfCancellationRequested();
 
-        return chosenGroup.Branches
-            .OrderBy(branch => branch.RepresentativeOrder, StringComparer.Ordinal)
-            .Select(branch => BuildTransitionBranch(state, fixedTopMask, branch, nextStep))
+        // A merged branch groups every order family whose outcome maps to the same
+        // display-canonical next state. Two very different situations land here:
+        //
+        //   1. A genuine relabeling-symmetry orbit. The merged orderings are interchangeable
+        //      (e.g. the three triple-winners #1, #4, #7), so the pattern engine unifies them
+        //      into one disjunction-free template such as "permute {#1, #4, #7}". These stay a
+        //      single branch; showing the representative effect (up to relabeling) is honest.
+        //
+        //   2. Distinct orderings that merely converge to isomorphic (but differently-labeled)
+        //      next states (e.g. sort(#2, #4, #5) where #4 > #5 is already known). The pattern
+        //      engine cannot unify them and falls back to a disjunction "(… | …)" with a partial
+        //      "permute", which reads like a false symmetry claim and hides the per-ordering
+        //      effect. We split these into one branch per family so each shows its own effect;
+        //      the shared result subtree is materialized once under the first branch (build order
+        //      follows display order) and the rest become →S references with a relabel map via
+        //      the existing BuildState dedup.
+        var specs = new List<BranchSpec>();
+        foreach (MergedBranch merged in chosenGroup.Branches)
+        {
+            List<MergedFamilyOutcome> families = merged.FamilyOutcomes;
+            EquivalentOrderSummary? combinedSummary = BuildEquivalentOrderSummary(
+                families.Select(outcome => outcome.Family).ToList());
+
+            if (MergedOrderingsFormSingleOrbit(combinedSummary))
+            {
+                MergedFamilyOutcome representative = families[0];
+                specs.Add(new BranchSpec(representative.Family.RepresentativeOrder, representative, combinedSummary));
+            }
+            else
+            {
+                foreach (MergedFamilyOutcome outcome in families)
+                {
+                    EquivalentOrderSummary? familySummary = BuildEquivalentOrderSummary(
+                        new List<OrderFamilyDescriptor> { outcome.Family });
+                    specs.Add(new BranchSpec(outcome.Family.RepresentativeOrder, outcome, familySummary));
+                }
+            }
+        }
+
+        return specs
+            .OrderBy(spec => spec.OrderText, StringComparer.Ordinal)
+            .Select(spec => BuildTransitionBranch(state, fixedTopMask, spec, nextStep))
             .ToList();
+    }
+
+    // A single ordering (no summary) or a summary whose pattern is one disjunction-free symmetry
+    // template describes a genuine relabeling orbit, so it stays a single branch. The pattern
+    // engine emits the " | " separator only when the merged orderings cannot be unified into one
+    // template (distinct orderings that merely converge to isomorphic next states); those are
+    // split. " | " is exclusively the engine's disjunction separator (all other segment joins use
+    // " > ").
+    private static bool MergedOrderingsFormSingleOrbit(EquivalentOrderSummary? combinedSummary)
+    {
+        return combinedSummary is null
+            || !combinedSummary.PatternText.Contains(" | ", StringComparison.Ordinal);
     }
 
     private void AddMergedBranch(
@@ -22,28 +73,30 @@ partial class StrategyBuilder
     {
         ulong nextFixedTopMask = fixedTopMask | outcome.AddedFixedTopMask;
         IntSequenceKey nextKey = state.GetDisplayCanonicalKey(nextFixedTopMask);
+        var familyOutcome = new MergedFamilyOutcome(
+            outcome.OrderFamily!,
+            outcome.NextState,
+            nextFixedTopMask,
+            outcome.NextRemainingSlots);
 
         if (!groupedBranches.TryGetValue(nextKey, out MergedBranch? branch))
         {
-            groupedBranches[nextKey] = new MergedBranch(
-                outcome.NextState,
-                nextFixedTopMask,
-                outcome.NextRemainingSlots,
-                outcome.OrderFamily!);
+            groupedBranches[nextKey] = new MergedBranch(familyOutcome);
             return;
         }
 
-        branch.AddOrderFamily(outcome.OrderFamily!);
+        branch.AddFamilyOutcome(familyOutcome);
         _mergedOutcomeCollisions++;
     }
 
-    private StrategyBranch BuildTransitionBranch(ComparisonState state, ulong fixedTopMask, MergedBranch branch, int nextStep)
+    private StrategyBranch BuildTransitionBranch(ComparisonState state, ulong fixedTopMask, BranchSpec spec, int nextStep)
     {
+        MergedFamilyOutcome outcome = spec.Outcome;
         return new StrategyBranch(
-            branch.RepresentativeOrder,
-            BuildEquivalentOrderSummary(branch.OrderFamilies),
-            BuildComparisonEffect(state, fixedTopMask, branch.NextState, branch.NextFixedTopMask),
-            BuildState(branch.NextState, branch.NextFixedTopMask, branch.NextRemainingSlots, nextStep));
+            spec.OrderText,
+            spec.Summary,
+            BuildComparisonEffect(state, fixedTopMask, outcome.NextState, outcome.NextFixedTopMask),
+            BuildState(outcome.NextState, outcome.NextFixedTopMask, outcome.NextRemainingSlots, nextStep));
     }
 
     private StrategyEffect BuildComparisonEffect(ComparisonState before, ulong beforeFixedTopMask, ComparisonState after, ulong afterFixedTopMask)
@@ -139,27 +192,53 @@ partial class StrategyBuilder
             yield return CreateComparisonOutcome(state, remainingSlots, order, null);
     }
 
+    private readonly struct BranchSpec
+    {
+        public BranchSpec(string orderText, MergedFamilyOutcome outcome, EquivalentOrderSummary? summary)
+        {
+            OrderText = orderText;
+            Outcome = outcome;
+            Summary = summary;
+        }
+
+        public string OrderText { get; }
+        public MergedFamilyOutcome Outcome { get; }
+        public EquivalentOrderSummary? Summary { get; }
+    }
+
     private sealed class MergedBranch
     {
-        public ComparisonState NextState { get; }
-        public ulong NextFixedTopMask { get; }
-        public int NextRemainingSlots { get; }
-        public string RepresentativeOrder { get; }
-        public List<OrderFamilyDescriptor> OrderFamilies { get; }
+        public List<MergedFamilyOutcome> FamilyOutcomes { get; }
 
-        public MergedBranch(ComparisonState nextState, ulong nextFixedTopMask, int nextRemainingSlots, OrderFamilyDescriptor representativeFamily)
+        public MergedBranch(MergedFamilyOutcome firstOutcome)
         {
+            FamilyOutcomes = new List<MergedFamilyOutcome> { firstOutcome };
+        }
+
+        public void AddFamilyOutcome(MergedFamilyOutcome outcome)
+        {
+            FamilyOutcomes.Add(outcome);
+        }
+    }
+
+    private sealed class MergedFamilyOutcome
+    {
+        public MergedFamilyOutcome(
+            OrderFamilyDescriptor family,
+            ComparisonState nextState,
+            ulong nextFixedTopMask,
+            int nextRemainingSlots)
+        {
+            Family = family;
             NextState = nextState;
             NextFixedTopMask = nextFixedTopMask;
             NextRemainingSlots = nextRemainingSlots;
-            RepresentativeOrder = representativeFamily.RepresentativeOrder;
-            OrderFamilies = new List<OrderFamilyDescriptor> { representativeFamily };
         }
 
-        public void AddOrderFamily(OrderFamilyDescriptor orderFamily)
-        {
-            OrderFamilies.Add(orderFamily);
-        }
+        public OrderFamilyDescriptor Family { get; }
+        public ComparisonState NextState { get; }
+        public ulong NextFixedTopMask { get; }
+        public int NextRemainingSlots { get; }
     }
 
     private sealed class ComparisonOutcome
