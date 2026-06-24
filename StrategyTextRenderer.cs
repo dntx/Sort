@@ -32,15 +32,15 @@ static class StrategyTextRenderer
 
         // Diagnostics: internal search-engine telemetry, grouped so it does not crowd the summary.
         writer.WriteLine(Banner("diagnostics"));
-        writer.WriteLine($"  searched states = {stats.SearchedStates}");
-        writer.WriteLine($"  pending states = {stats.PendingStates} (peak {stats.PeakPendingStates})");
-        writer.WriteLine($"  output states = {stats.OutputStates} (expanded {stats.ExpandedOutputStates})");
-        writer.WriteLine($"  lower-bound states = {stats.LowerBoundStates}, feasible-top-set states = {stats.FeasibleTopSetStates}");
-        writer.WriteLine($"  outcomes constructed = {stats.OutcomesConstructed} (duplicate skips {diag.DuplicateOutcomeSkips}, merged collisions {diag.MergedOutcomeCollisions})");
-        writer.WriteLine($"  lower-bound prunes = {diag.LowerBoundPrunes}");
-        writer.WriteLine($"  cache hits = exact {diag.ExactCacheHits}, lower-bound {diag.LowerBoundCacheHits}, feasible-top-set {diag.FeasibleTopSetCacheHits}, best-group-pattern {diag.BestGroupPatternCacheHits}");
+        writer.WriteLine($"searched states = {stats.SearchedStates}");
+        writer.WriteLine($"pending states = {stats.PendingStates} (peak {stats.PeakPendingStates})");
+        writer.WriteLine($"output states = {stats.OutputStates} (expanded {stats.ExpandedOutputStates})");
+        writer.WriteLine($"lower-bound states = {stats.LowerBoundStates}, feasible-top-set states = {stats.FeasibleTopSetStates}");
+        writer.WriteLine($"outcomes constructed = {stats.OutcomesConstructed} (duplicate skips {diag.DuplicateOutcomeSkips}, merged collisions {diag.MergedOutcomeCollisions})");
+        writer.WriteLine($"lower-bound prunes = {diag.LowerBoundPrunes}");
+        writer.WriteLine($"cache hits = exact {diag.ExactCacheHits}, lower-bound {diag.LowerBoundCacheHits}, feasible-top-set {diag.FeasibleTopSetCacheHits}, best-group-pattern {diag.BestGroupPatternCacheHits}");
         if (stats.CompactStatesSolved > 0)
-            writer.WriteLine($"  compact pass = {stats.CompactStatesSolved} states solved, {stats.CompactGroupsEnumerated} groups enumerated ({stats.CompactStepOptimalGroups} step-optimal)");
+            writer.WriteLine($"compact pass = {stats.CompactStatesSolved} states solved, {stats.CompactGroupsEnumerated} groups enumerated ({stats.CompactStepOptimalGroups} step-optimal)");
         writer.WriteLine();
 
         writer.WriteLine(Banner("legend"));
@@ -56,19 +56,19 @@ static class StrategyTextRenderer
 
     private static void WriteLegend(TextWriter writer)
     {
-        writer.WriteLine("  #i                            item i (labels are 1-based; they may be relabeled in references)");
-        writer.WriteLine("  S{id} [step x/y] sort(...)    decision state: perform this sort at step x of at most y");
-        writer.WriteLine("  a > b > c                     the sort revealed a ranks above b above c");
-        writer.WriteLine("  [+ ..., - ..., fixed ..., possible ...]   effect of an outcome:");
-        writer.WriteLine("       +         newly guaranteed into the top-k");
-        writer.WriteLine("       -         newly excluded from the top-k");
-        writer.WriteLine("       fixed     members already locked into the top-k");
-        writer.WriteLine("       possible  items still competing for the remaining slots");
-        writer.WriteLine("  equivalent forms: N = ...     this branch stands for N symmetric orderings (e.g. 3! = 6)");
-        writer.WriteLine("  pattern: ...                  shape of those orderings (B/C = a permuted sub-block, e.g. B1 > B2)");
-        writer.WriteLine("  S{id}: top k = (...)          solved: the top-k set is fully determined");
-        writer.WriteLine("  →S{id} (+N steps) [map: a→b]  reuse state S{id}'s subtree (N more sorts);");
-        writer.WriteLine("                                [map] relabels the referenced state's items (referenced→current)");
+        writer.WriteLine("#i                            item i (labels are 1-based; they may be relabeled in references)");
+        writer.WriteLine("S{id} [step x/y] sort(...)    decision state: perform this sort at step x of at most y");
+        writer.WriteLine("a > b > c                     the sort revealed a ranks above b above c");
+        writer.WriteLine("[+ ..., - ..., fixed ..., possible ...]   effect of an outcome:");
+        writer.WriteLine("     +         newly guaranteed into the top-k");
+        writer.WriteLine("     -         newly excluded from the top-k");
+        writer.WriteLine("     fixed     members already locked into the top-k");
+        writer.WriteLine("     possible  items still competing for the remaining slots");
+        writer.WriteLine("equivalent forms: N = ...     this branch stands for N symmetric orderings (e.g. 3! = 6)");
+        writer.WriteLine("pattern: ...                  shape of those orderings (B/C = a permuted sub-block, e.g. B1 > B2)");
+        writer.WriteLine("S{id}: top k = (...)          solved: the top-k set is fully determined");
+        writer.WriteLine("→S{id} (+N steps) [map: a→b]  reuse state S{id}'s subtree (N more sorts);");
+        writer.WriteLine("                              [map] relabels the referenced state's items (referenced→current)");
     }
 
     public static string FormatReference(StrategyNode node, StrategyDepthIndex depthIndex)

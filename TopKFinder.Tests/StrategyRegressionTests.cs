@@ -360,28 +360,28 @@ public sealed class StrategyRegressionTests
               phases: <phases>
 
             ==================== diagnostics ====================
-              searched states = 4
-              pending states = 0 (peak 2)
-              output states = 4 (expanded 2)
-              lower-bound states = 1, feasible-top-set states = 3
-              outcomes constructed = 12 (duplicate skips 3, merged collisions 1)
-              lower-bound prunes = 2
-              cache hits = exact 0, lower-bound 0, feasible-top-set 8, best-group-pattern 2
+            searched states = 4
+            pending states = 0 (peak 2)
+            output states = 4 (expanded 2)
+            lower-bound states = 1, feasible-top-set states = 3
+            outcomes constructed = 12 (duplicate skips 3, merged collisions 1)
+            lower-bound prunes = 2
+            cache hits = exact 0, lower-bound 0, feasible-top-set 8, best-group-pattern 2
 
             ==================== legend ====================
-              #i                            item i (labels are 1-based; they may be relabeled in references)
-              S{id} [step x/y] sort(...)    decision state: perform this sort at step x of at most y
-              a > b > c                     the sort revealed a ranks above b above c
-              [+ ..., - ..., fixed ..., possible ...]   effect of an outcome:
-                   +         newly guaranteed into the top-k
-                   -         newly excluded from the top-k
-                   fixed     members already locked into the top-k
-                   possible  items still competing for the remaining slots
-              equivalent forms: N = ...     this branch stands for N symmetric orderings (e.g. 3! = 6)
-              pattern: ...                  shape of those orderings (B/C = a permuted sub-block, e.g. B1 > B2)
-              S{id}: top k = (...)          solved: the top-k set is fully determined
-              →S{id} (+N steps) [map: a→b]  reuse state S{id}'s subtree (N more sorts);
-                                            [map] relabels the referenced state's items (referenced→current)
+            #i                            item i (labels are 1-based; they may be relabeled in references)
+            S{id} [step x/y] sort(...)    decision state: perform this sort at step x of at most y
+            a > b > c                     the sort revealed a ranks above b above c
+            [+ ..., - ..., fixed ..., possible ...]   effect of an outcome:
+                 +         newly guaranteed into the top-k
+                 -         newly excluded from the top-k
+                 fixed     members already locked into the top-k
+                 possible  items still competing for the remaining slots
+            equivalent forms: N = ...     this branch stands for N symmetric orderings (e.g. 3! = 6)
+            pattern: ...                  shape of those orderings (B/C = a permuted sub-block, e.g. B1 > B2)
+            S{id}: top k = (...)          solved: the top-k set is fully determined
+            →S{id} (+N steps) [map: a→b]  reuse state S{id}'s subtree (N more sorts);
+                                          [map] relabels the referenced state's items (referenced→current)
 
             ==================== strategy ====================
             S1 [step 1/3] sort(#1, #2, #3)
