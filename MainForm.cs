@@ -603,7 +603,7 @@ class MainForm : Form
     private TreeNode CreateReferenceNode(StrategyNode node)
     {
         string label = _depthIndex!.TryGetReferenceRemaining(node.StateId, out int remaining)
-            ? $"->S{node.StateId} (+{remaining} steps)"
+            ? $"->S{node.StateId} {StrategyTextRenderer.FormatRemainingSteps(remaining)}"
             : $"->S{node.StateId}";
         label += StrategyTextRenderer.FormatRelabeling(node.ReferenceRelabeling);
 
