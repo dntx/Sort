@@ -513,9 +513,7 @@ class MainForm : Form
     private TreeNode CreateDecisionNode(StrategyNode node, int k)
     {
         int maxStep = _depthIndex!.SubtreeMaxStep(node);
-        string headerText = node.FinalChoice is not null
-            ? $"[step {node.Step}/{maxStep}] sort({StrategyTextRenderer.FormatSet(node.Group)})"
-            : $"S{node.StateId} [step {node.Step}/{maxStep}] sort({StrategyTextRenderer.FormatSet(node.Group)})";
+        string headerText = $"S{node.StateId} [step {node.Step}/{maxStep}] sort({StrategyTextRenderer.FormatSet(node.Group)})";
 
         var treeNode = new TreeNode(headerText)
         {
