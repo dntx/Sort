@@ -357,7 +357,7 @@ public sealed class StrategyRegressionTests
             n=5, m=3, k=2
             max step = 3
             elapsed = <elapsed>
-              phases: <phases>
+            phases: <phases>
 
             ==================== diagnostics ====================
             searched states = 4
@@ -994,8 +994,8 @@ internal static class StrategyTestHelpers
             // snapshot/determinism comparisons only assert on the deterministic counters.
             if (lines[i].StartsWith("elapsed = ", StringComparison.Ordinal))
                 lines[i] = "elapsed = <elapsed>";
-            else if (lines[i].StartsWith("  phases: ", StringComparison.Ordinal))
-                lines[i] = "  phases: <phases>";
+            else if (lines[i].StartsWith("phases: ", StringComparison.Ordinal))
+                lines[i] = "phases: <phases>";
         }
 
         return string.Join("\n", lines);
