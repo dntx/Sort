@@ -50,43 +50,89 @@ Symmetric branches are merged by canonicalizing the comparison state, so equival
 
 ## Usage
 
+The program has three entry points that share the same input validation
+(`1 <= n <= 64`, `2 <= m <= n`, `1 <= k <= n`).
+
+### Command-line arguments
+
 ```bash
-dotnet run
+dotnet run -- <n> <m> <k> [--compact]
 ```
 
-Input (one per line):
+- Prints the strategy tree for `n`, `m`, `k` to **stdout**.
+- `--compact` (or `-c`) prints the compact, alias-compressed tree where shared
+  sub-trees are emitted once and later referenced by their state id.
+- Search progress is written to **stderr**, so you can redirect the result on its
+  own: `dotnet run -- 12 3 3 > tree.txt`.
+- `--help` (or `-h`) prints usage and exits.
+
+### Piped stdin
+
+With no arguments but redirected input, the program reads `n`, `m`, `k` from
+stdin, one value per line:
+
+```bash
+printf "10\n4\n3\n" | dotnet run
 ```
-n   # total number of elements
-m   # max sort capacity
-k   # how many top elements to find
-```
+
+### Desktop UI
+
+Running with no arguments and no redirected input opens the WinForms explorer
+(see below).
 
 ### Example
 
 ```
-$ echo "10
-4
-3" | dotnet run
+$ dotnet run -- 5 3 2
 
-n=10, m=4, k=3
+==================== summary ====================
+n=5, m=3, k=2
+worst-case steps = 3
+elapsed = 36.9 ms
+phases: exact-step = 18 ms, compact = 0 ms, build = 18 ms
 
-比较方案：
-状态 S1: 比较 #1, #2, #3, #4
-  如果结果是 #1 > #2 > #3 > #4：
-    ...
+==================== diagnostics ====================
+searched states = 4
+...
+
+==================== legend ====================
+#i                            item i (1-based labels; may be relabeled in references)
+S{id} [step x/y] sort(...)    decision state: do this sort at step x of at most y
+...
+
+==================== strategy ====================
+S1 [step 1/3] sort(#1, #2, #3)
+  #1 > #2 > #3: [- (#3), possible (#1, #2, #4, #5)]
+    equivalent forms: 6 = 3!
+    pattern: permute {#1, #2, #3}
+    S2 [step 2/3] sort(#1, #4, #5)
+      ...
 ```
 
-For small inputs such as `n=8, m=3, k=3`, the full strategy tree is readable. For larger inputs, the tree can grow quickly because each sort may have multiple feasible outcomes.
+The output is grouped into four banner-delimited sections: a **summary**
+(parameters and the worst-case number of sorts), **diagnostics** (search
+telemetry), a **legend** explaining the notation, and the **strategy** tree
+itself. For small inputs such as `n=8, m=3, k=3` the full tree is readable; for
+larger inputs use `--compact`, because each sort may have multiple feasible
+outcomes and the full tree grows quickly.
 
-### Desktop UI
+### Desktop UI details
 
-Running without redirected input opens the WinForms explorer. During a run it now shows live:
+Running without redirected input opens the WinForms explorer. During a run it
+shows live:
 
 - searched / pending / output state counts
 - the current best root worst-case bound as incumbents improve
 - lower-bound pruning and cache-hit counters
 
-After the run finishes, the details pane also includes a root-incumbent timeline so you can see when the search first found `x` steps, then improved to a smaller bound.
+You can press **Stop** at any time to cancel a running search. For parameter
+combinations that are known to be expensive (large `n` with a mid-range sort
+size), the UI shows a confirmation dialog before starting so a long search is
+never launched by accident.
+
+After the run finishes, the details pane also includes a root-incumbent timeline
+so you can see when the search first found `x` steps, then improved to a smaller
+bound.
 
 ## Requirements
 

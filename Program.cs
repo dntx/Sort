@@ -5,11 +5,44 @@ class Program
 {
     private const string UsageText = "Usage: TopKFinder <n> <m> <k> [--compact]";
 
+    private const string HelpText =
+        "TopK Finder - generate a comparison strategy for finding the top-k of n numbers\n" +
+        "using only a sort-at-most-m operation.\n" +
+        "\n" +
+        "Usage:\n" +
+        "  TopKFinder                      Launch the desktop (WinForms) explorer.\n" +
+        "  TopKFinder <n> <m> <k>          Print the full strategy tree to stdout.\n" +
+        "  TopKFinder <n> <m> <k> --compact  Print the compact (alias-compressed) tree.\n" +
+        "  ... | TopKFinder                Read n, m, k from stdin (one value per line).\n" +
+        "\n" +
+        "Options:\n" +
+        "  -c, --compact   Emit the compact strategy tree (CLI argument mode only).\n" +
+        "  -h, --help      Show this help and exit.\n" +
+        "\n" +
+        "Arguments:\n" +
+        "  n   total number of elements   (1 <= n <= 64)\n" +
+        "  m   max sort capacity          (2 <= m <= n)\n" +
+        "  k   how many top elements      (1 <= k <= n)\n" +
+        "\n" +
+        "Progress is written to stderr; the strategy is written to stdout, so you can\n" +
+        "redirect them independently (e.g. TopKFinder 12 3 3 > tree.txt).\n" +
+        "\n" +
+        "Examples:\n" +
+        "  TopKFinder 5 3 2\n" +
+        "  TopKFinder 9 3 3 --compact\n" +
+        "  (interactive) run with no args, or pipe n, m, k on three stdin lines";
+
     [STAThread]
     static void Main(string[] args)
     {
         if (args.Length > 0)
         {
+            if (IsHelpRequested(args))
+            {
+                Console.WriteLine(HelpText);
+                return;
+            }
+
             if (!TryParseCliArgs(args, out string? nText, out string? mText, out string? kText, out bool compact, out string? argError))
             {
                 Console.WriteLine(argError);
@@ -50,6 +83,11 @@ class Program
         }
 
         RunHeadless(n, m, k, compact: false);
+    }
+
+    public static bool IsHelpRequested(string[] args)
+    {
+        return Array.Exists(args, a => a == "--help" || a == "-h");
     }
 
     public static bool TryParseCliArgs(

@@ -83,4 +83,20 @@ public sealed class CliArgsTests
         Assert.False(ok);
         Assert.StartsWith("Error: expected 3 positional arguments", error);
     }
+
+    [Theory]
+    [InlineData("--help")]
+    [InlineData("-h")]
+    public void IsHelpRequested_DetectsHelpFlag(string flag)
+    {
+        Assert.True(Program.IsHelpRequested(new[] { flag }));
+        Assert.True(Program.IsHelpRequested(new[] { "9", "3", "3", flag }));
+    }
+
+    [Fact]
+    public void IsHelpRequested_FalseWithoutHelpFlag()
+    {
+        Assert.False(Program.IsHelpRequested(new[] { "9", "3", "3" }));
+        Assert.False(Program.IsHelpRequested(new[] { "9", "3", "3", "--compact" }));
+    }
 }
