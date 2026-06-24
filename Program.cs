@@ -198,4 +198,27 @@ class Program
         error = null;
         return true;
     }
+
+    // Heuristic guard for the GUI: the exact minimax search is exponential, so some
+    // valid inputs take many seconds to minutes. This flags those so the GUI can warn
+    // before starting. The score below was calibrated against measured run times:
+    //   score = (n - m) * min(k, n-k) / m
+    // Across a probe grid every configuration scoring < 11 finished in <= ~1.2 s, while
+    // every configuration scoring >= 11 took >= ~1.4 s and grew quickly from there
+    // (e.g. 16,5,5 ~ 8 s). Inputs that resolve a very small or very large top set
+    // (min(k, n-k) <= 1) or where a single sort nearly covers everything (m close to n)
+    // stay cheap regardless of n.
+    public const double SlowSearchScoreThreshold = 11.0;
+
+    public static bool IsPotentiallySlowSearch(int n, int m, int k)
+    {
+        int boundaryItems = Math.Min(k, n - k);
+        if (boundaryItems <= 1)
+            return false;
+        if (m >= n)
+            return false;
+
+        double score = (double)(n - m) * boundaryItems / m;
+        return score >= SlowSearchScoreThreshold;
+    }
 }
