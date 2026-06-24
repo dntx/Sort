@@ -3,18 +3,27 @@ using System.Windows.Forms;
 
 class Program
 {
+    private const string UsageText = "Usage: TopKFinder <n> <m> <k> [--compact]";
+
     [STAThread]
     static void Main(string[] args)
     {
-        if (args.Length == 3)
+        if (args.Length > 0)
         {
-            if (!TryParseAndValidate(args[0], args[1], args[2], out int nFromArgs, out int mFromArgs, out int kFromArgs, out string? errorFromArgs))
+            if (!TryParseCliArgs(args, out string? nText, out string? mText, out string? kText, out bool compact, out string? argError))
+            {
+                Console.WriteLine(argError);
+                Console.WriteLine(UsageText);
+                return;
+            }
+
+            if (!TryParseAndValidate(nText, mText, kText, out int nFromArgs, out int mFromArgs, out int kFromArgs, out string? errorFromArgs))
             {
                 Console.WriteLine(errorFromArgs);
                 return;
             }
 
-            Console.Write(StrategyTextRenderer.Render(StrategyBuilder.Generate(nFromArgs, mFromArgs, kFromArgs)));
+            RunHeadless(nFromArgs, mFromArgs, kFromArgs, compact);
             return;
         }
 
@@ -28,19 +37,101 @@ class Program
         }
 
         Console.Write("Enter n (total numbers): ");
-        string? nText = Console.ReadLine();
+        string? nTextStdin = Console.ReadLine();
         Console.Write("Enter m (max sort size): ");
-        string? mText = Console.ReadLine();
+        string? mTextStdin = Console.ReadLine();
         Console.Write("Enter k (top-k to find): ");
-        string? kText = Console.ReadLine();
+        string? kTextStdin = Console.ReadLine();
 
-        if (!TryParseAndValidate(nText, mText, kText, out int n, out int m, out int k, out string? error))
+        if (!TryParseAndValidate(nTextStdin, mTextStdin, kTextStdin, out int n, out int m, out int k, out string? error))
         {
             Console.WriteLine(error);
             return;
         }
 
-        Console.Write(StrategyTextRenderer.Render(StrategyBuilder.Generate(n, m, k)));
+        RunHeadless(n, m, k, compact: false);
+    }
+
+    public static bool TryParseCliArgs(
+        string[] args,
+        out string? nText,
+        out string? mText,
+        out string? kText,
+        out bool compact,
+        out string? error)
+    {
+        nText = null;
+        mText = null;
+        kText = null;
+        compact = false;
+        error = null;
+
+        var positionals = new System.Collections.Generic.List<string>();
+
+        foreach (string arg in args)
+        {
+            if (arg == "--compact" || arg == "-c")
+            {
+                compact = true;
+            }
+            else if (arg.StartsWith("-", StringComparison.Ordinal))
+            {
+                error = $"Error: unknown option '{arg}'";
+                return false;
+            }
+            else
+            {
+                positionals.Add(arg);
+            }
+        }
+
+        if (positionals.Count != 3)
+        {
+            error = $"Error: expected 3 positional arguments (n m k) but got {positionals.Count}";
+            return false;
+        }
+
+        nText = positionals[0];
+        mText = positionals[1];
+        kText = positionals[2];
+        return true;
+    }
+
+    private static void RunHeadless(int n, int m, int k, bool compact)
+    {
+        bool showProgress = !Console.IsErrorRedirected;
+        long lastEmitMs = -1;
+        int lastLineLength = 0;
+
+        void ReportProgress(SearchProgressSnapshot snapshot)
+        {
+            if (!showProgress)
+            {
+                return;
+            }
+
+            if (lastEmitMs >= 0 && snapshot.ElapsedMilliseconds - lastEmitMs < 250)
+            {
+                return;
+            }
+
+            lastEmitMs = snapshot.ElapsedMilliseconds;
+            string line = $"searching... elapsed={snapshot.ElapsedMilliseconds / 1000.0:F1}s " +
+                $"searched={snapshot.SearchedStates} pending={snapshot.PendingStates} output={snapshot.OutputStates}";
+            Console.Error.Write("\r" + line.PadRight(lastLineLength));
+            lastLineLength = line.Length;
+        }
+
+        StrategyPlan plan = compact
+            ? StrategyBuilder.GenerateCompact(n, m, k, System.Threading.CancellationToken.None, ReportProgress)
+            : StrategyBuilder.Generate(n, m, k, System.Threading.CancellationToken.None, ReportProgress);
+
+        if (showProgress && lastLineLength > 0)
+        {
+            Console.Error.Write("\r" + new string(' ', lastLineLength) + "\r");
+        }
+
+        Console.Write(StrategyTextRenderer.Render(plan));
     }
 
     public static bool TryParseAndValidate(
