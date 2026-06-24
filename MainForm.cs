@@ -404,7 +404,7 @@ class MainForm : Form
         {
             DialogResult choice = MessageBox.Show(
                 this,
-                $"Solving n={n}, m={m}, k={k} may take a long time (seconds to minutes) because the search grows quickly for these parameters.\n\n" +
+                $"Solving n={n}, m={m}, k={k} may take a long time (roughly ten seconds or more, up to minutes) because the search grows quickly for these parameters.\n\n" +
                 "You can press Stop at any time once it starts.\n\nContinue?",
                 "Large search",
                 MessageBoxButtons.YesNo,
