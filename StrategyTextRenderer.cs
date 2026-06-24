@@ -25,7 +25,7 @@ static class StrategyTextRenderer
         // Summary: the problem and its answer first, so the key number is not buried.
         writer.WriteLine(Banner("summary"));
         writer.WriteLine($"n={plan.N}, m={plan.M}, k={plan.K}");
-        writer.WriteLine($"max step = {plan.MaxStep}");
+        writer.WriteLine($"worst-case steps = {plan.MaxStep}");
         writer.WriteLine($"elapsed = {plan.Elapsed.TotalMilliseconds:F1} ms");
         writer.WriteLine($"phases: exact-step = {stats.Phase1Milliseconds} ms, compact = {stats.Phase1bMilliseconds} ms, build = {stats.Phase2Milliseconds} ms");
         writer.WriteLine();
@@ -56,19 +56,27 @@ static class StrategyTextRenderer
 
     private static void WriteLegend(TextWriter writer)
     {
-        writer.WriteLine("#i                            item i (labels are 1-based; they may be relabeled in references)");
-        writer.WriteLine("S{id} [step x/y] sort(...)    decision state: perform this sort at step x of at most y");
-        writer.WriteLine("a > b > c                     the sort revealed a ranks above b above c");
-        writer.WriteLine("[+ ..., - ..., fixed ..., possible ...]   effect of an outcome:");
+        (string Token, string Description)[] entries =
+        {
+            ("#i", "item i (1-based labels; may be relabeled in references)"),
+            ("S{id} [step x/y] sort(...)", "decision state: do this sort at step x of at most y"),
+            ("a > b > c", "the sort revealed a ranks above b above c"),
+            ("equivalent forms: N = ...", "this branch stands for N symmetric orderings (e.g. 3! = 6)"),
+            ("pattern: ...", "shape of those orderings (B/C = a permuted sub-block, e.g. B1 > B2)"),
+            ("S{id}: top k = (...)", "solved: the top-k set is fully determined"),
+            ("→S{id} (+N steps) [map: ...]", "reuse state S{id}'s subtree (N more sorts); [map] relabels referenced→current"),
+        };
+
+        int width = entries.Max(e => e.Token.Length);
+        foreach (var (token, description) in entries)
+            writer.WriteLine($"{token.PadRight(width)}  {description}");
+
+        writer.WriteLine();
+        writer.WriteLine("[+ ..., - ..., fixed ..., possible ...]   effect after an outcome (empty entries are omitted):");
         writer.WriteLine("     +         newly guaranteed into the top-k");
         writer.WriteLine("     -         newly excluded from the top-k");
-        writer.WriteLine("     fixed     members already locked into the top-k");
-        writer.WriteLine("     possible  items still competing for the remaining slots");
-        writer.WriteLine("equivalent forms: N = ...     this branch stands for N symmetric orderings (e.g. 3! = 6)");
-        writer.WriteLine("pattern: ...                  shape of those orderings (B/C = a permuted sub-block, e.g. B1 > B2)");
-        writer.WriteLine("S{id}: top k = (...)          solved: the top-k set is fully determined");
-        writer.WriteLine("→S{id} (+N steps) [map: a→b]  reuse state S{id}'s subtree (N more sorts);");
-        writer.WriteLine("                              [map] relabels the referenced state's items (referenced→current)");
+        writer.WriteLine("     fixed     already locked into the top-k");
+        writer.WriteLine("     possible  still competing for the remaining slots");
     }
 
     public static string FormatReference(StrategyNode node, StrategyDepthIndex depthIndex)
@@ -152,7 +160,16 @@ static class StrategyTextRenderer
 
     public static string FormatEffect(StrategyEffect effect)
     {
-        return $"[{FormatInEntry(effect.NewlyGuaranteedTop)}, {FormatOutEntry(effect.NewlyExcluded)}, {FormatFixedEntry(effect.FixedCandidates)}, {FormatPossibleEntry(effect.PossibleCandidates)}]";
+        var parts = new List<string>(4);
+        if (effect.NewlyGuaranteedTop.Count > 0)
+            parts.Add(FormatInEntry(effect.NewlyGuaranteedTop));
+        if (effect.NewlyExcluded.Count > 0)
+            parts.Add(FormatOutEntry(effect.NewlyExcluded));
+        if (effect.FixedCandidates.Count > 0)
+            parts.Add(FormatFixedEntry(effect.FixedCandidates));
+        if (effect.PossibleCandidates.Count > 0)
+            parts.Add(FormatPossibleEntry(effect.PossibleCandidates));
+        return $"[{string.Join(", ", parts)}]";
     }
 
     public static string FormatInEntry(IEnumerable<int> items) => $"{InLabel} {FormatOptionalSet(items)}";

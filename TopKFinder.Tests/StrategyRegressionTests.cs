@@ -355,7 +355,7 @@ public sealed class StrategyRegressionTests
         const string expected = """
             ==================== summary ====================
             n=5, m=3, k=2
-            max step = 3
+            worst-case steps = 3
             elapsed = <elapsed>
             phases: <phases>
 
@@ -369,23 +369,23 @@ public sealed class StrategyRegressionTests
             cache hits = exact 0, lower-bound 0, feasible-top-set 8, best-group-pattern 2
 
             ==================== legend ====================
-            #i                            item i (labels are 1-based; they may be relabeled in references)
-            S{id} [step x/y] sort(...)    decision state: perform this sort at step x of at most y
+            #i                            item i (1-based labels; may be relabeled in references)
+            S{id} [step x/y] sort(...)    decision state: do this sort at step x of at most y
             a > b > c                     the sort revealed a ranks above b above c
-            [+ ..., - ..., fixed ..., possible ...]   effect of an outcome:
-                 +         newly guaranteed into the top-k
-                 -         newly excluded from the top-k
-                 fixed     members already locked into the top-k
-                 possible  items still competing for the remaining slots
             equivalent forms: N = ...     this branch stands for N symmetric orderings (e.g. 3! = 6)
             pattern: ...                  shape of those orderings (B/C = a permuted sub-block, e.g. B1 > B2)
             S{id}: top k = (...)          solved: the top-k set is fully determined
-            →S{id} (+N steps) [map: a→b]  reuse state S{id}'s subtree (N more sorts);
-                                          [map] relabels the referenced state's items (referenced→current)
+            →S{id} (+N steps) [map: ...]  reuse state S{id}'s subtree (N more sorts); [map] relabels referenced→current
+
+            [+ ..., - ..., fixed ..., possible ...]   effect after an outcome (empty entries are omitted):
+                 +         newly guaranteed into the top-k
+                 -         newly excluded from the top-k
+                 fixed     already locked into the top-k
+                 possible  still competing for the remaining slots
 
             ==================== strategy ====================
             S1 [step 1/3] sort(#1, #2, #3)
-              #1 > #2 > #3: [+ (), - (#3), fixed (), possible (#1, #2, #4, #5)]
+              #1 > #2 > #3: [- (#3), possible (#1, #2, #4, #5)]
                 equivalent forms: 6 = 3!
                 pattern: permute {#1, #2, #3}
                 S2 [step 2/3] sort(#1, #4, #5)
@@ -394,10 +394,10 @@ public sealed class StrategyRegressionTests
                     pattern: B=permute{#4, #5}; #1 > B1 > B2
                     S3 [step 3/3] sort(#2, #4)
                       fixed (#1); choose 1 of (#2, #4) into top 2
-                  #4 > #1 > #5: [+ (#1, #4), - (#2, #5), fixed (#1, #4), possible ()] S4: top 2 = (#1, #4)
+                  #4 > #1 > #5: [+ (#1, #4), - (#2, #5), fixed (#1, #4)] S4: top 2 = (#1, #4)
                     equivalent forms: 2 = 2!
                     pattern: B=permute{#4, #5}; B1 > #1 > B2
-                  #4 > #5 > #1: [+ (#4, #5), - (#1, #2), fixed (#4, #5), possible ()] S4: top 2 = (#4, #5)
+                  #4 > #5 > #1: [+ (#4, #5), - (#1, #2), fixed (#4, #5)] S4: top 2 = (#4, #5)
                     equivalent forms: 2 = 2!
                     pattern: B=permute{#4, #5}; B1 > B2 > #1
             """;
@@ -664,7 +664,7 @@ public sealed class StrategyRegressionTests
                         equivalent forms: 2 = 2!
                         pattern: C=permute{#9, #10}; #2 > #6 > C1 > C2
                         S4 [step 4/5] sort(#3, #5, #11, #12)
-                          #11 > #12 > #3 > #5: [+ (#2, #11, #12), - (#3, #4, #5, #6), fixed (#1, #2, #11, #12), possible ()] S5: top 4 = (#1, #2, #11, #12)
+                          #11 > #12 > #3 > #5: [+ (#2, #11, #12), - (#3, #4, #5, #6), fixed (#1, #2, #11, #12)] S5: top 4 = (#1, #2, #11, #12)
                             equivalent forms: 2 = 2!
                             pattern: C=permute{#11, #12}; C1 > C2 > #3 > #5
                           #11 > #12 > #5 > #3: [+ (#11, #12), - (#3, #4, #6), fixed (#1, #11, #12), possible (#2, #5)]
@@ -672,10 +672,10 @@ public sealed class StrategyRegressionTests
                             pattern: C=permute{#11, #12}; C1 > C2 > #5 > #3
                             S6 [step 5/5] sort(#2, #5)
                               fixed (#1, #11, #12); choose 1 of (#2, #5) into top 4
-                          #11 > #3 > #12 > #5: [+ (#2, #3, #11), - (#4, #5, #6, #12), fixed (#1, #2, #3, #11), possible ()] S7: top 4 = (#1, #2, #3, #11)
+                          #11 > #3 > #12 > #5: [+ (#2, #3, #11), - (#4, #5, #6, #12), fixed (#1, #2, #3, #11)] S7: top 4 = (#1, #2, #3, #11)
                             equivalent forms: 2 = 2!
                             pattern: C=permute{#11, #12}; C1 > #3 > C2 > #5
-                          #11 > #3 > #5 > #12: [+ (#2, #3, #11), - (#4, #5, #6, #12), fixed (#1, #2, #3, #11), possible ()] S7: top 4 = (#1, #2, #3, #11)
+                          #11 > #3 > #5 > #12: [+ (#2, #3, #11), - (#4, #5, #6, #12), fixed (#1, #2, #3, #11)] S7: top 4 = (#1, #2, #3, #11)
                             equivalent forms: 2 = 2!
                             pattern: C=permute{#11, #12}; C1 > #3 > #5 > C2
             """;
