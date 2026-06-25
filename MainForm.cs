@@ -82,8 +82,10 @@ class MainForm : Form
     private readonly Label _statesLabel;
     private readonly Label _workLabel;
     private readonly Label _progressLabel;
-    private readonly Label _summaryLabel;
+    private readonly StatusStrip _statusStrip;
+    private readonly ToolStripStatusLabel _statusLabel;
     private readonly TreeView _treeView;
+    private readonly ListView _overviewList;
     private readonly RichTextBox _detailsTextBox;
     private readonly System.Windows.Forms.Timer _elapsedTimer;
     private ThemePalette _palette = DarkPalette;
@@ -124,12 +126,11 @@ class MainForm : Form
             Dock = DockStyle.Fill,
             AutoSize = true,
             ColumnCount = 1,
-            RowCount = 3,
+            RowCount = 2,
             Margin = new Padding(0, 0, 0, 12),
         };
         headerLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         headerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, StatsRowHeight));
-        headerLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
         _nTextBox = CreateInputTextBox("9");
         _mTextBox = CreateInputTextBox("3");
@@ -256,24 +257,39 @@ class MainForm : Form
             Dock = DockStyle.Fill,
             AutoSize = false,
             Height = StatsRowHeight,
-            ColumnCount = 4,
+            ColumnCount = 3,
             Margin = Padding.Empty,
         };
-        statsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 22));
-        statsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 28));
-        statsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 26));
-        statsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 24));
-        statsLayout.Controls.Add(CreateSectionPanel("Elapsed", _elapsedLabel, fillCell: true), 0, 0);
+        statsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 38));
+        statsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 32));
+        statsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 30));
+
+        var progressBody = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            ColumnCount = 1,
+            Margin = Padding.Empty,
+        };
+        _progressLabel.Margin = new Padding(0, 6, 0, 0);
+        progressBody.Controls.Add(_elapsedLabel, 0, 0);
+        progressBody.Controls.Add(_progressLabel, 0, 1);
+
+        statsLayout.Controls.Add(CreateSectionPanel("Progress", progressBody, fillCell: true), 0, 0);
         statsLayout.Controls.Add(CreateSectionPanel("States", _statesLabel, fillCell: true), 1, 0);
         statsLayout.Controls.Add(CreateSectionPanel("Work", _workLabel, fillCell: true), 2, 0);
-        statsLayout.Controls.Add(CreateSectionPanel("Progress", _progressLabel, fillCell: true), 3, 0);
 
-        _summaryLabel = new Label
+        _statusStrip = new StatusStrip
         {
-            AutoSize = true,
-            Margin = Padding.Empty,
+            SizingGrip = false,
+        };
+        _statusLabel = new ToolStripStatusLabel
+        {
+            Spring = true,
+            TextAlign = ContentAlignment.MiddleLeft,
             Text = "Ready.",
         };
+        _statusStrip.Items.Add(_statusLabel);
 
         var split = new SplitContainer
         {
@@ -297,6 +313,32 @@ class MainForm : Form
         _collapseAllButton.Click += (_, _) => _treeView.CollapseAll();
         _backButton.Click += (_, _) => NavigateBack();
 
+        _overviewList = new ListView
+        {
+            Dock = DockStyle.Fill,
+            View = View.Details,
+            HeaderStyle = ColumnHeaderStyle.None,
+            FullRowSelect = true,
+            MultiSelect = false,
+            HideSelection = false,
+            Font = new Font(FontFamily.GenericSansSerif, 9),
+        };
+        _overviewList.Columns.Add("Overview", -2, HorizontalAlignment.Left);
+        _overviewList.SelectedIndexChanged += (_, _) => JumpFromOverviewSelection();
+        _overviewList.Resize += (_, _) =>
+        {
+            if (_overviewList.Columns.Count > 0)
+                _overviewList.Columns[0].Width = _overviewList.ClientSize.Width;
+        };
+
+        var treeSplit = new SplitContainer
+        {
+            Dock = DockStyle.Fill,
+            Orientation = Orientation.Horizontal,
+        };
+        treeSplit.Panel1.Controls.Add(_overviewList);
+        treeSplit.Panel2.Controls.Add(_treeView);
+
         _detailsTextBox = new RichTextBox
         {
             Dock = DockStyle.Fill,
@@ -306,22 +348,23 @@ class MainForm : Form
             ScrollBars = RichTextBoxScrollBars.Both,
         };
 
-        split.Panel1.Controls.Add(_treeView);
+        split.Panel1.Controls.Add(treeSplit);
         split.Panel2.Controls.Add(_detailsTextBox);
 
         headerLayout.Controls.Add(controlsLayout, 0, 0);
         headerLayout.Controls.Add(statsLayout, 0, 1);
-        headerLayout.Controls.Add(CreateSectionPanel("Status", _summaryLabel), 0, 2);
 
         layout.Controls.Add(headerLayout, 0, 0);
         layout.Controls.Add(split, 0, 1);
 
         Controls.Add(layout);
+        Controls.Add(_statusStrip);
         Shown += (_, _) =>
         {
+            int progressColumn = _elapsedLabel.PreferredHeight + _progressLabel.PreferredHeight + 6;
             int statsBody = Math.Max(
-                Math.Max(_elapsedLabel.PreferredHeight, _statesLabel.PreferredHeight),
-                Math.Max(_workLabel.PreferredHeight, _progressLabel.PreferredHeight));
+                progressColumn,
+                Math.Max(_statesLabel.PreferredHeight, _workLabel.PreferredHeight));
             int statsHeight = statsBody + StatsRowChrome;
             headerLayout.RowStyles[1].Height = statsHeight;
             statsLayout.Height = statsHeight;
@@ -330,6 +373,12 @@ class MainForm : Form
             split.Panel2MinSize = 320;
             int preferred = (int)(split.Width * 0.62);
             split.SplitterDistance = Math.Clamp(preferred, split.Panel1MinSize, split.Width - split.Panel2MinSize);
+
+            treeSplit.Panel1MinSize = 80;
+            treeSplit.Panel2MinSize = 160;
+            int overviewHeight = (int)(treeSplit.Height * 0.32);
+            treeSplit.SplitterDistance = Math.Clamp(
+                overviewHeight, treeSplit.Panel1MinSize, Math.Max(treeSplit.Panel1MinSize, treeSplit.Height - treeSplit.Panel2MinSize));
         };
         AcceptButton = _runButton;
         _elapsedTimer = new System.Windows.Forms.Timer { Interval = 100 };
@@ -442,12 +491,13 @@ class MainForm : Form
         _compactImproved = false;
         _activePhase = 1;
         Interlocked.Exchange(ref _phase1ElapsedMs, -1);
+        ClearResultsView();
         _runStopwatch = Stopwatch.StartNew();
         UpdateElapsedLabel();
         UpdateStatsPanels();
         _elapsedTimer.Start();
         SetRunningState(isRunning: true);
-        _summaryLabel.Text = $"Running n={n}, m={m}, k={k}...";
+        _statusLabel.Text = $"Running n={n}, m={m}, k={k}...";
         _detailsTextBox.Text = BuildLiveDiagnosticsText(_latestProgress);
 
         try
@@ -479,13 +529,13 @@ class MainForm : Form
         catch (OperationCanceledException)
         {
             _runStopwatch?.Stop();
-            _summaryLabel.Text = $"Stopped after {GetElapsedSeconds():F1} s. {FormatSearchStatsSummary(_latestProgress, includeOutputStates: true)}. {FormatLiveDiagnosticsSummary(_latestProgress)}.";
+            _statusLabel.Text = $"Stopped after {GetElapsedSeconds():F1} s. {FormatSearchStatsSummary(_latestProgress, includeOutputStates: true)}. {FormatLiveDiagnosticsSummary(_latestProgress)}.";
             _detailsTextBox.Text = BuildLiveDiagnosticsText(_latestProgress);
         }
         catch (Exception ex)
         {
             _runStopwatch?.Stop();
-            _summaryLabel.Text = $"Run failed after {GetElapsedSeconds():F1} s. {FormatSearchStatsSummary(_latestProgress, includeOutputStates: true)}. {FormatLiveDiagnosticsSummary(_latestProgress)}.";
+            _statusLabel.Text = $"Run failed after {GetElapsedSeconds():F1} s. {FormatSearchStatsSummary(_latestProgress, includeOutputStates: true)}. {FormatLiveDiagnosticsSummary(_latestProgress)}.";
             _detailsTextBox.Text = BuildLiveDiagnosticsText(_latestProgress);
             MessageBox.Show(this, ex.Message, "Run failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
@@ -528,6 +578,64 @@ class MainForm : Form
 
         _treeView.EndUpdate();
         _treeView.SelectedNode = root;
+
+        PopulateOverview(defaultPlan);
+    }
+
+    // Resets the result surfaces (overview list, tree, navigation state, details) so a fresh Run
+    // does not leave the previous parameters' output on screen while the new search is in flight or
+    // if it is cancelled / fails before producing a plan.
+    private void ClearResultsView()
+    {
+        _overviewList.Items.Clear();
+
+        _treeView.BeginUpdate();
+        _treeView.Nodes.Clear();
+        _treeView.EndUpdate();
+
+        _stateNodesByKey.Clear();
+        _referenceTargets.Clear();
+        _navigationHistory.Clear();
+        _backButton.Enabled = false;
+    }
+
+    private void PopulateOverview(StrategyPlan defaultPlan)
+    {
+        _overviewList.BeginUpdate();
+        _overviewList.Items.Clear();
+        foreach (OverviewRow row in StrategyOverviewRenderer.Build(defaultPlan).Rows)
+        {
+            string? key = row.LinkStateId is int id ? $"default:{id}" : null;
+            var headlineItem = new ListViewItem(row.Headline) { Tag = key };
+            _overviewList.Items.Add(headlineItem);
+            foreach (string detail in row.Details)
+            {
+                _overviewList.Items.Add(new ListViewItem("        " + detail)
+                {
+                    Tag = key,
+                    ForeColor = _palette.MutedForeColor,
+                });
+            }
+        }
+
+        if (_overviewList.Columns.Count > 0)
+            _overviewList.Columns[0].Width = Math.Max(_overviewList.ClientSize.Width, 1);
+        _overviewList.EndUpdate();
+    }
+
+    private void JumpFromOverviewSelection()
+    {
+        if (_overviewList.SelectedItems.Count == 0)
+            return;
+
+        if (_overviewList.SelectedItems[0].Tag is not string targetStateKey)
+            return;
+
+        if (!_stateNodesByKey.TryGetValue(targetStateKey, out TreeNode? targetNode))
+            return;
+
+        targetNode.EnsureVisible();
+        _treeView.SelectedNode = targetNode;
     }
 
     private TreeNode CreatePlanTreeRoot(string label, StrategyPlan plan, string scope)
@@ -787,11 +895,11 @@ class MainForm : Form
         try
         {
             Clipboard.SetText(text);
-            _summaryLabel.Text = "Copied to clipboard.";
+            _statusLabel.Text = "Copied to clipboard.";
         }
         catch (Exception ex)
         {
-            _summaryLabel.Text = $"Copy failed: {ex.Message}";
+            _statusLabel.Text = $"Copy failed: {ex.Message}";
         }
     }
 
@@ -843,6 +951,9 @@ class MainForm : Form
         BackColor = _palette.FormBackColor;
         ForeColor = _palette.ForeColor;
         ApplyThemeToControlTree(this);
+        _statusStrip.BackColor = _palette.SurfaceBackColor;
+        _statusStrip.ForeColor = _palette.ForeColor;
+        _statusLabel.ForeColor = _palette.ForeColor;
 
         if (_defaultPlan is not null && _compactPlan is not null)
         {
@@ -852,7 +963,7 @@ class MainForm : Form
         }
         else if (_runCancellationSource is null)
         {
-            _summaryLabel.Text = "Ready.";
+            _statusLabel.Text = "Ready.";
             _detailsTextBox.Text = BuildIdleDetailsText();
         }
     }
@@ -869,6 +980,10 @@ class MainForm : Form
             case RichTextBox richTextBox:
                 richTextBox.BackColor = _palette.SurfaceBackColor;
                 richTextBox.ForeColor = _palette.ForeColor;
+                break;
+            case ListView listView:
+                listView.BackColor = _palette.SurfaceBackColor;
+                listView.ForeColor = _palette.ForeColor;
                 break;
             case TextBox textBox:
                 textBox.BackColor = _palette.InputBackColor;
@@ -915,7 +1030,7 @@ class MainForm : Form
         string compactText = compactImproved
             ? $"compact improved output states {defaultPlan.SearchStatistics.OutputStates} -> {compactPlan.SearchStatistics.OutputStates}"
             : $"compact produced no better result (default output states {defaultPlan.SearchStatistics.OutputStates}, compact {compactPlan.SearchStatistics.OutputStates})";
-        _summaryLabel.Text =
+        _statusLabel.Text =
             $"n={defaultPlan.N}, m={defaultPlan.M}, k={defaultPlan.K}, total elapsed={totalElapsedMs:F1} ms, " +
             $"worst-case steps={defaultPlan.MaxStep}, {compactText}.";
     }
@@ -995,7 +1110,7 @@ class MainForm : Form
         string incumbent = snapshot.LatestRootIncumbent is null
             ? "incumbent -"
             : $"incumbent <= {snapshot.LatestRootIncumbent.BestWorstCaseSteps}";
-        _summaryLabel.Text = $"Running (phase {GetPhaseLabel()})... {GetElapsedSeconds():F1} s, searched {snapshot.SearchedStates}, {incumbent}.";
+        _statusLabel.Text = $"Running (phase {GetPhaseLabel()})... {GetElapsedSeconds():F1} s, searched {snapshot.SearchedStates}, {incumbent}.";
         _detailsTextBox.Text = BuildLiveDiagnosticsText(snapshot);
     }
 
