@@ -161,6 +161,8 @@ class Program
         var builder = new StrategyBuilder(n, m, k, System.Threading.CancellationToken.None, ReportProgress);
         StrategyPlan defaultPlan = builder.BuildDefaultPlan();
         ClearProgressLine();
+        Console.Write(StrategyOverviewRenderer.RenderText(defaultPlan));
+        Console.WriteLine();
         Console.Write(StrategyTextRenderer.Render(defaultPlan));
 
         StrategyPlan compactPlan = builder.BuildCompactPlan();
@@ -173,6 +175,8 @@ class Program
         ClearProgressLine();
         Console.WriteLine();
         Console.WriteLine("==================== compact refinement ====================");
+        Console.Write(StrategyOverviewRenderer.RenderText(compactPlan));
+        Console.WriteLine();
         Console.Write(StrategyTextRenderer.Render(compactPlan));
     }
 
