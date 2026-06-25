@@ -241,16 +241,309 @@ class ComparisonState
         if (_canonicalKeyCache is not null)
             return _canonicalKeyCache.Value;
 
-        var labels = GetStructuralLabels();
-        _canonicalKeyCache = BuildCanonicalKey(ActiveMask, labels);
+        _canonicalKeyCache = ComputeCanonicalForm(ActiveMask, fixedTopMask: 0);
         return _canonicalKeyCache.Value;
     }
 
     public IntSequenceKey GetDisplayCanonicalKey(ulong fixedTopMask)
     {
-        ulong combinedMask = ActiveMask | fixedTopMask;
-        int[] labels = ComputeStructuralLabels(combinedMask);
-        return BuildCanonicalKey(combinedMask, labels);
+        return ComputeCanonicalForm(ActiveMask | fixedTopMask, fixedTopMask);
+    }
+
+    // Produces a COMPLETE canonical invariant of the included sub-poset via
+    // individualization-refinement (a McKay-style canonical labeling). 1-WL color
+    // refinement alone is not a complete graph invariant: non-isomorphic posets can share
+    // a refined coloring and therefore collide. Such collisions corrupt the exact-step
+    // caches (a hard state inherits an easier isomorphism-class's cached cost), which in
+    // turn breaks compact selection's step-budget invariant. Individualization-refinement
+    // distinguishes every non-isomorphic state while still mapping isomorphic states (and
+    // fixed-top elements onto fixed-top elements) to an identical key.
+    private IntSequenceKey ComputeCanonicalForm(ulong includedMask, ulong fixedTopMask)
+    {
+        int n = _n;
+        var verts = new int[n];
+        int a = 0;
+        ulong remaining = includedMask;
+        while (remaining != 0)
+        {
+            int i = BitOperations.TrailingZeroCount(remaining);
+            remaining &= remaining - 1;
+            verts[a++] = i;
+        }
+
+        if (a == 0)
+            return new IntSequenceKey(new[] { 0 });
+
+        // Position-space adjacency over the active vertices: anc[p] holds the positions
+        // dominated by verts[p] (i.e. verts[p] is an ancestor / strictly greater).
+        var pos = new int[n];
+        for (int p = 0; p < a; p++)
+            pos[verts[p]] = p;
+
+        var anc = new ulong[a];
+        var desc = new ulong[a];
+        for (int p = 0; p < a; p++)
+        {
+            ulong upMask = _ancestors[verts[p]] & includedMask;
+            while (upMask != 0)
+            {
+                int b = BitOperations.TrailingZeroCount(upMask);
+                upMask &= upMask - 1;
+                // verts[p]'s ancestor b means b > verts[p]; record as desc edge b->p.
+                desc[p] |= 1UL << pos[b];
+            }
+
+            ulong downMask = _descendants[verts[p]] & includedMask;
+            while (downMask != 0)
+            {
+                int b = BitOperations.TrailingZeroCount(downMask);
+                downMask &= downMask - 1;
+                anc[p] |= 1UL << pos[b];
+            }
+        }
+
+        // Seed colors distinguish fixed-top elements from ordinary active candidates so the
+        // canonicalization never maps a guaranteed-top item onto a still-contested one.
+        var seed = new int[a];
+        for (int p = 0; p < a; p++)
+        {
+            ulong bit = 1UL << verts[p];
+            seed[p] = (fixedTopMask & bit) != 0 ? 1 : 0;
+        }
+
+        var refined = RefineCanonicalColoring(a, anc, desc, seed);
+
+        int[]? best = null;
+        CanonicalizeRecursive(a, anc, desc, seed, refined, ref best);
+        return new IntSequenceKey(best!);
+    }
+
+    // Refines a coloring to the 1-WL fixed point using ancestor/descendant color multisets.
+    private static int[] RefineCanonicalColoring(int a, ulong[] anc, ulong[] desc, int[] colors)
+    {
+        var labels = (int[])colors.Clone();
+        var order = new int[a];
+        var perm = new int[a];
+
+        bool changed;
+        do
+        {
+            int classCount = 0;
+            for (int i = 0; i < a; i++)
+                if (labels[i] > classCount)
+                    classCount = labels[i];
+            classCount++;
+
+            int width = 1 + 2 * classCount;
+            var sig = new int[a * width];
+            for (int i = 0; i < a; i++)
+            {
+                int baseIdx = i * width;
+                sig[baseIdx] = labels[i];
+
+                ulong up = desc[i];
+                while (up != 0)
+                {
+                    int b = BitOperations.TrailingZeroCount(up);
+                    up &= up - 1;
+                    sig[baseIdx + 1 + labels[b]]++;
+                }
+
+                ulong down = anc[i];
+                while (down != 0)
+                {
+                    int b = BitOperations.TrailingZeroCount(down);
+                    down &= down - 1;
+                    sig[baseIdx + 1 + classCount + labels[b]]++;
+                }
+
+                order[i] = i;
+                perm[i] = i;
+            }
+
+            for (int x = 1; x < a; x++)
+            {
+                int keyPos = perm[x];
+                int y = x - 1;
+                while (y >= 0 && CompareCanonicalSignatures(sig, perm[y], keyPos, width) > 0)
+                {
+                    perm[y + 1] = perm[y];
+                    y--;
+                }
+
+                perm[y + 1] = keyPos;
+            }
+
+            var nextLabels = new int[a];
+            int color = 0;
+            for (int r = 0; r < a; r++)
+            {
+                if (r > 0 && CompareCanonicalSignatures(sig, perm[r - 1], perm[r], width) != 0)
+                    color++;
+                nextLabels[order[perm[r]]] = color;
+            }
+
+            changed = false;
+            for (int i = 0; i < a; i++)
+            {
+                if (labels[i] != nextLabels[i])
+                {
+                    changed = true;
+                    break;
+                }
+            }
+
+            labels = nextLabels;
+        }
+        while (changed);
+
+        return labels;
+    }
+
+    private static int CompareCanonicalSignatures(int[] sig, int posLeft, int posRight, int width)
+    {
+        int left = posLeft * width;
+        int right = posRight * width;
+        for (int t = 0; t < width; t++)
+        {
+            int diff = sig[left + t] - sig[right + t];
+            if (diff != 0)
+                return diff;
+        }
+
+        return 0;
+    }
+
+    private static void CanonicalizeRecursive(int a, ulong[] anc, ulong[] desc, int[] seed, int[] colors, ref int[]? best)
+    {
+        int classCount = 0;
+        for (int i = 0; i < a; i++)
+            if (colors[i] + 1 > classCount)
+                classCount = colors[i] + 1;
+
+        // Find the smallest color value owning more than one vertex (the target cell).
+        var cellSize = new int[classCount];
+        for (int i = 0; i < a; i++)
+            cellSize[colors[i]]++;
+
+        int targetColor = -1;
+        for (int c = 0; c < classCount; c++)
+        {
+            if (cellSize[c] > 1)
+            {
+                targetColor = c;
+                break;
+            }
+        }
+
+        if (targetColor < 0)
+        {
+            // Discrete coloring: colors form a bijection onto 0..a-1, giving a canonical order.
+            var candidate = ReadCanonicalKey(a, anc, seed, colors);
+            if (best is null || CompareKeyArrays(candidate, best) < 0)
+                best = candidate;
+            return;
+        }
+
+        for (int p = 0; p < a; p++)
+        {
+            if (colors[p] != targetColor)
+                continue;
+
+            // Automorphism pruning: skip p when an earlier same-cell vertex is interchangeable
+            // with it (identical poset relations to every other vertex and mutually incomparable).
+            // Individualizing interchangeable vertices yields isomorphic colored posets and hence
+            // the same canonical sub-key, so trying only one representative per interchangeability
+            // class cannot change the minimum. This collapses the otherwise factorial branching on
+            // large symmetric cells (e.g. antichains) to one branch per class.
+            bool redundant = false;
+            for (int q = 0; q < p; q++)
+            {
+                if (colors[q] == targetColor && AreInterchangeable(p, q, anc, desc))
+                {
+                    redundant = true;
+                    break;
+                }
+            }
+
+            if (redundant)
+                continue;
+
+            // Individualize p: it sorts ahead of its former cell-mates; all other cells keep
+            // their relative order. Re-refine, then recurse.
+            var individualized = new int[a];
+            for (int i = 0; i < a; i++)
+                individualized[i] = 2 * colors[i] + (colors[i] == targetColor && i != p ? 1 : 0);
+
+            var refined = RefineCanonicalColoring(a, anc, desc, individualized);
+            CanonicalizeRecursive(a, anc, desc, seed, refined, ref best);
+        }
+    }
+
+    // Two vertices (positions) are interchangeable when swapping them is an automorphism of the
+    // colored poset: they must be mutually incomparable and have identical ancestor/descendant
+    // relations to every other vertex.
+    private static bool AreInterchangeable(int p, int q, ulong[] anc, ulong[] desc)
+    {
+        ulong bp = 1UL << p;
+        ulong bq = 1UL << q;
+
+        if (((anc[p] | desc[p]) & bq) != 0)
+            return false;
+
+        if ((anc[p] & ~bq) != (anc[q] & ~bp))
+            return false;
+
+        if ((desc[p] & ~bq) != (desc[q] & ~bp))
+            return false;
+
+        return true;
+    }
+
+    private static int[] ReadCanonicalKey(int a, ulong[] anc, int[] seed, int[] colors)
+    {
+        // colors[v] is the canonical rank of vertex v (a permutation of 0..a-1).
+        var byRank = new int[a];
+        for (int v = 0; v < a; v++)
+            byRank[colors[v]] = v;
+
+        // Per canonical row: the seed flag, then the ancestor relation to every other canonical
+        // column packed as two ints (a <= 64). This is a complete invariant in canonical order.
+        var parts = new int[1 + a * 3];
+        parts[0] = a;
+        int w = 1;
+        for (int rc = 0; rc < a; rc++)
+        {
+            int v = byRank[rc];
+            parts[w++] = seed[v];
+
+            ulong row = 0;
+            ulong ancMask = anc[v];
+            while (ancMask != 0)
+            {
+                int b = BitOperations.TrailingZeroCount(ancMask);
+                ancMask &= ancMask - 1;
+                row |= 1UL << colors[b];
+            }
+
+            parts[w++] = (int)(row & 0xFFFFFFFF);
+            parts[w++] = (int)(row >> 32);
+        }
+
+        return parts;
+    }
+
+    private static int CompareKeyArrays(int[] left, int[] right)
+    {
+        int len = Math.Min(left.Length, right.Length);
+        for (int i = 0; i < len; i++)
+        {
+            int diff = left[i] - right[i];
+            if (diff != 0)
+                return diff;
+        }
+
+        return left.Length - right.Length;
     }
 
     internal ulong GetAncestorMask(int item)
@@ -403,83 +696,6 @@ class ComparisonState
         return labels;
     }
 
-    private IntSequenceKey BuildCanonicalKey(ulong includedMask, IReadOnlyList<int> labels)
-    {
-        int n = _n;
-        Span<bool> present = stackalloc bool[n];
-        ulong remaining = includedMask;
-        while (remaining != 0)
-        {
-            int i = BitOperations.TrailingZeroCount(remaining);
-            remaining &= remaining - 1;
-            present[labels[i]] = true;
-        }
-
-        Span<int> classIds = stackalloc int[n];
-        int classCount = 0;
-        for (int c = 0; c < n; c++)
-        {
-            if (present[c])
-                classIds[classCount++] = c;
-        }
-
-        var parts = new List<int> { classCount };
-        Span<int> members = stackalloc int[n];
-        Span<int> counts = stackalloc int[n];
-        for (int ci = 0; ci < classCount; ci++)
-        {
-            int classId = classIds[ci];
-            int memberCount = 0;
-            ulong memberMask = includedMask;
-            while (memberMask != 0)
-            {
-                int i = BitOperations.TrailingZeroCount(memberMask);
-                memberMask &= memberMask - 1;
-                if (labels[i] == classId)
-                    members[memberCount++] = i;
-            }
-
-            parts.Add(memberCount);
-            parts.Add(1);
-
-            for (int phase = 0; phase < 2; phase++)
-            {
-                for (int oci = 0; oci < classCount; oci++)
-                {
-                    int otherClass = classIds[oci];
-                    for (int mi = 0; mi < memberCount; mi++)
-                    {
-                        int member = members[mi];
-                        ulong neighborMask = (phase == 0 ? _ancestors[member] : _descendants[member]) & includedMask;
-                        counts[mi] = CountNeighborsWithLabel(neighborMask, labels, otherClass);
-                    }
-
-                    InsertionSort(counts, memberCount);
-                    for (int mi = 0; mi < memberCount; mi++)
-                        parts.Add(counts[mi]);
-                }
-            }
-        }
-
-        return new IntSequenceKey(parts.ToArray());
-    }
-
-    private static void InsertionSort(Span<int> values, int count)
-    {
-        for (int a = 1; a < count; a++)
-        {
-            int key = values[a];
-            int b = a - 1;
-            while (b >= 0 && values[b] > key)
-            {
-                values[b + 1] = values[b];
-                b--;
-            }
-
-            values[b + 1] = key;
-        }
-    }
-
     public bool IsActive(int item)
     {
         return (ActiveMask & Bit(item)) != 0;
@@ -625,17 +841,5 @@ class ComparisonState
             yield return bit;
             mask &= mask - 1;
         }
-    }
-
-    private static int CountNeighborsWithLabel(ulong mask, IReadOnlyList<int> labels, int targetLabel)
-    {
-        int count = 0;
-        foreach (int item in EnumerateBits(mask))
-        {
-            if (labels[item] == targetLabel)
-                count++;
-        }
-
-        return count;
     }
 }
