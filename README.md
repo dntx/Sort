@@ -56,12 +56,14 @@ The program has three entry points that share the same input validation
 ### Command-line arguments
 
 ```bash
-dotnet run -- <n> <m> <k> [--compact]
+dotnet run -- <n> <m> <k>
 ```
 
 - Prints the strategy tree for `n`, `m`, `k` to **stdout**.
-- `--compact` (or `-c`) prints the compact, alias-compressed tree where shared
-  sub-trees are emitted once and later referenced by their state id.
+- The CLI always runs in two phases: it first prints the default strategy, then
+  performs compact refinement reusing the solved exact-step cache.
+- If compact refinement does not reduce output states, only the default strategy
+  is printed; otherwise both default and refined compact strategies are printed.
 - Search progress is written to **stderr**, so you can redirect the result on its
   own: `dotnet run -- 12 3 3 > tree.txt`.
 - `--help` (or `-h`) prints usage and exits.
@@ -112,9 +114,9 @@ S1 [step 1/3] sort(#1, #2, #3)
 The output is grouped into four banner-delimited sections: a **summary**
 (parameters and the worst-case number of sorts), **diagnostics** (search
 telemetry), a **legend** explaining the notation, and the **strategy** tree
-itself. For small inputs such as `n=8, m=3, k=3` the full tree is readable; for
-larger inputs use `--compact`, because each sort may have multiple feasible
-outcomes and the full tree grows quickly.
+itself. The CLI now runs default first and then compact refinement automatically:
+if refinement improves output-state count, both trees are printed; otherwise only
+the default tree is printed.
 
 ### Desktop UI details
 

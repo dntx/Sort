@@ -18,12 +18,12 @@ partial class StrategyBuilder
 
     public static StrategyPlan GenerateCompact(int n, int m, int k, System.Threading.CancellationToken cancellationToken = default)
     {
-        return new StrategyBuilder(n, m, k, cancellationToken) { _useCompactSelection = true }.Build();
+        return new StrategyBuilder(n, m, k, cancellationToken).BuildCompactPlan();
     }
 
     public static StrategyPlan GenerateCompact(int n, int m, int k, System.Threading.CancellationToken cancellationToken, Action<SearchProgressSnapshot> progressCallback)
     {
-        return new StrategyBuilder(n, m, k, cancellationToken, progressCallback) { _useCompactSelection = true }.Build();
+        return new StrategyBuilder(n, m, k, cancellationToken, progressCallback).BuildCompactPlan();
     }
 
     // Returns the proxy subtree cost (number of materialized nodes) under the
