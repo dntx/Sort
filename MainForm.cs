@@ -699,7 +699,10 @@ class MainForm : Form
             ForeColor = _palette.StateColor,
             Tag = BuildStateDetails(node),
         };
-        _stateNodesByKey[$"{scope}:{node.StateId}"] = treeNode;
+        // Keep the first (representative-spine) occurrence: the same canonical StateId can be fully
+        // expanded at several positions with different relabelings, and the overview links by StateId
+        // to the representative main line, which DFS visits (and inserts) first.
+        _stateNodesByKey.TryAdd($"{scope}:{node.StateId}", treeNode);
 
         if (node.FinalChoice is not null)
         {
@@ -787,7 +790,7 @@ class MainForm : Form
             ForeColor = _palette.ResultColor,
             Tag = $"Result state S{node.StateId}\nTop {k} = ({StrategyTextRenderer.FormatSet(node.TopSet)})",
         };
-        _stateNodesByKey[$"{scope}:{node.StateId}"] = treeNode;
+        _stateNodesByKey.TryAdd($"{scope}:{node.StateId}", treeNode);
         return treeNode;
     }
 
