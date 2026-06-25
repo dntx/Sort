@@ -737,6 +737,33 @@ class ComparisonState
         return MaskToOrderedList(ActiveMask);
     }
 
+    // Partitions the active items into "free symmetry classes": maximal sets of active items that
+    // share identical active-restricted ancestor and descendant sets. Such a class is necessarily
+    // an antichain whose members relate identically to every other item, so permuting its members
+    // (and fixing everything else) is always an automorphism of the active poset. This matches the
+    // equivalence captured by GetGroupCanonicalKey, which canonicalizes the active sub-poset over
+    // ActiveMask with fixedTopMask 0. Each class is returned as an ascending list of item indices,
+    // and classes are ordered by their smallest member.
+    public List<List<int>> GetFreeSymmetryClasses()
+    {
+        var classes = new List<List<int>>();
+        var keyToIndex = new Dictionary<(ulong Ancestors, ulong Descendants), int>();
+        foreach (int item in EnumerateBits(ActiveMask))
+        {
+            var key = (_ancestors[item] & ActiveMask, _descendants[item] & ActiveMask);
+            if (!keyToIndex.TryGetValue(key, out int index))
+            {
+                index = classes.Count;
+                keyToIndex[key] = index;
+                classes.Add(new List<int>());
+            }
+
+            classes[index].Add(item);
+        }
+
+        return classes;
+    }
+
     public static List<int> MaskToOrderedList(ulong mask)
     {
         return EnumerateBits(mask).ToList();
