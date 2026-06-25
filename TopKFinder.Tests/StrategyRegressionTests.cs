@@ -178,23 +178,22 @@ public sealed class StrategyRegressionTests
         Assert.True(plan.SearchStatistics.OutputStates <= 29, $"output states regressed to {plan.SearchStatistics.OutputStates}");
         Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 9, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
 
+        // #2 and #6 are interchangeable here via a group-fixing automorphism (the same one the
+        // search path already used to dedup #2>#6 against #6>#2). The display path now recognizes
+        // that symmetry too, so both #2/#6 and #9/#10 collapse into a single permute template and
+        // the formerly-split #6 > #2 sibling is folded into this branch's equivalent orders.
         StrategyBranch branch = StrategyTestHelpers.FindBranchByOrderText(plan.Root, "#2 > #6 > #9 > #10");
         Assert.NotNull(branch.EquivalentOrders);
-        Assert.Equal(2, branch.EquivalentOrders!.Count);
-        Assert.Equal("2!", branch.EquivalentOrders.CountFormula);
+        Assert.Equal(4, branch.EquivalentOrders!.Count);
+        Assert.Equal("2! x 2!", branch.EquivalentOrders.CountFormula);
+        Assert.Contains("permute{#2, #6}", branch.EquivalentOrders.PatternText);
         Assert.Contains("permute{#9, #10}", branch.EquivalentOrders.PatternText);
-        Assert.Contains("#2 > #6", branch.EquivalentOrders.PatternText);
-        Assert.DoesNotContain("#6 > #2", branch.EquivalentOrders.PatternText);
 
-        // The genuinely-distinct #6 > #2 ordering is now a separate branch that keeps its own
-        // #9/#10 alias compression and reuses the shared result subtree via a reference.
-        StrategyBranch siblingBranch = StrategyTestHelpers.FindBranchByOrderText(plan.Root, "#6 > #2 > #9 > #10");
-        Assert.NotNull(siblingBranch.EquivalentOrders);
-        Assert.Equal(2, siblingBranch.EquivalentOrders!.Count);
-        Assert.Equal("2!", siblingBranch.EquivalentOrders.CountFormula);
-        Assert.Contains("permute{#9, #10}", siblingBranch.EquivalentOrders.PatternText);
-        Assert.Contains("#6 > #2", siblingBranch.EquivalentOrders.PatternText);
-        Assert.Equal(StrategyNodeKind.Reference, siblingBranch.Next.Kind);
+        // The #6 > #2 ordering is no longer a distinct branch; it is now part of the permute family
+        // above, so no separate (reference) sibling exists for it.
+        Assert.DoesNotContain(
+            StrategyTestHelpers.EnumerateBranches(plan.Root),
+            candidate => candidate.OrderText == "#6 > #2 > #9 > #10");
     }
 
     [Fact]
@@ -536,8 +535,8 @@ public sealed class StrategyRegressionTests
         const string expected = """
                     S3 [step 3/5] sort(#2, #6, #9, #10)
                       #2 > #6 > #9 > #10: [+ (#1), - (#7~#10), fixed (#1), possible (#2~#6, #11, #12)]
-                        equivalent forms: 2 = 2!
-                        pattern: C=permute{#9, #10}; #2 > #6 > C1 > C2
+                        equivalent forms: 4 = 2! x 2!
+                        pattern: A=permute{#2, #6}, B=permute{#9, #10}; A1 > A2 > B1 > B2
                         S4 [step 4/5] sort(#3, #5, #11, #12)
                           #11 > #12 > #3 > #5: [+ (#2, #11, #12), - (#3~#6), fixed (#1, #2, #11, #12)] S5: top 4 = (#1, #2, #11, #12)
                             equivalent forms: 2 = 2!
@@ -963,7 +962,7 @@ internal static class StrategyTestHelpers
         return string.Join("\n", lines[startIndex..endIndex]);
     }
 
-    private static IEnumerable<StrategyBranch> EnumerateBranches(StrategyNode node)
+    public static IEnumerable<StrategyBranch> EnumerateBranches(StrategyNode node)
     {
         foreach (StrategyBranch branch in node.Branches)
         {

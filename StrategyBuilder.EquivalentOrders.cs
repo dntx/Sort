@@ -195,7 +195,10 @@ partial class StrategyBuilder
             parent[ra] = rb;
     }
 
-    private int[] BuildSearchClassPredecessors(ComparisonState state, IReadOnlyList<int> group, ulong activeMask)
+    // Partitions the group into symmetry classes via union-find, merging two members whenever an
+    // automorphism of the active DAG swaps them while fixing the rest of the group. Returns the
+    // shared scratch parent array; callers must consume it before any other call reuses the scratch.
+    private int[] BuildGroupSymmetryParents(ComparisonState state, IReadOnlyList<int> group, ulong activeMask)
     {
         int[] parent = _classParentScratch is { Length: var len } buffer && len >= _n
             ? buffer
@@ -243,6 +246,13 @@ partial class StrategyBuilder
                     ClassUnion(parent, i, j);
             }
         }
+
+        return parent;
+    }
+
+    private int[] BuildSearchClassPredecessors(ComparisonState state, IReadOnlyList<int> group, ulong activeMask)
+    {
+        int[] parent = BuildGroupSymmetryParents(state, group, activeMask);
 
         var previousInClass = new int[_n];
         foreach (int item in group)
@@ -424,17 +434,25 @@ partial class StrategyBuilder
     private GroupSymmetryInfo BuildGroupSymmetryInfo(ComparisonState state, IReadOnlyList<int> group)
     {
         ulong activeMask = state.ActiveMask;
-        var groupedItems = group
-            .GroupBy(item => new SymmetrySignature(state.GetAncestorMask(item) & activeMask, state.GetDescendantMask(item) & activeMask))
-            .OrderBy(grouping => grouping.Min())
-            .ToList();
+        int[] parent = BuildGroupSymmetryParents(state, group, activeMask);
 
-        var classes = groupedItems
-            .Select((grouping, index) =>
+        var classItems = new Dictionary<int, List<int>>();
+        foreach (int item in group)
+        {
+            int root = ClassFind(parent, item);
+            if (!classItems.TryGetValue(root, out var items))
             {
-                int[] items = grouping.OrderBy(item => item).ToArray();
-                return new GroupSymmetryClass(index, items, state.GetAncestorMask(items[0]) & activeMask);
-            })
+                items = new List<int>();
+                classItems[root] = items;
+            }
+
+            items.Add(item);
+        }
+
+        var classes = classItems.Values
+            .Select(items => items.OrderBy(item => item).ToArray())
+            .OrderBy(items => items[0])
+            .Select((items, index) => new GroupSymmetryClass(index, items, state.GetAncestorMask(items[0]) & activeMask))
             .ToList();
 
         var itemToClassIndex = new Dictionary<int, int>(group.Count);
@@ -1506,8 +1524,6 @@ partial class StrategyBuilder
     {
         public int Savings => OrderIndices.Count - 1;
     }
-
-    private readonly record struct SymmetrySignature(ulong AncestorMask, ulong DescendantMask);
 
     private sealed class GroupSymmetryClass
     {
