@@ -321,13 +321,15 @@ class MainForm : Form
             View = View.Details,
             HeaderStyle = ColumnHeaderStyle.None,
             FullRowSelect = true,
-            MultiSelect = false,
+            MultiSelect = true,
             HideSelection = false,
             Font = new Font(FontFamily.GenericSansSerif, 9),
         };
         _overviewList.Columns.Add("Overview", -2, HorizontalAlignment.Left);
         _overviewList.SelectedIndexChanged += (_, _) => JumpFromOverviewSelection();
         _overviewList.Resize += (_, _) => ResizeOverviewColumn();
+        _overviewList.ContextMenuStrip = CreateOverviewContextMenu();
+        _overviewList.KeyDown += OverviewList_KeyDown;
 
         var innerSplit = new SplitContainer
         {
@@ -662,6 +664,73 @@ class MainForm : Form
 
         targetNode.EnsureVisible();
         _treeView.SelectedNode = targetNode;
+    }
+
+    private ContextMenuStrip CreateOverviewContextMenu()
+    {
+        var menu = new ContextMenuStrip();
+
+        var copySelected = new ToolStripMenuItem("Copy") { ShortcutKeyDisplayString = "Ctrl+C" };
+        copySelected.Click += (_, _) => CopyOverviewSelection();
+
+        var copyAll = new ToolStripMenuItem("Copy all");
+        copyAll.Click += (_, _) => CopyOverviewAll();
+
+        menu.Items.Add(copySelected);
+        menu.Items.Add(copyAll);
+
+        menu.Opening += (_, e) =>
+        {
+            if (_overviewList.Items.Count == 0)
+            {
+                e.Cancel = true;
+                return;
+            }
+
+            copySelected.Enabled = _overviewList.SelectedItems.Count > 0;
+            copyAll.Enabled = true;
+        };
+
+        return menu;
+    }
+
+    private void OverviewList_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Control && e.KeyCode == Keys.C)
+        {
+            CopyOverviewSelection();
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+        }
+        else if (e.Control && e.KeyCode == Keys.A)
+        {
+            foreach (ListViewItem item in _overviewList.Items)
+                item.Selected = true;
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+        }
+    }
+
+    private void CopyOverviewSelection()
+    {
+        if (_overviewList.SelectedItems.Count == 0)
+            return;
+
+        var builder = new System.Text.StringBuilder();
+        foreach (ListViewItem item in _overviewList.SelectedItems)
+            builder.AppendLine(item.Text);
+        SetClipboardText(builder.ToString().TrimEnd());
+    }
+
+    private void CopyOverviewAll()
+    {
+        if (_overviewList.Items.Count == 0)
+            return;
+
+        var builder = new System.Text.StringBuilder();
+        foreach (ListViewItem item in _overviewList.Items)
+            builder.AppendLine(item.Text);
+        SetClipboardText(builder.ToString().TrimEnd());
     }
 
     private TreeNode CreatePlanTreeRoot(string label, StrategyPlan plan, string scope)
