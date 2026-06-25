@@ -160,15 +160,7 @@ static class StrategyTextRenderer
 
     public static string FormatEffect(StrategyEffect effect)
     {
-        var parts = new List<string>(4);
-        if (effect.NewlyGuaranteedTop.Count > 0)
-            parts.Add(FormatInEntry(effect.NewlyGuaranteedTop));
-        if (effect.NewlyExcluded.Count > 0)
-            parts.Add(FormatOutEntry(effect.NewlyExcluded));
-        if (effect.FixedCandidates.Count > 0)
-            parts.Add(FormatFixedEntry(effect.FixedCandidates));
-        if (effect.PossibleCandidates.Count > 0)
-            parts.Add(FormatPossibleEntry(effect.PossibleCandidates));
+        var parts = GetNonEmptyEffectEntries(effect);
         return $"[{string.Join(", ", parts)}]";
     }
 
@@ -182,13 +174,7 @@ static class StrategyTextRenderer
 
     public static string FormatEffectDetails(StrategyEffect effect)
     {
-        return string.Join("\n", new[]
-        {
-            FormatInEntry(effect.NewlyGuaranteedTop),
-            FormatOutEntry(effect.NewlyExcluded),
-            FormatFixedEntry(effect.FixedCandidates),
-            FormatPossibleEntry(effect.PossibleCandidates),
-        });
+        return string.Join("\n", GetNonEmptyEffectEntries(effect));
     }
 
     public static string FormatEquivalentFormsSummary(EquivalentOrderSummary summary)
@@ -216,4 +202,18 @@ static class StrategyTextRenderer
     }
 
     public static string FormatEquivalentPattern(EquivalentOrderSummary summary) => summary.PatternText;
+
+    private static List<string> GetNonEmptyEffectEntries(StrategyEffect effect)
+    {
+        var parts = new List<string>(4);
+        if (effect.NewlyGuaranteedTop.Count > 0)
+            parts.Add(FormatInEntry(effect.NewlyGuaranteedTop));
+        if (effect.NewlyExcluded.Count > 0)
+            parts.Add(FormatOutEntry(effect.NewlyExcluded));
+        if (effect.FixedCandidates.Count > 0)
+            parts.Add(FormatFixedEntry(effect.FixedCandidates));
+        if (effect.PossibleCandidates.Count > 0)
+            parts.Add(FormatPossibleEntry(effect.PossibleCandidates));
+        return parts;
+    }
 }

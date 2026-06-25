@@ -127,7 +127,7 @@ class MainForm : Form
             Margin = new Padding(0, 0, 0, 12),
         };
         headerLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        headerLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        headerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, StatsRowHeight));
         headerLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
 
         _nTextBox = CreateInputTextBox("9");
@@ -191,8 +191,8 @@ class MainForm : Form
         {
             AutoSize = true,
             Margin = Padding.Empty,
-            Text = "0.0 s",
-            Font = new Font(Font.FontFamily, 14, FontStyle.Bold),
+            Text = "0.0 s\ndefault: -\ncompact: -",
+            Font = new Font(Font.FontFamily, 11, FontStyle.Bold),
         };
         _statesLabel = new Label
         {
@@ -204,13 +204,13 @@ class MainForm : Form
         {
             AutoSize = true,
             Margin = Padding.Empty,
-            Text = "outcomes: 0\nduplicate skips: 0\nmerged collisions: 0\nprunes: 0",
+            Text = "outcomes: 0\nduplicate skips: 0\nmerged collisions: 0\nprunes: 0\ncompact: -",
         };
         _progressLabel = new Label
         {
             AutoSize = true,
             Margin = Padding.Empty,
-            Text = "incumbent: -\nmilestones: 0\ncache: 0/0/0/0",
+            Text = "phase: -\nincumbent: -\nmilestones: 0\ncache: 0/0/0/0",
         };
 
         var inputsPanel = new FlowLayoutPanel
@@ -253,7 +253,8 @@ class MainForm : Form
         var statsLayout = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            AutoSize = true,
+            AutoSize = false,
+            Height = StatsRowHeight,
             ColumnCount = 4,
             Margin = Padding.Empty,
         };
@@ -261,10 +262,10 @@ class MainForm : Form
         statsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 28));
         statsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 26));
         statsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 24));
-        statsLayout.Controls.Add(CreateSectionPanel("Elapsed", _elapsedLabel), 0, 0);
-        statsLayout.Controls.Add(CreateSectionPanel("States", _statesLabel), 1, 0);
-        statsLayout.Controls.Add(CreateSectionPanel("Work", _workLabel), 2, 0);
-        statsLayout.Controls.Add(CreateSectionPanel("Progress", _progressLabel), 3, 0);
+        statsLayout.Controls.Add(CreateSectionPanel("Elapsed", _elapsedLabel, fillCell: true), 0, 0);
+        statsLayout.Controls.Add(CreateSectionPanel("States", _statesLabel, fillCell: true), 1, 0);
+        statsLayout.Controls.Add(CreateSectionPanel("Work", _workLabel, fillCell: true), 2, 0);
+        statsLayout.Controls.Add(CreateSectionPanel("Progress", _progressLabel, fillCell: true), 3, 0);
 
         _summaryLabel = new Label
         {
@@ -277,7 +278,6 @@ class MainForm : Form
         {
             Dock = DockStyle.Fill,
             Orientation = Orientation.Vertical,
-            SplitterDistance = 720,
         };
 
         _treeView = new TreeView
@@ -301,6 +301,8 @@ class MainForm : Form
             Dock = DockStyle.Fill,
             ReadOnly = true,
             Font = new Font(FontFamily.GenericMonospace, 10),
+            WordWrap = false,
+            ScrollBars = RichTextBoxScrollBars.Both,
         };
 
         split.Panel1.Controls.Add(_treeView);
@@ -314,12 +316,29 @@ class MainForm : Form
         layout.Controls.Add(split, 0, 1);
 
         Controls.Add(layout);
+        Shown += (_, _) =>
+        {
+            int statsBody = Math.Max(
+                Math.Max(_elapsedLabel.PreferredHeight, _statesLabel.PreferredHeight),
+                Math.Max(_workLabel.PreferredHeight, _progressLabel.PreferredHeight));
+            int statsHeight = statsBody + StatsRowChrome;
+            headerLayout.RowStyles[1].Height = statsHeight;
+            statsLayout.Height = statsHeight;
+
+            split.Panel1MinSize = 360;
+            split.Panel2MinSize = 320;
+            int preferred = (int)(split.Width * 0.62);
+            split.SplitterDistance = Math.Clamp(preferred, split.Panel1MinSize, split.Width - split.Panel2MinSize);
+        };
         AcceptButton = _runButton;
         _elapsedTimer = new System.Windows.Forms.Timer { Interval = 100 };
         _elapsedTimer.Tick += (_, _) => UpdateElapsedLabel();
         _detailsTextBox.Text = BuildIdleDetailsText();
         ApplyTheme(ColorTheme.Dark);
     }
+
+    private const int StatsRowHeight = 150;
+    private const int StatsRowChrome = 84;
 
     private static Control CreateLabeledInput(string labelText, Control inputControl)
     {
@@ -340,12 +359,12 @@ class MainForm : Form
         return panel;
     }
 
-    private static Panel CreateSectionPanel(string title, Control body)
+    private static Panel CreateSectionPanel(string title, Control body, bool fillCell = false)
     {
         var panel = new Panel
         {
             Dock = DockStyle.Fill,
-            AutoSize = true,
+            AutoSize = !fillCell,
             BorderStyle = BorderStyle.FixedSingle,
             Padding = new Padding(10),
             Margin = new Padding(0, 0, 8, 8),
@@ -354,13 +373,15 @@ class MainForm : Form
         var sectionLayout = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            AutoSize = true,
+            AutoSize = !fillCell,
             ColumnCount = 1,
             RowCount = 2,
             Margin = Padding.Empty,
         };
         sectionLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        sectionLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        sectionLayout.RowStyles.Add(fillCell
+            ? new RowStyle(SizeType.Percent, 100f)
+            : new RowStyle(SizeType.AutoSize));
         sectionLayout.Controls.Add(new Label
         {
             Text = title,
@@ -579,29 +600,41 @@ class MainForm : Form
                 });
             }
 
-            branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatInEntry(branch.Effect.NewlyGuaranteedTop))
+            if (branch.Effect.NewlyGuaranteedTop.Count > 0)
             {
-                ForeColor = _palette.InColor,
-                Tag = $"Newly confirmed in top-k: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.NewlyGuaranteedTop)}",
-            });
+                branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatInEntry(branch.Effect.NewlyGuaranteedTop))
+                {
+                    ForeColor = _palette.InColor,
+                    Tag = $"Newly confirmed in top-k: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.NewlyGuaranteedTop)}",
+                });
+            }
 
-            branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatOutEntry(branch.Effect.NewlyExcluded))
+            if (branch.Effect.NewlyExcluded.Count > 0)
             {
-                ForeColor = _palette.OutColor,
-                Tag = $"Newly excluded from top-k: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.NewlyExcluded)}",
-            });
+                branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatOutEntry(branch.Effect.NewlyExcluded))
+                {
+                    ForeColor = _palette.OutColor,
+                    Tag = $"Newly excluded from top-k: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.NewlyExcluded)}",
+                });
+            }
 
-            branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatFixedEntry(branch.Effect.FixedCandidates))
+            if (branch.Effect.FixedCandidates.Count > 0)
             {
-                ForeColor = _palette.FixedColor,
-                Tag = $"Current fixed top-k candidates: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.FixedCandidates)}",
-            });
+                branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatFixedEntry(branch.Effect.FixedCandidates))
+                {
+                    ForeColor = _palette.FixedColor,
+                    Tag = $"Current fixed top-k candidates: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.FixedCandidates)}",
+                });
+            }
 
-            branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatPossibleEntry(branch.Effect.PossibleCandidates))
+            if (branch.Effect.PossibleCandidates.Count > 0)
             {
-                ForeColor = _palette.PossibleColor,
-                Tag = $"Current possible top-k candidates: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.PossibleCandidates)}",
-            });
+                branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatPossibleEntry(branch.Effect.PossibleCandidates))
+                {
+                    ForeColor = _palette.PossibleColor,
+                    Tag = $"Current possible top-k candidates: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.PossibleCandidates)}",
+                });
+            }
 
             branchNode.Nodes.Add(CreateStateNode(branch.Next, k, scope, depthIndex));
             treeNode.Nodes.Add(branchNode);
@@ -761,7 +794,10 @@ class MainForm : Form
 
     private static string BuildBranchDetails(StrategyBranch branch)
     {
-        string details = $"{branch.OrderText}\n{StrategyTextRenderer.FormatEffectDetails(branch.Effect)}";
+        string details = branch.OrderText;
+        string effectDetails = StrategyTextRenderer.FormatEffectDetails(branch.Effect);
+        if (!string.IsNullOrEmpty(effectDetails))
+            details += "\n" + effectDetails;
 
         if (branch.EquivalentOrders is not null)
         {
@@ -911,20 +947,20 @@ class MainForm : Form
 
     private void UpdateElapsedLabel()
     {
-        string text = $"{GetElapsedSeconds():F1} s";
+        string defaultLine = "default: -";
+        string compactLine = "compact-refine: -";
         if (_completedDefaultStats is { } defaultStats)
         {
-            text +=
-                $"\ndefault: {defaultStats.Phase1Milliseconds + defaultStats.Phase2Milliseconds} ms " +
-                $"(exact {defaultStats.Phase1Milliseconds} + build {defaultStats.Phase2Milliseconds})";
+            defaultLine =
+                $"default: {defaultStats.Phase1Milliseconds + defaultStats.Phase2Milliseconds} ms";
         }
         if (_completedCompactStats is { } compactStats)
         {
-            text +=
-                $"\ncompact-refine: {compactStats.Phase1bMilliseconds + compactStats.Phase2Milliseconds} ms " +
-                $"(compact {compactStats.Phase1bMilliseconds} + build {compactStats.Phase2Milliseconds})";
+            compactLine =
+                $"compact: {compactStats.Phase1bMilliseconds + compactStats.Phase2Milliseconds} ms";
         }
 
+        string text = $"{GetElapsedSeconds():F1} s\n{defaultLine}\n{compactLine}";
         _elapsedLabel.Text = text;
     }
 
@@ -953,13 +989,13 @@ class MainForm : Form
             $"feasible-top-set: {p.FeasibleTopSetStates}";
 
         string compactText = p.CompactStatesSolved > 0
-            ? $"\ncompact: {p.CompactStatesSolved} solved, {p.CompactGroupsEnumerated} groups ({p.CompactStepOptimalGroups} opt)"
-            : string.Empty;
+            ? $"compact: {p.CompactStatesSolved} solved, {p.CompactGroupsEnumerated} groups ({p.CompactStepOptimalGroups} opt)"
+            : "compact: -";
         _workLabel.Text =
             $"outcomes: {p.OutcomesConstructed}\n" +
             $"duplicate skips: {p.DuplicateOutcomeSkips}\n" +
             $"merged collisions: {p.MergedOutcomeCollisions}\n" +
-            $"prunes: {p.LowerBoundPrunes}" +
+            $"prunes: {p.LowerBoundPrunes}\n" +
             compactText;
 
         string incumbent = p.LatestRootIncumbent is null
@@ -971,11 +1007,6 @@ class MainForm : Form
             $"milestones: {p.RootIncumbentCount}\n" +
             $"cache: {p.ExactCacheHits}/{p.LowerBoundCacheHits}/{p.FeasibleTopSetCacheHits}/{p.BestGroupPatternCacheHits}";
     }
-    private static string FormatSearchStatsSummary(SearchStatistics statistics)
-    {
-        return $"searched={statistics.SearchedStates}, pending={statistics.PendingStates}, peak pending={statistics.PeakPendingStates}, output states={statistics.OutputStates}";
-    }
-
     private static string FormatSearchStatsSummary(SearchProgressSnapshot snapshot, bool includeOutputStates)
     {
         string outputText = includeOutputStates ? $", output={snapshot.OutputStates}" : string.Empty;
@@ -1108,14 +1139,6 @@ class MainForm : Form
         }
 
         return string.Join(Environment.NewLine, lines);
-    }
-
-    private static string FormatDiagnosticsSummary(SearchDiagnostics diagnostics)
-    {
-        string incumbentText = diagnostics.RootIncumbents.Count == 0
-            ? "incumbent=-"
-            : $"incumbent<={diagnostics.RootIncumbents[^1].BestWorstCaseSteps}";
-        return $"{incumbentText}, root milestones={diagnostics.RootIncumbents.Count}, prunes={diagnostics.LowerBoundPrunes}";
     }
 
     private static string FormatLiveDiagnosticsSummary(SearchProgressSnapshot snapshot)
