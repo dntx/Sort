@@ -78,10 +78,10 @@ class MainForm : Form
     private readonly Button _expandAllButton;
     private readonly Button _collapseAllButton;
     private readonly Button _backButton;
+    private readonly Button _toggleDetailsButton;
     private readonly Label _elapsedLabel;
     private readonly Label _statesLabel;
     private readonly Label _workLabel;
-    private readonly Label _progressLabel;
     private readonly StatusStrip _statusStrip;
     private readonly ToolStripStatusLabel _statusLabel;
     private readonly TreeView _treeView;
@@ -189,6 +189,14 @@ class MainForm : Form
             Margin = new Padding(8, 4, 0, 0),
         };
 
+        _toggleDetailsButton = new Button
+        {
+            Text = "Show Details",
+            AutoSize = true,
+            Height = 30,
+            Margin = new Padding(8, 4, 0, 0),
+        };
+
         _elapsedLabel = new Label
         {
             AutoSize = true,
@@ -208,13 +216,6 @@ class MainForm : Form
             Margin = Padding.Empty,
             Text = "outcomes: 0\nduplicate skips: 0\nmerged collisions: 0\nprunes: 0\ncache: 0/0/0/0\ncompact: -",
         };
-        _progressLabel = new Label
-        {
-            AutoSize = true,
-            Margin = Padding.Empty,
-            Text = "phase: -",
-        };
-
         var inputsPanel = new FlowLayoutPanel
         {
             AutoSize = true,
@@ -239,6 +240,7 @@ class MainForm : Form
         actionsPanel.Controls.Add(_expandAllButton);
         actionsPanel.Controls.Add(_collapseAllButton);
         actionsPanel.Controls.Add(_backButton);
+        actionsPanel.Controls.Add(_toggleDetailsButton);
 
         var controlsLayout = new TableLayoutPanel
         {
@@ -271,9 +273,7 @@ class MainForm : Form
             ColumnCount = 1,
             Margin = Padding.Empty,
         };
-        _progressLabel.Margin = new Padding(0, 6, 0, 0);
         progressBody.Controls.Add(_elapsedLabel, 0, 0);
-        progressBody.Controls.Add(_progressLabel, 0, 1);
 
         statsLayout.Controls.Add(CreateSectionPanel("Progress", progressBody, fillCell: true), 0, 0);
         statsLayout.Controls.Add(CreateSectionPanel("States", _statesLabel, fillCell: true), 1, 0);
@@ -325,19 +325,15 @@ class MainForm : Form
         };
         _overviewList.Columns.Add("Overview", -2, HorizontalAlignment.Left);
         _overviewList.SelectedIndexChanged += (_, _) => JumpFromOverviewSelection();
-        _overviewList.Resize += (_, _) =>
-        {
-            if (_overviewList.Columns.Count > 0)
-                _overviewList.Columns[0].Width = _overviewList.ClientSize.Width;
-        };
+        _overviewList.Resize += (_, _) => ResizeOverviewColumn();
 
-        var treeSplit = new SplitContainer
+        var innerSplit = new SplitContainer
         {
             Dock = DockStyle.Fill,
-            Orientation = Orientation.Horizontal,
+            Orientation = Orientation.Vertical,
+            Panel2Collapsed = true,
         };
-        treeSplit.Panel1.Controls.Add(_overviewList);
-        treeSplit.Panel2.Controls.Add(_treeView);
+        innerSplit.Panel1.Controls.Add(_treeView);
 
         _detailsTextBox = new RichTextBox
         {
@@ -347,9 +343,16 @@ class MainForm : Form
             WordWrap = false,
             ScrollBars = RichTextBoxScrollBars.Both,
         };
+        innerSplit.Panel2.Controls.Add(_detailsTextBox);
 
-        split.Panel1.Controls.Add(treeSplit);
-        split.Panel2.Controls.Add(_detailsTextBox);
+        _toggleDetailsButton.Click += (_, _) =>
+        {
+            innerSplit.Panel2Collapsed = !innerSplit.Panel2Collapsed;
+            _toggleDetailsButton.Text = innerSplit.Panel2Collapsed ? "Show Details" : "Hide Details";
+        };
+
+        split.Panel1.Controls.Add(_overviewList);
+        split.Panel2.Controls.Add(innerSplit);
 
         headerLayout.Controls.Add(controlsLayout, 0, 0);
         headerLayout.Controls.Add(statsLayout, 0, 1);
@@ -361,7 +364,7 @@ class MainForm : Form
         Controls.Add(_statusStrip);
         Shown += (_, _) =>
         {
-            int progressColumn = _elapsedLabel.PreferredHeight + _progressLabel.PreferredHeight + 6;
+            int progressColumn = _elapsedLabel.PreferredHeight + 6;
             int statsBody = Math.Max(
                 progressColumn,
                 Math.Max(_statesLabel.PreferredHeight, _workLabel.PreferredHeight));
@@ -369,16 +372,16 @@ class MainForm : Form
             headerLayout.RowStyles[1].Height = statsHeight;
             statsLayout.Height = statsHeight;
 
-            split.Panel1MinSize = 360;
-            split.Panel2MinSize = 320;
-            int preferred = (int)(split.Width * 0.62);
-            split.SplitterDistance = Math.Clamp(preferred, split.Panel1MinSize, split.Width - split.Panel2MinSize);
+            split.Panel1MinSize = 200;
+            split.Panel2MinSize = 360;
+            int overviewWidth = (int)(split.Width * 4.0 / 9.0);
+            split.SplitterDistance = Math.Clamp(overviewWidth, split.Panel1MinSize, split.Width - split.Panel2MinSize);
 
-            treeSplit.Panel1MinSize = 80;
-            treeSplit.Panel2MinSize = 160;
-            int overviewHeight = (int)(treeSplit.Height * 0.32);
-            treeSplit.SplitterDistance = Math.Clamp(
-                overviewHeight, treeSplit.Panel1MinSize, Math.Max(treeSplit.Panel1MinSize, treeSplit.Height - treeSplit.Panel2MinSize));
+            innerSplit.Panel1MinSize = 240;
+            innerSplit.Panel2MinSize = 160;
+            int treeWidth = (int)(innerSplit.Width * 0.6);
+            innerSplit.SplitterDistance = Math.Clamp(
+                treeWidth, innerSplit.Panel1MinSize, Math.Max(innerSplit.Panel1MinSize, innerSplit.Width - innerSplit.Panel2MinSize));
         };
         AcceptButton = _runButton;
         _elapsedTimer = new System.Windows.Forms.Timer { Interval = 100 };
@@ -619,8 +622,18 @@ class MainForm : Form
         }
 
         if (_overviewList.Columns.Count > 0)
-            _overviewList.Columns[0].Width = Math.Max(_overviewList.ClientSize.Width, 1);
+            ResizeOverviewColumn();
         _overviewList.EndUpdate();
+    }
+
+    private void ResizeOverviewColumn()
+    {
+        if (_overviewList.Columns.Count == 0)
+            return;
+
+        _overviewList.Columns[0].Width = _overviewList.Items.Count > 0 ? -1 : _overviewList.ClientSize.Width;
+        if (_overviewList.Columns[0].Width < _overviewList.ClientSize.Width)
+            _overviewList.Columns[0].Width = _overviewList.ClientSize.Width;
     }
 
     private void JumpFromOverviewSelection()
@@ -1137,8 +1150,6 @@ class MainForm : Form
             $"prunes: {p.LowerBoundPrunes}\n" +
             $"cache: {p.ExactCacheHits}/{p.LowerBoundCacheHits}/{p.FeasibleTopSetCacheHits}/{p.BestGroupPatternCacheHits}\n" +
             compactText;
-
-        _progressLabel.Text = $"phase: {GetPhaseLabel()}";
     }
     private static string FormatSearchStatsSummary(SearchProgressSnapshot snapshot, bool includeOutputStates)
     {
