@@ -25,20 +25,6 @@ public sealed class StrategyRegressionTests
     }
 
     [Fact]
-    public void N9M3K3_SearchWorkStaysWithinBaseline()
-    {
-        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.BuildDefaultPlan(9, 3, 3)",
-            RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(9, 3, 3, cancellationToken).BuildDefaultPlan());
-
-        Assert.Equal(6, plan.MaxStep);
-        Assert.True(plan.SearchStatistics.SearchedStates <= 115, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
-        Assert.True(plan.SearchStatistics.OutputStates <= 7, $"output states regressed to {plan.SearchStatistics.OutputStates}");
-        Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 5, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
-    }
-
-    [Fact]
     public void N9M3K3_RootChoiceRemainsCanonicalOpeningGroup()
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
@@ -78,154 +64,41 @@ public sealed class StrategyRegressionTests
         Assert.Equal("permute {#1, #4, #7}", branch.EquivalentOrders.PatternText);
     }
 
-    [Fact]
-    public void N12M3K3_SearchWorkStaysWithinBaseline()
+    // Structural baseline for the default (fast) pass across a spread of k=m, k<m (find a few
+    // winners using wide comparisons) and k>m (find more winners than a single comparison can
+    // rank) shapes. Pins the worst-case step count, the root group size, and the output-state
+    // counts. Searched-state caps live in Default_SearchedStateCountStaysWithinBaseline; the
+    // dominant outcome-construction cost lives in Default_OutcomesConstructedStaysWithinBaseline.
+    [Theory]
+    [InlineData(9, 3, 3, 6, 3, 7, 5)]
+    [InlineData(12, 3, 3, 7, 3, 15, 8)]
+    [InlineData(10, 3, 5, 6, 3, 8, 5)]
+    [InlineData(12, 4, 5, 6, 4, 21, 8)]
+    [InlineData(8, 4, 2, 3, 4, 3, 2)]
+    [InlineData(9, 4, 3, 4, 4, 6, 3)]
+    [InlineData(12, 4, 3, 5, 4, 8, 4)]
+    [InlineData(8, 3, 4, 5, 3, 17, 6)]
+    [InlineData(9, 3, 4, 6, 3, 7, 5)]
+    [InlineData(8, 2, 3, 10, 2, 12, 10)]
+    [InlineData(10, 3, 6, 7, 3, 54, 18)]
+    [InlineData(6, 2, 2, 7, 2, 7, 6)]
+    [InlineData(25, 5, 3, 7, 5, 7, 6)]
+    public void Default_StructuralBaselineRemainsStable(
+        int n, int m, int k, int maxStep, int rootGroupCount, int outputStateCap, int expandedOutputStateCap)
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.BuildDefaultPlan(12, 3, 3)",
+            $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k})",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(12, 3, 3, cancellationToken).BuildDefaultPlan());
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildDefaultPlan());
 
-        Assert.Equal(7, plan.MaxStep);
-        Assert.True(plan.SearchStatistics.SearchedStates <= 606, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
-        Assert.True(plan.SearchStatistics.OutputStates <= 15, $"output states regressed to {plan.SearchStatistics.OutputStates}");
-        Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 8, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
-    }
-
-    [Fact]
-    public void N10M3K5_SearchWorkStaysWithinWideTopKBaseline()
-    {
-        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.BuildDefaultPlan(10, 3, 5)",
-            RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(10, 3, 5, cancellationToken).BuildDefaultPlan());
-
-        Assert.Equal(6, plan.MaxStep);
-        Assert.True(plan.SearchStatistics.SearchedStates <= 416, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
-        Assert.True(plan.SearchStatistics.OutputStates <= 8, $"output states regressed to {plan.SearchStatistics.OutputStates}");
-        Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 5, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
-    }
-
-    [Fact]
-    public void N12M4K5_SearchWorkStaysWithinWideTopKBaseline()
-    {
-        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.BuildDefaultPlan(12, 4, 5)",
-            RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(12, 4, 5, cancellationToken).BuildDefaultPlan());
-
-        Assert.Equal(6, plan.MaxStep);
-        Assert.True(plan.SearchStatistics.SearchedStates <= 785, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
-        Assert.True(plan.SearchStatistics.OutputStates <= 21, $"output states regressed to {plan.SearchStatistics.OutputStates}");
-        Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 8, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
-    }
-
-    // The following cases deliberately exercise k < m (find a few winners using wide
-    // comparisons) and k > m (find more winners than a single comparison can rank).
-
-    [Fact]
-    public void N8M4K2_NarrowTopKWithinWideGroupBaseline()
-    {
-        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.BuildDefaultPlan(8, 4, 2)",
-            RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(8, 4, 2, cancellationToken).BuildDefaultPlan());
-
-        Assert.Equal(3, plan.MaxStep);
-        Assert.Equal(4, plan.Root.Group.Count);
-        Assert.True(plan.SearchStatistics.SearchedStates <= 6, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
-        Assert.True(plan.SearchStatistics.OutputStates <= 3, $"output states regressed to {plan.SearchStatistics.OutputStates}");
-        Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 2, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
-    }
-
-    [Fact]
-    public void N9M4K3_NarrowTopKBaseline()
-    {
-        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.BuildDefaultPlan(9, 4, 3)",
-            RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(9, 4, 3, cancellationToken).BuildDefaultPlan());
-
-        Assert.Equal(4, plan.MaxStep);
-        Assert.Equal(4, plan.Root.Group.Count);
-        Assert.True(plan.SearchStatistics.SearchedStates <= 18, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
-        Assert.True(plan.SearchStatistics.OutputStates <= 6, $"output states regressed to {plan.SearchStatistics.OutputStates}");
-        Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 3, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
-    }
-
-    [Fact]
-    public void N12M4K3_NarrowTopKBaseline()
-    {
-        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.BuildDefaultPlan(12, 4, 3)",
-            RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(12, 4, 3, cancellationToken).BuildDefaultPlan());
-
-        Assert.Equal(5, plan.MaxStep);
-        Assert.Equal(4, plan.Root.Group.Count);
-        Assert.True(plan.SearchStatistics.SearchedStates <= 79, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
-        Assert.True(plan.SearchStatistics.OutputStates <= 8, $"output states regressed to {plan.SearchStatistics.OutputStates}");
-        Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 4, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
-    }
-
-    [Fact]
-    public void N8M3K4_WideTopKBeyondGroupBaseline()
-    {
-        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.BuildDefaultPlan(8, 3, 4)",
-            RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(8, 3, 4, cancellationToken).BuildDefaultPlan());
-
-        Assert.Equal(5, plan.MaxStep);
-        Assert.Equal(3, plan.Root.Group.Count);
-        Assert.True(plan.SearchStatistics.SearchedStates <= 59, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
-        Assert.True(plan.SearchStatistics.OutputStates <= 17, $"output states regressed to {plan.SearchStatistics.OutputStates}");
-        Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 6, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
-    }
-
-    [Fact]
-    public void N9M3K4_WideTopKBaseline()
-    {
-        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.BuildDefaultPlan(9, 3, 4)",
-            RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(9, 3, 4, cancellationToken).BuildDefaultPlan());
-
-        Assert.Equal(6, plan.MaxStep);
-        Assert.Equal(3, plan.Root.Group.Count);
-        Assert.True(plan.SearchStatistics.SearchedStates <= 176, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
-        Assert.True(plan.SearchStatistics.OutputStates <= 7, $"output states regressed to {plan.SearchStatistics.OutputStates}");
-        Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 5, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
-    }
-
-    [Fact]
-    public void N8M2K3_PairwiseWideTopKBaseline()
-    {
-        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.BuildDefaultPlan(8, 2, 3)",
-            RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(8, 2, 3, cancellationToken).BuildDefaultPlan());
-
-        Assert.Equal(10, plan.MaxStep);
-        Assert.Equal(2, plan.Root.Group.Count);
-        Assert.True(plan.SearchStatistics.SearchedStates <= 319, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
-        Assert.True(plan.SearchStatistics.OutputStates <= 12, $"output states regressed to {plan.SearchStatistics.OutputStates}");
-        Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 10, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
-    }
-
-    [Fact]
-    public void N10M3K6_WideTopKBaseline()
-    {
-        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.BuildDefaultPlan(10, 3, 6)",
-            RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(10, 3, 6, cancellationToken).BuildDefaultPlan());
-
-        Assert.Equal(7, plan.MaxStep);
-        Assert.Equal(3, plan.Root.Group.Count);
-        Assert.True(plan.SearchStatistics.SearchedStates <= 514, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
-        Assert.True(plan.SearchStatistics.OutputStates <= 54, $"output states regressed to {plan.SearchStatistics.OutputStates}");
-        Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 18, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
+        Assert.Equal(maxStep, plan.MaxStep);
+        Assert.Equal(rootGroupCount, plan.Root.Group.Count);
+        Assert.True(
+            plan.SearchStatistics.OutputStates <= outputStateCap,
+            $"output states regressed to {plan.SearchStatistics.OutputStates} (cap {outputStateCap})");
+        Assert.True(
+            plan.SearchStatistics.ExpandedOutputStates <= expandedOutputStateCap,
+            $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates} (cap {expandedOutputStateCap})");
     }
 
     [Fact]
@@ -804,14 +677,18 @@ public sealed class StrategyRegressionTests
     [InlineData(12, 4, 3, 79)]
     [InlineData(10, 3, 4, 451)]
     [InlineData(10, 3, 5, 416)]
+    [InlineData(12, 4, 5, 785)]
     [InlineData(13, 4, 3, 136)]
     [InlineData(8, 4, 2, 6)]
     [InlineData(9, 4, 3, 18)]
     [InlineData(8, 3, 4, 59)]
+    [InlineData(8, 2, 3, 319)]
     [InlineData(9, 3, 4, 176)]
     [InlineData(10, 3, 6, 514)]
     [InlineData(5, 3, 2, 4)]
+    [InlineData(6, 2, 2, 22)]
     [InlineData(10, 2, 2, 115)]
+    [InlineData(25, 5, 3, 1706)]
     public void Default_SearchedStateCountStaysWithinBaseline(int n, int m, int k, int searchedStateCap)
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
@@ -851,7 +728,9 @@ public sealed class StrategyRegressionTests
     [InlineData(9, 3, 4, 3461)]
     [InlineData(10, 3, 6, 10019)]
     [InlineData(5, 3, 2, 12)]
+    [InlineData(6, 2, 2, 96)]
     [InlineData(10, 2, 2, 935)]
+    [InlineData(25, 5, 3, 108023)]
     public void Default_OutcomesConstructedStaysWithinBaseline(int n, int m, int k, int outcomesCap)
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
@@ -926,6 +805,47 @@ public sealed class StrategyRegressionTests
         Assert.True(
             plan.SearchStatistics.Diagnostics.DuplicateOutcomeSkips <= duplicateSkipCap,
             $"default duplicate outcome skips regressed to {plan.SearchStatistics.Diagnostics.DuplicateOutcomeSkips} (cap {duplicateSkipCap})");
+    }
+
+    // Candidate-group enumeration monitor for the default pass. CandidateGroupsEnumerated counts the
+    // symmetry-class representatives canonicalized before cross-class de-duplication -- i.e. the
+    // distinct comparison groups the search actually materializes per state. The symmetry-aware
+    // group generator (PR #96) collapses each automorphism orbit to a single representative up
+    // front, so this counter is the direct measure of that win: on highly symmetric states it is
+    // far below the naive C(active, m). The 25,5,3 row is the showcase -- its root alone would
+    // canonicalize C(25,5)=53,130 groups without symmetry awareness but emits one representative.
+    // Caps pin the current deterministic counts; an increase is a regression and a deliberate
+    // decrease (a stronger symmetry collapse) is an improvement -- ratchet them down when one lands.
+    [Theory]
+    [InlineData(9, 3, 3, 1714)]
+    [InlineData(11, 3, 3, 8152)]
+    [InlineData(12, 3, 3, 15959)]
+    [InlineData(12, 4, 4, 12932)]
+    [InlineData(12, 4, 5, 37827)]
+    [InlineData(12, 4, 3, 1024)]
+    [InlineData(10, 3, 4, 8087)]
+    [InlineData(10, 3, 5, 5679)]
+    [InlineData(13, 4, 3, 2475)]
+    [InlineData(8, 4, 2, 5)]
+    [InlineData(9, 4, 3, 91)]
+    [InlineData(8, 3, 4, 526)]
+    [InlineData(8, 2, 3, 4213)]
+    [InlineData(9, 3, 4, 3069)]
+    [InlineData(10, 3, 6, 8773)]
+    [InlineData(5, 3, 2, 4)]
+    [InlineData(6, 2, 2, 99)]
+    [InlineData(10, 2, 2, 1307)]
+    [InlineData(25, 5, 3, 158293)]
+    public void Default_CandidateGroupsEnumeratedStaysWithinBaseline(int n, int m, int k, int candidateGroupsCap)
+    {
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k})",
+            RegressionTestTimeout,
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildDefaultPlan());
+
+        Assert.True(
+            plan.SearchStatistics.CandidateGroupsEnumerated <= candidateGroupsCap,
+            $"default candidate groups enumerated regressed to {plan.SearchStatistics.CandidateGroupsEnumerated} (cap {candidateGroupsCap})");
     }
 
     // Symmetry-redundancy monitor for the compact pass. The compact selection re-enumerates group
