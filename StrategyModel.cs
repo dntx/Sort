@@ -122,6 +122,7 @@ readonly struct SearchProgressSnapshot
         int feasibleTopSetCacheHits,
         int bestGroupPatternCacheHits,
         int outcomesConstructed,
+        int candidateGroupsEnumerated,
         int lowerBoundStates,
         int feasibleTopSetStates,
         int compactStatesSolved,
@@ -143,6 +144,7 @@ readonly struct SearchProgressSnapshot
         FeasibleTopSetCacheHits = feasibleTopSetCacheHits;
         BestGroupPatternCacheHits = bestGroupPatternCacheHits;
         OutcomesConstructed = outcomesConstructed;
+        CandidateGroupsEnumerated = candidateGroupsEnumerated;
         LowerBoundStates = lowerBoundStates;
         FeasibleTopSetStates = feasibleTopSetStates;
         CompactStatesSolved = compactStatesSolved;
@@ -165,6 +167,7 @@ readonly struct SearchProgressSnapshot
     public int FeasibleTopSetCacheHits { get; }
     public int BestGroupPatternCacheHits { get; }
     public int OutcomesConstructed { get; }
+    public int CandidateGroupsEnumerated { get; }
     public int LowerBoundStates { get; }
     public int FeasibleTopSetStates { get; }
     public int CompactStatesSolved { get; }
@@ -187,6 +190,7 @@ sealed class SearchStatistics
         long phase1bMilliseconds,
         long phase2Milliseconds,
         int outcomesConstructed,
+        int candidateGroupsEnumerated,
         int compactStatesSolved,
         int compactGroupsEnumerated,
         int compactStepOptimalGroups)
@@ -203,6 +207,7 @@ sealed class SearchStatistics
         Phase1bMilliseconds = phase1bMilliseconds;
         Phase2Milliseconds = phase2Milliseconds;
         OutcomesConstructed = outcomesConstructed;
+        CandidateGroupsEnumerated = candidateGroupsEnumerated;
         CompactStatesSolved = compactStatesSolved;
         CompactGroupsEnumerated = compactGroupsEnumerated;
         CompactStepOptimalGroups = compactStepOptimalGroups;
@@ -228,6 +233,13 @@ sealed class SearchStatistics
     // Normalize). Paired with Diagnostics.DuplicateOutcomeSkips this exposes how many
     // constructed outcomes were discarded as duplicates -- the dominant search cost.
     public int OutcomesConstructed { get; }
+
+    // Raw m-element candidate groups enumerated through the symmetry-dedup pass before
+    // canonical-pattern collapse (one canonicalization per count). On highly symmetric
+    // early states this far exceeds the distinct groups actually explored -- e.g. the empty
+    // root enumerates all C(n, m) combinations that collapse to a single pattern -- so it is
+    // the primary signal for symmetry-aware group-generation optimizations.
+    public int CandidateGroupsEnumerated { get; }
 
     // Compact-pass-only counters (zero unless the compact selection is enabled). The shared
     // SearchedStates/OutputStates totals do not otherwise reflect the compact pass's work.
