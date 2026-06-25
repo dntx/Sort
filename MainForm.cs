@@ -99,6 +99,7 @@ class MainForm : Form
     private SearchStatistics? _completedDefaultStats;
     private SearchStatistics? _completedCompactStats;
     private int _activePhase;
+    private long _phase1ElapsedMs = -1;
 
     public MainForm()
     {
@@ -191,7 +192,7 @@ class MainForm : Form
         {
             AutoSize = true,
             Margin = Padding.Empty,
-            Text = "0.0 s\ndefault: -\ncompact: -",
+            Text = "0.000 s\ndefault: -\ncompact: -",
             Font = new Font(Font.FontFamily, 11, FontStyle.Bold),
         };
         _statesLabel = new Label
@@ -440,6 +441,7 @@ class MainForm : Form
         _compactPlan = null;
         _compactImproved = false;
         _activePhase = 1;
+        Interlocked.Exchange(ref _phase1ElapsedMs, -1);
         _runStopwatch = Stopwatch.StartNew();
         UpdateElapsedLabel();
         UpdateStatsPanels();
@@ -454,6 +456,7 @@ class MainForm : Form
             {
                 var builder = new StrategyBuilder(n, m, k, cancellationToken, snapshot => progress.Report(snapshot));
                 StrategyPlan defaultPlan = builder.BuildDefaultPlan();
+                Interlocked.Exchange(ref _phase1ElapsedMs, _runStopwatch?.ElapsedMilliseconds ?? 0);
                 Interlocked.Exchange(ref _activePhase, 2);
                 StrategyPlan compactPlan = builder.BuildCompactPlan();
                 return (defaultPlan, compactPlan);
@@ -947,20 +950,41 @@ class MainForm : Form
 
     private void UpdateElapsedLabel()
     {
-        string defaultLine = "default: -";
-        string compactLine = "compact-refine: -";
+        string defaultLine;
+        string compactLine;
+        int phase = Volatile.Read(ref _activePhase);
+        long phase1Ms = Interlocked.Read(ref _phase1ElapsedMs);
+        long totalMs = (long)((_runStopwatch?.Elapsed.TotalMilliseconds) ?? 0);
+
         if (_completedDefaultStats is { } defaultStats)
         {
-            defaultLine =
-                $"default: {defaultStats.Phase1Milliseconds + defaultStats.Phase2Milliseconds} ms";
+            defaultLine = $"default: {(defaultStats.Phase1Milliseconds + defaultStats.Phase2Milliseconds) / 1000.0:F3} s";
         }
-        if (_completedCompactStats is { } compactStats)
+        else if (_runStopwatch is not null && phase >= 1)
         {
-            compactLine =
-                $"compact: {compactStats.Phase1bMilliseconds + compactStats.Phase2Milliseconds} ms";
+            long liveDefaultMs = phase1Ms >= 0 ? phase1Ms : totalMs;
+            defaultLine = $"default: {liveDefaultMs / 1000.0:F3} s";
+        }
+        else
+        {
+            defaultLine = "default: -";
         }
 
-        string text = $"{GetElapsedSeconds():F1} s\n{defaultLine}\n{compactLine}";
+        if (_completedCompactStats is { } compactStats)
+        {
+            compactLine = $"compact: {(compactStats.Phase1bMilliseconds + compactStats.Phase2Milliseconds) / 1000.0:F3} s";
+        }
+        else if (_runStopwatch is not null && phase >= 2 && phase1Ms >= 0)
+        {
+            long liveCompactMs = Math.Max(0, totalMs - phase1Ms);
+            compactLine = $"compact: {liveCompactMs / 1000.0:F3} s";
+        }
+        else
+        {
+            compactLine = "compact: -";
+        }
+
+        string text = $"{GetElapsedSeconds():F3} s\n{defaultLine}\n{compactLine}";
         _elapsedLabel.Text = text;
     }
 
