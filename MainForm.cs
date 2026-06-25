@@ -585,7 +585,10 @@ class MainForm : Form
         _treeView.EndUpdate();
         _treeView.SelectedNode = root;
 
-        PopulateOverview(defaultPlan);
+        if (compactImproved)
+            PopulateOverview(compactPlan, "compact", "Overview of the 'compact' strategy below");
+        else
+            PopulateOverview(defaultPlan, "default", "Overview of the 'default' strategy below");
     }
 
     // Resets the result surfaces (overview list, tree, navigation state, details) so a fresh Run
@@ -605,13 +608,20 @@ class MainForm : Form
         _backButton.Enabled = false;
     }
 
-    private void PopulateOverview(StrategyPlan defaultPlan)
+    private void PopulateOverview(StrategyPlan plan, string scope, string title)
     {
         _overviewList.BeginUpdate();
         _overviewList.Items.Clear();
-        foreach (OverviewRow row in StrategyOverviewRenderer.Build(defaultPlan).Rows)
+
+        _overviewList.Items.Add(new ListViewItem(title)
         {
-            string? key = row.LinkStateId is int id ? $"default:{id}" : null;
+            Font = new Font(_overviewList.Font, FontStyle.Bold),
+            ForeColor = _palette.ForeColor,
+        });
+
+        foreach (OverviewRow row in StrategyOverviewRenderer.Build(plan).Rows)
+        {
+            string? key = row.LinkStateId is int id ? $"{scope}:{id}" : null;
             var headlineItem = new ListViewItem(row.Headline) { Tag = key };
             _overviewList.Items.Add(headlineItem);
             foreach (string detail in row.Details)
