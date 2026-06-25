@@ -1016,7 +1016,7 @@ class MainForm : Form
             ? $"compact: {p.CompactStatesSolved} solved, {p.CompactGroupsEnumerated} groups ({p.CompactStepOptimalGroups} opt)"
             : "compact: -";
         _workLabel.Text =
-            $"outcomes: {p.OutcomesConstructed}\n" +
+            $"outcomes: {p.OutcomesConstructed} (cand groups {p.CandidateGroupsEnumerated})\n" +
             $"duplicate skips: {p.DuplicateOutcomeSkips}\n" +
             $"merged collisions: {p.MergedOutcomeCollisions}\n" +
             $"prunes: {p.LowerBoundPrunes}\n" +
@@ -1039,7 +1039,7 @@ class MainForm : Form
 
     private static SearchProgressSnapshot CreateInitialProgressSnapshot()
     {
-        return new SearchProgressSnapshot(0, 0, 0, 0, 0, null, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+        return new SearchProgressSnapshot(0, 0, 0, 0, 0, null, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
     }
 
     private static SearchProgressSnapshot CreateSnapshotFromPlan(StrategyPlan plan)
@@ -1060,6 +1060,7 @@ class MainForm : Form
             plan.SearchStatistics.Diagnostics.FeasibleTopSetCacheHits,
             plan.SearchStatistics.Diagnostics.BestGroupPatternCacheHits,
             plan.SearchStatistics.OutcomesConstructed,
+            plan.SearchStatistics.CandidateGroupsEnumerated,
             plan.SearchStatistics.LowerBoundStates,
             plan.SearchStatistics.FeasibleTopSetStates,
             plan.SearchStatistics.CompactStatesSolved,

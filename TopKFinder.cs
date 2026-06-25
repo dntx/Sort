@@ -35,6 +35,7 @@ partial class StrategyBuilder
     private int _feasibleTopSetCacheHits;
     private int _bestGroupPatternCacheHits;
     private int _outcomesConstructed;
+    private int _candidateGroupsEnumerated;
     private long _phase1Milliseconds;
     private long _phase1bMilliseconds;
     private long _phase2Milliseconds;
@@ -197,6 +198,7 @@ partial class StrategyBuilder
         foreach (var group in EnumerateCombinations(candidates, groupSize))
         {
             ThrowIfCancellationRequested();
+            _candidateGroupsEnumerated++;
             if (seenGroupPatterns.Add(GetGroupPattern(state, group)))
                 yield return group;
         }
@@ -386,6 +388,7 @@ partial class StrategyBuilder
             _phase1bMilliseconds,
             _phase2Milliseconds,
             _outcomesConstructed,
+            _candidateGroupsEnumerated,
             _compactStatesSolved,
             _compactGroupsEnumerated,
             _compactStepOptimalGroups);
@@ -418,6 +421,7 @@ partial class StrategyBuilder
             _feasibleTopSetCacheHits,
             _bestGroupPatternCacheHits,
             _outcomesConstructed,
+            _candidateGroupsEnumerated,
             _lowerBoundStepsCache.Count,
             _feasibleTopSetCache.Count,
             _compactStatesSolved,
@@ -493,6 +497,7 @@ partial class StrategyBuilder
         _feasibleTopSetCacheHits = 0;
         _bestGroupPatternCacheHits = 0;
         _outcomesConstructed = 0;
+        _candidateGroupsEnumerated = 0;
         _compactStatesSolved = 0;
         _compactGroupsEnumerated = 0;
         _compactStepOptimalGroups = 0;

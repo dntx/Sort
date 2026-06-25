@@ -37,6 +37,7 @@ static class StrategyTextRenderer
         writer.WriteLine($"output states = {stats.OutputStates} (expanded {stats.ExpandedOutputStates})");
         writer.WriteLine($"lower-bound states = {stats.LowerBoundStates}, feasible-top-set states = {stats.FeasibleTopSetStates}");
         writer.WriteLine($"outcomes constructed = {stats.OutcomesConstructed} (duplicate skips {diag.DuplicateOutcomeSkips}, merged collisions {diag.MergedOutcomeCollisions})");
+        writer.WriteLine($"candidate groups enumerated = {stats.CandidateGroupsEnumerated} (raw m-subsets canonicalized before symmetry dedup)");
         writer.WriteLine($"lower-bound prunes = {diag.LowerBoundPrunes}");
         writer.WriteLine($"cache hits = exact {diag.ExactCacheHits}, lower-bound {diag.LowerBoundCacheHits}, feasible-top-set {diag.FeasibleTopSetCacheHits}, best-group-pattern {diag.BestGroupPatternCacheHits}");
         if (stats.CompactStatesSolved > 0)
