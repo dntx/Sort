@@ -127,7 +127,7 @@ class MainForm : Form
             AutoSize = true,
             ColumnCount = 1,
             RowCount = 2,
-            Margin = new Padding(0, 0, 0, 12),
+            Margin = new Padding(0, 0, 0, -1),
         };
         headerLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         headerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, StatsRowHeight));
@@ -295,6 +295,8 @@ class MainForm : Form
         {
             Dock = DockStyle.Fill,
             Orientation = Orientation.Vertical,
+            SplitterWidth = 6,
+            Margin = Padding.Empty,
         };
 
         _treeView = new TreeView
@@ -332,6 +334,7 @@ class MainForm : Form
             Dock = DockStyle.Fill,
             Orientation = Orientation.Vertical,
             Panel2Collapsed = true,
+            SplitterWidth = 6,
         };
         innerSplit.Panel1.Controls.Add(_treeView);
 
@@ -420,7 +423,7 @@ class MainForm : Form
             AutoSize = !fillCell,
             BorderStyle = BorderStyle.FixedSingle,
             Padding = new Padding(10),
-            Margin = new Padding(0, 0, 8, 8),
+            Margin = new Padding(0, 0, -1, -1),
         };
 
         var sectionLayout = new TableLayoutPanel
@@ -1027,9 +1030,10 @@ class MainForm : Form
 
         if (control is SplitContainer splitContainer)
         {
-            splitContainer.Panel1.BackColor = _palette.FormBackColor;
+            splitContainer.BackColor = _palette.BorderColor;
+            splitContainer.Panel1.BackColor = _palette.SurfaceBackColor;
             splitContainer.Panel1.ForeColor = _palette.ForeColor;
-            splitContainer.Panel2.BackColor = _palette.FormBackColor;
+            splitContainer.Panel2.BackColor = _palette.SurfaceBackColor;
             splitContainer.Panel2.ForeColor = _palette.ForeColor;
         }
 
