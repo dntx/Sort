@@ -21,7 +21,7 @@ public sealed class StrategyRegressionTests
         Assert.NotNull(rootBranch.EquivalentOrders);
         Assert.Equal(362880, rootBranch.EquivalentOrders!.Count);
         Assert.Equal("9!", rootBranch.EquivalentOrders.CountFormula);
-        Assert.Equal("permute {#1, #2, #3, #4, #5, #6, #7, #8, #9}", rootBranch.EquivalentOrders.PatternText);
+        Assert.Equal("permute {#1~#9}", rootBranch.EquivalentOrders.PatternText);
     }
 
     [Fact]
@@ -53,7 +53,7 @@ public sealed class StrategyRegressionTests
         Assert.NotNull(rootBranch.EquivalentOrders);
         Assert.Equal(6, rootBranch.EquivalentOrders!.Count);
         Assert.Equal("3!", rootBranch.EquivalentOrders.CountFormula);
-        Assert.Equal("permute {#1, #2, #3}", rootBranch.EquivalentOrders.PatternText);
+        Assert.Equal("permute {#1~#3}", rootBranch.EquivalentOrders.PatternText);
 
         Assert.Equal(new[] { 3, 4, 5 }, rootBranch.Next.Group);
     }
@@ -389,7 +389,7 @@ public sealed class StrategyRegressionTests
             S1 [step 1/3] sort(#1~#3)
               #1 > #2 > #3: [- (#3), possible (#1, #2, #4, #5)]
                 equivalent forms: 6 = 3!
-                pattern: permute {#1, #2, #3}
+                pattern: permute {#1~#3}
                 S2 [step 2/3] sort(#1, #4, #5)
                   #1 > #4 > #5: [+ (#1), - (#5), fixed (#1), possible (#2, #4)]
                     equivalent forms: 2 = 2!
