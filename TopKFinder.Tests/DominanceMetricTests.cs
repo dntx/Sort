@@ -18,7 +18,7 @@ public class DominanceMetricTests
     public void Phase1DominanceBoundsAreSound(int n, int m, int k)
     {
         var builder = new StrategyBuilder(n, m, k) { EnableDominanceMetric = true };
-        builder.Build();
+        builder.BuildDefaultPlan();
 
         Assert.Equal(0, builder.DominanceUnsoundObservations);
         Assert.Equal(0, builder.DominanceBudgetExhaustions);
@@ -31,7 +31,7 @@ public class DominanceMetricTests
     public void Phase1DominanceLowerBoundPruningFires(int n, int m, int k, int minBoundRaises)
     {
         var builder = new StrategyBuilder(n, m, k);
-        builder.Build();
+        builder.BuildDefaultPlan();
 
         // Floor, not an exact count: a legitimate improvement may only raise it. The accompanying
         // searched-state / outcomes-constructed monitors pin the downstream search-work reduction.

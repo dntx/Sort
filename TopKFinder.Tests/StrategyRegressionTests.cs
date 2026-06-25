@@ -9,9 +9,9 @@ public sealed class StrategyRegressionTests
     public void N10M9K9_RemainsTwoStepPermutationCase()
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.Generate(10, 9, 9)",
+            "StrategyBuilder.BuildDefaultPlan(10, 9, 9)",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(10, 9, 9, cancellationToken));
+            cancellationToken => new StrategyBuilder(10, 9, 9, cancellationToken).BuildDefaultPlan());
 
         Assert.Equal(2, plan.MaxStep);
         Assert.Equal(2, plan.SearchStatistics.SearchedStates);
@@ -28,9 +28,9 @@ public sealed class StrategyRegressionTests
     public void N9M3K3_SearchWorkStaysWithinBaseline()
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.Generate(9, 3, 3)",
+            "StrategyBuilder.BuildDefaultPlan(9, 3, 3)",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(9, 3, 3, cancellationToken));
+            cancellationToken => new StrategyBuilder(9, 3, 3, cancellationToken).BuildDefaultPlan());
 
         Assert.Equal(6, plan.MaxStep);
         Assert.True(plan.SearchStatistics.SearchedStates <= 115, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
@@ -42,9 +42,9 @@ public sealed class StrategyRegressionTests
     public void N9M3K3_RootChoiceRemainsCanonicalOpeningGroup()
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.Generate(9, 3, 3)",
+            "StrategyBuilder.BuildDefaultPlan(9, 3, 3)",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(9, 3, 3, cancellationToken));
+            cancellationToken => new StrategyBuilder(9, 3, 3, cancellationToken).BuildDefaultPlan());
 
         Assert.Equal(new[] { 0, 1, 2 }, plan.Root.Group);
 
@@ -62,9 +62,9 @@ public sealed class StrategyRegressionTests
     public void N9M3K3_DistinctClassPermutationRendersAsPermute()
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.Generate(9, 3, 3)",
+            "StrategyBuilder.BuildDefaultPlan(9, 3, 3)",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(9, 3, 3, cancellationToken));
+            cancellationToken => new StrategyBuilder(9, 3, 3, cancellationToken).BuildDefaultPlan());
 
         // At this node the compared items #1, #4 and #7 sit in different symmetry classes, yet all
         // six orderings collapse to the same next state. The summary should compress them to a
@@ -82,9 +82,9 @@ public sealed class StrategyRegressionTests
     public void N12M3K3_SearchWorkStaysWithinBaseline()
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.Generate(12, 3, 3)",
+            "StrategyBuilder.BuildDefaultPlan(12, 3, 3)",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(12, 3, 3, cancellationToken));
+            cancellationToken => new StrategyBuilder(12, 3, 3, cancellationToken).BuildDefaultPlan());
 
         Assert.Equal(7, plan.MaxStep);
         Assert.True(plan.SearchStatistics.SearchedStates <= 606, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
@@ -96,9 +96,9 @@ public sealed class StrategyRegressionTests
     public void N10M3K5_SearchWorkStaysWithinWideTopKBaseline()
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.Generate(10, 3, 5)",
+            "StrategyBuilder.BuildDefaultPlan(10, 3, 5)",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(10, 3, 5, cancellationToken));
+            cancellationToken => new StrategyBuilder(10, 3, 5, cancellationToken).BuildDefaultPlan());
 
         Assert.Equal(6, plan.MaxStep);
         Assert.True(plan.SearchStatistics.SearchedStates <= 416, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
@@ -110,9 +110,9 @@ public sealed class StrategyRegressionTests
     public void N12M4K5_SearchWorkStaysWithinWideTopKBaseline()
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.Generate(12, 4, 5)",
+            "StrategyBuilder.BuildDefaultPlan(12, 4, 5)",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(12, 4, 5, cancellationToken));
+            cancellationToken => new StrategyBuilder(12, 4, 5, cancellationToken).BuildDefaultPlan());
 
         Assert.Equal(6, plan.MaxStep);
         Assert.True(plan.SearchStatistics.SearchedStates <= 785, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
@@ -127,9 +127,9 @@ public sealed class StrategyRegressionTests
     public void N8M4K2_NarrowTopKWithinWideGroupBaseline()
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.Generate(8, 4, 2)",
+            "StrategyBuilder.BuildDefaultPlan(8, 4, 2)",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(8, 4, 2, cancellationToken));
+            cancellationToken => new StrategyBuilder(8, 4, 2, cancellationToken).BuildDefaultPlan());
 
         Assert.Equal(3, plan.MaxStep);
         Assert.Equal(4, plan.Root.Group.Count);
@@ -142,9 +142,9 @@ public sealed class StrategyRegressionTests
     public void N9M4K3_NarrowTopKBaseline()
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.Generate(9, 4, 3)",
+            "StrategyBuilder.BuildDefaultPlan(9, 4, 3)",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(9, 4, 3, cancellationToken));
+            cancellationToken => new StrategyBuilder(9, 4, 3, cancellationToken).BuildDefaultPlan());
 
         Assert.Equal(4, plan.MaxStep);
         Assert.Equal(4, plan.Root.Group.Count);
@@ -157,9 +157,9 @@ public sealed class StrategyRegressionTests
     public void N12M4K3_NarrowTopKBaseline()
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.Generate(12, 4, 3)",
+            "StrategyBuilder.BuildDefaultPlan(12, 4, 3)",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(12, 4, 3, cancellationToken));
+            cancellationToken => new StrategyBuilder(12, 4, 3, cancellationToken).BuildDefaultPlan());
 
         Assert.Equal(5, plan.MaxStep);
         Assert.Equal(4, plan.Root.Group.Count);
@@ -172,9 +172,9 @@ public sealed class StrategyRegressionTests
     public void N8M3K4_WideTopKBeyondGroupBaseline()
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.Generate(8, 3, 4)",
+            "StrategyBuilder.BuildDefaultPlan(8, 3, 4)",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(8, 3, 4, cancellationToken));
+            cancellationToken => new StrategyBuilder(8, 3, 4, cancellationToken).BuildDefaultPlan());
 
         Assert.Equal(5, plan.MaxStep);
         Assert.Equal(3, plan.Root.Group.Count);
@@ -187,9 +187,9 @@ public sealed class StrategyRegressionTests
     public void N9M3K4_WideTopKBaseline()
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.Generate(9, 3, 4)",
+            "StrategyBuilder.BuildDefaultPlan(9, 3, 4)",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(9, 3, 4, cancellationToken));
+            cancellationToken => new StrategyBuilder(9, 3, 4, cancellationToken).BuildDefaultPlan());
 
         Assert.Equal(6, plan.MaxStep);
         Assert.Equal(3, plan.Root.Group.Count);
@@ -202,9 +202,9 @@ public sealed class StrategyRegressionTests
     public void N8M2K3_PairwiseWideTopKBaseline()
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.Generate(8, 2, 3)",
+            "StrategyBuilder.BuildDefaultPlan(8, 2, 3)",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(8, 2, 3, cancellationToken));
+            cancellationToken => new StrategyBuilder(8, 2, 3, cancellationToken).BuildDefaultPlan());
 
         Assert.Equal(10, plan.MaxStep);
         Assert.Equal(2, plan.Root.Group.Count);
@@ -217,9 +217,9 @@ public sealed class StrategyRegressionTests
     public void N10M3K6_WideTopKBaseline()
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.Generate(10, 3, 6)",
+            "StrategyBuilder.BuildDefaultPlan(10, 3, 6)",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(10, 3, 6, cancellationToken));
+            cancellationToken => new StrategyBuilder(10, 3, 6, cancellationToken).BuildDefaultPlan());
 
         Assert.Equal(7, plan.MaxStep);
         Assert.Equal(3, plan.Root.Group.Count);
@@ -234,13 +234,13 @@ public sealed class StrategyRegressionTests
         foreach ((int n, int m, int k) in new[] { (9, 3, 3), (12, 3, 3), (10, 3, 5) })
         {
             StrategyPlan first = TestTimeoutHelper.RunWithTimeout(
-                $"StrategyBuilder.Generate({n}, {m}, {k}) first",
+                $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k}) first",
                 RegressionTestTimeout,
-                cancellationToken => StrategyBuilder.Generate(n, m, k, cancellationToken));
+                cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildDefaultPlan());
             StrategyPlan second = TestTimeoutHelper.RunWithTimeout(
-                $"StrategyBuilder.Generate({n}, {m}, {k}) second",
+                $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k}) second",
                 RegressionTestTimeout,
-                cancellationToken => StrategyBuilder.Generate(n, m, k, cancellationToken));
+                cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildDefaultPlan());
 
             string firstRendered = StrategyTestHelpers.NormalizeRenderedSnapshot(StrategyTextRenderer.Render(first));
             string secondRendered = StrategyTestHelpers.NormalizeRenderedSnapshot(StrategyTextRenderer.Render(second));
@@ -255,9 +255,9 @@ public sealed class StrategyRegressionTests
     public void N10M3K5_RecordsDescendingRootIncumbentMilestones()
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.Generate(10, 3, 5)",
+            "StrategyBuilder.BuildDefaultPlan(10, 3, 5)",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(10, 3, 5, cancellationToken));
+            cancellationToken => new StrategyBuilder(10, 3, 5, cancellationToken).BuildDefaultPlan());
 
         SearchDiagnostics diagnostics = plan.SearchStatistics.Diagnostics;
         Assert.NotEmpty(diagnostics.RootIncumbents);
@@ -277,9 +277,9 @@ public sealed class StrategyRegressionTests
     {
         var snapshots = new List<SearchProgressSnapshot>();
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.Generate(5, 3, 2) with progress",
+            "StrategyBuilder.BuildDefaultPlan(5, 3, 2) with progress",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(5, 3, 2, cancellationToken, snapshot => snapshots.Add(snapshot)));
+            cancellationToken => new StrategyBuilder(5, 3, 2, cancellationToken, snapshot => snapshots.Add(snapshot)).BuildDefaultPlan());
 
         Assert.NotEmpty(snapshots);
         Assert.True(snapshots.Exists(snapshot => snapshot.RootIncumbentCount > 0));
@@ -296,9 +296,9 @@ public sealed class StrategyRegressionTests
     public void N12M4K4_PreservesRepresentativeAliasCompression()
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.Generate(12, 4, 4)",
+            "StrategyBuilder.BuildDefaultPlan(12, 4, 4)",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(12, 4, 4, cancellationToken));
+            cancellationToken => new StrategyBuilder(12, 4, 4, cancellationToken).BuildDefaultPlan());
 
         Assert.Equal(5, plan.MaxStep);
         Assert.True(plan.SearchStatistics.SearchedStates <= 289, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
@@ -328,9 +328,9 @@ public sealed class StrategyRegressionTests
     public void N12M3K3_DoesNotCreateSelfReferentialBranches()
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.Generate(12, 3, 3)",
+            "StrategyBuilder.BuildDefaultPlan(12, 3, 3)",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(12, 3, 3, cancellationToken));
+            cancellationToken => new StrategyBuilder(12, 3, 3, cancellationToken).BuildDefaultPlan());
 
         foreach (StrategyNode node in StrategyTestHelpers.EnumerateDecisionNodes(plan.Root))
         {
@@ -347,9 +347,9 @@ public sealed class StrategyRegressionTests
     public void N5M3K2_RenderedTextMatchesSnapshot()
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.Generate(5, 3, 2)",
+            "StrategyBuilder.BuildDefaultPlan(5, 3, 2)",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(5, 3, 2, cancellationToken));
+            cancellationToken => new StrategyBuilder(5, 3, 2, cancellationToken).BuildDefaultPlan());
 
         string rendered = StrategyTestHelpers.NormalizeRenderedSnapshot(StrategyTextRenderer.Render(plan));
         const string expected = """
@@ -409,9 +409,9 @@ public sealed class StrategyRegressionTests
     public void N12M3K3_DecisionTransitionEffectRemainsStable()
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.Generate(12, 3, 3)",
+            "StrategyBuilder.BuildDefaultPlan(12, 3, 3)",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(12, 3, 3, cancellationToken));
+            cancellationToken => new StrategyBuilder(12, 3, 3, cancellationToken).BuildDefaultPlan());
 
         StrategyBranch branch = StrategyTestHelpers.FindBranchPath(
             plan.Root,
@@ -434,9 +434,9 @@ public sealed class StrategyRegressionTests
     public void N9M3K3_TerminalTransitionEffectRemainsStable()
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.Generate(9, 3, 3)",
+            "StrategyBuilder.BuildDefaultPlan(9, 3, 3)",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(9, 3, 3, cancellationToken));
+            cancellationToken => new StrategyBuilder(9, 3, 3, cancellationToken).BuildDefaultPlan());
 
         StrategyBranch branch = StrategyTestHelpers.FindBranchPath(
             plan.Root,
@@ -459,9 +459,9 @@ public sealed class StrategyRegressionTests
     public void N11M3K3_ReferenceTransitionEffectRemainsStable()
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.Generate(11, 3, 3)",
+            "StrategyBuilder.BuildDefaultPlan(11, 3, 3)",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(11, 3, 3, cancellationToken));
+            cancellationToken => new StrategyBuilder(11, 3, 3, cancellationToken).BuildDefaultPlan());
 
         StrategyNode referenceTarget = StrategyTestHelpers.FollowBranchPath(
             plan.Root,
@@ -494,9 +494,9 @@ public sealed class StrategyRegressionTests
     public void N11M3K3_DepthAnnotationsAreConsistent()
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.Generate(11, 3, 3)",
+            "StrategyBuilder.BuildDefaultPlan(11, 3, 3)",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(11, 3, 3, cancellationToken));
+            cancellationToken => new StrategyBuilder(11, 3, 3, cancellationToken).BuildDefaultPlan());
 
         var depthIndex = StrategyDepthIndex.Build(plan.Root);
 
@@ -536,9 +536,9 @@ public sealed class StrategyRegressionTests
     public void N11M3K3_ReferenceRelabelingIsAnIsomorphismOfDisplayedSets()
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.Generate(11, 3, 3)",
+            "StrategyBuilder.BuildDefaultPlan(11, 3, 3)",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(11, 3, 3, cancellationToken));
+            cancellationToken => new StrategyBuilder(11, 3, 3, cancellationToken).BuildDefaultPlan());
 
         // Branch leading into the reference site and the branch leading into its target.
         StrategyBranch referenceBranch = StrategyTestHelpers.FindBranchPath(
@@ -591,9 +591,9 @@ public sealed class StrategyRegressionTests
     public void N12M3K3_AfterInitialPrefixesChoosesCrossBlockGroup()
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.Generate(12, 3, 3)",
+            "StrategyBuilder.BuildDefaultPlan(12, 3, 3)",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(12, 3, 3, cancellationToken));
+            cancellationToken => new StrategyBuilder(12, 3, 3, cancellationToken).BuildDefaultPlan());
 
         StrategyNode node = StrategyTestHelpers.FollowBranchPath(
             plan.Root,
@@ -608,9 +608,9 @@ public sealed class StrategyRegressionTests
     public void N12M3K3_WhenLeadingCandidateFixedChoosesBalancedFollowUpGroup()
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.Generate(12, 3, 3)",
+            "StrategyBuilder.BuildDefaultPlan(12, 3, 3)",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(12, 3, 3, cancellationToken));
+            cancellationToken => new StrategyBuilder(12, 3, 3, cancellationToken).BuildDefaultPlan());
 
         StrategyNode node = StrategyTestHelpers.FollowBranchPath(
             plan.Root,
@@ -627,9 +627,9 @@ public sealed class StrategyRegressionTests
     public void N10M2K2_AfterInitialComparisonsChainsIndependentPairs()
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.Generate(10, 2, 2)",
+            "StrategyBuilder.BuildDefaultPlan(10, 2, 2)",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(10, 2, 2, cancellationToken));
+            cancellationToken => new StrategyBuilder(10, 2, 2, cancellationToken).BuildDefaultPlan());
 
         // The tie-break prefers fresh, mutually independent pairs over reusing the leader.
         StrategyNode afterFirstComparison = StrategyTestHelpers.FollowBranchPath(
@@ -648,9 +648,9 @@ public sealed class StrategyRegressionTests
     public void N12M4K4_RenderedAliasCompressionSectionMatchesSnapshot()
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.Generate(12, 4, 4)",
+            "StrategyBuilder.BuildDefaultPlan(12, 4, 4)",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(12, 4, 4, cancellationToken));
+            cancellationToken => new StrategyBuilder(12, 4, 4, cancellationToken).BuildDefaultPlan());
 
         string rendered = StrategyTestHelpers.NormalizeRenderedSnapshot(StrategyTextRenderer.Render(plan));
         string excerpt = StrategyTestHelpers.ExtractRenderedSection(
@@ -694,14 +694,14 @@ public sealed class StrategyRegressionTests
     public void Compact_DoesNotCrashOnPreviouslyFailingInputs(int n, int m, int k)
     {
         StrategyPlan baseline = TestTimeoutHelper.RunWithTimeout(
-            $"StrategyBuilder.Generate({n}, {m}, {k})",
+            $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k})",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(n, m, k, cancellationToken));
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildDefaultPlan());
 
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
-            $"StrategyBuilder.GenerateCompact({n}, {m}, {k})",
+            $"StrategyBuilder.BuildCompactPlan({n}, {m}, {k})",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.GenerateCompact(n, m, k, cancellationToken));
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildCompactPlan());
 
         Assert.Equal(baseline.MaxStep, compact.MaxStep);
     }
@@ -720,14 +720,14 @@ public sealed class StrategyRegressionTests
     public void Compact_PreservesMaxStepAndDoesNotRegressOutputStates(int n, int m, int k)
     {
         StrategyPlan baseline = TestTimeoutHelper.RunWithTimeout(
-            $"StrategyBuilder.Generate({n}, {m}, {k})",
+            $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k})",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(n, m, k, cancellationToken));
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildDefaultPlan());
 
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
-            $"StrategyBuilder.GenerateCompact({n}, {m}, {k})",
+            $"StrategyBuilder.BuildCompactPlan({n}, {m}, {k})",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.GenerateCompact(n, m, k, cancellationToken));
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildCompactPlan());
 
         Assert.Equal(baseline.MaxStep, compact.MaxStep);
         Assert.True(
@@ -742,14 +742,14 @@ public sealed class StrategyRegressionTests
     public void Compact_ShrinksTreesWithRedundantSolutions(int n, int m, int k, int expectedOutputStatesCap)
     {
         StrategyPlan baseline = TestTimeoutHelper.RunWithTimeout(
-            $"StrategyBuilder.Generate({n}, {m}, {k})",
+            $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k})",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(n, m, k, cancellationToken));
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildDefaultPlan());
 
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
-            $"StrategyBuilder.GenerateCompact({n}, {m}, {k})",
+            $"StrategyBuilder.BuildCompactPlan({n}, {m}, {k})",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.GenerateCompact(n, m, k, cancellationToken));
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildCompactPlan());
 
         Assert.Equal(baseline.MaxStep, compact.MaxStep);
         Assert.True(
@@ -779,9 +779,9 @@ public sealed class StrategyRegressionTests
     public void Compact_SearchedStateCountStaysWithinBaseline(int n, int m, int k, int searchedStateCap)
     {
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
-            $"StrategyBuilder.GenerateCompact({n}, {m}, {k})",
+            $"StrategyBuilder.BuildCompactPlan({n}, {m}, {k})",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.GenerateCompact(n, m, k, cancellationToken));
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildCompactPlan());
 
         Assert.True(
             compact.SearchStatistics.SearchedStates <= searchedStateCap,
@@ -813,9 +813,9 @@ public sealed class StrategyRegressionTests
     public void Default_SearchedStateCountStaysWithinBaseline(int n, int m, int k, int searchedStateCap)
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            $"StrategyBuilder.Generate({n}, {m}, {k})",
+            $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k})",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(n, m, k, cancellationToken));
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildDefaultPlan());
 
         Assert.True(
             plan.SearchStatistics.SearchedStates <= searchedStateCap,
@@ -853,9 +853,9 @@ public sealed class StrategyRegressionTests
     public void Default_OutcomesConstructedStaysWithinBaseline(int n, int m, int k, int outcomesCap)
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            $"StrategyBuilder.Generate({n}, {m}, {k})",
+            $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k})",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(n, m, k, cancellationToken));
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildDefaultPlan());
 
         Assert.True(
             plan.SearchStatistics.OutcomesConstructed <= outcomesCap,
@@ -880,9 +880,9 @@ public sealed class StrategyRegressionTests
     public void Compact_OutcomesConstructedStaysWithinBaseline(int n, int m, int k, int outcomesCap)
     {
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
-            $"StrategyBuilder.GenerateCompact({n}, {m}, {k})",
+            $"StrategyBuilder.BuildCompactPlan({n}, {m}, {k})",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.GenerateCompact(n, m, k, cancellationToken));
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildCompactPlan());
 
         Assert.True(
             compact.SearchStatistics.OutcomesConstructed <= outcomesCap,
@@ -917,9 +917,9 @@ public sealed class StrategyRegressionTests
     public void Default_DuplicateOutcomeSkipsStaysWithinBaseline(int n, int m, int k, int duplicateSkipCap)
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            $"StrategyBuilder.Generate({n}, {m}, {k})",
+            $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k})",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(n, m, k, cancellationToken));
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildDefaultPlan());
 
         Assert.True(
             plan.SearchStatistics.Diagnostics.DuplicateOutcomeSkips <= duplicateSkipCap,
@@ -943,9 +943,9 @@ public sealed class StrategyRegressionTests
     public void Compact_DuplicateOutcomeSkipsStaysWithinBaseline(int n, int m, int k, int duplicateSkipCap)
     {
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
-            $"StrategyBuilder.GenerateCompact({n}, {m}, {k})",
+            $"StrategyBuilder.BuildCompactPlan({n}, {m}, {k})",
             RegressionTestTimeout,
-            cancellationToken => StrategyBuilder.GenerateCompact(n, m, k, cancellationToken));
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildCompactPlan());
 
         Assert.True(
             compact.SearchStatistics.Diagnostics.DuplicateOutcomeSkips <= duplicateSkipCap,

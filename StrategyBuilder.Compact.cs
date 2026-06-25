@@ -16,16 +16,6 @@ partial class StrategyBuilder
     private readonly Dictionary<SearchStateKey, BestGroupPattern> _compactGroupPatternCache = new();
     private readonly Dictionary<SearchStateKey, int> _compactCostMemo = new();
 
-    public static StrategyPlan GenerateCompact(int n, int m, int k, System.Threading.CancellationToken cancellationToken = default)
-    {
-        return new StrategyBuilder(n, m, k, cancellationToken).BuildCompactPlan();
-    }
-
-    public static StrategyPlan GenerateCompact(int n, int m, int k, System.Threading.CancellationToken cancellationToken, Action<SearchProgressSnapshot> progressCallback)
-    {
-        return new StrategyBuilder(n, m, k, cancellationToken, progressCallback).BuildCompactPlan();
-    }
-
     // Returns the proxy subtree cost (number of materialized nodes) under the
     // compact-optimal choice for this state, populating _compactGroupPatternCache.
     private int SolveCompactSelection(ComparisonState state, int remainingSlots)
