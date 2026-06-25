@@ -73,7 +73,6 @@ class MainForm : Form
     private readonly TextBox _mTextBox;
     private readonly TextBox _kTextBox;
     private readonly ComboBox _themeComboBox;
-    private readonly CheckBox _compactCheckBox;
     private readonly Button _runButton;
     private readonly Button _stopButton;
     private readonly Button _expandAllButton;
@@ -88,15 +87,18 @@ class MainForm : Form
     private readonly RichTextBox _detailsTextBox;
     private readonly System.Windows.Forms.Timer _elapsedTimer;
     private ThemePalette _palette = DarkPalette;
-    private StrategyPlan? _currentPlan;
+    private StrategyPlan? _defaultPlan;
+    private StrategyPlan? _compactPlan;
+    private bool _compactImproved;
     private Stopwatch? _runStopwatch;
     private CancellationTokenSource? _runCancellationSource;
-    private StrategyDepthIndex? _depthIndex;
-    private readonly Dictionary<int, TreeNode> _stateNodesById = new();
-    private readonly Dictionary<TreeNode, int> _referenceTargets = new();
+    private readonly Dictionary<string, TreeNode> _stateNodesByKey = new();
+    private readonly Dictionary<TreeNode, string> _referenceTargets = new();
     private readonly Stack<TreeNode> _navigationHistory = new();
     private SearchProgressSnapshot _latestProgress;
-    private SearchStatistics? _completedStats;
+    private SearchStatistics? _completedDefaultStats;
+    private SearchStatistics? _completedCompactStats;
+    private int _activePhase;
 
     public MainForm()
     {
@@ -140,14 +142,6 @@ class MainForm : Form
         _themeComboBox.Items.AddRange(Enum.GetNames<ColorTheme>());
         _themeComboBox.SelectedItem = ColorTheme.Dark.ToString();
         _themeComboBox.SelectedIndexChanged += (_, _) => ApplyTheme(ParseSelectedTheme());
-
-        _compactCheckBox = new CheckBox
-        {
-            Text = "Compact",
-            AutoSize = true,
-            Checked = false,
-            Margin = new Padding(0, 6, 0, 0),
-        };
 
         _runButton = new Button
         {
@@ -230,7 +224,6 @@ class MainForm : Form
         inputsPanel.Controls.Add(CreateLabeledInput("m", _mTextBox));
         inputsPanel.Controls.Add(CreateLabeledInput("k", _kTextBox));
         inputsPanel.Controls.Add(CreateLabeledInput("theme", _themeComboBox));
-        inputsPanel.Controls.Add(CreateLabeledInput("options", _compactCheckBox));
 
         var actionsPanel = new FlowLayoutPanel
         {
@@ -420,7 +413,12 @@ class MainForm : Form
         CancellationToken cancellationToken = _runCancellationSource.Token;
         IProgress<SearchProgressSnapshot> progress = new Progress<SearchProgressSnapshot>(UpdateSearchProgress);
         _latestProgress = CreateInitialProgressSnapshot();
-        _completedStats = null;
+        _completedDefaultStats = null;
+        _completedCompactStats = null;
+        _defaultPlan = null;
+        _compactPlan = null;
+        _compactImproved = false;
+        _activePhase = 1;
         _runStopwatch = Stopwatch.StartNew();
         UpdateElapsedLabel();
         UpdateStatsPanels();
@@ -431,38 +429,27 @@ class MainForm : Form
 
         try
         {
-            bool useCompact = _compactCheckBox.Checked;
-            var plan = await Task.Run(
-                () => useCompact
-                    ? StrategyBuilder.GenerateCompact(n, m, k, cancellationToken, snapshot => progress.Report(snapshot))
-                    : StrategyBuilder.Generate(n, m, k, cancellationToken, snapshot => progress.Report(snapshot)),
-                cancellationToken);
+            var result = await Task.Run(() =>
+            {
+                var builder = new StrategyBuilder(n, m, k, cancellationToken, snapshot => progress.Report(snapshot));
+                StrategyPlan defaultPlan = builder.BuildDefaultPlan();
+                Interlocked.Exchange(ref _activePhase, 2);
+                StrategyPlan compactPlan = builder.BuildCompactPlan();
+                return (defaultPlan, compactPlan);
+            }, cancellationToken);
             _runStopwatch?.Stop();
-            _currentPlan = plan;
-            _latestProgress = new SearchProgressSnapshot(
-                (long)plan.Elapsed.TotalMilliseconds,
-                plan.SearchStatistics.SearchedStates,
-                plan.SearchStatistics.PendingStates,
-                plan.SearchStatistics.PeakPendingStates,
-                plan.SearchStatistics.OutputStates,
-                plan.SearchStatistics.Diagnostics.RootIncumbents.LastOrDefault(),
-                plan.SearchStatistics.Diagnostics.RootIncumbents.Count,
-                plan.SearchStatistics.Diagnostics.LowerBoundPrunes,
-                plan.SearchStatistics.Diagnostics.DuplicateOutcomeSkips,
-                plan.SearchStatistics.Diagnostics.MergedOutcomeCollisions,
-                plan.SearchStatistics.Diagnostics.ExactCacheHits,
-                plan.SearchStatistics.Diagnostics.LowerBoundCacheHits,
-                plan.SearchStatistics.Diagnostics.FeasibleTopSetCacheHits,
-                plan.SearchStatistics.Diagnostics.BestGroupPatternCacheHits,
-                plan.SearchStatistics.OutcomesConstructed,
-                plan.SearchStatistics.LowerBoundStates,
-                plan.SearchStatistics.FeasibleTopSetStates,
-                plan.SearchStatistics.CompactStatesSolved,
-                plan.SearchStatistics.CompactGroupsEnumerated,
-                plan.SearchStatistics.CompactStepOptimalGroups);
-            PopulateTree(plan);
-            _completedStats = plan.SearchStatistics;
-            UpdateSummaryText(plan);
+
+            _defaultPlan = result.defaultPlan;
+            _compactPlan = result.compactPlan;
+            _compactImproved =
+                result.compactPlan.MaxStep == result.defaultPlan.MaxStep &&
+                result.compactPlan.SearchStatistics.OutputStates < result.defaultPlan.SearchStatistics.OutputStates;
+
+            _latestProgress = CreateSnapshotFromPlan(result.compactPlan);
+            PopulateTree(result.defaultPlan, result.compactPlan, _compactImproved);
+            _completedDefaultStats = result.defaultPlan.SearchStatistics;
+            _completedCompactStats = result.compactPlan.SearchStatistics;
+            UpdateSummaryText(result.defaultPlan, result.compactPlan, _compactImproved);
             UpdateStatsPanels();
         }
         catch (OperationCanceledException)
@@ -480,6 +467,7 @@ class MainForm : Form
         }
         finally
         {
+            _activePhase = 0;
             _elapsedTimer.Stop();
             UpdateElapsedLabel();
             SetRunningState(isRunning: false);
@@ -488,24 +476,28 @@ class MainForm : Form
         }
     }
 
-    private void PopulateTree(StrategyPlan plan)
+    private void PopulateTree(StrategyPlan defaultPlan, StrategyPlan compactPlan, bool compactImproved)
     {
         _treeView.BeginUpdate();
         _treeView.Nodes.Clear();
-        _stateNodesById.Clear();
+        _stateNodesByKey.Clear();
         _referenceTargets.Clear();
         _navigationHistory.Clear();
         _backButton.Enabled = false;
-        _depthIndex = StrategyDepthIndex.Build(plan.Root);
 
+        double totalElapsedMs = defaultPlan.Elapsed.TotalMilliseconds + compactPlan.Elapsed.TotalMilliseconds;
         var root = new TreeNode(
-            $"n={plan.N}, m={plan.M}, k={plan.K}, elapsed={plan.Elapsed.TotalMilliseconds:F1} ms, worst-case steps={plan.MaxStep}, searched={plan.SearchStatistics.SearchedStates}, peak pending={plan.SearchStatistics.PeakPendingStates}")
+            $"n={defaultPlan.N}, m={defaultPlan.M}, k={defaultPlan.K}, two-phase elapsed={totalElapsedMs:F1} ms")
         {
-            Tag = BuildPlanDetails(plan),
+            Tag = BuildTwoPhaseDetails(defaultPlan, compactPlan, compactImproved),
             NodeFont = new Font(_treeView.Font, FontStyle.Bold),
             ForeColor = _palette.ForeColor,
         };
-        root.Nodes.Add(CreateStateNode(plan.Root, plan.K));
+        root.Nodes.Add(CreatePlanTreeRoot("default", defaultPlan, "default"));
+        if (compactImproved)
+            root.Nodes.Add(CreatePlanTreeRoot("compact", compactPlan, "compact"));
+        else
+            root.Nodes.Add(new TreeNode("compact refinement: no better result (output states unchanged or worse)") { ForeColor = _palette.MutedForeColor });
         _treeView.Nodes.Add(root);
         root.Expand();
         root.Nodes[0].Expand();
@@ -514,20 +506,34 @@ class MainForm : Form
         _treeView.SelectedNode = root;
     }
 
-    private TreeNode CreateStateNode(StrategyNode node, int k)
+    private TreeNode CreatePlanTreeRoot(string label, StrategyPlan plan, string scope)
+    {
+        StrategyDepthIndex depthIndex = StrategyDepthIndex.Build(plan.Root);
+        var planNode = new TreeNode(
+            $"{label}: elapsed={plan.Elapsed.TotalMilliseconds:F1} ms, worst-case steps={plan.MaxStep}, output={plan.SearchStatistics.OutputStates}")
+        {
+            Tag = BuildPlanDetails(plan),
+            NodeFont = new Font(_treeView.Font, FontStyle.Bold),
+            ForeColor = _palette.ForeColor,
+        };
+        planNode.Nodes.Add(CreateStateNode(plan.Root, plan.K, scope, depthIndex));
+        return planNode;
+    }
+
+    private TreeNode CreateStateNode(StrategyNode node, int k, string scope, StrategyDepthIndex depthIndex)
     {
         return node.Kind switch
         {
-            StrategyNodeKind.Decision => CreateDecisionNode(node, k),
-            StrategyNodeKind.Terminal => CreateTerminalNode(node, k),
-            StrategyNodeKind.Reference => CreateReferenceNode(node),
+            StrategyNodeKind.Decision => CreateDecisionNode(node, k, scope, depthIndex),
+            StrategyNodeKind.Terminal => CreateTerminalNode(node, k, scope),
+            StrategyNodeKind.Reference => CreateReferenceNode(node, scope, depthIndex),
             _ => throw new InvalidOperationException("Unknown node kind"),
         };
     }
 
-    private TreeNode CreateDecisionNode(StrategyNode node, int k)
+    private TreeNode CreateDecisionNode(StrategyNode node, int k, string scope, StrategyDepthIndex depthIndex)
     {
-        int maxStep = _depthIndex!.SubtreeMaxStep(node);
+        int maxStep = depthIndex.SubtreeMaxStep(node);
         string headerText = $"S{node.StateId} [step {node.Step}/{maxStep}] sort({StrategyTextRenderer.FormatSet(node.Group)})";
 
         var treeNode = new TreeNode(headerText)
@@ -535,7 +541,7 @@ class MainForm : Form
             ForeColor = _palette.StateColor,
             Tag = BuildStateDetails(node),
         };
-        _stateNodesById[node.StateId] = treeNode;
+        _stateNodesByKey[$"{scope}:{node.StateId}"] = treeNode;
 
         if (node.FinalChoice is not null)
         {
@@ -597,27 +603,27 @@ class MainForm : Form
                 Tag = $"Current possible top-k candidates: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.PossibleCandidates)}",
             });
 
-            branchNode.Nodes.Add(CreateStateNode(branch.Next, k));
+            branchNode.Nodes.Add(CreateStateNode(branch.Next, k, scope, depthIndex));
             treeNode.Nodes.Add(branchNode);
         }
 
         return treeNode;
     }
 
-    private TreeNode CreateTerminalNode(StrategyNode node, int k)
+    private TreeNode CreateTerminalNode(StrategyNode node, int k, string scope)
     {
         var treeNode = new TreeNode($"S{node.StateId}: top {k} = ({StrategyTextRenderer.FormatSet(node.TopSet)})")
         {
             ForeColor = _palette.ResultColor,
             Tag = $"Result state S{node.StateId}\nTop {k} = ({StrategyTextRenderer.FormatSet(node.TopSet)})",
         };
-        _stateNodesById[node.StateId] = treeNode;
+        _stateNodesByKey[$"{scope}:{node.StateId}"] = treeNode;
         return treeNode;
     }
 
-    private TreeNode CreateReferenceNode(StrategyNode node)
+    private TreeNode CreateReferenceNode(StrategyNode node, string scope, StrategyDepthIndex depthIndex)
     {
-        string label = _depthIndex!.TryGetReferenceRemaining(node.StateId, out int remaining)
+        string label = depthIndex.TryGetReferenceRemaining(node.StateId, out int remaining)
             ? $"->S{node.StateId} {StrategyTextRenderer.FormatRemainingSteps(remaining)}"
             : $"->S{node.StateId}";
         label += StrategyTextRenderer.FormatRelabeling(node.ReferenceRelabeling);
@@ -636,16 +642,16 @@ class MainForm : Form
             ForeColor = _palette.ReferenceColor,
             Tag = tag,
         };
-        _referenceTargets[treeNode] = node.StateId;
+        _referenceTargets[treeNode] = $"{scope}:{node.StateId}";
         return treeNode;
     }
 
     private void TryJumpToReferenceTarget(TreeNode node)
     {
-        if (!_referenceTargets.TryGetValue(node, out int targetStateId))
+        if (!_referenceTargets.TryGetValue(node, out string? targetStateKey))
             return;
 
-        if (!_stateNodesById.TryGetValue(targetStateId, out TreeNode? targetNode))
+        if (!_stateNodesByKey.TryGetValue(targetStateKey, out TreeNode? targetNode))
             return;
 
         _navigationHistory.Push(node);
@@ -799,11 +805,11 @@ class MainForm : Form
         ForeColor = _palette.ForeColor;
         ApplyThemeToControlTree(this);
 
-        if (_currentPlan is not null)
+        if (_defaultPlan is not null && _compactPlan is not null)
         {
-            PopulateTree(_currentPlan);
+            PopulateTree(_defaultPlan, _compactPlan, _compactImproved);
             if (_runCancellationSource is null)
-                UpdateSummaryText(_currentPlan);
+                UpdateSummaryText(_defaultPlan, _compactPlan, _compactImproved);
         }
         else if (_runCancellationSource is null)
         {
@@ -864,11 +870,15 @@ class MainForm : Form
             ApplyThemeToControlTree(child);
     }
 
-    private void UpdateSummaryText(StrategyPlan plan)
+    private void UpdateSummaryText(StrategyPlan defaultPlan, StrategyPlan compactPlan, bool compactImproved)
     {
+        double totalElapsedMs = defaultPlan.Elapsed.TotalMilliseconds + compactPlan.Elapsed.TotalMilliseconds;
+        string compactText = compactImproved
+            ? $"compact improved output states {defaultPlan.SearchStatistics.OutputStates} -> {compactPlan.SearchStatistics.OutputStates}"
+            : $"compact produced no better result (default output states {defaultPlan.SearchStatistics.OutputStates}, compact {compactPlan.SearchStatistics.OutputStates})";
         _summaryLabel.Text =
-            $"n={plan.N}, m={plan.M}, k={plan.K}, elapsed={plan.Elapsed.TotalMilliseconds:F1} ms, worst-case steps={plan.MaxStep}, " +
-            $"{FormatSearchStatsSummary(plan.SearchStatistics)}, {FormatDiagnosticsSummary(plan.SearchStatistics.Diagnostics)}.";
+            $"n={defaultPlan.N}, m={defaultPlan.M}, k={defaultPlan.K}, total elapsed={totalElapsedMs:F1} ms, " +
+            $"worst-case steps={defaultPlan.MaxStep}, {compactText}.";
     }
 
     private static string BuildCompressedFinalChoiceText(FinalChoiceSummary summary, int k)
@@ -893,7 +903,6 @@ class MainForm : Form
     {
         UseWaitCursor = isRunning;
         _runButton.Enabled = !isRunning;
-        _compactCheckBox.Enabled = !isRunning;
         _stopButton.Enabled = isRunning;
         _expandAllButton.Enabled = !isRunning;
         _collapseAllButton.Enabled = !isRunning;
@@ -903,12 +912,17 @@ class MainForm : Form
     private void UpdateElapsedLabel()
     {
         string text = $"{GetElapsedSeconds():F1} s";
-        if (_completedStats is { } stats)
+        if (_completedDefaultStats is { } defaultStats)
         {
             text +=
-                $"\nexact-step: {stats.Phase1Milliseconds} ms" +
-                $"\ncompact: {stats.Phase1bMilliseconds} ms" +
-                $"\nbuild: {stats.Phase2Milliseconds} ms";
+                $"\ndefault: {defaultStats.Phase1Milliseconds + defaultStats.Phase2Milliseconds} ms " +
+                $"(exact {defaultStats.Phase1Milliseconds} + build {defaultStats.Phase2Milliseconds})";
+        }
+        if (_completedCompactStats is { } compactStats)
+        {
+            text +=
+                $"\ncompact-refine: {compactStats.Phase1bMilliseconds + compactStats.Phase2Milliseconds} ms " +
+                $"(compact {compactStats.Phase1bMilliseconds} + build {compactStats.Phase2Milliseconds})";
         }
 
         _elapsedLabel.Text = text;
@@ -921,7 +935,7 @@ class MainForm : Form
         string incumbent = snapshot.LatestRootIncumbent is null
             ? "incumbent -"
             : $"incumbent <= {snapshot.LatestRootIncumbent.BestWorstCaseSteps}";
-        _summaryLabel.Text = $"Running... {GetElapsedSeconds():F1} s, searched {snapshot.SearchedStates}, {incumbent}.";
+        _summaryLabel.Text = $"Running (phase {GetPhaseLabel()})... {GetElapsedSeconds():F1} s, searched {snapshot.SearchedStates}, {incumbent}.";
         _detailsTextBox.Text = BuildLiveDiagnosticsText(snapshot);
     }
 
@@ -952,6 +966,7 @@ class MainForm : Form
             ? "-"
             : $"<= {p.LatestRootIncumbent.BestWorstCaseSteps}";
         _progressLabel.Text =
+            $"phase: {GetPhaseLabel()}\n" +
             $"incumbent: {incumbent}\n" +
             $"milestones: {p.RootIncumbentCount}\n" +
             $"cache: {p.ExactCacheHits}/{p.LowerBoundCacheHits}/{p.FeasibleTopSetCacheHits}/{p.BestGroupPatternCacheHits}";
@@ -970,6 +985,70 @@ class MainForm : Form
     private static SearchProgressSnapshot CreateInitialProgressSnapshot()
     {
         return new SearchProgressSnapshot(0, 0, 0, 0, 0, null, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    }
+
+    private static SearchProgressSnapshot CreateSnapshotFromPlan(StrategyPlan plan)
+    {
+        return new SearchProgressSnapshot(
+            (long)plan.Elapsed.TotalMilliseconds,
+            plan.SearchStatistics.SearchedStates,
+            plan.SearchStatistics.PendingStates,
+            plan.SearchStatistics.PeakPendingStates,
+            plan.SearchStatistics.OutputStates,
+            plan.SearchStatistics.Diagnostics.RootIncumbents.LastOrDefault(),
+            plan.SearchStatistics.Diagnostics.RootIncumbents.Count,
+            plan.SearchStatistics.Diagnostics.LowerBoundPrunes,
+            plan.SearchStatistics.Diagnostics.DuplicateOutcomeSkips,
+            plan.SearchStatistics.Diagnostics.MergedOutcomeCollisions,
+            plan.SearchStatistics.Diagnostics.ExactCacheHits,
+            plan.SearchStatistics.Diagnostics.LowerBoundCacheHits,
+            plan.SearchStatistics.Diagnostics.FeasibleTopSetCacheHits,
+            plan.SearchStatistics.Diagnostics.BestGroupPatternCacheHits,
+            plan.SearchStatistics.OutcomesConstructed,
+            plan.SearchStatistics.LowerBoundStates,
+            plan.SearchStatistics.FeasibleTopSetStates,
+            plan.SearchStatistics.CompactStatesSolved,
+            plan.SearchStatistics.CompactGroupsEnumerated,
+            plan.SearchStatistics.CompactStepOptimalGroups);
+    }
+
+    private string GetPhaseLabel()
+    {
+        return _activePhase switch
+        {
+            1 => "1/2 default exact+build",
+            2 => "2/2 compact refinement",
+            _ => "-",
+        };
+    }
+
+    private static string BuildTwoPhaseDetails(StrategyPlan defaultPlan, StrategyPlan compactPlan, bool compactImproved)
+    {
+        string defaultText = StrategyTextRenderer.Render(defaultPlan).TrimEnd();
+        string compactText = StrategyTextRenderer.Render(compactPlan).TrimEnd();
+        double totalElapsedMs = defaultPlan.Elapsed.TotalMilliseconds + compactPlan.Elapsed.TotalMilliseconds;
+        var lines = new List<string>
+        {
+            "Two-phase result",
+            $"total elapsed: {totalElapsedMs:F1} ms",
+            $"default output states: {defaultPlan.SearchStatistics.OutputStates}",
+            $"compact output states: {compactPlan.SearchStatistics.OutputStates}",
+            compactImproved
+                ? "compact improvement: yes"
+                : "compact improvement: no",
+            string.Empty,
+            "----- default -----",
+            defaultText,
+        };
+
+        if (compactImproved)
+        {
+            lines.Add(string.Empty);
+            lines.Add("----- compact refinement -----");
+            lines.Add(compactText);
+        }
+
+        return string.Join(Environment.NewLine, lines);
     }
 
     private static string BuildPlanDetails(StrategyPlan plan)

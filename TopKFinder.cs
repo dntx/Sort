@@ -39,6 +39,8 @@ partial class StrategyBuilder
     private long _phase1bMilliseconds;
     private long _phase2Milliseconds;
     private bool _rootSearchInitialized;
+    private bool _phase1Solved;
+    private bool _phase1bSolved;
 
     public StrategyBuilder(int n, int m, int k, CancellationToken cancellationToken = default, Action<SearchProgressSnapshot>? progressCallback = null)
     {
@@ -51,21 +53,34 @@ partial class StrategyBuilder
 
     public StrategyPlan Build()
     {
+        return BuildPlan(_useCompactSelection);
+    }
+
+    public StrategyPlan BuildDefaultPlan()
+    {
+        return BuildPlan(useCompactSelection: false);
+    }
+
+    public StrategyPlan BuildCompactPlan()
+    {
+        return BuildPlan(useCompactSelection: true);
+    }
+
+    private StrategyPlan BuildPlan(bool useCompactSelection)
+    {
+        ResetPerBuildTransientState();
         var stopwatch = Stopwatch.StartNew();
         ReportProgress(force: true);
 
-        // Phase 1: solve the exact minimum worst-case cost for every reachable state,
-        // caching the optimal comparison-group pattern per state along the way.
-        _ = GetMinWorstCaseSteps(new ComparisonState(_n), _k);
+        EnsurePhase1Solved();
         _phase1Milliseconds = stopwatch.ElapsedMilliseconds;
 
-        // Optional phase 1b (PoC): among equally-optimal groups, choose the ones that
-        // minimize the materialized subtree size (a proxy for displayed output states).
-        if (_useCompactSelection)
-            _ = SolveCompactSelection(new ComparisonState(_n), _k);
+        if (useCompactSelection)
+            EnsureCompactSelectionSolved();
         _phase1bMilliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds;
 
         // Phase 2: materialize the strategy tree, reusing the cached group patterns.
+        _useCompactSelection = useCompactSelection;
         var root = BuildState(new ComparisonState(_n), 0, _k, 1);
         _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds - _phase1bMilliseconds;
         stopwatch.Stop();
@@ -453,6 +468,54 @@ partial class StrategyBuilder
     private void ThrowIfCancellationRequested()
     {
         _cancellationToken.ThrowIfCancellationRequested();
+    }
+
+    private void EnsurePhase1Solved()
+    {
+        if (_phase1Solved)
+            return;
+
+        // Phase 1: solve the exact minimum worst-case cost for every reachable state,
+        // caching the optimal comparison-group pattern per state along the way.
+        _ = GetMinWorstCaseSteps(new ComparisonState(_n), _k);
+        _phase1Solved = true;
+    }
+
+    private void EnsureCompactSelectionSolved()
+    {
+        if (_phase1bSolved)
+            return;
+
+        // Optional phase 1b (PoC): among equally-optimal groups, choose the ones that
+        // minimize the materialized subtree size (a proxy for displayed output states).
+        _ = SolveCompactSelection(new ComparisonState(_n), _k);
+        _phase1bSolved = true;
+    }
+
+    private void ResetPerBuildTransientState()
+    {
+        _stateIds.Clear();
+        _expandedStates.Clear();
+        _nextStateId = 1;
+        _rootSearchInitialized = _phase1Solved;
+
+        _visitedSearchStates.Clear();
+        _rootIncumbents.Clear();
+        _searchedStates = 0;
+        _pendingStates = 0;
+        _peakPendingStates = 0;
+
+        _lowerBoundPrunes = 0;
+        _duplicateOutcomeSkips = 0;
+        _mergedOutcomeCollisions = 0;
+        _exactCacheHits = 0;
+        _lowerBoundCacheHits = 0;
+        _feasibleTopSetCacheHits = 0;
+        _bestGroupPatternCacheHits = 0;
+        _outcomesConstructed = 0;
+        _compactStatesSolved = 0;
+        _compactGroupsEnumerated = 0;
+        _compactStepOptimalGroups = 0;
     }
 
     private sealed class SelectedComparisonGroup

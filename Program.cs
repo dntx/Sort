@@ -3,7 +3,7 @@ using System.Windows.Forms;
 
 class Program
 {
-    private const string UsageText = "Usage: TopKFinder <n> <m> <k> [--compact]";
+    private const string UsageText = "Usage: TopKFinder <n> <m> <k>";
 
     private const string HelpText =
         "TopK Finder - generate a comparison strategy for finding the top-k of n numbers\n" +
@@ -11,12 +11,10 @@ class Program
         "\n" +
         "Usage:\n" +
         "  TopKFinder                      Launch the desktop (WinForms) explorer.\n" +
-        "  TopKFinder <n> <m> <k>          Print the full strategy tree to stdout.\n" +
-        "  TopKFinder <n> <m> <k> --compact  Print the compact (alias-compressed) tree.\n" +
+        "  TopKFinder <n> <m> <k>          Run two-phase search: print default, then compact if improved.\n" +
         "  ... | TopKFinder                Read n, m, k from stdin (one value per line).\n" +
         "\n" +
         "Options:\n" +
-        "  -c, --compact   Emit the compact strategy tree (CLI argument mode only).\n" +
         "  -h, --help      Show this help and exit.\n" +
         "\n" +
         "Arguments:\n" +
@@ -29,7 +27,7 @@ class Program
         "\n" +
         "Examples:\n" +
         "  TopKFinder 5 3 2\n" +
-        "  TopKFinder 9 3 3 --compact\n" +
+        "  TopKFinder 9 3 3\n" +
         "  (interactive) run with no args, or pipe n, m, k on three stdin lines";
 
     [STAThread]
@@ -43,7 +41,7 @@ class Program
                 return;
             }
 
-            if (!TryParseCliArgs(args, out string? nText, out string? mText, out string? kText, out bool compact, out string? argError))
+            if (!TryParseCliArgs(args, out string? nText, out string? mText, out string? kText, out string? argError))
             {
                 Console.WriteLine(argError);
                 Console.WriteLine(UsageText);
@@ -56,7 +54,7 @@ class Program
                 return;
             }
 
-            RunHeadless(nFromArgs, mFromArgs, kFromArgs, compact);
+            RunHeadless(nFromArgs, mFromArgs, kFromArgs);
             return;
         }
 
@@ -82,7 +80,7 @@ class Program
             return;
         }
 
-        RunHeadless(n, m, k, compact: false);
+        RunHeadless(n, m, k);
     }
 
     public static bool IsHelpRequested(string[] args)
@@ -95,24 +93,18 @@ class Program
         out string? nText,
         out string? mText,
         out string? kText,
-        out bool compact,
         out string? error)
     {
         nText = null;
         mText = null;
         kText = null;
-        compact = false;
         error = null;
 
         var positionals = new System.Collections.Generic.List<string>();
 
         foreach (string arg in args)
         {
-            if (arg == "--compact" || arg == "-c")
-            {
-                compact = true;
-            }
-            else if (arg.StartsWith("-", StringComparison.Ordinal))
+            if (arg.StartsWith("-", StringComparison.Ordinal))
             {
                 error = $"Error: unknown option '{arg}'";
                 return false;
@@ -135,7 +127,7 @@ class Program
         return true;
     }
 
-    private static void RunHeadless(int n, int m, int k, bool compact)
+    private static void RunHeadless(int n, int m, int k)
     {
         bool showProgress = !Console.IsErrorRedirected;
         long lastEmitMs = -1;
@@ -160,16 +152,28 @@ class Program
             lastLineLength = line.Length;
         }
 
-        StrategyPlan plan = compact
-            ? StrategyBuilder.GenerateCompact(n, m, k, System.Threading.CancellationToken.None, ReportProgress)
-            : StrategyBuilder.Generate(n, m, k, System.Threading.CancellationToken.None, ReportProgress);
-
-        if (showProgress && lastLineLength > 0)
+        void ClearProgressLine()
         {
-            Console.Error.Write("\r" + new string(' ', lastLineLength) + "\r");
+            if (showProgress && lastLineLength > 0)
+                Console.Error.Write("\r" + new string(' ', lastLineLength) + "\r");
         }
 
-        Console.Write(StrategyTextRenderer.Render(plan));
+        var builder = new StrategyBuilder(n, m, k, System.Threading.CancellationToken.None, ReportProgress);
+        StrategyPlan defaultPlan = builder.BuildDefaultPlan();
+        ClearProgressLine();
+        Console.Write(StrategyTextRenderer.Render(defaultPlan));
+
+        StrategyPlan compactPlan = builder.BuildCompactPlan();
+        bool compactImproved =
+            compactPlan.MaxStep == defaultPlan.MaxStep &&
+            compactPlan.SearchStatistics.OutputStates < defaultPlan.SearchStatistics.OutputStates;
+        if (!compactImproved)
+            return;
+
+        ClearProgressLine();
+        Console.WriteLine();
+        Console.WriteLine("==================== compact refinement ====================");
+        Console.Write(StrategyTextRenderer.Render(compactPlan));
     }
 
     public static bool TryParseAndValidate(
