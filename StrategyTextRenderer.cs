@@ -60,6 +60,7 @@ static class StrategyTextRenderer
         (string Token, string Description)[] entries =
         {
             ("#i", "item i (1-based labels; may be relabeled in references)"),
+            ("#i~#j", "items #i through #j inclusive (a run of 3+ consecutive items)"),
             ("S{id} [step x/y] sort(...)", "decision state: do this sort at step x of at most y"),
             ("a > b > c", "the sort revealed a ranks above b above c"),
             ("equivalent forms: N = ...", "this branch stands for N symmetric orderings (e.g. 3! = 6)"),
@@ -150,7 +151,32 @@ static class StrategyTextRenderer
 
     public static string FormatSet(IEnumerable<int> items)
     {
-        return string.Join(", ", items.Select(i => $"#{i + 1}"));
+        var sorted = items.ToList();
+        sorted.Sort();
+
+        var segments = new List<string>();
+        int i = 0;
+        while (i < sorted.Count)
+        {
+            int runStart = i;
+            while (i + 1 < sorted.Count && sorted[i + 1] == sorted[i] + 1)
+                i++;
+
+            int runLength = i - runStart + 1;
+            if (runLength >= 3)
+            {
+                segments.Add($"#{sorted[runStart] + 1}~#{sorted[i] + 1}");
+            }
+            else
+            {
+                for (int j = runStart; j <= i; j++)
+                    segments.Add($"#{sorted[j] + 1}");
+            }
+
+            i++;
+        }
+
+        return string.Join(", ", segments);
     }
 
     public static string FormatOptionalSet(IEnumerable<int> items)
