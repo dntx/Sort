@@ -145,7 +145,6 @@ partial class StrategyBuilder
         ThrowIfCancellationRequested();
         var candidates = state.GetActiveItemsOrdered();
         SearchStateKey currentKey = GetSearchStateKey(state, remainingSlots);
-        var labels = state.GetStructuralLabels();
 
         // Phase 1 solves the optimal worst-case for every reachable state and caches the
         // chosen comparison-group pattern, so phase 2 always finds a populated entry here.
@@ -163,7 +162,7 @@ partial class StrategyBuilder
 
         foreach (var group in EnumerateCombinations(candidates, cachedPattern.GroupSize))
         {
-            if (GetGroupPattern(group, labels) == cachedPattern.Pattern)
+            if (GetGroupPattern(state, group) == cachedPattern.Pattern)
             {
                 _bestGroupPatternCacheHits++;
                 return new SelectedComparisonGroup(group, BuildMergedComparisonOutcomes(state, fixedTopMask, remainingSlots, group));
@@ -186,26 +185,24 @@ partial class StrategyBuilder
             onUsefulOutcome: _ => true).MergedBranches;
     }
 
-    private static IntSequenceKey GetGroupPattern(IReadOnlyList<int> group, IReadOnlyList<int> labels)
+    private static IntSequenceKey GetGroupPattern(ComparisonState state, IReadOnlyList<int> group)
     {
-        int count = group.Count;
-        int[] parts = new int[count];
-        for (int i = 0; i < count; i++)
-            parts[i] = labels[group[i]];
-        Array.Sort(parts);
-        return new IntSequenceKey(parts);
+        ulong mask = 0;
+        for (int i = 0; i < group.Count; i++)
+            mask |= 1UL << group[i];
+        return state.GetGroupCanonicalKey(mask);
     }
 
     private IEnumerable<List<int>> EnumerateDistinctGroups(
+        ComparisonState state,
         IReadOnlyList<int> candidates,
-        int groupSize,
-        IReadOnlyList<int> labels)
+        int groupSize)
     {
         var seenGroupPatterns = new HashSet<IntSequenceKey>();
         foreach (var group in EnumerateCombinations(candidates, groupSize))
         {
             ThrowIfCancellationRequested();
-            if (seenGroupPatterns.Add(GetGroupPattern(group, labels)))
+            if (seenGroupPatterns.Add(GetGroupPattern(state, group)))
                 yield return group;
         }
     }
@@ -214,11 +211,10 @@ partial class StrategyBuilder
         ComparisonState state,
         int remainingSlots,
         IReadOnlyList<int> candidates,
-        int groupSize,
-        IReadOnlyList<int> labels)
+        int groupSize)
     {
         var scoredGroups = new List<(List<int> Group, HeuristicGroupScore Score)>();
-        foreach (var group in EnumerateDistinctGroups(candidates, groupSize, labels))
+        foreach (var group in EnumerateDistinctGroups(state, candidates, groupSize))
         {
             ThrowIfCancellationRequested();
             scoredGroups.Add((group, BuildHeuristicGroupScore(state, remainingSlots, group)));
