@@ -371,6 +371,7 @@ public sealed class StrategyRegressionTests
 
             ==================== legend ====================
             #i                            item i (1-based labels; may be relabeled in references)
+            #i~#j                         items #i through #j inclusive (a run of 3+ consecutive items)
             S{id} [step x/y] sort(...)    decision state: do this sort at step x of at most y
             a > b > c                     the sort revealed a ranks above b above c
             equivalent forms: N = ...     this branch stands for N symmetric orderings (e.g. 3! = 6)
@@ -385,7 +386,7 @@ public sealed class StrategyRegressionTests
                  possible  still competing for the remaining slots
 
             ==================== strategy ====================
-            S1 [step 1/3] sort(#1, #2, #3)
+            S1 [step 1/3] sort(#1~#3)
               #1 > #2 > #3: [- (#3), possible (#1, #2, #4, #5)]
                 equivalent forms: 6 = 3!
                 pattern: permute {#1, #2, #3}
@@ -661,11 +662,11 @@ public sealed class StrategyRegressionTests
 
         const string expected = """
                     S3 [step 3/5] sort(#2, #6, #9, #10)
-                      #2 > #6 > #9 > #10: [+ (#1), - (#7, #8, #9, #10), fixed (#1), possible (#2, #3, #4, #5, #6, #11, #12)]
+                      #2 > #6 > #9 > #10: [+ (#1), - (#7~#10), fixed (#1), possible (#2~#6, #11, #12)]
                         equivalent forms: 2 = 2!
                         pattern: C=permute{#9, #10}; #2 > #6 > C1 > C2
                         S4 [step 4/5] sort(#3, #5, #11, #12)
-                          #11 > #12 > #3 > #5: [+ (#2, #11, #12), - (#3, #4, #5, #6), fixed (#1, #2, #11, #12)] S5: top 4 = (#1, #2, #11, #12)
+                          #11 > #12 > #3 > #5: [+ (#2, #11, #12), - (#3~#6), fixed (#1, #2, #11, #12)] S5: top 4 = (#1, #2, #11, #12)
                             equivalent forms: 2 = 2!
                             pattern: C=permute{#11, #12}; C1 > C2 > #3 > #5
                           #11 > #12 > #5 > #3: [+ (#11, #12), - (#3, #4, #6), fixed (#1, #11, #12), possible (#2, #5)]
@@ -673,10 +674,10 @@ public sealed class StrategyRegressionTests
                             pattern: C=permute{#11, #12}; C1 > C2 > #5 > #3
                             S6 [step 5/5] sort(#2, #5)
                               fixed (#1, #11, #12); choose 1 of (#2, #5) into top 4
-                          #11 > #3 > #12 > #5: [+ (#2, #3, #11), - (#4, #5, #6, #12), fixed (#1, #2, #3, #11)] S7: top 4 = (#1, #2, #3, #11)
+                          #11 > #3 > #12 > #5: [+ (#2, #3, #11), - (#4~#6, #12), fixed (#1~#3, #11)] S7: top 4 = (#1~#3, #11)
                             equivalent forms: 2 = 2!
                             pattern: C=permute{#11, #12}; C1 > #3 > C2 > #5
-                          #11 > #3 > #5 > #12: [+ (#2, #3, #11), - (#4, #5, #6, #12), fixed (#1, #2, #3, #11)] S7: top 4 = (#1, #2, #3, #11)
+                          #11 > #3 > #5 > #12: [+ (#2, #3, #11), - (#4~#6, #12), fixed (#1~#3, #11)] S7: top 4 = (#1~#3, #11)
                             equivalent forms: 2 = 2!
                             pattern: C=permute{#11, #12}; C1 > #3 > #5 > C2
             """;
