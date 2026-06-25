@@ -51,11 +51,6 @@ partial class StrategyBuilder
         _progressCallback = progressCallback;
     }
 
-    public StrategyPlan Build()
-    {
-        return BuildPlan(_useCompactSelection);
-    }
-
     public StrategyPlan BuildDefaultPlan()
     {
         return BuildPlan(useCompactSelection: false);
@@ -86,21 +81,6 @@ partial class StrategyBuilder
         stopwatch.Stop();
         ReportProgress(force: true);
         return new StrategyPlan(_n, _m, _k, root, stopwatch.Elapsed, CreateSearchStatistics());
-    }
-
-    public static StrategyPlan Generate(int n, int m, int k)
-    {
-        return new StrategyBuilder(n, m, k).Build();
-    }
-
-    public static StrategyPlan Generate(int n, int m, int k, CancellationToken cancellationToken)
-    {
-        return new StrategyBuilder(n, m, k, cancellationToken).Build();
-    }
-
-    public static StrategyPlan Generate(int n, int m, int k, CancellationToken cancellationToken, Action<SearchProgressSnapshot> progressCallback)
-    {
-        return new StrategyBuilder(n, m, k, cancellationToken, progressCallback).Build();
     }
 
     private StrategyNode BuildState(ComparisonState state, ulong fixedTopMask, int remainingSlots, int step)

@@ -201,8 +201,6 @@ static class StrategyTextRenderer
         return $"fixed ({FormatSet(summary.FixedTopSet)}); choose {summary.RemainingSlots} of ({FormatSet(summary.CandidatePool)}) into top {k}";
     }
 
-    public static string FormatEquivalentPattern(EquivalentOrderSummary summary) => summary.PatternText;
-
     private static List<string> GetNonEmptyEffectEntries(StrategyEffect effect)
     {
         var parts = new List<string>(4);

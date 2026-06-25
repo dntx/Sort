@@ -35,17 +35,17 @@ public sealed class StrategyPerformanceTests
     private static double MeasureMedianElapsedMilliseconds(int n, int m, int k, int iterations)
     {
         _ = TestTimeoutHelper.RunWithTimeout(
-            $"StrategyBuilder.Generate({n}, {m}, {k}) warmup",
+            $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k}) warmup",
             PerfTestTimeout,
-            cancellationToken => StrategyBuilder.Generate(n, m, k, cancellationToken));
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildDefaultPlan());
 
         var samples = new List<double>(iterations);
         for (int i = 0; i < iterations; i++)
         {
             StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-                $"StrategyBuilder.Generate({n}, {m}, {k}) iteration {i + 1}",
+                $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k}) iteration {i + 1}",
                 PerfTestTimeout,
-                cancellationToken => StrategyBuilder.Generate(n, m, k, cancellationToken));
+                cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildDefaultPlan());
             samples.Add(plan.Elapsed.TotalMilliseconds);
         }
 
