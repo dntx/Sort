@@ -206,13 +206,13 @@ class MainForm : Form
         {
             AutoSize = true,
             Margin = Padding.Empty,
-            Text = "outcomes: 0\nduplicate skips: 0\nmerged collisions: 0\nprunes: 0\ncompact: -",
+            Text = "outcomes: 0\nduplicate skips: 0\nmerged collisions: 0\nprunes: 0\ncache: 0/0/0/0\ncompact: -",
         };
         _progressLabel = new Label
         {
             AutoSize = true,
             Margin = Padding.Empty,
-            Text = "phase: -\nincumbent: -\nmilestones: 0\ncache: 0/0/0/0",
+            Text = "phase: -",
         };
 
         var inputsPanel = new FlowLayoutPanel
@@ -260,9 +260,9 @@ class MainForm : Form
             ColumnCount = 3,
             Margin = Padding.Empty,
         };
+        statsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33));
+        statsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 29));
         statsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 38));
-        statsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 32));
-        statsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 30));
 
         var progressBody = new TableLayoutPanel
         {
@@ -1135,16 +1135,10 @@ class MainForm : Form
             $"duplicate skips: {p.DuplicateOutcomeSkips}\n" +
             $"merged collisions: {p.MergedOutcomeCollisions}\n" +
             $"prunes: {p.LowerBoundPrunes}\n" +
+            $"cache: {p.ExactCacheHits}/{p.LowerBoundCacheHits}/{p.FeasibleTopSetCacheHits}/{p.BestGroupPatternCacheHits}\n" +
             compactText;
 
-        string incumbent = p.LatestRootIncumbent is null
-            ? "-"
-            : $"<= {p.LatestRootIncumbent.BestWorstCaseSteps}";
-        _progressLabel.Text =
-            $"phase: {GetPhaseLabel()}\n" +
-            $"incumbent: {incumbent}\n" +
-            $"milestones: {p.RootIncumbentCount}\n" +
-            $"cache: {p.ExactCacheHits}/{p.LowerBoundCacheHits}/{p.FeasibleTopSetCacheHits}/{p.BestGroupPatternCacheHits}";
+        _progressLabel.Text = $"phase: {GetPhaseLabel()}";
     }
     private static string FormatSearchStatsSummary(SearchProgressSnapshot snapshot, bool includeOutputStates)
     {
