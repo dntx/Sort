@@ -683,6 +683,29 @@ public sealed class StrategyRegressionTests
         Assert.Equal(StrategyTestHelpers.NormalizeRenderedSnapshot(expected), excerpt);
     }
 
+    // These exact inputs previously crashed compact mode: incomplete 1-WL group
+    // de-duplication merged structurally distinct groups, dropped a uniquely-optimal
+    // group, and left compact's budget with no admissible group (bestGroup == null ->
+    // throw). Pin them so the regression can never silently return. The complete group
+    // invariant must keep the optimal worst-case step count for these cases.
+    [Theory]
+    [InlineData(10, 2, 4)]
+    [InlineData(12, 3, 4)]
+    public void Compact_DoesNotCrashOnPreviouslyFailingInputs(int n, int m, int k)
+    {
+        StrategyPlan baseline = TestTimeoutHelper.RunWithTimeout(
+            $"StrategyBuilder.Generate({n}, {m}, {k})",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.Generate(n, m, k, cancellationToken));
+
+        StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
+            $"StrategyBuilder.GenerateCompact({n}, {m}, {k})",
+            RegressionTestTimeout,
+            cancellationToken => StrategyBuilder.GenerateCompact(n, m, k, cancellationToken));
+
+        Assert.Equal(baseline.MaxStep, compact.MaxStep);
+    }
+
     // Compact selection (opt-in) keeps the optimal worst-case step count but, among the
     // equally-optimal solutions, prefers the one with the smallest materialized tree. These
     // tests pin the two invariants: max step is preserved and output states never regress
