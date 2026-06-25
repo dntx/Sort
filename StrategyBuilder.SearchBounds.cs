@@ -62,13 +62,12 @@ partial class StrategyBuilder
 
         var candidates = state.GetActiveItemsOrdered();
         int groupSize = Math.Min(_m, candidates.Count);
-        var labels = state.GetStructuralLabels();
         // Always rank candidate groups with the independent/symmetric heuristic, including at
         // early nodes where remainingSlots < _m (e.g. before any winner is fixed). This makes the
         // displayed optimal strategy prefer regular, fresh groupings (such as sorting an untouched
         // block) over equally-optimal but less intuitive mixed groups.
         IEnumerable<List<int>> groups =
-            EnumeratePrioritizedGroups(state, remainingSlots, candidates, groupSize, labels);
+            EnumeratePrioritizedGroups(state, remainingSlots, candidates, groupSize);
         List<int>? bestGroup = null;
         int bestWorstCase = int.MaxValue;
         try
@@ -119,7 +118,7 @@ partial class StrategyBuilder
             throw new InvalidOperationException("Expected at least one useful comparison group when unresolved candidates exceed comparison size.");
 
         if (bestGroup is not null)
-            _bestGroupPatternCache[key] = new BestGroupPattern(bestGroup.Count, GetGroupPattern(bestGroup, labels));
+            _bestGroupPatternCache[key] = new BestGroupPattern(bestGroup.Count, GetGroupPattern(state, bestGroup));
 
         _minWorstCaseStepsCache[key] = bestWorstCase;
 

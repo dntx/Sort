@@ -58,7 +58,6 @@ partial class StrategyBuilder
 
         var candidates = state.GetActiveItemsOrdered();
         int groupSize = Math.Min(_m, candidates.Count);
-        var labels = state.GetStructuralLabels();
 
         // Gathers the distinct step-optimal child states for a group, or returns null if
         // the group is not useful or would not preserve the optimal worst-case step count.
@@ -107,7 +106,7 @@ partial class StrategyBuilder
         // Enumerate in a stable lexicographic order. Among groups with equal proxy cost
         // this keeps the first, which empirically yields the most subtree sharing (smallest
         // real output-state count). Branch-and-bound prunes provably-larger groups.
-        foreach (var group in EnumerateDistinctGroups(candidates, groupSize, labels))
+        foreach (var group in EnumerateDistinctGroups(state, candidates, groupSize))
         {
             ThrowIfCancellationRequested();
             _compactGroupsEnumerated++;
@@ -149,9 +148,11 @@ partial class StrategyBuilder
         }
 
         if (bestGroup is null)
+        {
             throw new InvalidOperationException("Compact selection found no step-optimal comparison group.");
+        }
 
-        _compactGroupPatternCache[key] = new BestGroupPattern(bestGroup.Count, GetGroupPattern(bestGroup, labels));
+        _compactGroupPatternCache[key] = new BestGroupPattern(bestGroup.Count, GetGroupPattern(state, bestGroup));
         _compactCostMemo[key] = bestCost;
         return bestCost;
     }

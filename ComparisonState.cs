@@ -241,13 +241,24 @@ class ComparisonState
         if (_canonicalKeyCache is not null)
             return _canonicalKeyCache.Value;
 
-        _canonicalKeyCache = ComputeCanonicalForm(ActiveMask, fixedTopMask: 0);
+        _canonicalKeyCache = ComputeCanonicalForm(ActiveMask, fixedTopMask: 0, highlightMask: 0);
         return _canonicalKeyCache.Value;
     }
 
     public IntSequenceKey GetDisplayCanonicalKey(ulong fixedTopMask)
     {
-        return ComputeCanonicalForm(ActiveMask | fixedTopMask, fixedTopMask);
+        return ComputeCanonicalForm(ActiveMask | fixedTopMask, fixedTopMask, highlightMask: 0);
+    }
+
+    // Produces a COMPLETE isomorphism invariant of a comparison group within the active
+    // sub-poset by canonicalizing the state with the group's members highlighted as a
+    // distinct color. Two groups share a key iff some automorphism of the poset maps one
+    // onto the other (i.e. they spawn isomorphic search subtrees). The 1-WL signature this
+    // replaces is incomplete and can merge genuinely distinct groups, which makes the search
+    // drop a uniquely optimal group and over-estimate the worst-case step count.
+    public IntSequenceKey GetGroupCanonicalKey(ulong groupMask)
+    {
+        return ComputeCanonicalForm(ActiveMask, fixedTopMask: 0, highlightMask: groupMask);
     }
 
     // Produces a COMPLETE canonical invariant of the included sub-poset via
@@ -258,7 +269,7 @@ class ComparisonState
     // turn breaks compact selection's step-budget invariant. Individualization-refinement
     // distinguishes every non-isomorphic state while still mapping isomorphic states (and
     // fixed-top elements onto fixed-top elements) to an identical key.
-    private IntSequenceKey ComputeCanonicalForm(ulong includedMask, ulong fixedTopMask)
+    private IntSequenceKey ComputeCanonicalForm(ulong includedMask, ulong fixedTopMask, ulong highlightMask)
     {
         int n = _n;
         var verts = new int[n];
@@ -303,12 +314,17 @@ class ComparisonState
         }
 
         // Seed colors distinguish fixed-top elements from ordinary active candidates so the
-        // canonicalization never maps a guaranteed-top item onto a still-contested one.
+        // canonicalization never maps a guaranteed-top item onto a still-contested one. A
+        // highlighted group (if any) gets a further distinct color so a group's canonical key
+        // is a complete invariant of (state, group) up to automorphism.
         var seed = new int[a];
         for (int p = 0; p < a; p++)
         {
             ulong bit = 1UL << verts[p];
-            seed[p] = (fixedTopMask & bit) != 0 ? 1 : 0;
+            int s = (fixedTopMask & bit) != 0 ? 1 : 0;
+            if ((highlightMask & bit) != 0)
+                s += 2;
+            seed[p] = s;
         }
 
         var refined = RefineCanonicalColoring(a, anc, desc, seed);
