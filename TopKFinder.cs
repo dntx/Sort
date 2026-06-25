@@ -194,14 +194,84 @@ partial class StrategyBuilder
         IReadOnlyList<int> candidates,
         int groupSize)
     {
-        var seenGroupPatterns = new HashSet<IntSequenceKey>();
-        foreach (var group in EnumerateCombinations(candidates, groupSize))
+        // Exploit the active poset's automorphisms to avoid enumerating all C(active, groupSize)
+        // combinations. Active items are partitioned into "free symmetry classes" (items with
+        // identical active-restricted ancestor and descendant sets); every within-class permutation
+        // is an automorphism, so all size-a selections from a class lie in one orbit and the class's
+        // a smallest items canonically represent them. We therefore build a single candidate per
+        // per-class count vector and canonically de-duplicate across classes, keeping the
+        // lexicographically smallest member of each orbit. This produces exactly one representative
+        // per orbit - identical to scanning every combination - but builds far fewer candidates on
+        // symmetric states (e.g. a single candidate at the fully symmetric root instead of C(n, m)).
+        List<List<int>> classes = state.GetFreeSymmetryClasses();
+
+        var suffixCapacity = new int[classes.Count + 1];
+        for (int c = classes.Count - 1; c >= 0; c--)
+            suffixCapacity[c] = suffixCapacity[c + 1] + classes[c].Count;
+
+        var representatives = new Dictionary<IntSequenceKey, List<int>>();
+        var prefix = new List<int>(groupSize);
+        GenerateClassRepresentatives(state, classes, suffixCapacity, 0, groupSize, prefix, representatives);
+
+        var ordered = new List<List<int>>(representatives.Values);
+        ordered.Sort(CompareGroupsLexicographically);
+        return ordered;
+    }
+
+    private void GenerateClassRepresentatives(
+        ComparisonState state,
+        List<List<int>> classes,
+        int[] suffixCapacity,
+        int classIndex,
+        int remaining,
+        List<int> prefix,
+        Dictionary<IntSequenceKey, List<int>> representatives)
+    {
+        if (remaining == 0)
         {
             ThrowIfCancellationRequested();
             _candidateGroupsEnumerated++;
-            if (seenGroupPatterns.Add(GetGroupPattern(state, group)))
-                yield return group;
+            var group = new List<int>(prefix);
+            group.Sort();
+            IntSequenceKey pattern = GetGroupPattern(state, group);
+            if (!representatives.TryGetValue(pattern, out List<int>? existing) ||
+                CompareGroupsLexicographically(group, existing) < 0)
+            {
+                representatives[pattern] = group;
+            }
+
+            return;
         }
+
+        // Prune branches that can no longer reach the required group size.
+        if (classIndex == classes.Count || suffixCapacity[classIndex] < remaining)
+            return;
+
+        List<int> cls = classes[classIndex];
+        int maxTake = Math.Min(cls.Count, remaining);
+        for (int take = 0; take <= maxTake; take++)
+        {
+            for (int j = 0; j < take; j++)
+                prefix.Add(cls[j]);
+
+            GenerateClassRepresentatives(
+                state, classes, suffixCapacity, classIndex + 1, remaining - take, prefix, representatives);
+
+            prefix.RemoveRange(prefix.Count - take, take);
+        }
+    }
+
+    private static int CompareGroupsLexicographically(List<int> a, List<int> b)
+    {
+        int min = Math.Min(a.Count, b.Count);
+        for (int i = 0; i < min; i++)
+        {
+            int cmp = a[i].CompareTo(b[i]);
+            if (cmp != 0)
+                return cmp;
+        }
+
+        return a.Count.CompareTo(b.Count);
     }
 
     private IEnumerable<List<int>> EnumeratePrioritizedGroups(
