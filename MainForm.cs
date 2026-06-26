@@ -525,7 +525,7 @@ class MainForm : Form
             _compactPlan = result.compactPlan;
             _compactImproved =
                 result.compactPlan.MaxStep == result.defaultPlan.MaxStep &&
-                result.compactPlan.SearchStatistics.OutputStates < result.defaultPlan.SearchStatistics.OutputStates;
+                result.compactPlan.TotalBranchEdges < result.defaultPlan.TotalBranchEdges;
 
             _latestProgress = CreateSnapshotFromPlan(result.compactPlan);
             PopulateTree(result.defaultPlan, result.compactPlan, _compactImproved);
@@ -579,7 +579,7 @@ class MainForm : Form
         if (compactImproved)
             root.Nodes.Add(CreatePlanTreeRoot("compact", compactPlan, "compact"));
         else
-            root.Nodes.Add(new TreeNode("compact refinement: no better result (output states unchanged or worse)") { ForeColor = _palette.MutedForeColor });
+            root.Nodes.Add(new TreeNode("compact refinement: no better result (total edges unchanged or worse)") { ForeColor = _palette.MutedForeColor });
         _treeView.Nodes.Add(root);
         root.Expand();
         root.Nodes[0].Expand();
@@ -737,7 +737,7 @@ class MainForm : Form
     {
         StrategyDepthIndex depthIndex = StrategyDepthIndex.Build(plan.Root);
         var planNode = new TreeNode(
-            $"{label}: elapsed={plan.Elapsed.TotalMilliseconds:F1} ms, worst-case steps={plan.MaxStep}, output={plan.SearchStatistics.OutputStates}")
+            $"{label}: elapsed={plan.Elapsed.TotalMilliseconds:F1} ms, worst-case steps={plan.MaxStep}, edges={plan.TotalBranchEdges}, output={plan.SearchStatistics.OutputStates}")
         {
             Tag = BuildPlanDetails(plan),
             NodeFont = new Font(_treeView.Font, FontStyle.Bold),
@@ -1127,8 +1127,8 @@ class MainForm : Form
     {
         double totalElapsedMs = defaultPlan.Elapsed.TotalMilliseconds + compactPlan.Elapsed.TotalMilliseconds;
         string compactText = compactImproved
-            ? $"compact improved output states {defaultPlan.SearchStatistics.OutputStates} -> {compactPlan.SearchStatistics.OutputStates}"
-            : $"compact produced no better result (default output states {defaultPlan.SearchStatistics.OutputStates}, compact {compactPlan.SearchStatistics.OutputStates})";
+            ? $"compact reduced total edges {defaultPlan.TotalBranchEdges} -> {compactPlan.TotalBranchEdges}"
+            : $"compact produced no better result (default total edges {defaultPlan.TotalBranchEdges}, compact {compactPlan.TotalBranchEdges})";
         _statusLabel.Text =
             $"n={defaultPlan.N}, m={defaultPlan.M}, k={defaultPlan.K}, total elapsed={totalElapsedMs:F1} ms, " +
             $"worst-case steps={defaultPlan.MaxStep}, {compactText}.";
@@ -1293,6 +1293,8 @@ class MainForm : Form
         {
             "Two-phase result",
             $"total elapsed: {totalElapsedMs:F1} ms",
+            $"default total edges: {defaultPlan.TotalBranchEdges}",
+            $"compact total edges: {compactPlan.TotalBranchEdges}",
             $"default output states: {defaultPlan.SearchStatistics.OutputStates}",
             $"compact output states: {compactPlan.SearchStatistics.OutputStates}",
             compactImproved

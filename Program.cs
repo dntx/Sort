@@ -168,7 +168,7 @@ class Program
         StrategyPlan compactPlan = builder.BuildCompactPlan();
         bool compactImproved =
             compactPlan.MaxStep == defaultPlan.MaxStep &&
-            compactPlan.SearchStatistics.OutputStates < defaultPlan.SearchStatistics.OutputStates;
+            compactPlan.TotalBranchEdges < defaultPlan.TotalBranchEdges;
         if (!compactImproved)
             return;
 

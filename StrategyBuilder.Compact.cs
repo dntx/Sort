@@ -6,9 +6,10 @@ partial class StrategyBuilder
     // EXPERIMENTAL (PoC): when enabled, phase 2 reads comparison groups from a
     // "compact" pattern cache produced by a secondary two-level DP. The DP keeps the
     // optimal worst-case step count (computed by phase 1) as the primary objective and,
-    // among all equally-optimal groups, minimizes the size of the materialized subtree
-    // (a proxy for the displayed output-state count). This lets us measure whether a
-    // global "prefer the simplest equally-optimal solution" rule shrinks the trees.
+    // among all equally-optimal groups, minimizes the total number of displayed branch
+    // edges (the count of branch lines the renderer draws across the whole subtree). This
+    // lets us measure whether a global "prefer the fewest-edges equally-optimal solution"
+    // rule shrinks the trees.
     private bool _useCompactSelection;
     private int _compactStatesSolved;
     private int _compactGroupsEnumerated;
@@ -16,7 +17,7 @@ partial class StrategyBuilder
     private readonly Dictionary<SearchStateKey, BestGroupPattern> _compactGroupPatternCache = new();
     private readonly Dictionary<SearchStateKey, int> _compactCostMemo = new();
 
-    // Returns the proxy subtree cost (number of materialized nodes) under the
+    // Returns the proxy subtree cost (number of displayed branch edges) under the
     // compact-optimal choice for this state, populating _compactGroupPatternCache.
     private int SolveCompactSelection(ComparisonState state, int remainingSlots)
     {
@@ -24,14 +25,17 @@ partial class StrategyBuilder
         ulong ignoredFixedTopMask = 0;
         NormalizeState(state, ref ignoredFixedTopMask, ref remainingSlots);
 
+        // Terminal and final-choice states render no branch lines (terminals carry the
+        // resolved top set; final-choice nodes are summarized by FinalChoiceSummary with an
+        // empty Branches list), so they contribute zero edges to the subtree.
         if (remainingSlots == 0)
-            return 1;
+            return 0;
         if (TryGetDeterminedTopSet(state, remainingSlots, out _))
-            return 1;
+            return 0;
         if (state.ActiveCount <= remainingSlots)
-            return 1;
+            return 0;
         if (state.ActiveCount <= _m)
-            return 1;
+            return 0;
 
         SearchStateKey key = GetSearchStateKey(state, remainingSlots);
         if (_compactCostMemo.TryGetValue(key, out int cachedCost))
@@ -93,9 +97,13 @@ partial class StrategyBuilder
         List<int>? bestGroup = null;
         int bestCost = int.MaxValue;
 
-        // Enumerate in a stable lexicographic order. Among groups with equal proxy cost
-        // this keeps the first, which empirically yields the most subtree sharing (smallest
-        // real output-state count). Branch-and-bound prunes provably-larger groups.
+        // Enumerate in a stable lexicographic order. Among groups with equal edge cost this
+        // keeps the first, which empirically yields the most subtree sharing. Branch-and-bound
+        // prunes provably-larger groups: the displayed-edge count of a node is always at least
+        // the number of distinct step-optimal children it has (the display path can only split
+        // a successor state into more lines, never fewer), and every child subtree contributes
+        // a non-negative number of edges, so children.Count is a valid lower bound on a group's
+        // total cost before the heavier display enumeration runs.
         foreach (var group in EnumerateDistinctGroups(state, candidates, groupSize))
         {
             ThrowIfCancellationRequested();
@@ -106,9 +114,9 @@ partial class StrategyBuilder
                 continue;
             _compactStepOptimalGroups++;
 
-            // A group cannot beat the incumbent if even its minimal possible cost (one
-            // node per child) reaches it.
-            if (1 + children.Count >= bestCost)
+            // Cheap lower bound (distinct children) before any child recursion or the heavy
+            // display enumeration.
+            if (children.Count >= bestCost)
                 continue;
 
             int branchCostSum = 0;
@@ -117,9 +125,9 @@ partial class StrategyBuilder
             {
                 branchCostSum += SolveCompactSelection(children[i].State, children[i].RemainingSlots);
 
-                // Remaining unvisited children still contribute at least one node each.
-                int partialLowerBound = 1 + branchCostSum + (children.Count - 1 - i);
-                if (partialLowerBound >= bestCost)
+                // The display edge count for this node is at least children.Count, so the group
+                // cannot beat the incumbent once children.Count + the accumulated child cost does.
+                if (children.Count + branchCostSum >= bestCost)
                 {
                     pruned = true;
                     break;
@@ -129,7 +137,9 @@ partial class StrategyBuilder
             if (pruned)
                 continue;
 
-            int groupCost = 1 + branchCostSum;
+            // Only now pay for the heavy display enumeration that yields the exact edge count.
+            int edgeCount = CountDisplayBranches(state, remainingSlots, group);
+            int groupCost = edgeCount + branchCostSum;
             if (groupCost < bestCost)
             {
                 bestCost = groupCost;
@@ -145,5 +155,40 @@ partial class StrategyBuilder
         _compactGroupPatternCache[key] = new BestGroupPattern(bestGroup.Count, GetGroupPattern(state, bestGroup));
         _compactCostMemo[key] = bestCost;
         return bestCost;
+    }
+
+    // Number of displayed branch lines this state renders for the given comparison group,
+    // including doomed-tail folding and the symmetry-orbit vs. distinct-family split. Counts
+    // exactly what BuildBranchSpecs would emit, but without building the per-branch pattern
+    // summaries for the common single-family case: a merged branch backed by one order family is
+    // a single relabeling orbit, so its pattern can never carry the " | " disjunction separator
+    // and always renders as exactly one branch. Only multi-family merged branches need the
+    // (expensive) pattern engine to decide single-orbit (1) vs. split (one line per family). This
+    // keeps the compact DP's edge counting cheap on wide, low-m search spaces.
+    private int CountDisplayBranches(ComparisonState state, int remainingSlots, IReadOnlyList<int> group)
+    {
+        IReadOnlyList<MergedBranch> merged = BuildMergedComparisonOutcomes(state, fixedTopMask: 0, remainingSlots, group);
+        var chosenGroup = new SelectedComparisonGroup(group, merged);
+
+        List<BranchSpec>? doomedTailSpecs = TryBuildDoomedTailSpecs(state, remainingSlots, chosenGroup);
+        if (doomedTailSpecs is not null)
+            return doomedTailSpecs.Count;
+
+        int count = 0;
+        foreach (MergedBranch branch in merged)
+        {
+            List<MergedFamilyOutcome> families = branch.FamilyOutcomes;
+            if (families.Count == 1)
+            {
+                count += 1;
+                continue;
+            }
+
+            EquivalentOrderSummary? combinedSummary = BuildEquivalentOrderSummary(
+                families.ConvertAll(outcome => outcome.Family));
+            count += MergedOrderingsFormSingleOrbit(combinedSummary) ? 1 : families.Count;
+        }
+
+        return count;
     }
 }

@@ -6,6 +6,18 @@ partial class StrategyBuilder
 {
     private List<StrategyBranch> BuildBranches(ComparisonState state, ulong fixedTopMask, int remainingSlots, SelectedComparisonGroup chosenGroup, int nextStep)
     {
+        return BuildBranchSpecs(state, remainingSlots, chosenGroup)
+            .Select(spec => BuildTransitionBranch(state, fixedTopMask, spec, nextStep))
+            .ToList();
+    }
+
+    // Builds the ordered display-branch specs for a chosen comparison group without
+    // materializing the subtrees. BuildBranches maps these through BuildTransitionBranch
+    // (which recurses); the compact DP counts them via CountDisplayBranches to minimize
+    // the total number of displayed edges. The returned list is already in display order,
+    // so its Count is exactly the number of branch lines this node will render.
+    private List<BranchSpec> BuildBranchSpecs(ComparisonState state, int remainingSlots, SelectedComparisonGroup chosenGroup)
+    {
         ThrowIfCancellationRequested();
 
         // A merged branch groups every order family whose outcome maps to the same
@@ -33,7 +45,6 @@ partial class StrategyBuilder
         {
             return doomedTailSpecs
                 .OrderBy(spec => spec.OrderText, StringComparer.Ordinal)
-                .Select(spec => BuildTransitionBranch(state, fixedTopMask, spec, nextStep))
                 .ToList();
         }
 
@@ -62,7 +73,6 @@ partial class StrategyBuilder
 
         return specs
             .OrderBy(spec => spec.OrderText, StringComparer.Ordinal)
-            .Select(spec => BuildTransitionBranch(state, fixedTopMask, spec, nextStep))
             .ToList();
     }
 
