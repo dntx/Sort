@@ -186,8 +186,8 @@ public sealed class StrategyRegressionTests
         Assert.NotNull(branch.EquivalentOrders);
         Assert.Equal(4, branch.EquivalentOrders!.Count);
         Assert.Equal("2! x 2!", branch.EquivalentOrders.CountFormula);
-        Assert.Contains("permute{#2, #6}", branch.EquivalentOrders.PatternText);
-        Assert.Contains("permute{#9, #10}", branch.EquivalentOrders.PatternText);
+        Assert.Equal("A1 > A2 > B1 > B2", branch.EquivalentOrders.PatternText);
+        Assert.Equal("A \u2208 permute {#2, #6}, B \u2208 permute {#9, #10}", branch.EquivalentOrders.Legend);
 
         // The #6 > #2 ordering is no longer a distinct branch; it is now part of the permute family
         // above, so no separate (reference) sibling exists for it.
@@ -247,7 +247,7 @@ public sealed class StrategyRegressionTests
             S{id} [step x/y] sort(...)    decision state: do this sort at step x of at most y
             a > b > c                     the sort revealed a ranks above b above c
             equivalent forms: N = ...     this branch stands for N symmetric orderings (e.g. 3! = 6)
-            pattern: ...                  shape of those orderings (B/C = a permuted sub-block, e.g. B1 > B2)
+            pattern: ...                  shape of those orderings; "A ∈ permute {...}" defines a permuted sub-block (e.g. A1 > A2)
             S{id}: top k = (...)          solved: the top-k set is fully determined
             →S{id} (+N steps) [map: ...]  reuse state S{id}'s subtree (N more sorts); [map] relabels referenced→current
 
@@ -264,16 +264,16 @@ public sealed class StrategyRegressionTests
                 pattern: permute {#1~#3}
                 S2 [step 2/3] sort(#1, #4, #5)
                   #1 > #4 > #5: [+ (#1), - (#5), fixed (#1), possible (#2, #4)]
-                    equivalent forms: 2 = 2!
-                    pattern: B=permute{#4, #5}; #1 > B1 > B2
+                    equivalent forms: 2 (= 2!)
+                    pattern: #1 > A1 > A2 ; A ∈ permute {#4, #5}
                     S3 [step 3/3] sort(#2, #4)
                       fixed (#1); choose 1 of (#2, #4) into top 2
                   #4 > #1 > #5: [+ (#1, #4), - (#2, #5), fixed (#1, #4)] S4: top 2 = (#1, #4)
-                    equivalent forms: 2 = 2!
-                    pattern: B=permute{#4, #5}; B1 > #1 > B2
+                    equivalent forms: 2 (= 2!)
+                    pattern: A1 > #1 > A2 ; A ∈ permute {#4, #5}
                   #4 > #5 > #1: [+ (#4, #5), - (#1, #2), fixed (#4, #5)] S4: top 2 = (#4, #5)
-                    equivalent forms: 2 = 2!
-                    pattern: B=permute{#4, #5}; B1 > B2 > #1
+                    equivalent forms: 2 (= 2!)
+                    pattern: A1 > A2 > #1 ; A ∈ permute {#4, #5}
             """;
 
         Assert.Equal(StrategyTestHelpers.NormalizeRenderedSnapshot(expected), rendered);
@@ -535,23 +535,23 @@ public sealed class StrategyRegressionTests
         const string expected = """
                     S3 [step 3/5] sort(#2, #6, #9, #10)
                       #2 > #6 > #9 > #10: [+ (#1), - (#7~#10), fixed (#1), possible (#2~#6, #11, #12)]
-                        equivalent forms: 4 = 2! x 2!
-                        pattern: A=permute{#2, #6}, B=permute{#9, #10}; A1 > A2 > B1 > B2
+                        equivalent forms: 4 (= 2! x 2!)
+                        pattern: A1 > A2 > B1 > B2 ; A ∈ permute {#2, #6}, B ∈ permute {#9, #10}
                         S4 [step 4/5] sort(#3, #5, #11, #12)
                           #11 > #12 > #3 > #5: [+ (#2, #11, #12), - (#3~#6), fixed (#1, #2, #11, #12)] S5: top 4 = (#1, #2, #11, #12)
-                            equivalent forms: 2 = 2!
-                            pattern: C=permute{#11, #12}; C1 > C2 > #3 > #5
+                            equivalent forms: 2 (= 2!)
+                            pattern: A1 > A2 > #3 > #5 ; A ∈ permute {#11, #12}
                           #11 > #12 > #5 > #3: [+ (#11, #12), - (#3, #4, #6), fixed (#1, #11, #12), possible (#2, #5)]
-                            equivalent forms: 2 = 2!
-                            pattern: C=permute{#11, #12}; C1 > C2 > #5 > #3
+                            equivalent forms: 2 (= 2!)
+                            pattern: A1 > A2 > #5 > #3 ; A ∈ permute {#11, #12}
                             S6 [step 5/5] sort(#2, #5)
                               fixed (#1, #11, #12); choose 1 of (#2, #5) into top 4
                           #11 > #3 > #12 > #5: [+ (#2, #3, #11), - (#4~#6, #12), fixed (#1~#3, #11)] S7: top 4 = (#1~#3, #11)
-                            equivalent forms: 2 = 2!
-                            pattern: C=permute{#11, #12}; C1 > #3 > C2 > #5
+                            equivalent forms: 2 (= 2!)
+                            pattern: A1 > #3 > A2 > #5 ; A ∈ permute {#11, #12}
                           #11 > #3 > #5 > #12: [+ (#2, #3, #11), - (#4~#6, #12), fixed (#1~#3, #11)] S7: top 4 = (#1~#3, #11)
-                            equivalent forms: 2 = 2!
-                            pattern: C=permute{#11, #12}; C1 > #3 > #5 > C2
+                            equivalent forms: 2 (= 2!)
+                            pattern: A1 > #3 > #5 > A2 ; A ∈ permute {#11, #12}
             """;
 
         Assert.Equal(StrategyTestHelpers.NormalizeRenderedSnapshot(expected), excerpt);
