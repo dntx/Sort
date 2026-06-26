@@ -217,7 +217,8 @@ partial class StrategyBuilder
 
         string legend = string.Join(", ", legendParts);
 
-        return new EquivalentOrderSummary(count, patternText, countFormula, legend);
+        var (normalizedPattern, normalizedLegend) = NormalizeEquivalentPattern(patternText, legend);
+        return new EquivalentOrderSummary(count, normalizedPattern, countFormula, normalizedLegend);
     }
 
     private static int NextSubscript(Dictionary<int, int> classSubscript, int classIndex)
@@ -227,7 +228,7 @@ partial class StrategyBuilder
         return next;
     }
 
-    // Lists the known orderings that still constrain the otherwise-unordered tail, e.g. "#1>#2"
+    // Lists the known orderings that still constrain the otherwise-unordered tail, e.g. "#1 > #2"
     // when #1 is a (transitively-reduced) ancestor of #2 and both fall in the doomed tail.
     private string BuildTailResidualConstraints(ComparisonState state, IReadOnlyList<int> tailItems)
     {
@@ -249,7 +250,7 @@ partial class StrategyBuilder
                 // strictly between them, since that pair is implied transitively.
                 ulong betweenMask = state.GetDescendantMask(higher) & state.GetAncestorMask(lower) & tailMask;
                 if (betweenMask == 0)
-                    covers.Add($"#{higher + 1}>#{lower + 1}");
+                    covers.Add($"#{higher + 1} > #{lower + 1}");
             }
         }
 

@@ -598,6 +598,7 @@ partial class StrategyBuilder
                 representativePositions);
 
             var (singletonPattern, singletonLegend) = SplitPlaceholderLegend(summary.PatternText);
+            (singletonPattern, singletonLegend) = NormalizeEquivalentPattern(singletonPattern, singletonLegend);
             return new EquivalentOrderSummary(totalCount, singletonPattern, summary.TotalCountFormula, singletonLegend);
         }
 
@@ -606,6 +607,7 @@ partial class StrategyBuilder
             : "(" + string.Join(" | ", orderFamilies.Select(family => family.PatternText)) + ")";
         string countFormula = CombineFormulaParts(orderFamilies.Select(family => family.CountFormula).ToList());
         var (displayPattern, displayLegend) = SplitPlaceholderLegend(patternText);
+        (displayPattern, displayLegend) = NormalizeEquivalentPattern(displayPattern, displayLegend);
         return new EquivalentOrderSummary(totalCount, displayPattern, countFormula, displayLegend);
     }
 
@@ -642,6 +644,161 @@ partial class StrategyBuilder
             match => aliasMap.TryGetValue(match.Value, out string? mapped) ? mapped : match.Value);
 
         return (body, string.Join(", ", legendParts));
+    }
+
+    private sealed class PlaceholderClass
+    {
+        public string Alias = string.Empty;
+        public int[] Items = Array.Empty<int>();
+        public bool Inlined;
+    }
+
+    // Rewrites a placeholder pattern into the unified "inline-set" notation: "{...}" always means
+    // "these items in any order". A class whose placeholders occupy a contiguous, ordered run
+    // (A1 > A2 > ... > An) is folded inline into "{items}"; only a class whose members land in
+    // non-adjacent slots keeps placeholders, defined by "A = {items}" in the legend. The word
+    // "permute" is dropped everywhere (a leftover "permute {...}" block becomes a bare "{...}").
+    // Surviving classes are renumbered A, B, ... by first appearance, and a pattern with no
+    // surviving placeholders carries no legend. " | " disjunctions are preserved untouched.
+    private static (string PatternText, string? Legend) NormalizeEquivalentPattern(string patternText, string? legend)
+    {
+        string[] segments = patternText.Split(" ; ", StringSplitOptions.None);
+        string body = segments[0];
+        string trailing = segments.Length > 1
+            ? " ; " + string.Join(" ; ", segments.Skip(1))
+            : string.Empty;
+
+        List<PlaceholderClass> classes = ParseLegendClasses(legend);
+        List<string> tokens = body.Length == 0
+            ? new List<string>()
+            : body.Split(" > ").ToList();
+
+        foreach (PlaceholderClass cls in classes)
+        {
+            if (cls.Items.Length < 2)
+                continue;
+
+            int start = FindContiguousPlaceholderRun(tokens, cls.Alias, cls.Items.Length);
+            if (start >= 0)
+            {
+                tokens.RemoveRange(start, cls.Items.Length);
+                tokens.Insert(start, FormatBraceSet(cls.Items));
+                cls.Inlined = true;
+                continue;
+            }
+
+            // A whole class sitting alone inside one any-order brace ("{A1, A2, A3}") is already a
+            // contiguous block, so substitute its items directly ("{#7, #13, #19}").
+            int braceIndex = tokens.FindIndex(token => IsWholeClassBrace(token, cls.Alias, cls.Items.Length));
+            if (braceIndex >= 0)
+            {
+                tokens[braceIndex] = FormatBraceSet(cls.Items);
+                cls.Inlined = true;
+            }
+        }
+
+        body = string.Join(" > ", tokens)
+            .Replace("permute {", "{", StringComparison.Ordinal)
+            .Replace("permute{", "{", StringComparison.Ordinal);
+
+        List<PlaceholderClass> survivors = classes.Where(cls => !cls.Inlined).ToList();
+        if (survivors.Count == 0)
+            return (body + trailing, null);
+
+        var aliasMap = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (Match match in Regex.Matches(body, @"\b[A-Z]+(?=\d)"))
+        {
+            string alias = match.Value;
+            if (!aliasMap.ContainsKey(alias) && survivors.Any(cls => cls.Alias == alias))
+                aliasMap[alias] = GetAliasName(aliasMap.Count);
+        }
+
+        body = Regex.Replace(
+            body,
+            @"\b[A-Z]+(?=\d)",
+            match => aliasMap.TryGetValue(match.Value, out string? mapped) ? mapped : match.Value);
+
+        IEnumerable<string> legendParts = survivors
+            .Where(cls => aliasMap.ContainsKey(cls.Alias))
+            .OrderBy(cls => aliasMap[cls.Alias], StringComparer.Ordinal)
+            .Select(cls => $"{aliasMap[cls.Alias]} = {FormatBraceSet(cls.Items)}");
+
+        return (body + trailing, string.Join(", ", legendParts));
+    }
+
+    private static List<PlaceholderClass> ParseLegendClasses(string? legend)
+    {
+        var result = new List<PlaceholderClass>();
+        if (string.IsNullOrEmpty(legend))
+            return result;
+
+        foreach (Match match in Regex.Matches(legend, @"([A-Z]+)\s*\u2208\s*permute\s*\{([^}]*)\}"))
+            result.Add(new PlaceholderClass { Alias = match.Groups[1].Value, Items = ParseBraceItems(match.Groups[2].Value) });
+
+        return result;
+    }
+
+    private static int[] ParseBraceItems(string inner)
+    {
+        var items = new List<int>();
+        foreach (Match match in Regex.Matches(inner, @"#(\d+)(?:\s*~\s*#(\d+))?"))
+        {
+            int low = int.Parse(match.Groups[1].Value) - 1;
+            if (match.Groups[2].Success)
+            {
+                int high = int.Parse(match.Groups[2].Value) - 1;
+                for (int value = low; value <= high; value++)
+                    items.Add(value);
+            }
+            else
+            {
+                items.Add(low);
+            }
+        }
+
+        return items.ToArray();
+    }
+
+    private static int FindContiguousPlaceholderRun(List<string> tokens, string alias, int length)
+    {
+        for (int start = 0; start + length <= tokens.Count; start++)
+        {
+            bool matched = true;
+            for (int offset = 0; offset < length; offset++)
+            {
+                if (tokens[start + offset] != alias + (offset + 1))
+                {
+                    matched = false;
+                    break;
+                }
+            }
+
+            if (matched)
+                return start;
+        }
+
+        return -1;
+    }
+
+    // True when "token" is an any-order brace whose only contents are exactly the "length"
+    // placeholder members of "alias" (e.g. "{A1, A2, A3}" for a 3-member class A).
+    private static bool IsWholeClassBrace(string token, string alias, int length)
+    {
+        if (token.Length < 2 || token[0] != '{' || token[^1] != '}')
+            return false;
+
+        string[] members = token.Substring(1, token.Length - 2).Split(", ");
+        if (members.Length != length)
+            return false;
+
+        foreach (string member in members)
+        {
+            Match match = Regex.Match(member, @"^([A-Z]+)\d+$");
+            if (!match.Success || match.Groups[1].Value != alias)
+                return false;
+        }
+
+        return true;
     }
 
     private static string FormatBraceSet(IEnumerable<int> items)

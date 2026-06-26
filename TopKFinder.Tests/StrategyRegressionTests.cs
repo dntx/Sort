@@ -21,7 +21,7 @@ public sealed class StrategyRegressionTests
         Assert.NotNull(rootBranch.EquivalentOrders);
         Assert.Equal(362880, rootBranch.EquivalentOrders!.Count);
         Assert.Equal("9!", rootBranch.EquivalentOrders.CountFormula);
-        Assert.Equal("permute {#1~#9}", rootBranch.EquivalentOrders.PatternText);
+        Assert.Equal("{#1 ~ #9}", rootBranch.EquivalentOrders.PatternText);
     }
 
     [Fact]
@@ -39,7 +39,7 @@ public sealed class StrategyRegressionTests
         Assert.NotNull(rootBranch.EquivalentOrders);
         Assert.Equal(6, rootBranch.EquivalentOrders!.Count);
         Assert.Equal("3!", rootBranch.EquivalentOrders.CountFormula);
-        Assert.Equal("permute {#1~#3}", rootBranch.EquivalentOrders.PatternText);
+        Assert.Equal("{#1 ~ #3}", rootBranch.EquivalentOrders.PatternText);
 
         Assert.Equal(new[] { 3, 4, 5 }, rootBranch.Next.Group);
     }
@@ -54,14 +54,14 @@ public sealed class StrategyRegressionTests
 
         // At this node the compared items #1, #4 and #7 sit in different symmetry classes, yet all
         // six orderings collapse to the same next state. The summary should compress them to a
-        // single "permute {...}" form rather than listing every order as a disjunction.
+        // single any-order "{...}" set rather than listing every order as a disjunction.
         StrategyBranch branch = StrategyTestHelpers.FindBranchPath(
             plan.Root, "#1 > #2 > #3", "#4 > #5 > #6", "#7 > #8 > #9", "#1 > #4 > #7");
 
         Assert.NotNull(branch.EquivalentOrders);
         Assert.Equal(6, branch.EquivalentOrders!.Count);
         Assert.Equal("3!", branch.EquivalentOrders.CountFormula);
-        Assert.Equal("permute {#1, #4, #7}", branch.EquivalentOrders.PatternText);
+        Assert.Equal("{#1, #4, #7}", branch.EquivalentOrders.PatternText);
     }
 
     // Structural baseline for the default (fast) pass across a spread of k=m, k<m (find a few
@@ -180,14 +180,14 @@ public sealed class StrategyRegressionTests
 
         // #2 and #6 are interchangeable here via a group-fixing automorphism (the same one the
         // search path already used to dedup #2>#6 against #6>#2). The display path now recognizes
-        // that symmetry too, so both #2/#6 and #9/#10 collapse into a single permute template and
+        // that symmetry too, so both #2/#6 and #9/#10 collapse into adjacent any-order sets and
         // the formerly-split #6 > #2 sibling is folded into this branch's equivalent orders.
         StrategyBranch branch = StrategyTestHelpers.FindBranchByOrderText(plan.Root, "#2 > #6 > #9 > #10");
         Assert.NotNull(branch.EquivalentOrders);
         Assert.Equal(4, branch.EquivalentOrders!.Count);
         Assert.Equal("2! x 2!", branch.EquivalentOrders.CountFormula);
-        Assert.Equal("A1 > A2 > B1 > B2", branch.EquivalentOrders.PatternText);
-        Assert.Equal("A \u2208 permute {#2, #6}, B \u2208 permute {#9, #10}", branch.EquivalentOrders.Legend);
+        Assert.Equal("{#2, #6} > {#9, #10}", branch.EquivalentOrders.PatternText);
+        Assert.Null(branch.EquivalentOrders.Legend);
 
         // The #6 > #2 ordering is no longer a distinct branch; it is now part of the permute family
         // above, so no separate (reference) sibling exists for it.
@@ -243,11 +243,11 @@ public sealed class StrategyRegressionTests
 
             ==================== legend ====================
             #i                            item i (1-based labels; may be relabeled in references)
-            #i~#j                         items #i through #j inclusive (a run of 3+ consecutive items)
+            #i ~ #j                       items #i through #j inclusive (a run of 3+ consecutive items)
             S{id} [step x/y] sort(...)    decision state: do this sort at step x of at most y
             a > b > c                     the sort revealed a ranks above b above c
             equivalent forms: N = ...     this branch stands for N symmetric orderings (e.g. 3! = 6)
-            pattern: ...                  shape of those orderings; "A ∈ permute {...}" defines a permuted sub-block (e.g. A1 > A2)
+            pattern: ...                  shape of those orderings; "{...}" = any order, "A = {...}" names a split block (members A1, A2 ...)
             S{id}: top k = (...)          solved: the top-k set is fully determined
             →S{id} (+N steps) [map: ...]  reuse state S{id}'s subtree (N more sorts); [map] relabels referenced→current
 
@@ -258,22 +258,22 @@ public sealed class StrategyRegressionTests
                  possible  still competing for the remaining slots
 
             ==================== strategy ====================
-            S1 [step 1/3] sort(#1~#3)
+            S1 [step 1/3] sort(#1 ~ #3)
               #1 > #2 > #3: [- (#3), possible (#1, #2, #4, #5)]
                 equivalent forms: 6 = 3!
-                pattern: permute {#1~#3}
+                pattern: {#1 ~ #3}
                 S2 [step 2/3] sort(#1, #4, #5)
                   #1 > #4 > #5: [+ (#1), - (#5), fixed (#1), possible (#2, #4)]
-                    equivalent forms: 2 (= 2!)
-                    pattern: #1 > A1 > A2 ; A ∈ permute {#4, #5}
+                    equivalent forms: 2 = 2!
+                    pattern: #1 > {#4, #5}
                     S3 [step 3/3] sort(#2, #4)
                       fixed (#1); choose 1 of (#2, #4) into top 2
                   #4 > #1 > #5: [+ (#1, #4), - (#2, #5), fixed (#1, #4)] S4: top 2 = (#1, #4)
                     equivalent forms: 2 (= 2!)
-                    pattern: A1 > #1 > A2 ; A ∈ permute {#4, #5}
+                    pattern: A1 > #1 > A2 ; A = {#4, #5}
                   #4 > #5 > #1: [+ (#4, #5), - (#1, #2), fixed (#4, #5)] S4: top 2 = (#4, #5)
-                    equivalent forms: 2 (= 2!)
-                    pattern: A1 > A2 > #1 ; A ∈ permute {#4, #5}
+                    equivalent forms: 2 = 2!
+                    pattern: {#4, #5} > #1
             """;
 
         Assert.Equal(StrategyTestHelpers.NormalizeRenderedSnapshot(expected), rendered);
@@ -534,24 +534,24 @@ public sealed class StrategyRegressionTests
 
         const string expected = """
                     S3 [step 3/5] sort(#2, #6, #9, #10)
-                      #2 > #6 > #9 > #10: [+ (#1), - (#7~#10), fixed (#1), possible (#2~#6, #11, #12)]
-                        equivalent forms: 4 (= 2! x 2!)
-                        pattern: A1 > A2 > B1 > B2 ; A ∈ permute {#2, #6}, B ∈ permute {#9, #10}
+                      #2 > #6 > #9 > #10: [+ (#1), - (#7 ~ #10), fixed (#1), possible (#2 ~ #6, #11, #12)]
+                        equivalent forms: 4 = 2! x 2!
+                        pattern: {#2, #6} > {#9, #10}
                         S4 [step 4/5] sort(#3, #5, #11, #12)
-                          #11 > #12 > #3 > #5: [+ (#2, #11, #12), - (#3~#6), fixed (#1, #2, #11, #12)] S5: top 4 = (#1, #2, #11, #12)
-                            equivalent forms: 2 (= 2!)
-                            pattern: A1 > A2 > #3 > #5 ; A ∈ permute {#11, #12}
+                          #11 > #12 > #3 > #5: [+ (#2, #11, #12), - (#3 ~ #6), fixed (#1, #2, #11, #12)] S5: top 4 = (#1, #2, #11, #12)
+                            equivalent forms: 2 = 2!
+                            pattern: {#11, #12} > #3 > #5
                           #11 > #12 > #5 > #3: [+ (#11, #12), - (#3, #4, #6), fixed (#1, #11, #12), possible (#2, #5)]
-                            equivalent forms: 2 (= 2!)
-                            pattern: A1 > A2 > #5 > #3 ; A ∈ permute {#11, #12}
+                            equivalent forms: 2 = 2!
+                            pattern: {#11, #12} > #5 > #3
                             S6 [step 5/5] sort(#2, #5)
                               fixed (#1, #11, #12); choose 1 of (#2, #5) into top 4
-                          #11 > #3 > #12 > #5: [+ (#2, #3, #11), - (#4~#6, #12), fixed (#1~#3, #11)] S7: top 4 = (#1~#3, #11)
+                          #11 > #3 > #12 > #5: [+ (#2, #3, #11), - (#4 ~ #6, #12), fixed (#1 ~ #3, #11)] S7: top 4 = (#1 ~ #3, #11)
                             equivalent forms: 2 (= 2!)
-                            pattern: A1 > #3 > A2 > #5 ; A ∈ permute {#11, #12}
-                          #11 > #3 > #5 > #12: [+ (#2, #3, #11), - (#4~#6, #12), fixed (#1~#3, #11)] S7: top 4 = (#1~#3, #11)
+                            pattern: A1 > #3 > A2 > #5 ; A = {#11, #12}
+                          #11 > #3 > #5 > #12: [+ (#2, #3, #11), - (#4 ~ #6, #12), fixed (#1 ~ #3, #11)] S7: top 4 = (#1 ~ #3, #11)
                             equivalent forms: 2 (= 2!)
-                            pattern: A1 > #3 > #5 > A2 ; A ∈ permute {#11, #12}
+                            pattern: A1 > #3 > #5 > A2 ; A = {#11, #12}
             """;
 
         Assert.Equal(StrategyTestHelpers.NormalizeRenderedSnapshot(expected), excerpt);
@@ -879,7 +879,7 @@ public sealed class StrategyRegressionTests
     // pattern, an inline legend appended to the pattern line, and an "a sym x b tail" count
     // factorization. The edge counts must still cover every real ordering, so they sum to the
     // full 6! = 360 permutations.
-    private const string S5DoomedTailLegend = "A \u2208 permute {#7, #13, #19}";
+    private const string S5DoomedTailLegend = "A = {#7, #13, #19}";
 
     [Fact]
     public void N25M6K3_FifthStepRendersNineteenDoomedTailEdges()
@@ -903,7 +903,13 @@ public sealed class StrategyRegressionTests
         foreach (StrategyBranch branch in s5.Branches)
         {
             Assert.NotNull(branch.EquivalentOrders);
-            Assert.Equal(S5DoomedTailLegend, branch.EquivalentOrders!.Legend);
+
+            // Edges whose surviving class collapses fully into an inline "{...}" set carry no
+            // legend; the rest name that single class with the shared "A = {#7, #13, #19}" legend.
+            string? legend = branch.EquivalentOrders!.Legend;
+            Assert.True(
+                legend is null || legend == S5DoomedTailLegend,
+                $"unexpected legend '{legend}'");
             total += branch.EquivalentOrders.Count;
         }
 
@@ -911,14 +917,17 @@ public sealed class StrategyRegressionTests
     }
 
     [Theory]
-    // 1 sym x 6 tail: the prefix already pins the representative, the doomed tail is free.
-    [InlineData("#1 > #2 > #25 > #7 > #13 > #19", 6, "1 sym \u00d7 6 tail", "#1 > #2 > #25 > {A1, A2, A3}")]
-    // 6 sym x 6 tail: all three interchangeable leaders sit in the prefix.
-    [InlineData("#1 > #7 > #13 > #2 > #19 > #25", 36, "6 sym \u00d7 6 tail", "#1 > A1 > A2 > {#2, A3, #25}")]
-    // 6 sym x 3 tail: both #1 and #2 land in the doomed tail, so the tail keeps #1>#2.
-    [InlineData("#7 > #13 > #19 > #1 > #2 > #25", 18, "6 sym \u00d7 3 tail", "A1 > A2 > A3 > {#1, #2, #25} ; #1>#2")]
+    // 1 sym x 6 tail: the prefix already pins the representative, the doomed tail is free; the
+    // whole surviving class sits inline, so this edge needs no legend.
+    [InlineData("#1 > #2 > #25 > #7 > #13 > #19", 6, "1 sym \u00d7 6 tail", "#1 > #2 > #25 > {#7, #13, #19}", null)]
+    // 6 sym x 6 tail: one class member leads in the prefix while the rest share the tail, so the
+    // class stays split across placeholders and keeps its legend.
+    [InlineData("#1 > #7 > #13 > #2 > #19 > #25", 36, "6 sym \u00d7 6 tail", "#1 > A1 > A2 > {#2, A3, #25}", "A = {#7, #13, #19}")]
+    // 6 sym x 3 tail: both #1 and #2 land in the doomed tail, so the tail keeps #1 > #2; the
+    // surviving class is a contiguous prefix run and folds into an inline set.
+    [InlineData("#7 > #13 > #19 > #1 > #2 > #25", 18, "6 sym \u00d7 3 tail", "{#7, #13, #19} > {#1, #2, #25} ; #1 > #2", null)]
     public void N25M6K3_DoomedTailEdgeCarriesExpectedPatternAndFormula(
-        string orderText, int expectedCount, string expectedFormula, string expectedPattern)
+        string orderText, int expectedCount, string expectedFormula, string expectedPattern, string? expectedLegend)
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
             "StrategyBuilder.BuildDefaultPlan(25, 6, 3)",
@@ -938,12 +947,13 @@ public sealed class StrategyRegressionTests
         Assert.Equal(expectedCount, branch.EquivalentOrders!.Count);
         Assert.Equal(expectedFormula, branch.EquivalentOrders.CountFormula);
         Assert.Equal(expectedPattern, branch.EquivalentOrders.PatternText);
-        Assert.Equal(S5DoomedTailLegend, branch.EquivalentOrders.Legend);
+        Assert.Equal(expectedLegend, branch.EquivalentOrders.Legend);
 
-        // The legend is appended inline to the pattern line rather than rendered on its own row.
-        Assert.Equal(
-            $"pattern: {expectedPattern} ; {S5DoomedTailLegend}",
-            StrategyTextRenderer.FormatEquivalentPatternLine(branch.EquivalentOrders));
+        // The legend, when present, is appended inline to the pattern line rather than on its own row.
+        string expectedLine = expectedLegend is null
+            ? $"pattern: {expectedPattern}"
+            : $"pattern: {expectedPattern} ; {expectedLegend}";
+        Assert.Equal(expectedLine, StrategyTextRenderer.FormatEquivalentPatternLine(branch.EquivalentOrders));
     }
 }
 
