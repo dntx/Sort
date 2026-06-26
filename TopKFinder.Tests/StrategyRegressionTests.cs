@@ -876,10 +876,10 @@ public sealed class StrategyRegressionTests
     // The 25,6,3 fifth step sorts six leaders whose tail positions are all doomed regardless of
     // the comparison result. The display path folds those orderings into 19 "doomed-tail" edges
     // (one per distinct doomed prefix, symmetry already collapsed), each carrying a brace-set
-    // pattern, a per-edge legend, and an "a sym x b tail" count factorization. The edge counts
-    // must still cover every real ordering, so they sum to the full 6! = 360 permutations.
-    private const string S5DoomedTailLegend =
-        "A \u2208 permute {#7, #13, #19} \u2014 interchangeable;  {\u2026} = any order";
+    // pattern, an inline legend appended to the pattern line, and an "a sym x b tail" count
+    // factorization. The edge counts must still cover every real ordering, so they sum to the
+    // full 6! = 360 permutations.
+    private const string S5DoomedTailLegend = "A \u2208 permute {#7, #13, #19}";
 
     [Fact]
     public void N25M6K3_FifthStepRendersNineteenDoomedTailEdges()
@@ -939,6 +939,11 @@ public sealed class StrategyRegressionTests
         Assert.Equal(expectedFormula, branch.EquivalentOrders.CountFormula);
         Assert.Equal(expectedPattern, branch.EquivalentOrders.PatternText);
         Assert.Equal(S5DoomedTailLegend, branch.EquivalentOrders.Legend);
+
+        // The legend is appended inline to the pattern line rather than rendered on its own row.
+        Assert.Equal(
+            $"pattern: {expectedPattern} ; {S5DoomedTailLegend}",
+            StrategyTextRenderer.FormatEquivalentPatternLine(branch.EquivalentOrders));
     }
 }
 

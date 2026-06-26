@@ -796,15 +796,6 @@ class MainForm : Form
                 string equivalentText = StrategyTextRenderer.FormatEquivalentFormsSummary(branch.EquivalentOrders);
                 string patternText = StrategyTextRenderer.FormatEquivalentPatternLine(branch.EquivalentOrders);
 
-                if (branch.EquivalentOrders.Legend is not null)
-                {
-                    branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatEquivalentLegendLine(branch.EquivalentOrders))
-                    {
-                        ForeColor = _palette.MutedForeColor,
-                        Tag = StrategyTextRenderer.FormatEquivalentDetails(branch.EquivalentOrders),
-                    });
-                }
-
                 branchNode.Nodes.Add(new TreeNode(equivalentText)
                 {
                     ForeColor = _palette.MutedForeColor,

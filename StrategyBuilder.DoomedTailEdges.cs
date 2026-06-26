@@ -211,12 +211,11 @@ partial class StrategyBuilder
             if (symmetryClass.Items.Length > 1)
             {
                 legendParts.Add(
-                    $"{classLetters[symmetryClass.Index]} \u2208 permute {FormatBraceSet(symmetryClass.Items)} \u2014 interchangeable");
+                    $"{classLetters[symmetryClass.Index]} \u2208 permute {FormatBraceSet(symmetryClass.Items)}");
             }
         }
 
         string legend = string.Join(", ", legendParts);
-        legend = legend.Length > 0 ? legend + ";  {\u2026} = any order" : "{\u2026} = any order";
 
         return new EquivalentOrderSummary(count, patternText, countFormula, legend);
     }
