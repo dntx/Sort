@@ -741,7 +741,7 @@ partial class StrategyBuilder
     private static int[] ParseBraceItems(string inner)
     {
         var items = new List<int>();
-        foreach (Match match in Regex.Matches(inner, @"#(\d+)(?:~#(\d+))?"))
+        foreach (Match match in Regex.Matches(inner, @"#(\d+)(?:\s*~\s*#(\d+))?"))
         {
             int low = int.Parse(match.Groups[1].Value) - 1;
             if (match.Groups[2].Success)
