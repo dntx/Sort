@@ -872,6 +872,74 @@ public sealed class StrategyRegressionTests
             compact.SearchStatistics.Diagnostics.DuplicateOutcomeSkips <= duplicateSkipCap,
             $"compact duplicate outcome skips regressed to {compact.SearchStatistics.Diagnostics.DuplicateOutcomeSkips} (cap {duplicateSkipCap})");
     }
+
+    // The 25,6,3 fifth step sorts six leaders whose tail positions are all doomed regardless of
+    // the comparison result. The display path folds those orderings into 19 "doomed-tail" edges
+    // (one per distinct doomed prefix, symmetry already collapsed), each carrying a brace-set
+    // pattern, a per-edge legend, and an "a sym x b tail" count factorization. The edge counts
+    // must still cover every real ordering, so they sum to the full 6! = 360 permutations.
+    private const string S5DoomedTailLegend =
+        "A \u2208 permute {#7, #13, #19} \u2014 interchangeable;  {\u2026} = any order";
+
+    [Fact]
+    public void N25M6K3_FifthStepRendersNineteenDoomedTailEdges()
+    {
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.BuildDefaultPlan(25, 6, 3)",
+            RegressionTestTimeout,
+            cancellationToken => new StrategyBuilder(25, 6, 3, cancellationToken).BuildDefaultPlan());
+
+        StrategyNode s5 = StrategyTestHelpers.FollowBranchPath(
+            plan.Root,
+            "#1 > #2 > #3 > #4 > #5 > #6",
+            "#7 > #8 > #9 > #10 > #11 > #12",
+            "#13 > #14 > #15 > #16 > #17 > #18",
+            "#19 > #20 > #21 > #22 > #23 > #24");
+
+        Assert.Equal(new[] { 0, 1, 6, 12, 18, 24 }, s5.Group);
+        Assert.Equal(19, s5.Branches.Count);
+
+        int total = 0;
+        foreach (StrategyBranch branch in s5.Branches)
+        {
+            Assert.NotNull(branch.EquivalentOrders);
+            Assert.Equal(S5DoomedTailLegend, branch.EquivalentOrders!.Legend);
+            total += branch.EquivalentOrders.Count;
+        }
+
+        Assert.Equal(360, total);
+    }
+
+    [Theory]
+    // 1 sym x 6 tail: the prefix already pins the representative, the doomed tail is free.
+    [InlineData("#1 > #2 > #25 > #7 > #13 > #19", 6, "1 sym \u00d7 6 tail", "#1 > #2 > #25 > {A1, A2, A3}")]
+    // 6 sym x 6 tail: all three interchangeable leaders sit in the prefix.
+    [InlineData("#1 > #7 > #13 > #2 > #19 > #25", 36, "6 sym \u00d7 6 tail", "#1 > A1 > A2 > {#2, A3, #25}")]
+    // 6 sym x 3 tail: both #1 and #2 land in the doomed tail, so the tail keeps #1>#2.
+    [InlineData("#7 > #13 > #19 > #1 > #2 > #25", 18, "6 sym \u00d7 3 tail", "A1 > A2 > A3 > {#1, #2, #25} ; #1>#2")]
+    public void N25M6K3_DoomedTailEdgeCarriesExpectedPatternAndFormula(
+        string orderText, int expectedCount, string expectedFormula, string expectedPattern)
+    {
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.BuildDefaultPlan(25, 6, 3)",
+            RegressionTestTimeout,
+            cancellationToken => new StrategyBuilder(25, 6, 3, cancellationToken).BuildDefaultPlan());
+
+        StrategyNode s5 = StrategyTestHelpers.FollowBranchPath(
+            plan.Root,
+            "#1 > #2 > #3 > #4 > #5 > #6",
+            "#7 > #8 > #9 > #10 > #11 > #12",
+            "#13 > #14 > #15 > #16 > #17 > #18",
+            "#19 > #20 > #21 > #22 > #23 > #24");
+
+        StrategyBranch branch = StrategyTestHelpers.FindChildBranch(s5, orderText);
+
+        Assert.NotNull(branch.EquivalentOrders);
+        Assert.Equal(expectedCount, branch.EquivalentOrders!.Count);
+        Assert.Equal(expectedFormula, branch.EquivalentOrders.CountFormula);
+        Assert.Equal(expectedPattern, branch.EquivalentOrders.PatternText);
+        Assert.Equal(S5DoomedTailLegend, branch.EquivalentOrders.Legend);
+    }
 }
 
 internal static class StrategyTestHelpers

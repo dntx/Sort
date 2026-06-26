@@ -24,6 +24,19 @@ partial class StrategyBuilder
         //      the shared result subtree is materialized once under the first branch (build order
         //      follows display order) and the rest become →S references with a relabel map via
         //      the existing BuildState dedup.
+        // When the chosen sort produces a genuinely doomed tail (items already eliminated whatever
+        // their final rank), fold every tail permutation into a single edge whose pattern carries
+        // the tail as an unordered brace set. This replaces the per-family listing, which would
+        // otherwise spell out each tail permutation as its own misleading branch.
+        List<BranchSpec>? doomedTailSpecs = TryBuildDoomedTailSpecs(state, remainingSlots, chosenGroup);
+        if (doomedTailSpecs is not null)
+        {
+            return doomedTailSpecs
+                .OrderBy(spec => spec.OrderText, StringComparer.Ordinal)
+                .Select(spec => BuildTransitionBranch(state, fixedTopMask, spec, nextStep))
+                .ToList();
+        }
+
         var specs = new List<BranchSpec>();
         foreach (MergedBranch merged in chosenGroup.Branches)
         {

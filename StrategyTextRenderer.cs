@@ -205,13 +205,20 @@ static class StrategyTextRenderer
     }
 
     public static string FormatEquivalentFormsSummary(EquivalentOrderSummary summary)
-        => $"equivalent forms: {summary.Count} = {summary.CountFormula}";
+        => summary.Legend is null
+            ? $"equivalent forms: {summary.Count} = {summary.CountFormula}"
+            : $"equivalent forms: {summary.Count} (= {summary.CountFormula})";
 
     public static string FormatEquivalentPatternLine(EquivalentOrderSummary summary)
         => $"pattern: {summary.PatternText}";
 
+    public static string FormatEquivalentLegendLine(EquivalentOrderSummary summary)
+        => $"legend: {summary.Legend}";
+
     public static string FormatEquivalentDetails(EquivalentOrderSummary summary)
-        => $"{FormatEquivalentFormsSummary(summary)}\n{FormatEquivalentPatternLine(summary)}";
+        => summary.Legend is null
+            ? $"{FormatEquivalentFormsSummary(summary)}\n{FormatEquivalentPatternLine(summary)}"
+            : $"{FormatEquivalentLegendLine(summary)}\n{FormatEquivalentFormsSummary(summary)}\n{FormatEquivalentPatternLine(summary)}";
 
     private static void WriteEquivalentOrders(StrategyBranch branch, TextWriter writer, int indent)
     {
@@ -219,6 +226,8 @@ static class StrategyTextRenderer
             return;
 
         string prefix = new string(' ', indent * 2);
+        if (branch.EquivalentOrders.Legend is not null)
+            writer.WriteLine($"{prefix}{FormatEquivalentLegendLine(branch.EquivalentOrders)}");
         writer.WriteLine($"{prefix}{FormatEquivalentFormsSummary(branch.EquivalentOrders)}");
         writer.WriteLine($"{prefix}{FormatEquivalentPatternLine(branch.EquivalentOrders)}");
     }

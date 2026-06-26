@@ -324,16 +324,22 @@ sealed class StrategyBranch
 
 sealed class EquivalentOrderSummary
 {
-    public EquivalentOrderSummary(int count, string patternText, string countFormula)
+    public EquivalentOrderSummary(int count, string patternText, string countFormula, string? legend = null)
     {
         Count = count;
         PatternText = patternText;
         CountFormula = countFormula;
+        Legend = legend;
     }
 
     public int Count { get; }
     public string PatternText { get; }
     public string CountFormula { get; }
+
+    // Non-null only for doomed-tail edges, which fold every ordering of an already-eliminated
+    // tail into one brace set "{...}" and need a per-edge legend (symmetry-class aliases and the
+    // "any order" note). When set, the count formula reads "a sym x b tail" instead of "N!".
+    public string? Legend { get; }
 }
 
 sealed class StrategyEffect
