@@ -3,7 +3,13 @@ using Xunit;
 
 public sealed class StrategyRegressionTests
 {
-    private static readonly TimeSpan RegressionTestTimeout = TimeSpan.FromSeconds(30);
+    // Headroom for the slowest cases. The compact pass's secondary objective minimizes total
+    // displayed edges, which adds a (now lightweight) display-branch enumeration; on a fresh
+    // builder BuildCompactPlan also re-runs phase 1 first. For the largest stress case (10,2,4)
+    // the exact-step search alone runs ~10-28s depending on machine load and phase 1b adds ~7s,
+    // so the combined fresh build can still approach 30s under parallel test load. Keep this
+    // generous so genuine hangs still fail while legitimate heavy work does not flake.
+    private static readonly TimeSpan RegressionTestTimeout = TimeSpan.FromSeconds(90);
 
     [Fact]
     public void N10M9K9_RemainsTwoStepPermutationCase()
@@ -228,6 +234,7 @@ public sealed class StrategyRegressionTests
             ==================== summary ====================
             n=5, m=3, k=2
             worst-case steps = 3
+            total edges = 4
             elapsed = <elapsed>
             phases: <phases>
 
@@ -591,7 +598,7 @@ public sealed class StrategyRegressionTests
     [InlineData(12, 4, 4)]
     [InlineData(10, 3, 4)]
     [InlineData(12, 4, 3)]
-    public void Compact_PreservesMaxStepAndDoesNotRegressOutputStates(int n, int m, int k)
+    public void Compact_PreservesMaxStepAndDoesNotRegressEdges(int n, int m, int k)
     {
         StrategyPlan baseline = TestTimeoutHelper.RunWithTimeout(
             $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k})",
@@ -605,15 +612,15 @@ public sealed class StrategyRegressionTests
 
         Assert.Equal(baseline.MaxStep, compact.MaxStep);
         Assert.True(
-            compact.SearchStatistics.OutputStates <= baseline.SearchStatistics.OutputStates,
-            $"compact output states {compact.SearchStatistics.OutputStates} exceeded baseline {baseline.SearchStatistics.OutputStates}");
+            compact.TotalBranchEdges <= baseline.TotalBranchEdges,
+            $"compact total edges {compact.TotalBranchEdges} exceeded baseline {baseline.TotalBranchEdges}");
     }
 
     [Theory]
-    [InlineData(11, 3, 3, 9)]
-    [InlineData(12, 4, 4, 21)]
+    [InlineData(11, 3, 3, 8)]
+    [InlineData(12, 4, 4, 35)]
     [InlineData(10, 3, 4, 9)]
-    public void Compact_ShrinksTreesWithRedundantSolutions(int n, int m, int k, int expectedOutputStatesCap)
+    public void Compact_ShrinksTreesWithRedundantSolutions(int n, int m, int k, int expectedEdgeCap)
     {
         StrategyPlan baseline = TestTimeoutHelper.RunWithTimeout(
             $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k})",
@@ -627,11 +634,11 @@ public sealed class StrategyRegressionTests
 
         Assert.Equal(baseline.MaxStep, compact.MaxStep);
         Assert.True(
-            compact.SearchStatistics.OutputStates < baseline.SearchStatistics.OutputStates,
-            $"compact output states {compact.SearchStatistics.OutputStates} did not improve on baseline {baseline.SearchStatistics.OutputStates}");
+            compact.TotalBranchEdges < baseline.TotalBranchEdges,
+            $"compact total edges {compact.TotalBranchEdges} did not improve on baseline {baseline.TotalBranchEdges}");
         Assert.True(
-            compact.SearchStatistics.OutputStates <= expectedOutputStatesCap,
-            $"compact output states regressed to {compact.SearchStatistics.OutputStates}");
+            compact.TotalBranchEdges <= expectedEdgeCap,
+            $"compact total edges regressed to {compact.TotalBranchEdges}");
     }
 
     // Searched-state monitor for the compact pass. Compact runs a second, less-prunable
@@ -642,7 +649,7 @@ public sealed class StrategyRegressionTests
     // changes.
     [Theory]
     [InlineData(9, 3, 3, 163)]
-    [InlineData(11, 3, 3, 582)]
+    [InlineData(11, 3, 3, 588)]
     [InlineData(12, 4, 4, 515)]
     [InlineData(10, 3, 4, 1126)]
     [InlineData(12, 4, 3, 137)]
@@ -743,20 +750,21 @@ public sealed class StrategyRegressionTests
     }
 
     // Outcome-construction monitor for the compact pass. The compact selection re-enumerates
-    // group outcomes on top of phase 1, so it constructs many more outcomes than the default;
-    // this count is the primary cost target for compact-search optimization. Caps are the
-    // current deterministic counts -- ratchet them down when an optimization legitimately cuts
-    // outcome construction.
+    // group outcomes on top of phase 1 -- including the heavier display-branch enumeration used
+    // to count displayed edges for its objective -- so it constructs many more outcomes than the
+    // default; this count is the primary cost target for compact-search optimization. Caps are
+    // the current deterministic counts -- ratchet them down when an optimization legitimately
+    // cuts outcome construction.
     [Theory]
-    [InlineData(9, 3, 3, 5745)]
-    [InlineData(11, 3, 3, 19356)]
-    [InlineData(12, 4, 4, 28815)]
-    [InlineData(10, 3, 4, 60233)]
-    [InlineData(12, 4, 3, 5462)]
-    [InlineData(12, 3, 3, 16095)]
-    [InlineData(8, 4, 2, 24)]
-    [InlineData(10, 3, 5, 12642)]
-    [InlineData(13, 4, 3, 2986)]
+    [InlineData(9, 3, 3, 6057)]
+    [InlineData(11, 3, 3, 20200)]
+    [InlineData(12, 4, 4, 29758)]
+    [InlineData(10, 3, 4, 62564)]
+    [InlineData(12, 4, 3, 6753)]
+    [InlineData(12, 3, 3, 16106)]
+    [InlineData(8, 4, 2, 31)]
+    [InlineData(10, 3, 5, 12644)]
+    [InlineData(13, 4, 3, 3046)]
     public void Compact_OutcomesConstructedStaysWithinBaseline(int n, int m, int k, int outcomesCap)
     {
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
@@ -852,15 +860,15 @@ public sealed class StrategyRegressionTests
     // this is the primary symmetry-collapse target for compact search. Caps pin the current
     // deterministic counts -- ratchet them down when an orbit/block-symmetry optimization lands.
     [Theory]
-    [InlineData(9, 3, 3, 692)]
-    [InlineData(11, 3, 3, 2635)]
-    [InlineData(12, 4, 4, 14251)]
-    [InlineData(10, 3, 4, 7411)]
-    [InlineData(12, 4, 3, 1811)]
-    [InlineData(12, 3, 3, 3324)]
-    [InlineData(8, 4, 2, 9)]
-    [InlineData(10, 3, 5, 4025)]
-    [InlineData(13, 4, 3, 1151)]
+    [InlineData(9, 3, 3, 762)]
+    [InlineData(11, 3, 3, 1838)]
+    [InlineData(12, 4, 4, 6724)]
+    [InlineData(10, 3, 4, 5638)]
+    [InlineData(12, 4, 3, 2466)]
+    [InlineData(12, 3, 3, 1097)]
+    [InlineData(8, 4, 2, 11)]
+    [InlineData(10, 3, 5, 732)]
+    [InlineData(13, 4, 3, 659)]
     public void Compact_DuplicateOutcomeSkipsStaysWithinBaseline(int n, int m, int k, int duplicateSkipCap)
     {
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(

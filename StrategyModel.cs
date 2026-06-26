@@ -17,6 +17,7 @@ sealed class StrategyPlan
     public StrategyNode Root { get; }
     public TimeSpan Elapsed { get; }
     public int MaxStep { get; }
+    public int TotalBranchEdges { get; }
     public SearchStatistics SearchStatistics { get; }
 
     public StrategyPlan(int n, int m, int k, StrategyNode root, TimeSpan elapsed, SearchStatistics searchStatistics)
@@ -27,6 +28,7 @@ sealed class StrategyPlan
         Root = root;
         Elapsed = elapsed;
         MaxStep = GetMaxStep(root);
+        TotalBranchEdges = GetTotalBranchEdges(root);
         SearchStatistics = searchStatistics;
     }
 
@@ -37,6 +39,18 @@ sealed class StrategyPlan
             return selfStep;
 
         return Math.Max(selfStep, node.Branches.Max(branch => GetMaxStep(branch.Next)));
+    }
+
+    // Total number of displayed branch lines across the whole tree. The materialized tree is
+    // a true tree (References are leaf nodes, not back-pointers), so summing Branches.Count at
+    // every node yields exactly the number of edges the renderer draws. This is the compact
+    // pass's secondary minimization objective (after MaxStep).
+    private static int GetTotalBranchEdges(StrategyNode node)
+    {
+        int total = node.Branches.Count;
+        foreach (StrategyBranch branch in node.Branches)
+            total += GetTotalBranchEdges(branch.Next);
+        return total;
     }
 }
 

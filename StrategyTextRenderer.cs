@@ -26,6 +26,7 @@ static class StrategyTextRenderer
         writer.WriteLine(Banner("summary"));
         writer.WriteLine($"n={plan.N}, m={plan.M}, k={plan.K}");
         writer.WriteLine($"worst-case steps = {plan.MaxStep}");
+        writer.WriteLine($"total edges = {plan.TotalBranchEdges}");
         writer.WriteLine($"elapsed = {plan.Elapsed.TotalMilliseconds:F1} ms");
         writer.WriteLine($"phases: exact-step = {stats.Phase1Milliseconds} ms, compact = {stats.Phase1bMilliseconds} ms, build = {stats.Phase2Milliseconds} ms");
         writer.WriteLine();
