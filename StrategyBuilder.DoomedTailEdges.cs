@@ -353,10 +353,20 @@ partial class StrategyBuilder
             }
             else
             {
-                long product = 1;
-                foreach (int member in members)
-                    product *= hook[member];
-                factors.Add(product.ToString());
+                // A branching component's hook-length product is an arbitrary integer (not a clean
+                // factorial), so it is multiplied out directly. Guard the rare large-tail case
+                // where that product would overflow by falling back to the plain integer count.
+                try
+                {
+                    long product = 1;
+                    foreach (int member in members)
+                        product = checked(product * hook[member]);
+                    factors.Add(product.ToString());
+                }
+                catch (OverflowException)
+                {
+                    return tailFactor.ToString();
+                }
             }
         }
 
