@@ -597,14 +597,51 @@ partial class StrategyBuilder
                 representativeOrder.ToArray(),
                 representativePositions);
 
-            return new EquivalentOrderSummary(totalCount, summary.PatternText, summary.TotalCountFormula);
+            var (singletonPattern, singletonLegend) = SplitPlaceholderLegend(summary.PatternText);
+            return new EquivalentOrderSummary(totalCount, singletonPattern, summary.TotalCountFormula, singletonLegend);
         }
 
         string patternText = orderFamilies.Count == 1
             ? orderFamilies[0].PatternText
             : "(" + string.Join(" | ", orderFamilies.Select(family => family.PatternText)) + ")";
         string countFormula = CombineFormulaParts(orderFamilies.Select(family => family.CountFormula).ToList());
-        return new EquivalentOrderSummary(totalCount, patternText, countFormula);
+        var (displayPattern, displayLegend) = SplitPlaceholderLegend(patternText);
+        return new EquivalentOrderSummary(totalCount, displayPattern, countFormula, displayLegend);
+    }
+
+    // The pattern engine composes placeholder sub-blocks using an internal, parseable form,
+    // "<alias>=permute{...}, ...; <body>" (definitions first so nesting can re-alias them). For
+    // display we move that legend to the end of the body and switch to the doomed-tail notation,
+    // "<body> ; A \u2208 permute {...}", so every placeholder pattern across the tree reads the same
+    // way. Aliases are renumbered sequentially from A in order of first appearance. Patterns with
+    // no definitions (a single "permute {...}" block) or a " | " disjunction are left untouched.
+    private static (string PatternText, string? Legend) SplitPlaceholderLegend(string pattern)
+    {
+        if (!pattern.Contains(';') || pattern.Contains(" | ", StringComparison.Ordinal))
+            return (pattern, null);
+
+        ParsedPatternSegment parsed = ParsePatternSegment(pattern);
+        if (parsed.Definitions.Count == 0)
+            return (pattern, null);
+
+        var aliasMap = new Dictionary<string, string>(StringComparer.Ordinal);
+        var legendParts = new List<string>(parsed.Definitions.Count);
+        for (int i = 0; i < parsed.Definitions.Count; i++)
+        {
+            PatternAliasDefinition definition = parsed.Definitions[i];
+            string newAlias = GetAliasName(i);
+            aliasMap[definition.Alias] = newAlias;
+            string expression = definition.Expression.Replace("permute{", "permute {", StringComparison.Ordinal);
+            legendParts.Add($"{newAlias} \u2208 {expression}");
+        }
+
+        // Single-pass rewrite so chained renamings (e.g. B->A, C->B) never cascade onto each other.
+        string body = Regex.Replace(
+            parsed.Body,
+            @"\b[A-Z]+(?=\d)",
+            match => aliasMap.TryGetValue(match.Value, out string? mapped) ? mapped : match.Value);
+
+        return (body, string.Join(", ", legendParts));
     }
 
     private static string FormatBraceSet(IEnumerable<int> items)

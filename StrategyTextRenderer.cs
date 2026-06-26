@@ -64,7 +64,7 @@ static class StrategyTextRenderer
             ("S{id} [step x/y] sort(...)", "decision state: do this sort at step x of at most y"),
             ("a > b > c", "the sort revealed a ranks above b above c"),
             ("equivalent forms: N = ...", "this branch stands for N symmetric orderings (e.g. 3! = 6)"),
-            ("pattern: ...", "shape of those orderings (B/C = a permuted sub-block, e.g. B1 > B2)"),
+            ("pattern: ...", "shape of those orderings; \"A \u2208 permute {...}\" defines a permuted sub-block (e.g. A1 > A2)"),
             ("S{id}: top k = (...)", "solved: the top-k set is fully determined"),
             ("→S{id} (+N steps) [map: ...]", "reuse state S{id}'s subtree (N more sorts); [map] relabels referenced→current"),
         };
@@ -205,10 +205,14 @@ static class StrategyTextRenderer
     }
 
     public static string FormatEquivalentFormsSummary(EquivalentOrderSummary summary)
-        => $"equivalent forms: {summary.Count} = {summary.CountFormula}";
+        => summary.Legend is null
+            ? $"equivalent forms: {summary.Count} = {summary.CountFormula}"
+            : $"equivalent forms: {summary.Count} (= {summary.CountFormula})";
 
     public static string FormatEquivalentPatternLine(EquivalentOrderSummary summary)
-        => $"pattern: {summary.PatternText}";
+        => string.IsNullOrEmpty(summary.Legend)
+            ? $"pattern: {summary.PatternText}"
+            : $"pattern: {summary.PatternText} ; {summary.Legend}";
 
     public static string FormatEquivalentDetails(EquivalentOrderSummary summary)
         => $"{FormatEquivalentFormsSummary(summary)}\n{FormatEquivalentPatternLine(summary)}";
