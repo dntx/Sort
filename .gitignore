@@ -1,3 +1,4 @@
 bin/
 obj/
 anomaly-report.txt
+dominance-reuse-report.txt
