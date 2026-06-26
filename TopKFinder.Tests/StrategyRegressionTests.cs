@@ -45,7 +45,7 @@ public sealed class StrategyRegressionTests
         Assert.NotNull(rootBranch.EquivalentOrders);
         Assert.Equal(6, rootBranch.EquivalentOrders!.Count);
         Assert.Equal("3!", rootBranch.EquivalentOrders.CountFormula);
-        Assert.Equal("{#1 ~ #3}", rootBranch.EquivalentOrders.PatternText);
+        Assert.Equal("{#1, #2, #3}", rootBranch.EquivalentOrders.PatternText);
 
         Assert.Equal(new[] { 3, 4, 5 }, rootBranch.Next.Group);
     }
@@ -250,7 +250,7 @@ public sealed class StrategyRegressionTests
 
             ==================== legend ====================
             #i                            item i (1-based labels; may be relabeled in references)
-            #i ~ #j                       items #i through #j inclusive (a run of 3+ consecutive items)
+            #i ~ #j                       items #i through #j inclusive (a run of 4+ consecutive items)
             S{id} [step x/y] sort(...)    decision state: do this sort at step x of at most y
             a > b > c                     the sort revealed a ranks above b above c
             equivalent forms: N = ...     this branch stands for N symmetric orderings (e.g. 3! = 6)
@@ -265,10 +265,10 @@ public sealed class StrategyRegressionTests
                  possible  still competing for the remaining slots
 
             ==================== strategy ====================
-            S1 [step 1/3] sort(#1 ~ #3)
+            S1 [step 1/3] sort(#1, #2, #3)
               #1 > #2 > #3: [- (#3), possible (#1, #2, #4, #5)]
                 equivalent forms: 6 = 3!
-                pattern: {#1 ~ #3}
+                pattern: {#1, #2, #3}
                 S2 [step 2/3] sort(#1, #4, #5)
                   #1 > #4 > #5: [+ (#1), - (#5), fixed (#1), possible (#2, #4)]
                     equivalent forms: 2 = 2!
@@ -276,7 +276,7 @@ public sealed class StrategyRegressionTests
                     S3 [step 3/3] sort(#2, #4)
                       fixed (#1); choose 1 of (#2, #4) into top 2
                   #4 > #1 > #5: [+ (#1, #4), - (#2, #5), fixed (#1, #4)] S4: top 2 = (#1, #4)
-                    equivalent forms: 2 (= 2!)
+                    equivalent forms: 2 = 2!
                     pattern: A1 > #1 > A2 ; A = {#4, #5}
                   #4 > #5 > #1: [+ (#4, #5), - (#1, #2), fixed (#4, #5)] S4: top 2 = (#4, #5)
                     equivalent forms: 2 = 2!
@@ -553,11 +553,11 @@ public sealed class StrategyRegressionTests
                             pattern: {#11, #12} > #5 > #3
                             S6 [step 5/5] sort(#2, #5)
                               fixed (#1, #11, #12); choose 1 of (#2, #5) into top 4
-                          #11 > #3 > #12 > #5: [+ (#2, #3, #11), - (#4 ~ #6, #12), fixed (#1 ~ #3, #11)] S7: top 4 = (#1 ~ #3, #11)
-                            equivalent forms: 2 (= 2!)
+                          #11 > #3 > #12 > #5: [+ (#2, #3, #11), - (#4, #5, #6, #12), fixed (#1, #2, #3, #11)] S7: top 4 = (#1, #2, #3, #11)
+                            equivalent forms: 2 = 2!
                             pattern: A1 > #3 > A2 > #5 ; A = {#11, #12}
-                          #11 > #3 > #5 > #12: [+ (#2, #3, #11), - (#4 ~ #6, #12), fixed (#1 ~ #3, #11)] S7: top 4 = (#1 ~ #3, #11)
-                            equivalent forms: 2 (= 2!)
+                          #11 > #3 > #5 > #12: [+ (#2, #3, #11), - (#4, #5, #6, #12), fixed (#1, #2, #3, #11)] S7: top 4 = (#1, #2, #3, #11)
+                            equivalent forms: 2 = 2!
                             pattern: A1 > #3 > #5 > A2 ; A = {#11, #12}
             """;
 
@@ -884,8 +884,8 @@ public sealed class StrategyRegressionTests
     // The 25,6,3 fifth step sorts six leaders whose tail positions are all doomed regardless of
     // the comparison result. The display path folds those orderings into 19 "doomed-tail" edges
     // (one per distinct doomed prefix, symmetry already collapsed), each carrying a brace-set
-    // pattern, an inline legend appended to the pattern line, and an "a sym x b tail" count
-    // factorization. The edge counts must still cover every real ordering, so they sum to the
+    // pattern, an inline legend appended to the pattern line, and a factorial "a sym x b tail"
+    // count factorization. The edge counts must still cover every real ordering, so they sum to the
     // full 6! = 360 permutations.
     private const string S5DoomedTailLegend = "A = {#7, #13, #19}";
 
@@ -925,15 +925,15 @@ public sealed class StrategyRegressionTests
     }
 
     [Theory]
-    // 1 sym x 6 tail: the prefix already pins the representative, the doomed tail is free; the
+    // 3! tail: the prefix already pins the representative, the doomed tail is free; the
     // whole surviving class sits inline, so this edge needs no legend.
-    [InlineData("#1 > #2 > #25 > #7 > #13 > #19", 6, "1 sym \u00d7 6 tail", "#1 > #2 > #25 > {#7, #13, #19}", null)]
-    // 6 sym x 6 tail: one class member leads in the prefix while the rest share the tail, so the
+    [InlineData("#1 > #2 > #25 > #7 > #13 > #19", 6, "3! tail", "#1 > #2 > #25 > {#7, #13, #19}", null)]
+    // 3! sym x 3! tail: one class member leads in the prefix while the rest share the tail, so the
     // class stays split across placeholders and keeps its legend.
-    [InlineData("#1 > #7 > #13 > #2 > #19 > #25", 36, "6 sym \u00d7 6 tail", "#1 > A1 > A2 > {#2, A3, #25}", "A = {#7, #13, #19}")]
-    // 6 sym x 3 tail: both #1 and #2 land in the doomed tail, so the tail keeps #1 > #2; the
+    [InlineData("#1 > #7 > #13 > #2 > #19 > #25", 36, "3! sym x 3! tail", "#1 > A1 > A2 > {#2, A3, #25}", "A = {#7, #13, #19}")]
+    // 3! sym x 3!/2! tail: both #1 and #2 land in the doomed tail, so the tail keeps #1 > #2; the
     // surviving class is a contiguous prefix run and folds into an inline set.
-    [InlineData("#7 > #13 > #19 > #1 > #2 > #25", 18, "6 sym \u00d7 3 tail", "{#7, #13, #19} > {#1, #2, #25} ; #1 > #2", null)]
+    [InlineData("#7 > #13 > #19 > #1 > #2 > #25", 18, "3! sym x 3!/2! tail", "{#7, #13, #19} > {#1, #2, #25} ; #1 > #2", null)]
     public void N25M6K3_DoomedTailEdgeCarriesExpectedPatternAndFormula(
         string orderText, int expectedCount, string expectedFormula, string expectedPattern, string? expectedLegend)
     {

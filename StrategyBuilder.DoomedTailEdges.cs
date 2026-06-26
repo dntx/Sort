@@ -196,14 +196,28 @@ partial class StrategyBuilder
         string patternText = residual.Length == 0 ? body : body + " ; " + residual;
 
         long symmetryFactor = 1;
-        foreach (KeyValuePair<int, int> slots in prefixClassSlots)
+        var symParts = new List<string>();
+        foreach (GroupSymmetryClass symmetryClass in symmetryInfo.Classes)
         {
-            int classSize = symmetryInfo.Classes[slots.Key].Items.Length;
-            symmetryFactor *= PartialPermutations(classSize, slots.Value);
+            if (!prefixClassSlots.TryGetValue(symmetryClass.Index, out int slotsUsed))
+                continue;
+
+            int classSize = symmetryClass.Items.Length;
+            symmetryFactor *= PartialPermutations(classSize, slotsUsed);
+
+            int symDenominator = classSize - slotsUsed;
+            symParts.Add(symDenominator <= 1 ? $"{classSize}!" : $"{classSize}!/{symDenominator}!");
         }
 
         long tailFactor = count / symmetryFactor;
-        string countFormula = $"{symmetryFactor} sym \u00d7 {tailFactor} tail";
+        string symFormula = symParts.Count == 0 ? "1" : string.Join(" x ", symParts);
+        string tailFormula = BuildTailFactorFormula(state, tailItems, tailFactor);
+
+        var formulaParts = new List<string>();
+        if (symFormula != "1")
+            formulaParts.Add($"{symFormula} sym");
+        formulaParts.Add($"{tailFormula} tail");
+        string countFormula = string.Join(" x ", formulaParts);
 
         var legendParts = new List<string>();
         foreach (GroupSymmetryClass symmetryClass in symmetryInfo.Classes)
@@ -256,6 +270,102 @@ partial class StrategyBuilder
 
         covers.Sort(StringComparer.Ordinal);
         return string.Join(", ", covers);
+    }
+
+    // Renders the tail multiplicity as a hook-length expression L! / D, where D is the product of
+    // each tail element's down-set size (its descendants within the tail, plus itself). This is
+    // exact whenever the residual order is a forest (every element has at most one immediate
+    // ancestor inside the tail). When the order branches upward (an element sits below two
+    // incomparable ancestors) the hook-length formula no longer applies, so we fall back to the
+    // plain integer count to avoid printing a wrong closed form.
+    //
+    // Each connected component contributes its own factor: a pure chain of length c renders as the
+    // factorial "c!" (its hook lengths c, c-1, ..., 1 multiply to c!), matching the symmetry
+    // factor's factorial style; a branching tree renders as its integer hook-length product.
+    private string BuildTailFactorFormula(
+        ComparisonState state, IReadOnlyList<int> tailItems, long tailFactor)
+    {
+        int tailLength = tailItems.Count;
+        ulong tailMask = 0;
+        foreach (int item in tailItems)
+            tailMask |= 1UL << item;
+
+        var parent = new Dictionary<int, int>();
+        foreach (int item in tailItems)
+            parent[item] = item;
+
+        int Find(int x)
+        {
+            while (parent[x] != x)
+            {
+                parent[x] = parent[parent[x]];
+                x = parent[x];
+            }
+            return x;
+        }
+
+        var childCount = new Dictionary<int, int>();
+        var hook = new Dictionary<int, int>();
+        foreach (int item in tailItems)
+        {
+            ulong ancestorsInTail = state.GetAncestorMask(item) & tailMask;
+            int immediateAncestors = 0;
+            ulong remaining = ancestorsInTail;
+            while (remaining != 0)
+            {
+                int higher = BitOperations.TrailingZeroCount(remaining);
+                remaining &= remaining - 1;
+
+                ulong betweenMask = state.GetDescendantMask(higher) & state.GetAncestorMask(item) & tailMask;
+                if (betweenMask != 0)
+                    continue;
+
+                immediateAncestors++;
+                childCount[higher] = childCount.GetValueOrDefault(higher) + 1;
+                parent[Find(item)] = Find(higher);
+            }
+
+            if (immediateAncestors > 1)
+                return tailFactor.ToString();
+
+            hook[item] = 1 + BitOperations.PopCount(state.GetDescendantMask(item) & tailMask);
+        }
+
+        var components = new Dictionary<int, List<int>>();
+        foreach (int item in tailItems)
+        {
+            int root = Find(item);
+            if (!components.TryGetValue(root, out List<int>? members))
+                components[root] = members = new List<int>();
+            members.Add(item);
+        }
+
+        var factors = new List<string>();
+        foreach (List<int> members in components.Values)
+        {
+            if (members.Count <= 1)
+                continue;
+
+            bool isChain = members.All(member => childCount.GetValueOrDefault(member) <= 1);
+            if (isChain)
+            {
+                factors.Add($"{members.Count}!");
+            }
+            else
+            {
+                long product = 1;
+                foreach (int member in members)
+                    product *= hook[member];
+                factors.Add(product.ToString());
+            }
+        }
+
+        if (factors.Count == 0)
+            return $"{tailLength}!";
+
+        factors.Sort(StringComparer.Ordinal);
+        string denominator = factors.Count == 1 ? factors[0] : "(" + string.Join(" x ", factors) + ")";
+        return $"{tailLength}!/{denominator}";
     }
 
     private static long PartialPermutations(int total, int taken)
