@@ -152,6 +152,8 @@ static class StrategyOverviewRenderer
         var sb = new StringBuilder();
         sb.AppendLine("==================== overview ====================");
         sb.AppendLine($"n={plan.N}, m={plan.M}, k={plan.K}  \u00b7  worst case {plan.MaxStep} steps");
+        if (plan.RequestedK != plan.K)
+            sb.AppendLine($"requested k = {plan.RequestedK}; solved via dual reduction to k'={plan.K}");
         sb.AppendLine("representative main line (forks flagged); see the strategy section below for full detail");
         sb.AppendLine();
         foreach (OverviewRow row in overview.Rows)
