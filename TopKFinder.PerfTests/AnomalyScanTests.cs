@@ -17,14 +17,15 @@ using Xunit;
 // Known findings (n <= 12 sweep, recorded so re-runs are not surprising):
 //   * Every rendered CountFormula evaluates exactly to its displayed Count across all 550 cases,
 //     so the factorial / hook-length equivalent-forms notation is globally self-consistent.
-//   * CompactEdgesIncreased (Review, not a hard bug) fires for (12,3,7) and (10,4,8): the compact
-//     pass occasionally materializes MORE displayed edges than the default plan. Root cause: the
-//     compact DP's edge proxy (StrategyBuilder.Compact.cs) sums each child subtree's edge cost
-//     independently and does not model the order-dependent Reference de-duplication that the
-//     materializer applies (TopKFinder.cs: a state seen a second time becomes a Reference leaf).
-//     Minimizing the proxy therefore does not strictly minimize the rendered edge count. Impact is
-//     limited because Program.RunHeadless only displays the compact plan when it is strictly better
-//     than the default, so a worse compact tree is silently discarded rather than shown.
+//   * CompactEdgesIncreased is now FIXED and should never fire. Previously the compact pass could
+//     materialize MORE displayed edges than default (e.g. (12,3,7) 13->17, (10,4,8) 8->10) because
+//     its edge proxy (StrategyBuilder.Compact.cs) sums each child subtree independently and does
+//     not model the materializer's display-key Reference de-duplication (TopKFinder.cs: a state
+//     seen a second time becomes a zero-edge Reference leaf), so minimizing the proxy did not
+//     strictly minimize rendered edges. BuildCompactPlan now falls back to the default selection
+//     whenever the compact selection does not strictly reduce the materialized edge count, so the
+//     compact plan is guaranteed never worse than default. The check below therefore now acts as a
+//     regression guard rather than a documented exception.
 public sealed class AnomalyScanTests
 {
     [Fact]

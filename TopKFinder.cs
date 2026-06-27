@@ -59,7 +59,19 @@ partial class StrategyBuilder
 
     public StrategyPlan BuildCompactPlan()
     {
-        return BuildPlan(useCompactSelection: true);
+        StrategyPlan compact = BuildPlan(useCompactSelection: true);
+
+        // The compact DP minimizes a per-state edge proxy that sums each child subtree
+        // independently; it does not model the materializer's display-key Reference
+        // de-duplication (a state reached a second time renders as a zero-edge Reference
+        // leaf). On rare states this proxy mismatch makes the compact selection render
+        // MORE branch edges than the default selection (e.g. 10,4,8: 8 -> 10). The compact
+        // pass must never be worse than default, so when it fails to strictly reduce the
+        // materialized edge count, fall back to the default selection. Compact only ever
+        // chooses among step-optimal groups, so MaxStep already matches default and the
+        // edge count is the sole tie-breaker.
+        StrategyPlan fallback = BuildPlan(useCompactSelection: false);
+        return compact.TotalBranchEdges < fallback.TotalBranchEdges ? compact : fallback;
     }
 
     private StrategyPlan BuildPlan(bool useCompactSelection)
