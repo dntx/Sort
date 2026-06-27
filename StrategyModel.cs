@@ -143,7 +143,9 @@ readonly struct SearchProgressSnapshot
         int feasibleTopSetStates,
         int compactStatesSolved,
         int compactGroupsEnumerated,
-        int compactStepOptimalGroups)
+        int compactStepOptimalGroups,
+        double estimatedProgress01,
+        long estimatedRemainingMilliseconds)
     {
         ElapsedMilliseconds = elapsedMilliseconds;
         SearchedStates = searchedStates;
@@ -166,6 +168,8 @@ readonly struct SearchProgressSnapshot
         CompactStatesSolved = compactStatesSolved;
         CompactGroupsEnumerated = compactGroupsEnumerated;
         CompactStepOptimalGroups = compactStepOptimalGroups;
+        EstimatedProgress01 = estimatedProgress01;
+        EstimatedRemainingMilliseconds = estimatedRemainingMilliseconds;
     }
 
     public long ElapsedMilliseconds { get; }
@@ -189,6 +193,8 @@ readonly struct SearchProgressSnapshot
     public int CompactStatesSolved { get; }
     public int CompactGroupsEnumerated { get; }
     public int CompactStepOptimalGroups { get; }
+    public double EstimatedProgress01 { get; }
+    public long EstimatedRemainingMilliseconds { get; }
 }
 
 sealed class SearchStatistics
