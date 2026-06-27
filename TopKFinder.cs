@@ -256,13 +256,65 @@ partial class StrategyBuilder
         for (int c = classes.Count - 1; c >= 0; c--)
             suffixCapacity[c] = suffixCapacity[c + 1] + classes[c].Count;
 
-        var representatives = new Dictionary<IntSequenceKey, List<int>>();
+        var collected = new List<List<int>>();
         var prefix = new List<int>(groupSize);
-        GenerateClassRepresentatives(state, classes, suffixCapacity, 0, groupSize, prefix, representatives);
+        GenerateClassRepresentatives(state, classes, suffixCapacity, 0, groupSize, prefix, collected);
 
-        var ordered = new List<List<int>>(representatives.Values);
+        // Orbit de-duplication via a cheap pre-filter. The full group canonical key
+        // (GetGroupPattern -> McKay) is the only sound way to merge two groups that lie in the same
+        // automorphism orbit, but it is expensive and dominates the search cost. Color-refinement
+        // structural labels are an automorphism invariant, so two groups in the same orbit always
+        // share the same sorted multiset of member labels. We bucket groups by that cheap signature:
+        // groups with distinct signatures are provably in different orbits and need no canonical key,
+        // so McKay only runs to disambiguate groups that collide on the cheap signature.
+        int[] labels = state.GetStructuralLabels();
+        var buckets = new Dictionary<IntSequenceKey, List<List<int>>>();
+        foreach (var group in collected)
+        {
+            IntSequenceKey cheap = CheapGroupSignature(labels, group);
+            if (!buckets.TryGetValue(cheap, out List<List<int>>? bucket))
+            {
+                bucket = new List<List<int>>();
+                buckets[cheap] = bucket;
+            }
+
+            bucket.Add(group);
+        }
+
+        var ordered = new List<List<int>>(buckets.Count);
+        foreach (List<List<int>> bucket in buckets.Values)
+        {
+            if (bucket.Count == 1)
+            {
+                ordered.Add(bucket[0]);
+                continue;
+            }
+
+            var representatives = new Dictionary<IntSequenceKey, List<int>>();
+            foreach (List<int> group in bucket)
+            {
+                IntSequenceKey pattern = GetGroupPattern(state, group);
+                if (!representatives.TryGetValue(pattern, out List<int>? existing) ||
+                    CompareGroupsLexicographically(group, existing) < 0)
+                {
+                    representatives[pattern] = group;
+                }
+            }
+
+            ordered.AddRange(representatives.Values);
+        }
+
         ordered.Sort(CompareGroupsLexicographically);
         return ordered;
+    }
+
+    private static IntSequenceKey CheapGroupSignature(int[] labels, IReadOnlyList<int> group)
+    {
+        var values = new int[group.Count];
+        for (int i = 0; i < group.Count; i++)
+            values[i] = labels[group[i]];
+        Array.Sort(values);
+        return new IntSequenceKey(values);
     }
 
     private void GenerateClassRepresentatives(
@@ -272,7 +324,7 @@ partial class StrategyBuilder
         int classIndex,
         int remaining,
         List<int> prefix,
-        Dictionary<IntSequenceKey, List<int>> representatives)
+        List<List<int>> collected)
     {
         if (remaining == 0)
         {
@@ -280,13 +332,7 @@ partial class StrategyBuilder
             _candidateGroupsEnumerated++;
             var group = new List<int>(prefix);
             group.Sort();
-            IntSequenceKey pattern = GetGroupPattern(state, group);
-            if (!representatives.TryGetValue(pattern, out List<int>? existing) ||
-                CompareGroupsLexicographically(group, existing) < 0)
-            {
-                representatives[pattern] = group;
-            }
-
+            collected.Add(group);
             return;
         }
 
@@ -302,7 +348,7 @@ partial class StrategyBuilder
                 prefix.Add(cls[j]);
 
             GenerateClassRepresentatives(
-                state, classes, suffixCapacity, classIndex + 1, remaining - take, prefix, representatives);
+                state, classes, suffixCapacity, classIndex + 1, remaining - take, prefix, collected);
 
             prefix.RemoveRange(prefix.Count - take, take);
         }
