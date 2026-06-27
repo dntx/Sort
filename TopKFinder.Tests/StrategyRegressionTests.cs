@@ -180,7 +180,7 @@ public sealed class StrategyRegressionTests
             cancellationToken => new StrategyBuilder(12, 4, 4, cancellationToken).BuildDefaultPlan());
 
         Assert.Equal(5, plan.MaxStep);
-        Assert.True(plan.SearchStatistics.SearchedStates <= 289, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
+        Assert.True(plan.SearchStatistics.SearchedStates <= 284, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
         Assert.True(plan.SearchStatistics.OutputStates <= 29, $"output states regressed to {plan.SearchStatistics.OutputStates}");
         Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 9, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
 
@@ -674,15 +674,15 @@ public sealed class StrategyRegressionTests
     // Values are deterministic; update them deliberately when the search work legitimately
     // changes.
     [Theory]
-    [InlineData(9, 3, 3, 163)]
-    [InlineData(11, 3, 3, 588)]
-    [InlineData(12, 4, 4, 515)]
-    [InlineData(10, 3, 4, 1126)]
-    [InlineData(12, 4, 3, 137)]
-    [InlineData(12, 3, 3, 735)]
-    [InlineData(8, 4, 2, 7)]
-    [InlineData(10, 3, 5, 674)]
-    [InlineData(13, 4, 3, 146)]
+    [InlineData(9, 3, 3, 162)]
+    [InlineData(11, 3, 3, 578)]
+    [InlineData(12, 4, 4, 488)]
+    [InlineData(10, 3, 4, 1088)]
+    [InlineData(12, 4, 3, 131)]
+    [InlineData(12, 3, 3, 712)]
+    [InlineData(8, 4, 2, 3)]
+    [InlineData(10, 3, 5, 8)]
+    [InlineData(13, 4, 3, 13)]
     public void Compact_SearchedStateCountStaysWithinBaseline(int n, int m, int k, int searchedStateCap)
     {
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
@@ -702,25 +702,25 @@ public sealed class StrategyRegressionTests
     // deliberate cap update) as an explicit diff. Update values deliberately when the search
     // work legitimately changes.
     [Theory]
-    [InlineData(9, 3, 3, 115)]
-    [InlineData(11, 3, 3, 353)]
-    [InlineData(12, 3, 3, 606)]
-    [InlineData(12, 4, 4, 289)]
+    [InlineData(9, 3, 3, 114)]
+    [InlineData(11, 3, 3, 344)]
+    [InlineData(12, 3, 3, 599)]
+    [InlineData(12, 4, 4, 284)]
     [InlineData(12, 4, 3, 79)]
-    [InlineData(10, 3, 4, 451)]
-    [InlineData(10, 3, 5, 416)]
-    [InlineData(12, 4, 5, 785)]
+    [InlineData(10, 3, 4, 422)]
+    [InlineData(10, 3, 5, 323)]
+    [InlineData(12, 4, 5, 698)]
     [InlineData(13, 4, 3, 136)]
     [InlineData(8, 4, 2, 6)]
     [InlineData(9, 4, 3, 18)]
     [InlineData(8, 3, 4, 59)]
-    [InlineData(8, 2, 3, 319)]
-    [InlineData(9, 3, 4, 176)]
-    [InlineData(10, 3, 6, 514)]
+    [InlineData(8, 2, 3, 316)]
+    [InlineData(9, 3, 4, 173)]
+    [InlineData(10, 3, 6, 422)]
     [InlineData(5, 3, 2, 4)]
     [InlineData(6, 2, 2, 22)]
     [InlineData(10, 2, 2, 115)]
-    [InlineData(25, 5, 3, 1706)]
+    [InlineData(25, 5, 3, 1678)]
     public void Default_SearchedStateCountStaysWithinBaseline(int n, int m, int k, int searchedStateCap)
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
@@ -746,23 +746,23 @@ public sealed class StrategyRegressionTests
     // though the search results (and the snapshot/output-state monitors) are byte-identical; the
     // net effect on heavy cases is a large reduction in both outcomes and wall-clock time.
     [Theory]
-    [InlineData(9, 3, 3, 1667)]
-    [InlineData(11, 3, 3, 7238)]
-    [InlineData(12, 3, 3, 12535)]
-    [InlineData(12, 4, 4, 14128)]
-    [InlineData(12, 4, 3, 1024)]
-    [InlineData(10, 3, 4, 8774)]
-    [InlineData(10, 3, 5, 7498)]
-    [InlineData(13, 4, 3, 2490)]
+    [InlineData(9, 3, 3, 1478)]
+    [InlineData(11, 3, 3, 6541)]
+    [InlineData(12, 3, 3, 11225)]
+    [InlineData(12, 4, 4, 12323)]
+    [InlineData(12, 4, 3, 1016)]
+    [InlineData(10, 3, 4, 6732)]
+    [InlineData(10, 3, 5, 5596)]
+    [InlineData(13, 4, 3, 2250)]
     [InlineData(8, 4, 2, 7)]
     [InlineData(9, 4, 3, 124)]
-    [InlineData(8, 3, 4, 647)]
-    [InlineData(9, 3, 4, 3461)]
-    [InlineData(10, 3, 6, 10019)]
+    [InlineData(8, 3, 4, 555)]
+    [InlineData(9, 3, 4, 2847)]
+    [InlineData(10, 3, 6, 6732)]
     [InlineData(5, 3, 2, 12)]
-    [InlineData(6, 2, 2, 96)]
-    [InlineData(10, 2, 2, 935)]
-    [InlineData(25, 5, 3, 108023)]
+    [InlineData(6, 2, 2, 88)]
+    [InlineData(10, 2, 2, 904)]
+    [InlineData(25, 5, 3, 100562)]
     public void Default_OutcomesConstructedStaysWithinBaseline(int n, int m, int k, int outcomesCap)
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
@@ -782,15 +782,15 @@ public sealed class StrategyRegressionTests
     // the current deterministic counts -- ratchet them down when an optimization legitimately
     // cuts outcome construction.
     [Theory]
-    [InlineData(9, 3, 3, 6111)]
-    [InlineData(11, 3, 3, 20303)]
-    [InlineData(12, 4, 4, 29758)]
-    [InlineData(10, 3, 4, 62856)]
-    [InlineData(12, 4, 3, 6753)]
-    [InlineData(12, 3, 3, 16106)]
-    [InlineData(8, 4, 2, 31)]
-    [InlineData(10, 3, 5, 12644)]
-    [InlineData(13, 4, 3, 3046)]
+    [InlineData(9, 3, 3, 5420)]
+    [InlineData(11, 3, 3, 17882)]
+    [InlineData(12, 4, 4, 24110)]
+    [InlineData(10, 3, 4, 46463)]
+    [InlineData(12, 4, 3, 6214)]
+    [InlineData(12, 3, 3, 13892)]
+    [InlineData(8, 4, 2, 2)]
+    [InlineData(10, 3, 5, 7)]
+    [InlineData(13, 4, 3, 34)]
     public void Compact_OutcomesConstructedStaysWithinBaseline(int n, int m, int k, int outcomesCap)
     {
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
@@ -813,21 +813,21 @@ public sealed class StrategyRegressionTests
     // optimizations: a correct orbit detector must ratchet these caps DOWN. Caps pin the current
     // deterministic counts; an increase is a regression, a deliberate decrease is an improvement.
     [Theory]
-    [InlineData(9, 3, 3, 155)]
-    [InlineData(11, 3, 3, 534)]
-    [InlineData(12, 3, 3, 943)]
-    [InlineData(12, 4, 4, 2789)]
-    [InlineData(12, 4, 3, 205)]
-    [InlineData(10, 3, 4, 617)]
-    [InlineData(10, 3, 5, 510)]
-    [InlineData(13, 4, 3, 539)]
+    [InlineData(9, 3, 3, 148)]
+    [InlineData(11, 3, 3, 502)]
+    [InlineData(12, 3, 3, 891)]
+    [InlineData(12, 4, 4, 2646)]
+    [InlineData(12, 4, 3, 199)]
+    [InlineData(10, 3, 4, 531)]
+    [InlineData(10, 3, 5, 370)]
+    [InlineData(13, 4, 3, 520)]
     [InlineData(8, 4, 2, 0)]
     [InlineData(9, 4, 3, 37)]
-    [InlineData(8, 3, 4, 65)]
-    [InlineData(9, 3, 4, 298)]
-    [InlineData(10, 3, 6, 617)]
+    [InlineData(8, 3, 4, 62)]
+    [InlineData(9, 3, 4, 263)]
+    [InlineData(10, 3, 6, 531)]
     [InlineData(5, 3, 2, 3)]
-    [InlineData(10, 2, 2, 9)]
+    [InlineData(10, 2, 2, 5)]
     public void Default_DuplicateOutcomeSkipsStaysWithinBaseline(int n, int m, int k, int duplicateSkipCap)
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
@@ -870,23 +870,23 @@ public sealed class StrategyRegressionTests
     [Theory]
     [InlineData(9, 3, 3, 1714)]
     [InlineData(11, 3, 3, 8152)]
-    [InlineData(12, 3, 3, 15959)]
+    [InlineData(12, 3, 3, 15903)]
     [InlineData(12, 4, 4, 12932)]
-    [InlineData(12, 4, 5, 37827)]
+    [InlineData(12, 4, 5, 36807)]
     [InlineData(12, 4, 3, 1024)]
     [InlineData(10, 3, 4, 8087)]
     [InlineData(10, 3, 5, 5679)]
-    [InlineData(13, 4, 3, 2475)]
+    [InlineData(13, 4, 3, 2470)]
     [InlineData(8, 4, 2, 5)]
     [InlineData(9, 4, 3, 91)]
     [InlineData(8, 3, 4, 526)]
-    [InlineData(8, 2, 3, 4213)]
+    [InlineData(8, 2, 3, 4191)]
     [InlineData(9, 3, 4, 3069)]
-    [InlineData(10, 3, 6, 8773)]
+    [InlineData(10, 3, 6, 8087)]
     [InlineData(5, 3, 2, 4)]
     [InlineData(6, 2, 2, 99)]
     [InlineData(10, 2, 2, 1307)]
-    [InlineData(25, 5, 3, 158293)]
+    [InlineData(25, 5, 3, 157915)]
     public void Default_CandidateGroupsEnumeratedStaysWithinBaseline(int n, int m, int k, int candidateGroupsCap)
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
@@ -904,15 +904,15 @@ public sealed class StrategyRegressionTests
     // this is the primary symmetry-collapse target for compact search. Caps pin the current
     // deterministic counts -- ratchet them down when an orbit/block-symmetry optimization lands.
     [Theory]
-    [InlineData(9, 3, 3, 781)]
-    [InlineData(11, 3, 3, 1865)]
-    [InlineData(12, 4, 4, 6724)]
-    [InlineData(10, 3, 4, 5715)]
-    [InlineData(12, 4, 3, 2466)]
-    [InlineData(12, 3, 3, 1097)]
-    [InlineData(8, 4, 2, 11)]
-    [InlineData(10, 3, 5, 732)]
-    [InlineData(13, 4, 3, 659)]
+    [InlineData(9, 3, 3, 744)]
+    [InlineData(11, 3, 3, 1786)]
+    [InlineData(12, 4, 4, 6070)]
+    [InlineData(10, 3, 4, 5013)]
+    [InlineData(12, 4, 3, 2394)]
+    [InlineData(12, 3, 3, 1034)]
+    [InlineData(8, 4, 2, 0)]
+    [InlineData(10, 3, 5, 0)]
+    [InlineData(13, 4, 3, 15)]
     public void Compact_DuplicateOutcomeSkipsStaysWithinBaseline(int n, int m, int k, int duplicateSkipCap)
     {
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
