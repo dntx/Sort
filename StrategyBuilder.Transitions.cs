@@ -72,17 +72,20 @@ partial class StrategyBuilder
     // count and the compact DP's edge count can never disagree.
     //
     // A merged bucket groups every order family whose outcome maps to the same display-canonical
-    // next state. We first partition those families into parent-automorphism orbits over the active
-    // poset: families in the same orbit are genuinely interchangeable for every future decision, so
-    // they may honestly share one line. Within an orbit we still defer to the pattern engine — if it
-    // unifies the orbit into one disjunction-free template the orbit renders as a single line; if it
-    // cannot (it would emit a " | " disjunction), we fall back to one line per family so no branch
-    // ever shows a misleading disjunction. This never over-merges (every fold is automorphism-backed)
-    // and never under-merges a renderable orbit.
+    // next state. If the full bucket can be summarized by one disjunction-free pattern, we render it
+    // as one line directly: this captures "comparison-before visible" equivalences (for example
+    // {A1, B1} > {A2, B2}) even when the parent-state automorphism partition is stricter. If the full
+    // bucket cannot be summarized cleanly, we fall back to parent-automorphism orbits and apply the
+    // same disjunction-free check per orbit, finally splitting to per-family lines when needed.
     private List<List<MergedFamilyOutcome>> SplitMergedBucketIntoBranchLines(
         ComparisonState state, List<MergedFamilyOutcome> families)
     {
         if (families.Count == 1)
+            return new List<List<MergedFamilyOutcome>> { families };
+
+        EquivalentOrderSummary? fullBucketSummary = BuildEquivalentOrderSummary(
+            families.Select(outcome => outcome.Family).ToList());
+        if (MergedOrderingsFormSingleOrbit(fullBucketSummary))
             return new List<List<MergedFamilyOutcome>> { families };
 
         var lines = new List<List<MergedFamilyOutcome>>();

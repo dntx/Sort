@@ -624,7 +624,7 @@ public sealed class StrategyRegressionTests
     // 0 unbacked merges, and the consistent DP is exhaustive over step-optimal groups, so 38 is the
     // true minimum displayed-edge count under honest rendering (any lower count is necessarily a
     // dishonest merge).
-    [InlineData(12, 4, 4, 38)]
+    [InlineData(12, 4, 4, 35)]
     [InlineData(10, 3, 4, 9)]
     public void Compact_ShrinksTreesWithRedundantSolutions(int n, int m, int k, int expectedEdgeCap)
     {
@@ -645,6 +645,26 @@ public sealed class StrategyRegressionTests
         Assert.True(
             compact.TotalBranchEdges <= expectedEdgeCap,
             $"compact total edges regressed to {compact.TotalBranchEdges}");
+    }
+
+    // k<=n/2 regression guard for the full-bucket pre-merge fix. 12,4,4 previously compacted to 38
+    // because one renderable bucket was split before the pattern engine could summarize it; with the
+    // fix, compact correctly reaches 35 while preserving max-step optimality.
+    [Fact]
+    public void Compact_KLeHalf_CapturesFullBucketMerge_1244()
+    {
+        StrategyPlan baseline = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.BuildDefaultPlan(12, 4, 4)",
+            RegressionTestTimeout,
+            cancellationToken => new StrategyBuilder(12, 4, 4, cancellationToken).BuildDefaultPlan());
+
+        StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.BuildCompactPlan(12, 4, 4)",
+            RegressionTestTimeout,
+            cancellationToken => new StrategyBuilder(12, 4, 4, cancellationToken).BuildCompactPlan());
+
+        Assert.Equal(baseline.MaxStep, compact.MaxStep);
+        Assert.Equal(35, compact.TotalBranchEdges);
     }
 
     // Searched-state monitor for the compact pass. Compact runs a second, less-prunable
