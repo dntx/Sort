@@ -14,6 +14,7 @@ partial class StrategyBuilder
     private readonly int _k;
     private readonly CancellationToken _cancellationToken;
     private readonly Action<SearchProgressSnapshot>? _progressCallback;
+    private readonly bool _reportCombinedRunProgress;
     private readonly Dictionary<IntSequenceKey, int> _stateIds = new();
     private readonly Dictionary<IntSequenceKey, ExpandedStateSnapshot> _expandedStates = new();
     private readonly HashSet<SearchStateKey> _visitedSearchStates = new();
@@ -43,8 +44,29 @@ partial class StrategyBuilder
     private bool _rootSearchInitialized;
     private bool _phase1Solved;
     private bool _phase1bSolved;
+    private bool _progressEstimateInitialized;
+    private double _progressEstimateEma01;
+    private long _lastProgressSampleElapsedMs;
+    private int _lastProgressSampleSearched;
+    private bool _pendingCostEstimateInitialized;
+    private double _pendingCostStatesPerPending;
+    private double _pendingCostConservativeStatesPerPending;
+    private int _pendingAtCostSample;
+    private long _searchedSinceCostSample;
+    private bool _searchRateEstimateInitialized;
+    private double _searchRateStatesPerMs;
+    private bool _pendingZeroSettling;
+    private long _pendingZeroSinceMs;
+    private int _pendingZeroSearchedAtStart;
+    private ProgressScope _progressScope;
 
-    public StrategyBuilder(int n, int m, int k, CancellationToken cancellationToken = default, Action<SearchProgressSnapshot>? progressCallback = null)
+    public StrategyBuilder(
+        int n,
+        int m,
+        int k,
+        CancellationToken cancellationToken = default,
+        Action<SearchProgressSnapshot>? progressCallback = null,
+        bool reportCombinedRunProgress = false)
     {
         _n = n;
         _m = m;
@@ -52,15 +74,23 @@ partial class StrategyBuilder
         _k = k > n - k ? n - k : k;
         _cancellationToken = cancellationToken;
         _progressCallback = progressCallback;
+        _reportCombinedRunProgress = reportCombinedRunProgress;
+        _progressScope = ProgressScope.DefaultStandalone;
     }
 
     public StrategyPlan BuildDefaultPlan()
     {
+        _progressScope = _reportCombinedRunProgress
+            ? ProgressScope.DefaultInCombinedRun
+            : ProgressScope.DefaultStandalone;
         return BuildPlan(useCompactSelection: false);
     }
 
     public StrategyPlan BuildCompactPlan()
     {
+        _progressScope = _reportCombinedRunProgress
+            ? ProgressScope.CompactPrimaryInCombinedRun
+            : ProgressScope.DefaultStandalone;
         StrategyPlan compact = BuildPlan(useCompactSelection: true);
 
         // The compact DP minimizes a per-state edge proxy that sums each child subtree
@@ -72,6 +102,9 @@ partial class StrategyBuilder
         // materialized edge count, fall back to the default selection. Compact only ever
         // chooses among step-optimal groups, so MaxStep already matches default and the
         // edge count is the sole tie-breaker.
+        _progressScope = _reportCombinedRunProgress
+            ? ProgressScope.CompactFallbackInCombinedRun
+            : ProgressScope.DefaultStandalone;
         StrategyPlan fallback = BuildPlan(useCompactSelection: false);
         return compact.TotalBranchEdges < fallback.TotalBranchEdges ? compact : fallback;
     }
@@ -489,6 +522,9 @@ partial class StrategyBuilder
             return;
 
         _lastProgressReportMs = elapsedMs;
+        (double localProgress01, long localRemainingMs) = EstimateProgress(elapsedMs);
+        (double estimatedProgress01, long estimatedRemainingMs) =
+            MapToReportedProgress(elapsedMs, localProgress01, localRemainingMs);
         _progressCallback(new SearchProgressSnapshot(
             elapsedMs,
             _searchedStates,
@@ -510,7 +546,207 @@ partial class StrategyBuilder
             _feasibleTopSetCache.Count,
             _compactStatesSolved,
             _compactGroupsEnumerated,
-            _compactStepOptimalGroups));
+            _compactStepOptimalGroups,
+            estimatedProgress01,
+            estimatedRemainingMs));
+    }
+
+    private (double Progress01, long RemainingMs) MapToReportedProgress(long elapsedMs, double localProgress01, long localRemainingMs)
+    {
+        if (!_reportCombinedRunProgress)
+            return (localProgress01, localRemainingMs);
+
+        (double progressBase, double progressSpan) = _progressScope switch
+        {
+            ProgressScope.DefaultInCombinedRun => (0.0, 0.60),
+            ProgressScope.CompactPrimaryInCombinedRun => (0.60, 0.39),
+            ProgressScope.CompactFallbackInCombinedRun => (0.99, 0.01),
+            _ => (0.0, 1.0),
+        };
+
+        double progress = Math.Clamp(progressBase + (Math.Clamp(localProgress01, 0.0, 1.0) * progressSpan), 0.0, 1.0);
+        if (progress <= 0.0 || elapsedMs <= 0)
+            return (progress, -1);
+
+        long remaining = progress >= 1.0
+            ? 0
+            : Math.Max(0, (long)(elapsedMs * ((1.0 / progress) - 1.0)));
+        return (progress, remaining);
+    }
+
+    private (double Progress01, long RemainingMs) EstimateProgress(long elapsedMs)
+    {
+        if (_searchedStates <= 0)
+            return (0.0, -1);
+
+        if (_lastProgressSampleElapsedMs >= 0)
+        {
+            int deltaSearched = Math.Max(0, _searchedStates - _lastProgressSampleSearched);
+            long deltaElapsedMs = Math.Max(0, elapsedMs - _lastProgressSampleElapsedMs);
+            if (deltaElapsedMs > 0 && deltaSearched > 0)
+            {
+                double observedSearchRate = deltaSearched / (double)deltaElapsedMs;
+                if (!_searchRateEstimateInitialized)
+                {
+                    _searchRateEstimateInitialized = true;
+                    _searchRateStatesPerMs = observedSearchRate;
+                }
+                else
+                {
+                    const double searchRateAlpha = 0.22;
+                    _searchRateStatesPerMs += searchRateAlpha * (observedSearchRate - _searchRateStatesPerMs);
+                }
+            }
+
+            if (_pendingAtCostSample < 0)
+                _pendingAtCostSample = _pendingStates;
+
+            _searchedSinceCostSample += deltaSearched;
+
+            int consumedPending = _pendingAtCostSample - _pendingStates;
+            if (consumedPending > 0 && _searchedSinceCostSample > 0)
+            {
+                // Download-like adaptive throughput: estimate how many searched states are
+                // needed to consume one pending state, then update continuously.
+                double observedCostPerPending = _searchedSinceCostSample / (double)consumedPending;
+                if (!_pendingCostEstimateInitialized)
+                {
+                    _pendingCostEstimateInitialized = true;
+                    _pendingCostStatesPerPending = observedCostPerPending;
+                    _pendingCostConservativeStatesPerPending = observedCostPerPending;
+                }
+                else
+                {
+                    const double pendingCostAlpha = 0.35;
+                    _pendingCostStatesPerPending += pendingCostAlpha * (observedCostPerPending - _pendingCostStatesPerPending);
+
+                    const double conservativeRiseAlpha = 0.45;
+                    const double conservativeFallAlpha = 0.04;
+                    double conservativeAlpha =
+                        observedCostPerPending >= _pendingCostConservativeStatesPerPending
+                            ? conservativeRiseAlpha
+                            : conservativeFallAlpha;
+                    _pendingCostConservativeStatesPerPending +=
+                        conservativeAlpha * (observedCostPerPending - _pendingCostConservativeStatesPerPending);
+                }
+
+                _searchedSinceCostSample = 0;
+                _pendingAtCostSample = _pendingStates;
+            }
+            else if (_pendingStates > _pendingAtCostSample)
+            {
+                _pendingAtCostSample = _pendingStates;
+            }
+
+            if (_pendingStates > 0 && _searchedSinceCostSample > 0 && _pendingCostEstimateInitialized)
+            {
+                double noDrainFloor = _searchedSinceCostSample / (double)_pendingStates;
+                _pendingCostStatesPerPending = Math.Max(_pendingCostStatesPerPending, noDrainFloor);
+                _pendingCostConservativeStatesPerPending = Math.Max(_pendingCostConservativeStatesPerPending, noDrainFloor);
+            }
+        }
+
+        _lastProgressSampleElapsedMs = elapsedMs;
+        _lastProgressSampleSearched = _searchedStates;
+
+        if (!_pendingCostEstimateInitialized)
+        {
+            _pendingCostEstimateInitialized = true;
+            _pendingCostStatesPerPending = _pendingStates > 0
+                ? Math.Max(64.0, _searchedStates / (double)_pendingStates)
+                : 64.0;
+            _pendingCostConservativeStatesPerPending = _pendingCostStatesPerPending;
+        }
+
+        bool isDefaultScope =
+            _progressScope is ProgressScope.DefaultStandalone or ProgressScope.DefaultInCombinedRun;
+        double costPerPending = Math.Max(1.0, _pendingCostStatesPerPending);
+        if (isDefaultScope)
+            costPerPending = Math.Max(costPerPending, _pendingCostConservativeStatesPerPending);
+
+        int effectivePending = _pendingStates;
+        if (_pendingStates == 0)
+        {
+            if (!_pendingZeroSettling)
+            {
+                _pendingZeroSettling = true;
+                _pendingZeroSinceMs = elapsedMs;
+                _pendingZeroSearchedAtStart = _searchedStates;
+            }
+
+            bool zeroSettled =
+                elapsedMs - _pendingZeroSinceMs >= 400 &&
+                _searchedStates == _pendingZeroSearchedAtStart;
+            if (zeroSettled)
+            {
+                _progressEstimateInitialized = true;
+                _progressEstimateEma01 = 1.0;
+                return (1.0, 0);
+            }
+
+            // Avoid instant "100%" spikes when pending briefly touches zero mid-search.
+            effectivePending = 1;
+        }
+        else
+        {
+            _pendingZeroSettling = false;
+        }
+
+        if (isDefaultScope && effectivePending <= 3)
+        {
+            // In default phase, tiny pending counts are often heavy tails rather than near-finish.
+            // Apply a conservative inflation so progress does not pin near 100% too early.
+            double inflation = effectivePending switch
+            {
+                1 => 3.0,
+                2 => 2.1,
+                _ => 1.5,
+            };
+            costPerPending *= inflation;
+        }
+
+        double estimatedRemainingSearchStates = effectivePending * costPerPending;
+        double estimatedTotal = _searchedStates + estimatedRemainingSearchStates;
+        if (estimatedTotal <= 0)
+            return (0.0, -1);
+
+        double rawProgress = Math.Clamp(_searchedStates / estimatedTotal, 0.0, 1.0);
+        if (effectivePending > 0)
+            rawProgress = Math.Min(rawProgress, 0.995);
+
+        if (!_progressEstimateInitialized)
+        {
+            _progressEstimateInitialized = true;
+            _progressEstimateEma01 = rawProgress;
+        }
+        else
+        {
+            const double riseAlpha = 0.25;
+            const double fallAlpha = 0.08;
+            double alpha = rawProgress >= _progressEstimateEma01 ? riseAlpha : fallAlpha;
+            _progressEstimateEma01 += alpha * (rawProgress - _progressEstimateEma01);
+        }
+
+        double progress = Math.Clamp(_progressEstimateEma01, 0.0, 1.0);
+
+        if (progress <= 0)
+            return (progress, -1);
+
+        long remaining;
+        if (effectivePending == 0)
+        {
+            remaining = 0;
+        }
+        else if (_searchRateEstimateInitialized && _searchRateStatesPerMs > 0)
+        {
+            remaining = Math.Max(0, (long)(estimatedRemainingSearchStates / _searchRateStatesPerMs));
+        }
+        else
+        {
+            remaining = -1;
+        }
+
+        return (progress, remaining);
     }
 
     private void ObserveSearchState(ComparisonState state, int remainingSlots)
@@ -585,6 +821,20 @@ partial class StrategyBuilder
         _compactStatesSolved = 0;
         _compactGroupsEnumerated = 0;
         _compactStepOptimalGroups = 0;
+        _progressEstimateInitialized = false;
+        _progressEstimateEma01 = 0.0;
+        _lastProgressSampleElapsedMs = -1;
+        _lastProgressSampleSearched = 0;
+        _pendingCostEstimateInitialized = false;
+        _pendingCostStatesPerPending = 0.0;
+        _pendingCostConservativeStatesPerPending = 0.0;
+        _pendingAtCostSample = -1;
+        _searchedSinceCostSample = 0;
+        _searchRateEstimateInitialized = false;
+        _searchRateStatesPerMs = 0.0;
+        _pendingZeroSettling = false;
+        _pendingZeroSinceMs = 0;
+        _pendingZeroSearchedAtStart = 0;
     }
 
     private sealed class SelectedComparisonGroup
@@ -656,6 +906,14 @@ partial class StrategyBuilder
 
             return GroupSize.CompareTo(other.GroupSize);
         }
+    }
+
+    private enum ProgressScope
+    {
+        DefaultStandalone = 0,
+        DefaultInCombinedRun = 1,
+        CompactPrimaryInCombinedRun = 2,
+        CompactFallbackInCombinedRun = 3,
     }
 
 }

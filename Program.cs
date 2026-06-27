@@ -151,8 +151,13 @@ class Program
             }
 
             lastEmitMs = snapshot.ElapsedMilliseconds;
+            string progressText = $"{snapshot.EstimatedProgress01 * 100.0:F1}%";
+            string etaText = snapshot.EstimatedRemainingMilliseconds >= 0
+                ? $"{snapshot.EstimatedRemainingMilliseconds / 1000.0:F1}s"
+                : "-";
             string line = $"searching... elapsed={snapshot.ElapsedMilliseconds / 1000.0:F1}s " +
-                $"searched={snapshot.SearchedStates} pending={snapshot.PendingStates} output={snapshot.OutputStates}";
+                $"searched={snapshot.SearchedStates} pending={snapshot.PendingStates} output={snapshot.OutputStates} " +
+                $"progress: {progressText} eta: {etaText}";
             Console.Error.Write("\r" + line.PadRight(lastLineLength));
             lastLineLength = line.Length;
         }
@@ -163,7 +168,13 @@ class Program
                 Console.Error.Write("\r" + new string(' ', lastLineLength) + "\r");
         }
 
-        var builder = new StrategyBuilder(n, m, k, System.Threading.CancellationToken.None, ReportProgress);
+        var builder = new StrategyBuilder(
+            n,
+            m,
+            k,
+            System.Threading.CancellationToken.None,
+            ReportProgress,
+            reportCombinedRunProgress: true);
         StrategyPlan defaultPlan = builder.BuildDefaultPlan();
         ClearProgressLine();
         Console.Write(StrategyOverviewRenderer.RenderText(defaultPlan));
