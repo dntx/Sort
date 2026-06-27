@@ -618,7 +618,13 @@ public sealed class StrategyRegressionTests
 
     [Theory]
     [InlineData(11, 3, 3, 8)]
-    [InlineData(12, 4, 4, 35)]
+    // 12,4,4: honest minimum is 38, not 35. The prior 35 relied on a false sibling-merge (a
+    // misleading disjunction) at one node; the automorphism-orbit honesty fix correctly splits it.
+    // Verified: the 38-edge compact tree has objective==render at every node, 0 false-splits, and
+    // 0 unbacked merges, and the consistent DP is exhaustive over step-optimal groups, so 38 is the
+    // true minimum displayed-edge count under honest rendering (any lower count is necessarily a
+    // dishonest merge).
+    [InlineData(12, 4, 4, 38)]
     [InlineData(10, 3, 4, 9)]
     public void Compact_ShrinksTreesWithRedundantSolutions(int n, int m, int k, int expectedEdgeCap)
     {
@@ -756,10 +762,10 @@ public sealed class StrategyRegressionTests
     // the current deterministic counts -- ratchet them down when an optimization legitimately
     // cuts outcome construction.
     [Theory]
-    [InlineData(9, 3, 3, 6057)]
-    [InlineData(11, 3, 3, 20200)]
+    [InlineData(9, 3, 3, 6111)]
+    [InlineData(11, 3, 3, 20303)]
     [InlineData(12, 4, 4, 29758)]
-    [InlineData(10, 3, 4, 62564)]
+    [InlineData(10, 3, 4, 62856)]
     [InlineData(12, 4, 3, 6753)]
     [InlineData(12, 3, 3, 16106)]
     [InlineData(8, 4, 2, 31)]
@@ -860,10 +866,10 @@ public sealed class StrategyRegressionTests
     // this is the primary symmetry-collapse target for compact search. Caps pin the current
     // deterministic counts -- ratchet them down when an orbit/block-symmetry optimization lands.
     [Theory]
-    [InlineData(9, 3, 3, 762)]
-    [InlineData(11, 3, 3, 1838)]
+    [InlineData(9, 3, 3, 781)]
+    [InlineData(11, 3, 3, 1865)]
     [InlineData(12, 4, 4, 6724)]
-    [InlineData(10, 3, 4, 5638)]
+    [InlineData(10, 3, 4, 5715)]
     [InlineData(12, 4, 3, 2466)]
     [InlineData(12, 3, 3, 1097)]
     [InlineData(8, 4, 2, 11)]

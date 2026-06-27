@@ -51,29 +51,121 @@ partial class StrategyBuilder
         var specs = new List<BranchSpec>();
         foreach (MergedBranch merged in chosenGroup.Branches)
         {
-            List<MergedFamilyOutcome> families = merged.FamilyOutcomes;
-            EquivalentOrderSummary? combinedSummary = BuildEquivalentOrderSummary(
-                families.Select(outcome => outcome.Family).ToList());
-
-            if (MergedOrderingsFormSingleOrbit(combinedSummary))
+            foreach (List<MergedFamilyOutcome> line in SplitMergedBucketIntoBranchLines(state, merged.FamilyOutcomes))
             {
-                MergedFamilyOutcome representative = families[0];
-                specs.Add(new BranchSpec(representative.Family.RepresentativeOrder, representative, combinedSummary));
-            }
-            else
-            {
-                foreach (MergedFamilyOutcome outcome in families)
-                {
-                    EquivalentOrderSummary? familySummary = BuildEquivalentOrderSummary(
-                        new List<OrderFamilyDescriptor> { outcome.Family });
-                    specs.Add(new BranchSpec(outcome.Family.RepresentativeOrder, outcome, familySummary));
-                }
+                MergedFamilyOutcome representative = line[0];
+                EquivalentOrderSummary? summary = BuildEquivalentOrderSummary(
+                    line.Select(outcome => outcome.Family).ToList());
+                specs.Add(new BranchSpec(representative.Family.RepresentativeOrder, representative, summary));
             }
         }
 
         return specs
             .OrderBy(spec => spec.OrderText, StringComparer.Ordinal)
             .ToList();
+    }
+
+    // Splits one merged bucket's order families into the exact set of displayed branch lines.
+    // Each returned inner list is the families folded onto a single line; its first element is the
+    // line's representative. Both BuildBranchSpecs (which materializes the line) and
+    // CountDisplayBranches (which only counts lines) route through here, so the displayed edge
+    // count and the compact DP's edge count can never disagree.
+    //
+    // A merged bucket groups every order family whose outcome maps to the same display-canonical
+    // next state. We first partition those families into parent-automorphism orbits over the active
+    // poset: families in the same orbit are genuinely interchangeable for every future decision, so
+    // they may honestly share one line. Within an orbit we still defer to the pattern engine — if it
+    // unifies the orbit into one disjunction-free template the orbit renders as a single line; if it
+    // cannot (it would emit a " | " disjunction), we fall back to one line per family so no branch
+    // ever shows a misleading disjunction. This never over-merges (every fold is automorphism-backed)
+    // and never under-merges a renderable orbit.
+    private List<List<MergedFamilyOutcome>> SplitMergedBucketIntoBranchLines(
+        ComparisonState state, List<MergedFamilyOutcome> families)
+    {
+        if (families.Count == 1)
+            return new List<List<MergedFamilyOutcome>> { families };
+
+        var lines = new List<List<MergedFamilyOutcome>>();
+        foreach (List<MergedFamilyOutcome> orbit in PartitionFamiliesIntoOrbits(state, families))
+        {
+            if (orbit.Count == 1)
+            {
+                lines.Add(orbit);
+                continue;
+            }
+
+            EquivalentOrderSummary? combinedSummary = BuildEquivalentOrderSummary(
+                orbit.Select(outcome => outcome.Family).ToList());
+            if (MergedOrderingsFormSingleOrbit(combinedSummary))
+            {
+                lines.Add(orbit);
+            }
+            else
+            {
+                foreach (MergedFamilyOutcome outcome in orbit)
+                    lines.Add(new List<MergedFamilyOutcome> { outcome });
+            }
+        }
+
+        return lines;
+    }
+
+    // Partitions a merged bucket's families into parent-automorphism orbits over the active poset.
+    // Two families are unioned when some automorphism of the parent state's active poset maps one
+    // family's representative order onto the other's. Fixed-top winners are deactivated before a node
+    // is rendered and never affect elimination, so an active-poset automorphism (fixedTopMask: 0) is
+    // the exact symmetry that makes two sibling orderings interchangeable for the future — and it is
+    // identical in the display path and the compact counting path, which never accumulate the same
+    // fixed-top context anyway. Orbits and the families within them preserve input order.
+    private List<List<MergedFamilyOutcome>> PartitionFamiliesIntoOrbits(
+        ComparisonState state, List<MergedFamilyOutcome> families)
+    {
+        int n = families.Count;
+        var parent = new int[n];
+        for (int i = 0; i < n; i++)
+            parent[i] = i;
+
+        int Find(int x)
+        {
+            while (parent[x] != x)
+            {
+                parent[x] = parent[parent[x]];
+                x = parent[x];
+            }
+            return x;
+        }
+
+        for (int i = 0; i < n; i++)
+        {
+            for (int j = i + 1; j < n; j++)
+            {
+                if (Find(i) == Find(j))
+                    continue;
+                if (state.TryMapOrderByAutomorphism(
+                        0,
+                        families[i].Family.RepresentativeOrderItems,
+                        families[j].Family.RepresentativeOrderItems))
+                {
+                    parent[Find(i)] = Find(j);
+                }
+            }
+        }
+
+        var orbitsByRoot = new Dictionary<int, List<MergedFamilyOutcome>>();
+        var order = new List<int>();
+        for (int i = 0; i < n; i++)
+        {
+            int root = Find(i);
+            if (!orbitsByRoot.TryGetValue(root, out List<MergedFamilyOutcome>? orbit))
+            {
+                orbit = new List<MergedFamilyOutcome>();
+                orbitsByRoot[root] = orbit;
+                order.Add(root);
+            }
+            orbit.Add(families[i]);
+        }
+
+        return order.Select(root => orbitsByRoot[root]).ToList();
     }
 
     // A single ordering (no summary) or a summary whose pattern is one disjunction-free symmetry
