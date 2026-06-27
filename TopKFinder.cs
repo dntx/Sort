@@ -10,6 +10,7 @@ partial class StrategyBuilder
     private const int ProgressReportIntervalMs = 100;
     private readonly int _n;
     private readonly int _m;
+    private readonly int _requestedK;
     private readonly int _k;
     private readonly CancellationToken _cancellationToken;
     private readonly Action<SearchProgressSnapshot>? _progressCallback;
@@ -47,7 +48,8 @@ partial class StrategyBuilder
     {
         _n = n;
         _m = m;
-        _k = k;
+        _requestedK = k;
+        _k = k > n - k ? n - k : k;
         _cancellationToken = cancellationToken;
         _progressCallback = progressCallback;
     }
@@ -93,7 +95,7 @@ partial class StrategyBuilder
         _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds - _phase1bMilliseconds;
         stopwatch.Stop();
         ReportProgress(force: true);
-        return new StrategyPlan(_n, _m, _k, root, stopwatch.Elapsed, CreateSearchStatistics());
+        return new StrategyPlan(_n, _m, _requestedK, _k, root, stopwatch.Elapsed, CreateSearchStatistics());
     }
 
     private StrategyNode BuildState(ComparisonState state, ulong fixedTopMask, int remainingSlots, int step)

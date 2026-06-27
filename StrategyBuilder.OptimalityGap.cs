@@ -130,7 +130,7 @@ partial class StrategyBuilder
 
         ResetPerBuildTransientState();
         StrategyNode root = BuildState(new ComparisonState(_n), 0, _k, 1);
-        return new StrategyPlan(_n, _m, _k, root, TimeSpan.Zero, CreateSearchStatistics());
+        return new StrategyPlan(_n, _m, _requestedK, _k, root, TimeSpan.Zero, CreateSearchStatistics());
     }
 
     private int ExhaustiveMinEdges(

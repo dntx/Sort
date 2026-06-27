@@ -825,7 +825,7 @@ public sealed class StrategyRegressionTests
     [InlineData(9, 4, 3, 37)]
     [InlineData(8, 3, 4, 65)]
     [InlineData(9, 3, 4, 298)]
-    [InlineData(10, 3, 6, 578)]
+    [InlineData(10, 3, 6, 617)]
     [InlineData(5, 3, 2, 3)]
     [InlineData(10, 2, 2, 9)]
     public void Default_DuplicateOutcomeSkipsStaysWithinBaseline(int n, int m, int k, int duplicateSkipCap)
@@ -838,6 +838,24 @@ public sealed class StrategyRegressionTests
         Assert.True(
             plan.SearchStatistics.Diagnostics.DuplicateOutcomeSkips <= duplicateSkipCap,
             $"default duplicate outcome skips regressed to {plan.SearchStatistics.Diagnostics.DuplicateOutcomeSkips} (cap {duplicateSkipCap})");
+    }
+
+    [Fact]
+    public void BuildDefaultPlan_ReducesKAboveHalf_ToDualProblem()
+    {
+        StrategyPlan reduced = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.BuildDefaultPlan(10, 4, 2)",
+            RegressionTestTimeout,
+            cancellationToken => new StrategyBuilder(10, 4, 2, cancellationToken).BuildDefaultPlan());
+
+        StrategyPlan dualInput = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.BuildDefaultPlan(10, 4, 8)",
+            RegressionTestTimeout,
+            cancellationToken => new StrategyBuilder(10, 4, 8, cancellationToken).BuildDefaultPlan());
+
+        Assert.Equal(2, dualInput.K);
+        Assert.Equal(reduced.MaxStep, dualInput.MaxStep);
+        Assert.Equal(reduced.TotalBranchEdges, dualInput.TotalBranchEdges);
     }
 
     // Candidate-group enumeration monitor for the default pass. CandidateGroupsEnumerated counts the
