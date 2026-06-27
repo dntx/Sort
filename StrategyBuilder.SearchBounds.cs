@@ -178,10 +178,99 @@ partial class StrategyBuilder
             }
         }
 
+        steps = Math.Max(steps, GetAntichainLowerBound(state));
         steps = ApplyDominanceLowerBound(state, remainingSlots, steps);
 
         _lowerBoundStepsCache[key] = steps;
         return steps;
+    }
+
+    // Antichain/width lower bound. In a normalized active state every active item is undecided
+    // (elimination removed items with >= remainingSlots active ancestors; NormalizeState removed
+    // guaranteed-top items), so the active poset IS the undecided poset. Let w be the width of the
+    // active poset (size of its maximum antichain). A single comparison step totally orders at most
+    // _m items into a chain, so it can collapse at most _m mutually-incomparable items into a single
+    // chain; hence the maximum antichain shrinks by at most _m - 1 per step. To reach a determined
+    // state (width 1) from width w therefore needs at least ceil((w - 1) / (_m - 1)) further steps.
+    // Width is computed via Dilworth/Koenig: w = ActiveCount - (maximum matching in the strict
+    // comparability bipartite graph). Fresh items (the coverage bound) are a special case -- they
+    // form an antichain, so this dominates coverage. Soundness is validated empirically by the
+    // 229-case MaxStep/edge-invariance regression oracle: an unsound bound would prune an optimal
+    // branch and raise some case's MaxStep.
+    private int GetAntichainLowerBound(ComparisonState state)
+    {
+        if (_m <= 1)
+            return 0;
+
+        int width = GetActivePosetWidth(state);
+        if (width <= 1)
+            return 0;
+
+        return (width - 1 + (_m - 1) - 1) / (_m - 1);
+    }
+
+    // Maximum antichain width of the active poset, via Dilworth's theorem (max antichain = minimum
+    // chain cover) realized as ActiveCount - (maximum bipartite matching), where left/right copies
+    // of each active item are joined when one strictly precedes the other (descendant relation).
+    private int GetActivePosetWidth(ComparisonState state)
+    {
+        List<int> items = state.GetActiveItemsOrdered();
+        int count = items.Count;
+        if (count <= 1)
+            return count;
+
+        var index = new Dictionary<int, int>(count);
+        for (int i = 0; i < count; i++)
+            index[items[i]] = i;
+
+        ulong activeMask = state.ActiveMask;
+        var adjacency = new List<int>[count];
+        for (int i = 0; i < count; i++)
+        {
+            ThrowIfCancellationRequested();
+            var neighbours = new List<int>();
+            ulong descendants = state.GetDescendantMask(items[i]) & activeMask;
+            while (descendants != 0)
+            {
+                int item = BitOperations.TrailingZeroCount(descendants);
+                descendants &= descendants - 1;
+                neighbours.Add(index[item]);
+            }
+
+            adjacency[i] = neighbours;
+        }
+
+        var matchRight = new int[count];
+        Array.Fill(matchRight, -1);
+        int matching = 0;
+        var visited = new bool[count];
+        for (int left = 0; left < count; left++)
+        {
+            ThrowIfCancellationRequested();
+            Array.Clear(visited, 0, count);
+            if (TryAugmentMatching(left, adjacency, matchRight, visited))
+                matching++;
+        }
+
+        return count - matching;
+    }
+
+    private bool TryAugmentMatching(int left, List<int>[] adjacency, int[] matchRight, bool[] visited)
+    {
+        foreach (int right in adjacency[left])
+        {
+            if (visited[right])
+                continue;
+
+            visited[right] = true;
+            if (matchRight[right] == -1 || TryAugmentMatching(matchRight[right], adjacency, matchRight, visited))
+            {
+                matchRight[right] = left;
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private bool TryGetDeterminedTopSet(ComparisonState state, int remainingSlots, out ulong topMask)
