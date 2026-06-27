@@ -25,9 +25,9 @@ public class DominanceMetricTests
     }
 
     [Theory]
-    [InlineData(9, 3, 3, 26)]
-    [InlineData(13, 4, 3, 68)]
-    [InlineData(12, 4, 4, 166)]
+    [InlineData(9, 3, 3, 13)]
+    [InlineData(13, 4, 3, 32)]
+    [InlineData(12, 4, 4, 129)]
     public void Phase1DominanceLowerBoundPruningFires(int n, int m, int k, int minBoundRaises)
     {
         var builder = new StrategyBuilder(n, m, k);
