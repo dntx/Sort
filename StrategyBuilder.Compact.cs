@@ -158,13 +158,11 @@ partial class StrategyBuilder
     }
 
     // Number of displayed branch lines this state renders for the given comparison group,
-    // including doomed-tail folding and the symmetry-orbit vs. distinct-family split. Counts
-    // exactly what BuildBranchSpecs would emit, but without building the per-branch pattern
-    // summaries for the common single-family case: a merged branch backed by one order family is
-    // a single relabeling orbit, so its pattern can never carry the " | " disjunction separator
-    // and always renders as exactly one branch. Only multi-family merged branches need the
-    // (expensive) pattern engine to decide single-orbit (1) vs. split (one line per family). This
-    // keeps the compact DP's edge counting cheap on wide, low-m search spaces.
+    // including doomed-tail folding and the automorphism-orbit vs. distinct-family split. Routes
+    // every merged bucket through the same SplitMergedBucketIntoBranchLines helper as
+    // BuildBranchSpecs, so the compact DP's edge count is exactly what the display will render.
+    // A single-family bucket is one relabeling orbit and always renders as one line; only
+    // multi-family buckets pay for the automorphism partition and the pattern engine.
     private int CountDisplayBranches(ComparisonState state, int remainingSlots, IReadOnlyList<int> group)
     {
         IReadOnlyList<MergedBranch> merged = BuildMergedComparisonOutcomes(state, fixedTopMask: 0, remainingSlots, group);
@@ -176,18 +174,7 @@ partial class StrategyBuilder
 
         int count = 0;
         foreach (MergedBranch branch in merged)
-        {
-            List<MergedFamilyOutcome> families = branch.FamilyOutcomes;
-            if (families.Count == 1)
-            {
-                count += 1;
-                continue;
-            }
-
-            EquivalentOrderSummary? combinedSummary = BuildEquivalentOrderSummary(
-                families.ConvertAll(outcome => outcome.Family));
-            count += MergedOrderingsFormSingleOrbit(combinedSummary) ? 1 : families.Count;
-        }
+            count += SplitMergedBucketIntoBranchLines(state, branch.FamilyOutcomes).Count;
 
         return count;
     }

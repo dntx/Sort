@@ -572,6 +572,80 @@ class ComparisonState
         return _descendants[item];
     }
 
+    // Tests whether some automorphism of this state's poset (preserving the fixed-top vs. active
+    // coloring) maps orderA[i] -> orderB[i] for every i. Existence proves the two orderings are a
+    // genuine symmetry orbit of the decision state, so their branches are interchangeable up to
+    // relabeling and may honestly merge into one displayed branch. Backtracking over a bijection of
+    // (active | fixedTop) that extends the forced pairing and preserves the transitive
+    // ancestor/descendant relation and the fixed-top coloring. orderA and orderB must be equal length.
+    internal bool TryMapOrderByAutomorphism(ulong fixedTopMask, IReadOnlyList<int> orderA, IReadOnlyList<int> orderB)
+    {
+        if (orderA.Count != orderB.Count)
+            return false;
+
+        ulong mask = ActiveMask | fixedTopMask;
+        List<int> items = MaskToOrderedList(mask);
+
+        var assignment = new Dictionary<int, int>(items.Count);
+        ulong used = 0;
+
+        bool Consistent(int from, int to)
+        {
+            if (((fixedTopMask >> from) & 1UL) != ((fixedTopMask >> to) & 1UL))
+                return false;
+            foreach (KeyValuePair<int, int> pair in assignment)
+            {
+                int of = pair.Key, ot = pair.Value;
+                if (((_ancestors[of] >> from) & 1UL) != ((_ancestors[ot] >> to) & 1UL))
+                    return false;
+                if (((_descendants[of] >> from) & 1UL) != ((_descendants[ot] >> to) & 1UL))
+                    return false;
+            }
+            return true;
+        }
+
+        for (int i = 0; i < orderA.Count; i++)
+        {
+            int from = orderA[i], to = orderB[i];
+            if ((used & (1UL << to)) != 0)
+            {
+                if (assignment.TryGetValue(from, out int existing) && existing == to)
+                    continue;
+                return false;
+            }
+            if (assignment.ContainsKey(from) || !Consistent(from, to))
+                return false;
+            assignment[from] = to;
+            used |= 1UL << to;
+        }
+
+        var unassigned = new List<int>();
+        foreach (int item in items)
+            if (!assignment.ContainsKey(item))
+                unassigned.Add(item);
+
+        bool Search(int idx)
+        {
+            if (idx == unassigned.Count)
+                return true;
+            int from = unassigned[idx];
+            foreach (int to in items)
+            {
+                if ((used & (1UL << to)) != 0 || !Consistent(from, to))
+                    continue;
+                assignment[from] = to;
+                used |= 1UL << to;
+                if (Search(idx + 1))
+                    return true;
+                assignment.Remove(from);
+                used &= ~(1UL << to);
+            }
+            return false;
+        }
+
+        return Search(0);
+    }
+
     [ThreadStatic] private static int[]? _scratchNextLabels;
     [ThreadStatic] private static int[]? _scratchOrder;
     [ThreadStatic] private static int[]? _scratchPerm;
