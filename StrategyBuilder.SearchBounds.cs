@@ -70,6 +70,12 @@ partial class StrategyBuilder
             EnumeratePrioritizedGroups(state, remainingSlots, candidates, groupSize);
         List<int>? bestGroup = null;
         int bestWorstCase = int.MaxValue;
+        // The state's own lower bound is a proven floor on the optimum. Once a candidate group
+        // achieves it, no remaining group can do better, so we stop scoring the rest. This is
+        // behaviour-preserving for the chosen group: when the lower bound is tight the first group
+        // in priority order to reach the minimum is selected either way (later equal groups never
+        // replace it), and when it is not tight the break never fires.
+        int stateLowerBound = GetMinWorstCaseLowerBound(state, remainingSlots);
         try
         {
             ThrowIfCancellationRequested();
@@ -106,6 +112,9 @@ partial class StrategyBuilder
                     bestGroup = group;
                     if (isRootSearch && bestWorstCase < previousBestWorstCase)
                         RecordRootIncumbent(bestWorstCase, group);
+
+                    if (bestWorstCase <= stateLowerBound)
+                        break;
                 }
             }
         }

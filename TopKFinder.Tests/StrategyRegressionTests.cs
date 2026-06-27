@@ -242,11 +242,11 @@ public sealed class StrategyRegressionTests
             searched states = 4
             pending states = 0 (peak 2)
             output states = 4 (expanded 2)
-            lower-bound states = 1, feasible-top-set states = 3
+            lower-bound states = 2, feasible-top-set states = 3
             outcomes constructed = 12 (duplicate skips 3, merged collisions 1)
             candidate groups enumerated = 4 (symmetry-class representatives canonicalized before cross-class dedup)
             lower-bound prunes = 2
-            cache hits = exact 0, lower-bound 0, feasible-top-set 8, best-group-pattern 2
+            cache hits = exact 0, lower-bound 1, feasible-top-set 11, best-group-pattern 2
 
             ==================== legend ====================
             #i                            item i (1-based labels; may be relabeled in references)
