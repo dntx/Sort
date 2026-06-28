@@ -85,7 +85,7 @@ class MainForm : Form
     private readonly StatusStrip _statusStrip;
     private readonly ToolStripStatusLabel _statusLabel;
     private readonly TreeView _treeView;
-    private readonly ListView _overviewList;
+    private readonly TreeView _overviewTree;
     private readonly RichTextBox _detailsTextBox;
     private readonly System.Windows.Forms.Timer _elapsedTimer;
     private ThemePalette _palette = DarkPalette;
@@ -294,21 +294,18 @@ class MainForm : Form
         _collapseAllButton.Click += (_, _) => _treeView.CollapseAll();
         _backButton.Click += (_, _) => NavigateBack();
 
-        _overviewList = new ListView
+        _overviewTree = new TreeView
         {
             Dock = DockStyle.Fill,
-            View = View.Details,
-            HeaderStyle = ColumnHeaderStyle.None,
-            FullRowSelect = true,
-            MultiSelect = true,
             HideSelection = false,
+            ShowLines = true,
+            ShowPlusMinus = true,
+            ShowRootLines = true,
             Font = new Font(FontFamily.GenericSansSerif, 9),
         };
-        _overviewList.Columns.Add("Overview", -2, HorizontalAlignment.Left);
-        _overviewList.SelectedIndexChanged += (_, _) => JumpFromOverviewSelection();
-        _overviewList.Resize += (_, _) => ResizeOverviewColumn();
-        _overviewList.ContextMenuStrip = CreateOverviewContextMenu();
-        _overviewList.KeyDown += OverviewList_KeyDown;
+        _overviewTree.AfterSelect += (_, _) => JumpFromOverviewSelection();
+        _overviewTree.ContextMenuStrip = CreateOverviewContextMenu();
+        _overviewTree.KeyDown += OverviewTree_KeyDown;
 
         var innerSplit = new SplitContainer
         {
@@ -345,7 +342,7 @@ class MainForm : Form
             _toggleDetailsButton.Text = innerSplit.Panel2Collapsed ? "Show Details" : "Hide Details";
         };
 
-        split.Panel1.Controls.Add(_overviewList);
+        split.Panel1.Controls.Add(_overviewTree);
         split.Panel2.Controls.Add(innerSplit);
 
         headerLayout.Controls.Add(controlsLayout, 0, 0);
@@ -698,7 +695,7 @@ class MainForm : Form
     // if it is cancelled / fails before producing a plan.
     private void ClearResultsView()
     {
-        _overviewList.Items.Clear();
+        _overviewTree.Nodes.Clear();
 
         _treeView.BeginUpdate();
         _treeView.Nodes.Clear();
@@ -710,14 +707,16 @@ class MainForm : Form
         _backButton.Enabled = false;
     }
 
-    // Renders the overview panel so it mirrors the tree one-to-one: a "default strategy" section
-    // plus, depending on the compact phase, a "compact strategy" section (when it improved), a
-    // "no better result" note (when it did not), or a "computing..." placeholder (still running).
-    // This is the full-rebuild path used for the initial render and theme switches.
+    // Renders the overview panel so it mirrors the tree one-to-one: a collapsible "default strategy"
+    // section node plus, depending on the compact phase, a "compact strategy" section node (when it
+    // improved), a "no better result" note (when it did not), or a "computing..." placeholder (still
+    // running). Each section is an independent root, so the two strategies' overviews can be browsed
+    // and collapsed separately. This is the full-rebuild path used for the initial render and theme
+    // switches.
     private void RebuildOverview(StrategyPlan defaultPlan, StrategyPlan? compactPlan, bool compactImproved)
     {
-        _overviewList.BeginUpdate();
-        _overviewList.Items.Clear();
+        _overviewTree.BeginUpdate();
+        _overviewTree.Nodes.Clear();
 
         AppendOverviewSection(defaultPlan, "default", "default strategy overview");
         if (compactPlan is null)
@@ -727,81 +726,71 @@ class MainForm : Form
         else
             AppendOverviewNote("compact strategy overview: no better result (total edges unchanged or worse)");
 
-        if (_overviewList.Columns.Count > 0)
-            ResizeOverviewColumn();
-        _overviewList.EndUpdate();
+        _overviewTree.EndUpdate();
     }
 
     // Incrementally folds the finished compact result into the overview, mirroring the tree update:
-    // the default section (and the user's scroll position over it) is left untouched, and only the
-    // trailing "computing..." placeholder is replaced with the compact section or a "no better
-    // result" note.
+    // the default section node (and the user's expand/scroll state over it) is left untouched, and
+    // only the trailing "computing..." placeholder root is replaced with the compact section node or
+    // a "no better result" note.
     private void FinalizeCompactInOverview(StrategyPlan compactPlan, bool compactImproved)
     {
-        _overviewList.BeginUpdate();
+        _overviewTree.BeginUpdate();
 
-        // Drop the single-line "computing..." placeholder appended during the default render.
-        if (_overviewList.Items.Count > 0)
-            _overviewList.Items.RemoveAt(_overviewList.Items.Count - 1);
+        // Drop the "computing..." placeholder root appended during the default render.
+        if (_overviewTree.Nodes.Count > 0)
+            _overviewTree.Nodes.RemoveAt(_overviewTree.Nodes.Count - 1);
 
         if (compactImproved)
             AppendOverviewSection(compactPlan, "compact", "compact strategy overview");
         else
             AppendOverviewNote("compact strategy overview: no better result (total edges unchanged or worse)");
 
-        if (_overviewList.Columns.Count > 0)
-            ResizeOverviewColumn();
-        _overviewList.EndUpdate();
+        _overviewTree.EndUpdate();
     }
 
     private void AppendOverviewSection(StrategyPlan plan, string scope, string title)
     {
-        _overviewList.Items.Add(new ListViewItem(title)
+        var sectionNode = new TreeNode(title)
         {
-            Font = new Font(_overviewList.Font, FontStyle.Bold),
+            NodeFont = new Font(_overviewTree.Font, FontStyle.Bold),
             ForeColor = _palette.ForeColor,
-        });
+        };
 
         foreach (OverviewRow row in StrategyOverviewRenderer.Build(plan).Rows)
         {
             string? key = row.LinkStateId is int id ? $"{scope}:{id}" : null;
-            var headlineItem = new ListViewItem(row.Headline) { Tag = key };
-            _overviewList.Items.Add(headlineItem);
+            var headlineNode = new TreeNode(row.Headline)
+            {
+                Tag = key,
+                ForeColor = _palette.ForeColor,
+            };
             foreach (string detail in row.Details)
             {
-                _overviewList.Items.Add(new ListViewItem("        " + detail)
+                headlineNode.Nodes.Add(new TreeNode(detail)
                 {
                     Tag = key,
                     ForeColor = _palette.MutedForeColor,
                 });
             }
+            sectionNode.Nodes.Add(headlineNode);
         }
+
+        _overviewTree.Nodes.Add(sectionNode);
+        sectionNode.ExpandAll();
     }
 
     private void AppendOverviewNote(string text)
     {
-        _overviewList.Items.Add(new ListViewItem(text)
+        _overviewTree.Nodes.Add(new TreeNode(text)
         {
             ForeColor = _palette.MutedForeColor,
         });
     }
 
-    private void ResizeOverviewColumn()
-    {
-        if (_overviewList.Columns.Count == 0)
-            return;
-
-        _overviewList.Columns[0].Width = _overviewList.Items.Count > 0 ? -1 : _overviewList.ClientSize.Width;
-        if (_overviewList.Columns[0].Width < _overviewList.ClientSize.Width)
-            _overviewList.Columns[0].Width = _overviewList.ClientSize.Width;
-    }
-
     private void JumpFromOverviewSelection()
     {
-        if (_overviewList.SelectedItems.Count == 0)
-            return;
-
-        if (_overviewList.SelectedItems[0].Tag is not string targetStateKey)
+        if (_overviewTree.SelectedNode?.Tag is not string targetStateKey)
             return;
 
         if (!_stateNodesByKey.TryGetValue(targetStateKey, out TreeNode? targetNode))
@@ -826,20 +815,20 @@ class MainForm : Form
 
         menu.Opening += (_, e) =>
         {
-            if (_overviewList.Items.Count == 0)
+            if (_overviewTree.Nodes.Count == 0)
             {
                 e.Cancel = true;
                 return;
             }
 
-            copySelected.Enabled = _overviewList.SelectedItems.Count > 0;
+            copySelected.Enabled = _overviewTree.SelectedNode is not null;
             copyAll.Enabled = true;
         };
 
         return menu;
     }
 
-    private void OverviewList_KeyDown(object? sender, KeyEventArgs e)
+    private void OverviewTree_KeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Control && e.KeyCode == Keys.C)
         {
@@ -847,35 +836,36 @@ class MainForm : Form
             e.Handled = true;
             e.SuppressKeyPress = true;
         }
-        else if (e.Control && e.KeyCode == Keys.A)
-        {
-            foreach (ListViewItem item in _overviewList.Items)
-                item.Selected = true;
-            e.Handled = true;
-            e.SuppressKeyPress = true;
-        }
     }
 
+    // Copies the selected node and its descendants (each level indented by four spaces), so copying
+    // a section root yields that whole strategy's overview and copying a row yields its detail lines.
     private void CopyOverviewSelection()
     {
-        if (_overviewList.SelectedItems.Count == 0)
+        if (_overviewTree.SelectedNode is not TreeNode selected)
             return;
 
         var builder = new System.Text.StringBuilder();
-        foreach (ListViewItem item in _overviewList.SelectedItems)
-            builder.AppendLine(item.Text);
+        AppendOverviewNodeText(builder, selected, depth: 0);
         SetClipboardText(builder.ToString().TrimEnd());
     }
 
     private void CopyOverviewAll()
     {
-        if (_overviewList.Items.Count == 0)
+        if (_overviewTree.Nodes.Count == 0)
             return;
 
         var builder = new System.Text.StringBuilder();
-        foreach (ListViewItem item in _overviewList.Items)
-            builder.AppendLine(item.Text);
+        foreach (TreeNode root in _overviewTree.Nodes)
+            AppendOverviewNodeText(builder, root, depth: 0);
         SetClipboardText(builder.ToString().TrimEnd());
+    }
+
+    private static void AppendOverviewNodeText(System.Text.StringBuilder builder, TreeNode node, int depth)
+    {
+        builder.Append(' ', depth * 4).AppendLine(node.Text);
+        foreach (TreeNode child in node.Nodes)
+            AppendOverviewNodeText(builder, child, depth + 1);
     }
 
     private TreeNode CreatePlanTreeRoot(string label, StrategyPlan plan, string scope)
@@ -1229,10 +1219,6 @@ class MainForm : Form
             case RichTextBox richTextBox:
                 richTextBox.BackColor = _palette.SurfaceBackColor;
                 richTextBox.ForeColor = _palette.ForeColor;
-                break;
-            case ListView listView:
-                listView.BackColor = _palette.SurfaceBackColor;
-                listView.ForeColor = _palette.ForeColor;
                 break;
             case TextBox statBox when statBox.ReadOnly:
                 statBox.BackColor = _palette.FormBackColor;
