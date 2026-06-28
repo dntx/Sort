@@ -66,6 +66,9 @@ partial class StrategyBuilder
     // First-top-level-entry latch for the single-pass exact search path (matches the pre-ID
     // algorithm): root incumbents are recorded only for the first (phase-1) search of a build.
     private bool _rootSearchInitialized;
+    // Best proven lower bound on the root optimum (opt >= this). Lifted each failed iterative-
+    // deepening pass; recorded only during the phase-1 root search. The L side of the squeeze.
+    private int _rootProvenLowerBound;
     private bool _phase1Solved;
     private bool _phase1bSolved;
     private bool _progressEstimateInitialized;
@@ -579,7 +582,8 @@ partial class StrategyBuilder
             _candidateGroupsEnumerated,
             _compactStatesSolved,
             _compactGroupsEnumerated,
-            _compactStepOptimalGroups);
+            _compactStepOptimalGroups,
+            _rootProvenLowerBound);
     }
 
     private void ReportProgress(bool force = false)
@@ -619,7 +623,8 @@ partial class StrategyBuilder
             _compactGroupsEnumerated,
             _compactStepOptimalGroups,
             estimatedProgress01,
-            estimatedRemainingMs));
+            estimatedRemainingMs,
+            _rootProvenLowerBound));
     }
 
     private (double Progress01, long RemainingMs) MapToReportedProgress(long elapsedMs, double localProgress01, long localRemainingMs)
@@ -840,6 +845,17 @@ partial class StrategyBuilder
         ReportProgress(force: true);
     }
 
+    // Monotonically lifts the root proven lower bound (the L side of the squeeze). Called only
+    // during the phase-1 root search; ignores non-increasing values so it stays monotone even
+    // though the single-pass path reports the analytic bound before the exact result.
+    private void RecordRootProvenLowerBound(int provenLowerBound)
+    {
+        if (provenLowerBound <= _rootProvenLowerBound)
+            return;
+        _rootProvenLowerBound = provenLowerBound;
+        ReportProgress(force: true);
+    }
+
     private void ThrowIfCancellationRequested()
     {
         _cancellationToken.ThrowIfCancellationRequested();
@@ -884,6 +900,7 @@ partial class StrategyBuilder
         _visitedSearchStates.Clear();
         _rootIncumbents.Clear();
         _rootSearchInitialized = false;
+        _rootProvenLowerBound = 0;
         _searchedStates = 0;
         _pendingStates = 0;
         _peakPendingStates = 0;

@@ -145,7 +145,8 @@ readonly struct SearchProgressSnapshot
         int compactGroupsEnumerated,
         int compactStepOptimalGroups,
         double estimatedProgress01,
-        long estimatedRemainingMilliseconds)
+        long estimatedRemainingMilliseconds,
+        int rootProvenLowerBound)
     {
         ElapsedMilliseconds = elapsedMilliseconds;
         SearchedStates = searchedStates;
@@ -170,6 +171,7 @@ readonly struct SearchProgressSnapshot
         CompactStepOptimalGroups = compactStepOptimalGroups;
         EstimatedProgress01 = estimatedProgress01;
         EstimatedRemainingMilliseconds = estimatedRemainingMilliseconds;
+        RootProvenLowerBound = rootProvenLowerBound;
     }
 
     public long ElapsedMilliseconds { get; }
@@ -195,6 +197,12 @@ readonly struct SearchProgressSnapshot
     public int CompactStepOptimalGroups { get; }
     public double EstimatedProgress01 { get; }
     public long EstimatedRemainingMilliseconds { get; }
+
+    // Best PROVEN lower bound on the root optimum so far (opt >= this). In the iterative-deepening
+    // regime it is the current global budget, which each failed pass lifts; outside that regime it
+    // is the analytic root lower bound. Once the search resolves it equals the exact optimum. This
+    // is the L side of the L <= opt <= U squeeze; the U side is LatestRootIncumbent.
+    public int RootProvenLowerBound { get; }
 }
 
 sealed class SearchStatistics
@@ -215,7 +223,8 @@ sealed class SearchStatistics
         int candidateGroupsEnumerated,
         int compactStatesSolved,
         int compactGroupsEnumerated,
-        int compactStepOptimalGroups)
+        int compactStepOptimalGroups,
+        int rootProvenLowerBound)
     {
         SearchedStates = searchedStates;
         PendingStates = pendingStates;
@@ -233,6 +242,7 @@ sealed class SearchStatistics
         CompactStatesSolved = compactStatesSolved;
         CompactGroupsEnumerated = compactGroupsEnumerated;
         CompactStepOptimalGroups = compactStepOptimalGroups;
+        RootProvenLowerBound = rootProvenLowerBound;
     }
 
     public int SearchedStates { get; }
@@ -268,6 +278,10 @@ sealed class SearchStatistics
     public int CompactStatesSolved { get; }
     public int CompactGroupsEnumerated { get; }
     public int CompactStepOptimalGroups { get; }
+
+    // Best PROVEN lower bound on the root optimum (opt >= this). The L side of the L <= opt <= U
+    // squeeze report; for a fully resolved build it equals MaxStep. See SearchProgressSnapshot.
+    public int RootProvenLowerBound { get; }
 }
 
 sealed class StrategyNode

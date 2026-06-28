@@ -1223,7 +1223,7 @@ class MainForm : Form
         string etaText = snapshot.EstimatedRemainingMilliseconds >= 0
             ? $"{snapshot.EstimatedRemainingMilliseconds / 1000.0:F1} s"
             : "-";
-        _statusLabel.Text = $"Running (phase {GetPhaseLabel()})... elapsed: {GetElapsedSeconds():F1} s, searched: {snapshot.SearchedStates}, {incumbent}, " +
+        _statusLabel.Text = $"Running (phase {GetPhaseLabel()})... elapsed: {GetElapsedSeconds():F1} s, searched: {snapshot.SearchedStates}, {FormatSqueeze(snapshot)}, {incumbent}, " +
             $"progress: {snapshot.EstimatedProgress01 * 100.0:F1}%, eta: {etaText}.";
         _detailsTextBox.Text = BuildLiveDiagnosticsText(snapshot);
     }
@@ -1260,7 +1260,7 @@ class MainForm : Form
 
     private static SearchProgressSnapshot CreateInitialProgressSnapshot()
     {
-        return new SearchProgressSnapshot(0, 0, 0, 0, 0, null, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.0, -1);
+        return new SearchProgressSnapshot(0, 0, 0, 0, 0, null, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.0, -1, 0);
     }
 
     private static SearchProgressSnapshot CreateSnapshotFromPlan(StrategyPlan plan)
@@ -1288,7 +1288,8 @@ class MainForm : Form
             plan.SearchStatistics.CompactGroupsEnumerated,
             plan.SearchStatistics.CompactStepOptimalGroups,
             1.0,
-            0);
+            0,
+            plan.SearchStatistics.RootProvenLowerBound);
     }
 
     private string GetPhaseLabel()
@@ -1372,6 +1373,7 @@ class MainForm : Form
         {
             "Live search diagnostics",
             $"elapsed: {snapshot.ElapsedMilliseconds / 1000.0:F1} s",
+            $"squeeze: {FormatSqueeze(snapshot)}",
             "(see the States / Work / Progress panels for live counters)",
             string.Empty,
         };
@@ -1396,9 +1398,23 @@ class MainForm : Form
         string incumbentText = snapshot.LatestRootIncumbent is null
             ? "incumbent: -"
             : $"incumbent: <= {snapshot.LatestRootIncumbent.BestWorstCaseSteps}";
-        return $"{incumbentText}, milestones: {snapshot.RootIncumbentCount}, prunes: {snapshot.LowerBoundPrunes}, cache hits: {snapshot.ExactCacheHits}/{snapshot.LowerBoundCacheHits}/{snapshot.FeasibleTopSetCacheHits}/{snapshot.BestGroupPatternCacheHits}";
+        return $"{FormatSqueeze(snapshot)}, {incumbentText}, milestones: {snapshot.RootIncumbentCount}, prunes: {snapshot.LowerBoundPrunes}, cache hits: {snapshot.ExactCacheHits}/{snapshot.LowerBoundCacheHits}/{snapshot.FeasibleTopSetCacheHits}/{snapshot.BestGroupPatternCacheHits}";
     }
 
+    // Formats the L <= opt <= U squeeze: L is the proven lower bound (RootProvenLowerBound), U is
+    // the best incumbent worst-case steps. Either side may be unknown ("?") early on; when both are
+    // known and equal the optimum is proven exactly.
+    private static string FormatSqueeze(SearchProgressSnapshot snapshot)
+    {
+        int lower = snapshot.RootProvenLowerBound;
+        int? upper = snapshot.LatestRootIncumbent?.BestWorstCaseSteps;
+        if (lower > 0 && upper is int u && lower == u)
+            return $"opt = {lower} (proven)";
+
+        string lowerText = lower > 0 ? lower.ToString() : "?";
+        string upperText = upper?.ToString() ?? "?";
+        return $"bound: {lowerText} <= opt <= {upperText}";
+    }
 
     private static string BuildIdleDetailsText()
     {

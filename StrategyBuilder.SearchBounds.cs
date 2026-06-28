@@ -32,14 +32,30 @@ partial class StrategyBuilder
     {
         bool useIterativeDeepening = ForceIterativeDeepeningForTesting ?? _useIterativeDeepening;
         if (!useIterativeDeepening)
-            return GetMinWorstCaseStepsExact(state, remainingSlots);
+        {
+            // Single-pass path: this completes in one go, so the exact result IS the proven lower
+            // bound. Record only after solving so the shared lower-bound cache counters stay
+            // byte-identical to the pre-squeeze algorithm (no extra GetMinWorstCaseLowerBound call).
+            int exact = GetMinWorstCaseStepsExact(state, remainingSlots);
+            if (_recordRootIncumbents)
+                RecordRootProvenLowerBound(exact);
+            return exact;
+        }
 
         int budget = GetMinWorstCaseLowerBound(state, remainingSlots);
         while (true)
         {
+            // Reaching a pass with this budget means every earlier pass proved no strategy
+            // <= budget - 1 exists, so `budget` is a PROVEN lower bound on the root optimum.
+            if (_recordRootIncumbents)
+                RecordRootProvenLowerBound(budget);
             int result = GetMinWorstCaseStepsBounded(state, remainingSlots, budget, depth: 0);
             if (result <= budget)
+            {
+                if (_recordRootIncumbents)
+                    RecordRootProvenLowerBound(result);
                 return result;
+            }
             budget = result;       // failed: jump the budget up to the learned lower bound and retry
         }
     }
