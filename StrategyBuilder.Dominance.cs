@@ -43,6 +43,7 @@ partial class StrategyBuilder
     private int _dominanceExactDeterminations;
     private int _dominanceBudgetExhaustions;
     private int _dominanceUnsoundObservations;
+    private int _dominanceUpperTight;
 
     public int DominanceProbes => _dominanceProbes;
     public int DominanceLowerFound => _dominanceLowerFound;
@@ -53,6 +54,14 @@ partial class StrategyBuilder
     public int DominanceBudgetExhaustions => _dominanceBudgetExhaustions;
     public int DominanceUnsoundObservations => _dominanceUnsoundObservations;
     public int DominanceLibrarySize => _dominanceLibrary.Count;
+
+    // Headline metric for the "subset reuse" idea: the state currently being solved (S2) has an
+    // already-solved state (S1) strictly embedding into it (S1 carries less information, so S2 is a
+    // proper superset) AND S2's true cost equals S1's cost. Then S1's optimal strategy is valid and
+    // step-optimal on S2, so S2 could be marked as a reuse/Reference of S1 instead of expanded
+    // independently. Isomorphic states never reach the probe (the canonical-key cache catches them),
+    // so every count here is a genuinely NEW sharing opportunity beyond today's isomorphism dedup.
+    public int DominanceUpperTight => _dominanceUpperTight;
 
     private const int DominanceProbeBudget = 20000;
 
@@ -392,6 +401,8 @@ partial class StrategyBuilder
             _dominanceUpperFound++;
             if (probe.Upper < trueCost)
                 _dominanceUnsoundObservations++;
+            if (probe.Upper == trueCost)
+                _dominanceUpperTight++;
         }
 
         if (probe.HasLower && probe.HasUpper && probe.Lower == probe.Upper)
