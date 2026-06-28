@@ -1267,6 +1267,47 @@ public sealed class StrategyRegressionTests
             : $"pattern: {expectedPattern} ; {expectedLegend}";
         Assert.Equal(expectedLine, StrategyTextRenderer.FormatEquivalentPatternLine(branch.EquivalentOrders));
     }
+
+    // A doomed-tail item that is FORCED to come first within the tail (it dominates every other
+    // tail item) is peeled out of the any-order brace and rendered as a leading chain link, instead
+    // of being buried in the brace with its order re-stated as a residual cover. In 12,4,3 compact,
+    // the step-4 edge "#6 > #10 > #2 > #3" has doomed tail {#2, #3} with #2 > #3 forced: the old
+    // rendering was "{#6, #10} > {#2, #3} ; #2 > #3", which the peel collapses to the cleaner
+    // "{#6, #10} > #2 > #3" (the single remaining item #3 needs no brace). The symmetric class
+    // {#6, #10} stays inline, so the edge carries no legend, and the count factorization is
+    // recomputed on the reduced tail. Both forms describe the same 2 orderings; this pins the
+    // simpler one and guards against a regression back to the buried-with-residual shape.
+    [Fact]
+    public void N12M4K3_CompactForcedTailHeadPeelsIntoLeadingChain()
+    {
+        StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.BuildCompactPlan(12, 4, 3)",
+            RegressionTestTimeout,
+            cancellationToken => new StrategyBuilder(12, 4, 3, cancellationToken).BuildCompactPlan());
+
+        StrategyNode s4 = StrategyTestHelpers.FollowBranchPath(
+            compact.Root,
+            "#1 > #2 > #3 > #4",
+            "#5 > #6 > #7 > #8",
+            "#9 > #10 > #11 > #12");
+
+        StrategyBranch peeled = StrategyTestHelpers.FindChildBranch(s4, "#6 > #10 > #2 > #3");
+        Assert.NotNull(peeled.EquivalentOrders);
+        Assert.Equal(2, peeled.EquivalentOrders!.Count);
+        Assert.Equal("2! sym x 1! tail", peeled.EquivalentOrders.CountFormula);
+        Assert.Equal("{#6, #10} > #2 > #3", peeled.EquivalentOrders.PatternText);
+        Assert.Null(peeled.EquivalentOrders.Legend);
+        Assert.Equal(
+            "pattern: {#6, #10} > #2 > #3",
+            StrategyTextRenderer.FormatEquivalentPatternLine(peeled.EquivalentOrders));
+
+        // A sibling whose surviving class is split across the order keeps the brace + legend form:
+        // here #2 leads, one class member trails, and #3 is still free, so nothing peels.
+        StrategyBranch split = StrategyTestHelpers.FindChildBranch(s4, "#2 > #6 > #3 > #10");
+        Assert.NotNull(split.EquivalentOrders);
+        Assert.Equal("#2 > A1 > {#3, A2}", split.EquivalentOrders!.PatternText);
+        Assert.Equal("A = {#6, #10}", split.EquivalentOrders.Legend);
+    }
 }
 
 internal static class StrategyTestHelpers

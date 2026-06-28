@@ -282,8 +282,49 @@ partial class StrategyBuilder
             tailItems.Add(items[i]);
         tailItems.Sort();
 
-        var tailTokens = new List<string>(tailItems.Count);
-        foreach (int item in tailItems)
+        // Peel any singleton tail item that dominates every other remaining tail item: such an item
+        // is forced to come first within the doomed tail, so render it as a chain link
+        // ("... > #6 > {rest}") instead of burying it in the any-order brace and re-stating the
+        // order via residual covers ("{#6, A1, A2} ; #6 > #7, #6 > #11"). Both forms are correct,
+        // but the chain reads cleaner. Only singleton (non-multi-member-class) items are peeled so
+        // the symmetry/permutation accounting for multi-member classes is left untouched; peeling a
+        // forced-first element does not change the tail's linear-extension count, so the count
+        // formula (recomputed on the reduced tail below) stays consistent.
+        var chainHeadItems = new List<int>();
+        var remainingTail = new List<int>(tailItems);
+        while (remainingTail.Count > 1)
+        {
+            int forcedHead = -1;
+            foreach (int candidate in remainingTail)
+            {
+                if (classLetters.ContainsKey(symmetryInfo.ItemToClassIndex[candidate]))
+                    continue;
+
+                ulong othersMask = 0;
+                foreach (int other in remainingTail)
+                    if (other != candidate)
+                        othersMask |= 1UL << other;
+
+                if ((state.GetDescendantMask(candidate) & othersMask) == othersMask)
+                {
+                    forcedHead = candidate;
+                    break;
+                }
+            }
+
+            if (forcedHead < 0)
+                break;
+
+            chainHeadItems.Add(forcedHead);
+            remainingTail.Remove(forcedHead);
+        }
+
+        var chainTokens = new List<string>(prefixTokens);
+        foreach (int item in chainHeadItems)
+            chainTokens.Add($"#{item + 1}");
+
+        var tailTokens = new List<string>(remainingTail.Count);
+        foreach (int item in remainingTail)
         {
             int classIndex = symmetryInfo.ItemToClassIndex[item];
             tailTokens.Add(classLetters.TryGetValue(classIndex, out string? letter)
@@ -291,11 +332,23 @@ partial class StrategyBuilder
                 : $"#{item + 1}");
         }
 
-        string braceSet = "{" + string.Join(", ", tailTokens) + "}";
-        string body = prefixTokens.Count > 0
-            ? string.Join(" > ", prefixTokens) + " > " + braceSet
-            : braceSet;
-        string residual = BuildTailResidualConstraints(state, tailItems);
+        string body;
+        if (remainingTail.Count >= 2)
+        {
+            string braceSet = "{" + string.Join(", ", tailTokens) + "}";
+            body = chainTokens.Count > 0
+                ? string.Join(" > ", chainTokens) + " > " + braceSet
+                : braceSet;
+        }
+        else
+        {
+            // The tail fully reduced to a forced chain (at most one free item remains).
+            var allTokens = new List<string>(chainTokens);
+            allTokens.AddRange(tailTokens);
+            body = string.Join(" > ", allTokens);
+        }
+
+        string residual = BuildTailResidualConstraints(state, remainingTail);
         string patternText = residual.Length == 0 ? body : body + " ; " + residual;
 
         long symmetryFactor = 1;
@@ -314,7 +367,7 @@ partial class StrategyBuilder
 
         long tailFactor = count / symmetryFactor;
         string symFormula = symParts.Count == 0 ? "1" : string.Join(" x ", symParts);
-        string tailFormula = BuildTailFactorFormula(state, tailItems, tailFactor);
+        string tailFormula = BuildTailFactorFormula(state, remainingTail, tailFactor);
 
         var formulaParts = new List<string>();
         if (symFormula != "1")
