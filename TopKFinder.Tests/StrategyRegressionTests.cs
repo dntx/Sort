@@ -107,6 +107,81 @@ public sealed class StrategyRegressionTests
             $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates} (cap {expandedOutputStateCap})");
     }
 
+    // Heavy (5, 5) monitor for the iterative-deepening (IDA*) regime. The 229-case suite above
+    // covers only m<=4 / k<=3 shapes, all of which run the single-pass exact path after the
+    // _useIterativeDeepening gate (_m>=5 && _k>=5 && _n>=2*_m). That left the entire ID regime --
+    // the path that actually runs on the 25,5,5 frontier -- with NO correctness oracle and NO
+    // benefit-locking caps. These rows build the gated (5,5) cases on the production (ID) path and
+    // pin both the materialized tree shape (MaxStep, root group, total edges, output states) and
+    // the deterministic search-work counters (searched / outcomes / candidate groups). Ratchet the
+    // counter caps DOWN when an optimization cuts work; an increase is a regression.
+    //
+    // NOTE: edges/outputStates here are the ID-path values and may differ from what the single-pass
+    // exact path would produce for the same case -- both are valid MaxStep-optimal trees, they only
+    // break ties between equally-optimal groups differently (see Default_IterativeDeepening_BeatsExactPath
+    // and docs/core-algorithm.md sec 4.3). This theory therefore locks the ID path's own tree, not
+    // cross-path identity.
+    [Theory]
+    [InlineData(14, 5, 5, 5, 5, 85, 36, 8, 329, 22686, 30137)]
+    [InlineData(16, 5, 5, 6, 5, 195, 29, 12, 2573, 416162, 488630)]
+    [InlineData(17, 5, 5, 6, 5, 200, 40, 13, 2714, 393047, 534261)]
+    [InlineData(18, 5, 5, 6, 5, 397, 66, 14, 3855, 680812, 836413)]
+    public void Default_IterativeDeepeningBaselineRemainsStable(
+        int n, int m, int k, int maxStep, int rootGroupCount, int totalEdges,
+        int outputStates, int expandedOutputStates,
+        int searchedStateCap, int outcomesCap, int candidateGroupsCap)
+    {
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k}) [iterative-deepening]",
+            RegressionTestTimeout,
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildDefaultPlan());
+
+        Assert.Equal(maxStep, plan.MaxStep);
+        Assert.Equal(rootGroupCount, plan.Root.Group.Count);
+        Assert.Equal(totalEdges, plan.TotalBranchEdges);
+        Assert.Equal(outputStates, plan.SearchStatistics.OutputStates);
+        Assert.Equal(expandedOutputStates, plan.SearchStatistics.ExpandedOutputStates);
+        Assert.True(
+            plan.SearchStatistics.SearchedStates <= searchedStateCap,
+            $"searched states regressed to {plan.SearchStatistics.SearchedStates} (cap {searchedStateCap})");
+        Assert.True(
+            plan.SearchStatistics.OutcomesConstructed <= outcomesCap,
+            $"outcomes constructed regressed to {plan.SearchStatistics.OutcomesConstructed} (cap {outcomesCap})");
+        Assert.True(
+            plan.SearchStatistics.CandidateGroupsEnumerated <= candidateGroupsCap,
+            $"candidate groups enumerated regressed to {plan.SearchStatistics.CandidateGroupsEnumerated} (cap {candidateGroupsCap})");
+    }
+
+    // Proves the iterative-deepening gate actually pays off: on a gated (5,5) case, forcing the ID
+    // path must reach the SAME MaxStep optimum as the single-pass exact path while constructing
+    // strictly FEWER outcomes and searching strictly FEWER states. 17,5,5 is a clear-win case
+    // (ID outcomes ~393k vs exact ~1.04M; searched 2714 vs 4833). We deliberately do NOT assert the
+    // two trees are identical -- they are both MaxStep-optimal but break ties differently, so edge /
+    // output-state counts can differ (14,5,5: ID 85 vs exact 84; 17,5,5: ID 200 vs exact 206).
+    [Fact]
+    public void Default_IterativeDeepening_BeatsExactPath()
+    {
+        StrategyPlan idPlan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.BuildDefaultPlan(17, 5, 5) [force ID]",
+            RegressionTestTimeout,
+            cancellationToken => new StrategyBuilder(17, 5, 5, cancellationToken)
+            { ForceIterativeDeepeningForTesting = true }.BuildDefaultPlan());
+
+        StrategyPlan exactPlan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.BuildDefaultPlan(17, 5, 5) [force exact]",
+            RegressionTestTimeout,
+            cancellationToken => new StrategyBuilder(17, 5, 5, cancellationToken)
+            { ForceIterativeDeepeningForTesting = false }.BuildDefaultPlan());
+
+        Assert.Equal(exactPlan.MaxStep, idPlan.MaxStep);
+        Assert.True(
+            idPlan.SearchStatistics.OutcomesConstructed < exactPlan.SearchStatistics.OutcomesConstructed,
+            $"iterative deepening did not cut outcomes: ID={idPlan.SearchStatistics.OutcomesConstructed}, exact={exactPlan.SearchStatistics.OutcomesConstructed}");
+        Assert.True(
+            idPlan.SearchStatistics.SearchedStates < exactPlan.SearchStatistics.SearchedStates,
+            $"iterative deepening did not cut searched states: ID={idPlan.SearchStatistics.SearchedStates}, exact={exactPlan.SearchStatistics.SearchedStates}");
+    }
+
     [Fact]
     public void Builder_ProducesDeterministicOutputAcrossRuns()
     {

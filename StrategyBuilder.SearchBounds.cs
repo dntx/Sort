@@ -24,11 +24,14 @@ partial class StrategyBuilder
     // root, where there is no incumbent yet) translate into real pruning instead of being wasted
     // under an unbounded alpha-beta search. Outside that regime it falls back to the single-pass
     // exact search, which is byte-identical to the pre-ID algorithm and avoids ID's re-exploration
-    // overhead on shallow/wide shapes. Both paths return the same optimum and materialize the same
-    // tree (same first-priority optimal group per state).
+    // overhead on shallow/wide shapes. Both paths return the same exact MaxStep optimum. They do NOT
+    // necessarily materialize the same tree: the bounded path can pick a different representative
+    // among equally-optimal groups, so a gated case may yield a different (still MaxStep-optimal)
+    // tree than the single-pass path (see docs/core-algorithm.md sec 4.3).
     private int GetMinWorstCaseSteps(ComparisonState state, int remainingSlots)
     {
-        if (!_useIterativeDeepening)
+        bool useIterativeDeepening = ForceIterativeDeepeningForTesting ?? _useIterativeDeepening;
+        if (!useIterativeDeepening)
             return GetMinWorstCaseStepsExact(state, remainingSlots);
 
         int budget = GetMinWorstCaseLowerBound(state, remainingSlots);
