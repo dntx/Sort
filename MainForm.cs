@@ -132,9 +132,9 @@ class MainForm : Form
         headerLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         headerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, StatsRowHeight));
 
-        _nTextBox = CreateInputTextBox("9");
-        _mTextBox = CreateInputTextBox("3");
-        _kTextBox = CreateInputTextBox("3");
+        _nTextBox = CreateInputTextBox("25");
+        _mTextBox = CreateInputTextBox("5");
+        _kTextBox = CreateInputTextBox("5");
         _themeComboBox = new ComboBox
         {
             Width = 140,
@@ -411,6 +411,12 @@ class MainForm : Form
 
     private static void SetStatText(TextBox box, string text)
     {
+        // Skip the refresh while the user is actively selecting text in this box, so a
+        // selection made mid-run is not cleared by the periodic update and can be copied.
+        // Updates resume automatically once the selection is cleared or focus moves away.
+        if (box.Focused && box.SelectionLength > 0)
+            return;
+
         string normalized = NormalizeStatLines(text);
         if (box.Text != normalized)
             box.Text = normalized;
