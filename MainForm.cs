@@ -201,7 +201,7 @@ class MainForm : Form
         {
             AutoSize = true,
             Margin = Padding.Empty,
-            Text = "0.000 s\n[default] bound: ? <= opt <= ?\ndefault: -\ncompact: -\nprogress: 0.0%\neta: -",
+            Text = "0.000 s\nstep-opt: ? <= opt <= ?\ndefault: -\ncompact: -\nprogress: 0.0%\neta: -",
             Font = new Font(Font.FontFamily, 11, FontStyle.Bold),
         };
         _statesLabel = new Label
@@ -1209,7 +1209,7 @@ class MainForm : Form
             : "-";
         string progressLine = $"progress: {_latestProgress.EstimatedProgress01 * 100.0:F1}%";
         string etaLine = $"eta: {etaLineValue}";
-        string boundLine = $"[default] {FormatSqueeze(_latestProgress)}";
+        string boundLine = FormatSqueeze(_latestProgress);
         string text = $"{GetElapsedSeconds():F3} s\n{boundLine}\n{defaultLine}\n{compactLine}\n{progressLine}\n{etaLine}";
         _elapsedLabel.Text = text;
     }
@@ -1376,7 +1376,7 @@ class MainForm : Form
         {
             "Live search diagnostics",
             $"elapsed: {snapshot.ElapsedMilliseconds / 1000.0:F1} s",
-            $"squeeze: {FormatSqueeze(snapshot)}",
+            $"{FormatSqueeze(snapshot)}",
             "(see the States / Work / Progress panels for live counters)",
             string.Empty,
         };
@@ -1404,19 +1404,21 @@ class MainForm : Form
         return $"{FormatSqueeze(snapshot)}, {incumbentText}, milestones: {snapshot.RootIncumbentCount}, prunes: {snapshot.LowerBoundPrunes}, cache hits: {snapshot.ExactCacheHits}/{snapshot.LowerBoundCacheHits}/{snapshot.FeasibleTopSetCacheHits}/{snapshot.BestGroupPatternCacheHits}";
     }
 
-    // Formats the L <= opt <= U squeeze: L is the proven lower bound (RootProvenLowerBound), U is
-    // the best incumbent worst-case steps. Either side may be unknown ("?") early on; when both are
-    // known and equal the optimum is proven exactly.
+    // Formats the squeeze on the optimal max-step count: L is the proven lower bound
+    // (RootProvenLowerBound), U is the best incumbent worst-case steps. Either side may be unknown
+    // ("?") early on; when both are known and equal the optimum is proven exactly. The value is a
+    // global result of the phase-1 solve and stays fixed through the compact phase, so it is shown
+    // as "step-opt" rather than tagged to a single phase.
     private static string FormatSqueeze(SearchProgressSnapshot snapshot)
     {
         int lower = snapshot.RootProvenLowerBound;
         int? upper = snapshot.LatestRootIncumbent?.BestWorstCaseSteps;
         if (lower > 0 && upper is int u && lower == u)
-            return $"opt = {lower} (proven)";
+            return $"step-opt = {lower} (proven)";
 
         string lowerText = lower > 0 ? lower.ToString() : "?";
         string upperText = upper?.ToString() ?? "?";
-        return $"bound: {lowerText} <= opt <= {upperText}";
+        return $"step-opt: {lowerText} <= opt <= {upperText}";
     }
 
     private static string BuildIdleDetailsText()
