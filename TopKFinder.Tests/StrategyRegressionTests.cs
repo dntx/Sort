@@ -219,6 +219,96 @@ public sealed class StrategyRegressionTests
         }
     }
 
+    // === Squeeze report (L <= opt <= U): proven-lower-bound (L) side ===
+    // The iterative-deepening driver lifts a global budget that is, at every pass, a PROVEN lower
+    // bound on the root optimum. Phase A surfaces that value as SearchStatistics.RootProvenLowerBound
+    // (and on each progress snapshot) so a cancelled hard run still reports "opt >= L". For any fully
+    // resolved build the squeeze closes: L equals the exact MaxStep.
+    [Theory]
+    [InlineData(5, 3, 2)]
+    [InlineData(9, 3, 3)]
+    [InlineData(10, 3, 5)]
+    [InlineData(12, 4, 4)]
+    [InlineData(14, 5, 5)]   // iterative-deepening regime
+    public void Default_RootProvenLowerBound_EqualsMaxStepWhenSolved(int n, int m, int k)
+    {
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k}) [proven LB]",
+            RegressionTestTimeout,
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildDefaultPlan());
+
+        Assert.Equal(plan.MaxStep, plan.SearchStatistics.RootProvenLowerBound);
+    }
+
+    // Across the progress snapshots of an iterative-deepening run, the proven lower bound rises
+    // monotonically, never exceeds the true optimum (it is always a VALID lower bound), and the
+    // final value reaches the exact MaxStep. 17,5,5 forced into ID exercises several lifts.
+    [Fact]
+    public void Default_RootProvenLowerBound_RisesMonotonicallyAndStaysValid()
+    {
+        var snapshots = new List<SearchProgressSnapshot>();
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.BuildDefaultPlan(17, 5, 5) [force ID, proven LB timeline]",
+            RegressionTestTimeout,
+            cancellationToken => new StrategyBuilder(17, 5, 5, cancellationToken, snapshot => snapshots.Add(snapshot))
+            { ForceIterativeDeepeningForTesting = true }.BuildDefaultPlan());
+
+        Assert.NotEmpty(snapshots);
+
+        int previous = 0;
+        bool sawPositive = false;
+        foreach (SearchProgressSnapshot snapshot in snapshots)
+        {
+            Assert.True(snapshot.RootProvenLowerBound >= previous,
+                $"proven lower bound regressed: {snapshot.RootProvenLowerBound} after {previous}");
+            Assert.True(snapshot.RootProvenLowerBound <= plan.MaxStep,
+                $"proven lower bound {snapshot.RootProvenLowerBound} exceeded the true optimum {plan.MaxStep}");
+            previous = snapshot.RootProvenLowerBound;
+            sawPositive |= snapshot.RootProvenLowerBound > 0;
+        }
+
+        Assert.True(sawPositive, "expected at least one snapshot with a positive proven lower bound");
+        Assert.Equal(plan.MaxStep, snapshots[^1].RootProvenLowerBound);
+    }
+
+    // A cancelled run still yields a VALID proven lower bound. Cancellation is triggered
+    // deterministically from the progress callback the first time a positive lower bound is
+    // observed, so the test never depends on wall-clock timing. The captured bound must be a real
+    // lower bound on the optimum (1 <= L <= opt), where opt is learned from a full solve.
+    [Fact]
+    public void Default_RootProvenLowerBound_SurvivesCancellation()
+    {
+        StrategyPlan solved = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.BuildDefaultPlan(14, 5, 5) [solve for opt]",
+            RegressionTestTimeout,
+            cancellationToken => new StrategyBuilder(14, 5, 5, cancellationToken)
+            { ForceIterativeDeepeningForTesting = true }.BuildDefaultPlan());
+        int optimum = solved.MaxStep;
+
+        using var cts = new CancellationTokenSource();
+        SearchProgressSnapshot? captured = null;
+        Exception? thrown = Record.Exception(() =>
+        {
+            var builder = new StrategyBuilder(14, 5, 5, cts.Token, snapshot =>
+            {
+                if (snapshot.RootProvenLowerBound > 0)
+                {
+                    captured = snapshot;
+                    cts.Cancel();
+                }
+            })
+            { ForceIterativeDeepeningForTesting = true };
+            builder.BuildDefaultPlan();
+        });
+
+        Assert.IsType<OperationCanceledException>(thrown);
+        Assert.NotNull(captured);
+        int lower = captured!.Value.RootProvenLowerBound;
+        Assert.True(lower >= 1, "cancelled run produced no positive proven lower bound");
+        Assert.True(lower <= optimum,
+            $"cancelled proven lower bound {lower} exceeded the true optimum {optimum}");
+    }
+
     [Fact]
     public void N10M3K5_RecordsDescendingRootIncumbentMilestones()
     {

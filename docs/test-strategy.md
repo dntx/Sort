@@ -97,6 +97,20 @@ compact 是一个跑在 phase 1 之上的**二级 DP**（`StrategyBuilder.Compac
 > compact 的最优性边界（最小化的是边数**代理量**、可能比 default 差因而有兜底取 min）见
 > `docs/core-algorithm.md` §4.4。
 
+### 3.4 夹逼报告（squeeze）的「已证明下界 L」一侧
+
+迭代加深驱动循环的全局预算在每一趟都是 opt 的**已证明合法下界**，通过
+`SearchStatistics.RootProvenLowerBound` 与每次进度回调的 `SearchProgressSnapshot.RootProvenLowerBound`
+暴露给 GUI/CLI（详见 `docs/core-algorithm.md` §4.5）。三道护栏锁定它的关键不变量：
+
+- **`Default_RootProvenLowerBound_EqualsMaxStepWhenSolved`**（5 形状，含门控的 14,5,5）：任何**完整解出**的
+  build 必有 `RootProvenLowerBound == MaxStep`——夹逼闭合成一个点。
+- **`Default_RootProvenLowerBound_RisesMonotonicallyAndStaysValid`**（强制 ID 的 17,5,5）：沿进度快照断言
+  下界**单调不降**、**始终 ≤ 真实 opt**（永远是合法下界）、且最终**等于 MaxStep**。
+- **`Default_RootProvenLowerBound_SurvivesCancellation`**（14,5,5）：用进度回调在**首个正下界**出现时**确定性地**
+  触发取消（不依赖墙钟时间），断言取消路径仍给出一个 `1 ≤ L ≤ opt` 的合法下界——这正是硬算例（如 25,5,5）
+  跑不完时仍能诚实报告「opt ≥ L」的依据。
+
 ---
 
 ## 4. 墙钟烟雾测试（B 层）
