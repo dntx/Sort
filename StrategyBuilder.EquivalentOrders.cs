@@ -557,6 +557,84 @@ partial class StrategyBuilder
             classSequence);
     }
 
+    // Renders a genuine parent-automorphism orbit (e.g. two interchangeable sorted chains) as one
+    // representative ordering plus a relabeling that maps it onto the other member(s). The pattern
+    // engine cannot express such a cross-relabeling as a disjunction-free template, so without this
+    // it would emit a misleading "(... | ...)" disjunction; here the equivalence is honest because
+    // PartitionFamiliesIntoOrbits only unions families connected by a real active-poset automorphism.
+    private static EquivalentOrderSummary BuildRelabelingOrbitSummary(
+        ComparisonState state,
+        List<MergedFamilyOutcome> line,
+        MergedFamilyOutcome representative)
+    {
+        IReadOnlyList<int> repOrder = representative.Family.RepresentativeOrderItems;
+        var legends = new List<string>();
+        foreach (MergedFamilyOutcome member in line)
+        {
+            if (ReferenceEquals(member, representative))
+                continue;
+            if (state.TryFindOrderAutomorphism(0, repOrder, member.Family.RepresentativeOrderItems, out Dictionary<int, int>? map)
+                && map is not null)
+            {
+                string legend = FormatRelabelingMap(map);
+                if (!string.IsNullOrEmpty(legend) && !legends.Contains(legend))
+                    legends.Add(legend);
+            }
+        }
+
+        string? combinedLegend = legends.Count > 0
+            ? string.Join(" ; ", legends)
+            : null;
+        return new EquivalentOrderSummary(
+            line.Count,
+            representative.Family.RepresentativeOrder,
+            line.Count.ToString(),
+            combinedLegend);
+    }
+
+    // Collapses an item->item automorphism into a compact relabeling note. An involution (the common
+    // chain-swap case) renders as range pairs "#a~#b <-> #c~#d" listing each unordered swap once;
+    // any other map renders as directional "#a->#b" entries.
+    private static string FormatRelabelingMap(Dictionary<int, int> map)
+    {
+        bool isInvolution = map.All(kv => map.TryGetValue(kv.Value, out int back) && back == kv.Key);
+        if (isInvolution)
+        {
+            var pairs = map
+                .Where(kv => kv.Key < kv.Value)
+                .Select(kv => (Low: kv.Key, High: kv.Value))
+                .OrderBy(pair => pair.Low)
+                .ToList();
+
+            var runs = new List<(int LowStart, int LowEnd, int HighStart, int HighEnd)>();
+            foreach ((int low, int high) in pairs)
+            {
+                if (runs.Count > 0)
+                {
+                    var last = runs[^1];
+                    if (low == last.LowEnd + 1 && high == last.HighEnd + 1)
+                    {
+                        runs[^1] = (last.LowStart, low, last.HighStart, high);
+                        continue;
+                    }
+                }
+                runs.Add((low, low, high, high));
+            }
+
+            return string.Join(", ", runs.Select(run =>
+                $"({FormatItemRange(run.LowStart, run.LowEnd)}) \u2194 ({FormatItemRange(run.HighStart, run.HighEnd)})"));
+        }
+
+        var moved = map
+            .Where(kv => kv.Key != kv.Value)
+            .OrderBy(kv => kv.Key)
+            .Select(kv => $"#{kv.Key + 1}\u2192#{kv.Value + 1}");
+        return string.Join(", ", moved);
+    }
+
+    private static string FormatItemRange(int startItem, int endItem)
+        => startItem == endItem ? $"#{startItem + 1}" : $"#{startItem + 1} ~ #{endItem + 1}";
+
     private static string BuildMultiplicityFormula(IEnumerable<int> classSizes)
     {
         string formula = string.Join(" x ", classSizes

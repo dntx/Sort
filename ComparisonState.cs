@@ -639,7 +639,19 @@ class ComparisonState
     // (active | fixedTop) that extends the forced pairing and preserves the transitive
     // ancestor/descendant relation and the fixed-top coloring. orderA and orderB must be equal length.
     internal bool TryMapOrderByAutomorphism(ulong fixedTopMask, IReadOnlyList<int> orderA, IReadOnlyList<int> orderB)
+        => TryFindOrderAutomorphism(fixedTopMask, orderA, orderB, out _);
+
+    // Witness-returning form of TryMapOrderByAutomorphism. On success, automorphism is the full
+    // bijection on (active | fixedTop) that extends orderA[i] -> orderB[i]; on failure it is null.
+    // Used to render a relabeling-equivalence legend for genuine automorphism orbits that the
+    // pattern engine cannot express as a single disjunction-free template.
+    internal bool TryFindOrderAutomorphism(
+        ulong fixedTopMask,
+        IReadOnlyList<int> orderA,
+        IReadOnlyList<int> orderB,
+        out Dictionary<int, int>? automorphism)
     {
+        automorphism = null;
         if (orderA.Count != orderB.Count)
             return false;
 
@@ -703,7 +715,11 @@ class ComparisonState
             return false;
         }
 
-        return Search(0);
+        if (!Search(0))
+            return false;
+
+        automorphism = assignment;
+        return true;
     }
 
     [ThreadStatic] private static int[]? _scratchNextLabels;
