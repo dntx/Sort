@@ -562,6 +562,10 @@ class MainForm : Form
             UpdateSummaryText(defaultPlan, compactPlan: null, compactImproved: false);
             UpdateStatsPanels();
 
+            // The default plan is fully rendered; the compact pass now runs on a background thread.
+            // Free the UI: drop the wait cursor and re-enable tree navigation while it computes.
+            SetRunUiState(RunUiState.CompactComputingInteractive);
+
             // Phase 2: compact refinement.
             Interlocked.Exchange(ref _activePhase, 2);
             StrategyPlan compactPlan = await Task.Run(() => builder.BuildCompactPlan(), cancellationToken);
@@ -1235,14 +1239,34 @@ class MainForm : Form
         _runCancellationSource?.Cancel();
     }
 
+    private enum RunUiState
+    {
+        Idle,
+        Running,
+        CompactComputingInteractive,
+    }
+
     private void SetRunningState(bool isRunning)
     {
-        UseWaitCursor = isRunning;
-        _runButton.Enabled = !isRunning;
-        _stopButton.Enabled = isRunning;
-        _expandAllButton.Enabled = !isRunning;
-        _collapseAllButton.Enabled = !isRunning;
-        _backButton.Enabled = !isRunning && _navigationHistory.Count > 0;
+        SetRunUiState(isRunning ? RunUiState.Running : RunUiState.Idle);
+    }
+
+    // Three-state UI model. While phase 1 (default) runs the whole form shows the wait cursor and
+    // all result-interaction buttons are disabled. Once the default plan is on screen but the
+    // compact refinement is still computing on a background thread, the UI thread is free, so we
+    // drop the wait cursor and re-enable tree navigation -- only Run stays disabled (a new search
+    // cannot start) while Stop can still cancel the compact phase.
+    private void SetRunUiState(RunUiState state)
+    {
+        bool running = state != RunUiState.Idle;
+        bool interactive = state != RunUiState.Running;
+
+        UseWaitCursor = state == RunUiState.Running;
+        _runButton.Enabled = !running;
+        _stopButton.Enabled = running;
+        _expandAllButton.Enabled = interactive;
+        _collapseAllButton.Enabled = interactive;
+        _backButton.Enabled = interactive && _navigationHistory.Count > 0;
     }
 
     private void UpdateElapsedLabel()
