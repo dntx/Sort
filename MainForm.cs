@@ -79,9 +79,9 @@ class MainForm : Form
     private readonly Button _collapseAllButton;
     private readonly Button _backButton;
     private readonly Button _toggleDetailsButton;
-    private readonly Label _elapsedLabel;
-    private readonly Label _statesLabel;
-    private readonly Label _workLabel;
+    private readonly TextBox _progressTextBox;
+    private readonly TextBox _statesTextBox;
+    private readonly TextBox _workTextBox;
     private readonly StatusStrip _statusStrip;
     private readonly ToolStripStatusLabel _statusLabel;
     private readonly TreeView _treeView;
@@ -132,9 +132,9 @@ class MainForm : Form
         headerLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         headerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, StatsRowHeight));
 
-        _nTextBox = CreateInputTextBox("9");
-        _mTextBox = CreateInputTextBox("3");
-        _kTextBox = CreateInputTextBox("3");
+        _nTextBox = CreateInputTextBox("25");
+        _mTextBox = CreateInputTextBox("5");
+        _kTextBox = CreateInputTextBox("5");
         _themeComboBox = new ComboBox
         {
             Width = 140,
@@ -197,25 +197,13 @@ class MainForm : Form
             Margin = new Padding(8, 4, 0, 0),
         };
 
-        _elapsedLabel = new Label
-        {
-            AutoSize = true,
-            Margin = Padding.Empty,
-            Text = "0.000 s\nstep-opt: ? <= opt <= ?\ndefault: -\ncompact: -\nprogress: 0.0%\neta: -",
-            Font = new Font(Font.FontFamily, 11, FontStyle.Bold),
-        };
-        _statesLabel = new Label
-        {
-            AutoSize = true,
-            Margin = Padding.Empty,
-            Text = "(cumulative: default + compact)\nsearched: 0\npending: 0 (peak 0)\noutput: 0\nlower-bound: 0\nfeasible-top-set: 0",
-        };
-        _workLabel = new Label
-        {
-            AutoSize = true,
-            Margin = Padding.Empty,
-            Text = "(cumulative: default + compact)\noutcomes: 0\nduplicate skips: 0\nmerged collisions: 0\nprunes: 0\ncache: 0/0/0/0\n[compact] -",
-        };
+        _progressTextBox = CreateStatTextBox(
+            "0.000 s\nstep-opt: ? <= opt <= ?\ndefault: -\ncompact: -\nprogress: 0.0%\neta: -",
+            new Font(Font.FontFamily, 11, FontStyle.Bold));
+        _statesTextBox = CreateStatTextBox(
+            "(cumulative: default + compact)\nsearched: 0\npending: 0 (peak 0)\noutput: 0\nlower-bound: 0\nfeasible-top-set: 0");
+        _workTextBox = CreateStatTextBox(
+            "(cumulative: default + compact)\noutcomes: 0\nduplicate skips: 0\nmerged collisions: 0\nprunes: 0\ncache: 0/0/0/0\n[compact] -");
         var inputsPanel = new FlowLayoutPanel
         {
             AutoSize = true,
@@ -266,18 +254,9 @@ class MainForm : Form
         statsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 29));
         statsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 38));
 
-        var progressBody = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            AutoSize = true,
-            ColumnCount = 1,
-            Margin = Padding.Empty,
-        };
-        progressBody.Controls.Add(_elapsedLabel, 0, 0);
-
-        statsLayout.Controls.Add(CreateSectionPanel("Progress", progressBody, fillCell: true), 0, 0);
-        statsLayout.Controls.Add(CreateSectionPanel("States", _statesLabel, fillCell: true), 1, 0);
-        statsLayout.Controls.Add(CreateSectionPanel("Work", _workLabel, fillCell: true), 2, 0);
+        statsLayout.Controls.Add(CreateSectionPanel("Progress", _progressTextBox, fillCell: true), 0, 0);
+        statsLayout.Controls.Add(CreateSectionPanel("States", _statesTextBox, fillCell: true), 1, 0);
+        statsLayout.Controls.Add(CreateSectionPanel("Work", _workTextBox, fillCell: true), 2, 0);
 
         _statusStrip = new StatusStrip
         {
@@ -348,6 +327,16 @@ class MainForm : Form
             WordWrap = false,
             ScrollBars = RichTextBoxScrollBars.Both,
         };
+        var detailsContextMenu = new ContextMenuStrip();
+        var detailsCopy = new ToolStripMenuItem("Copy") { ShortcutKeyDisplayString = "Ctrl+C" };
+        detailsCopy.Click += (_, _) => SetClipboardText(_detailsTextBox.SelectedText);
+        var detailsCopyAll = new ToolStripMenuItem("Copy all");
+        detailsCopyAll.Click += (_, _) => SetClipboardText(_detailsTextBox.Text);
+        detailsContextMenu.Items.Add(detailsCopy);
+        detailsContextMenu.Items.Add(detailsCopyAll);
+        detailsContextMenu.Opening += (_, _) =>
+            detailsCopy.Enabled = _detailsTextBox.SelectionLength > 0;
+        _detailsTextBox.ContextMenuStrip = detailsContextMenu;
         innerSplit.Panel2.Controls.Add(_detailsTextBox);
 
         _toggleDetailsButton.Click += (_, _) =>
@@ -369,10 +358,10 @@ class MainForm : Form
         Controls.Add(_statusStrip);
         Shown += (_, _) =>
         {
-            int progressColumn = _elapsedLabel.PreferredHeight + 6;
+            int progressColumn = MeasureStatHeight(_progressTextBox) + 6;
             int statsBody = Math.Max(
                 progressColumn,
-                Math.Max(_statesLabel.PreferredHeight, _workLabel.PreferredHeight));
+                Math.Max(MeasureStatHeight(_statesTextBox), MeasureStatHeight(_workTextBox)));
             int statsHeight = statsBody + StatsRowChrome;
             headerLayout.RowStyles[1].Height = statsHeight;
             statsLayout.Height = statsHeight;
@@ -397,6 +386,47 @@ class MainForm : Form
 
     private const int StatsRowHeight = 150;
     private const int StatsRowChrome = 84;
+
+    // Read-only, borderless, selectable text box used for the live stat panels so users can
+    // select and copy the metric text (a plain Label is not selectable).
+    private static TextBox CreateStatTextBox(string text, Font? font = null)
+    {
+        var box = new TextBox
+        {
+            Multiline = true,
+            ReadOnly = true,
+            BorderStyle = BorderStyle.None,
+            WordWrap = false,
+            ScrollBars = ScrollBars.None,
+            TabStop = false,
+            Cursor = Cursors.IBeam,
+            Dock = DockStyle.Fill,
+            Margin = Padding.Empty,
+        };
+        if (font is not null)
+            box.Font = font;
+        box.Text = NormalizeStatLines(text);
+        return box;
+    }
+
+    private static void SetStatText(TextBox box, string text)
+    {
+        // Skip the refresh while the user is actively selecting text in this box, so a
+        // selection made mid-run is not cleared by the periodic update and can be copied.
+        // Updates resume automatically once the selection is cleared or focus moves away.
+        if (box.Focused && box.SelectionLength > 0)
+            return;
+
+        string normalized = NormalizeStatLines(text);
+        if (box.Text != normalized)
+            box.Text = normalized;
+    }
+
+    private static string NormalizeStatLines(string text)
+        => text.Replace("\r\n", "\n").Replace("\n", "\r\n");
+
+    private static int MeasureStatHeight(TextBox box)
+        => TextRenderer.MeasureText(box.Text, box.Font).Height + 6;
 
     private static Control CreateLabeledInput(string labelText, Control inputControl)
     {
@@ -1089,6 +1119,11 @@ class MainForm : Form
                 listView.BackColor = _palette.SurfaceBackColor;
                 listView.ForeColor = _palette.ForeColor;
                 break;
+            case TextBox statBox when statBox.ReadOnly:
+                statBox.BackColor = _palette.FormBackColor;
+                statBox.ForeColor = _palette.ForeColor;
+                statBox.BorderStyle = BorderStyle.None;
+                break;
             case TextBox textBox:
                 textBox.BackColor = _palette.InputBackColor;
                 textBox.ForeColor = _palette.ForeColor;
@@ -1211,7 +1246,7 @@ class MainForm : Form
         string etaLine = $"eta: {etaLineValue}";
         string boundLine = FormatSqueeze(_latestProgress);
         string text = $"{GetElapsedSeconds():F3} s\n{boundLine}\n{defaultLine}\n{compactLine}\n{progressLine}\n{etaLine}";
-        _elapsedLabel.Text = text;
+        SetStatText(_progressTextBox, text);
     }
 
     private void UpdateSearchProgress(SearchProgressSnapshot snapshot)
@@ -1235,25 +1270,25 @@ class MainForm : Form
     {
         SearchProgressSnapshot p = _latestProgress;
 
-        _statesLabel.Text =
+        SetStatText(_statesTextBox,
             "(cumulative: default + compact)\n" +
             $"searched: {p.SearchedStates}\n" +
             $"pending: {p.PendingStates} (peak {p.PeakPendingStates})\n" +
             $"output: {p.OutputStates}\n" +
             $"lower-bound: {p.LowerBoundStates}\n" +
-            $"feasible-top-set: {p.FeasibleTopSetStates}";
+            $"feasible-top-set: {p.FeasibleTopSetStates}");
 
         string compactText = p.CompactStatesSolved > 0
             ? $"[compact] {p.CompactStatesSolved} solved, {p.CompactGroupsEnumerated} groups ({p.CompactStepOptimalGroups} opt)"
             : "[compact] -";
-        _workLabel.Text =
+        SetStatText(_workTextBox,
             "(cumulative: default + compact)\n" +
             $"outcomes: {p.OutcomesConstructed} (cand groups {p.CandidateGroupsEnumerated})\n" +
             $"duplicate skips: {p.DuplicateOutcomeSkips}\n" +
             $"merged collisions: {p.MergedOutcomeCollisions}\n" +
             $"prunes: {p.LowerBoundPrunes}\n" +
             $"cache: {p.ExactCacheHits}/{p.LowerBoundCacheHits}/{p.FeasibleTopSetCacheHits}/{p.BestGroupPatternCacheHits}\n" +
-            compactText;
+            compactText);
     }
     private static string FormatSearchStatsSummary(SearchProgressSnapshot snapshot, bool includeOutputStates)
     {
