@@ -1923,8 +1923,9 @@ partial class StrategyBuilder
     // product is a lower bound on every descendant partition's product. Callers that need
     // partitions whose block-factorial product equals a target order count can therefore never
     // miss a match, while the explosive majority of partitions (Bell(n) grows super-exponentially)
-    // are skipped before they are even built.
-    private static IEnumerable<List<List<int>>> EnumeratePartitions(IReadOnlyList<int> items, int targetFactorialProduct)
+    // are skipped before they are even built. Exposed to the test assembly so the pruning can be
+    // locked by a deterministic count-based test (EquivalentOrderPartitionPruningTests).
+    internal static IEnumerable<List<List<int>>> EnumeratePartitions(IReadOnlyList<int> items, int targetFactorialProduct)
     {
         var blocks = new List<List<int>>();
         foreach (var partition in EnumeratePartitions(items, 0, blocks, BigInteger.One, targetFactorialProduct))
