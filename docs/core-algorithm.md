@@ -291,6 +291,13 @@ while (true)
 > 浅 / 宽算例）不在每个节点压预算，没有「逐趟抬升的下界」可言，因此只在解出后把**精确结果**记为 `L`（这样既满足
 > 「解出即 `L == opt`」，又**不额外调用** `GetMinWorstCaseLowerBound`、保持既有计数器逐字节不变）。
 
+> **跨阶段生命周期**：`_rootProvenLowerBound` 与 `_rootIncumbents`、`_rootSearchInitialized` 一样，都是
+> **一次性 phase-1 求解的产物**，其生命周期由 `_phase1Solved`（**不**按 build 重置）界定。因此它们**不**在
+> `ResetPerBuildTransientState` 里清零——否则随后的 compact build 会把已解出的 `L` 重置为 0，而 compact
+> 阶段复用缓存、**不会重跑** IDA* driver 去重新记录，导致夹逼显示从「`opt = N (proven)`」回退成
+> 「`? ≤ opt ≤ ?`」。其余按 build 重新统计的计数器（`searched` / `output` / cache 命中等）仍照常重置，
+> 因为 compact 阶段会通过 `ObserveSearchState` / `VisitComparisonOutcomes` 重新填充它们。
+
 ---
 
 ## 5. 对称性约减：McKay 风格规范形

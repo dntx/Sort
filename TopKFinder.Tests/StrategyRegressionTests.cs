@@ -309,6 +309,42 @@ public sealed class StrategyRegressionTests
             $"cancelled proven lower bound {lower} exceeded the true optimum {optimum}");
     }
 
+    // The proven lower bound (and incumbent) is a product of the once-only phase-1 solve, so it must
+    // SURVIVE the subsequent compact build that reuses the same builder. Regression for the GUI bug
+    // where the squeeze display dropped from "opt = N (proven)" back to "? <= opt <= ?" the moment the
+    // compact phase started, because ResetPerBuildTransientState used to zero the lower bound that the
+    // cached phase-1 solve never re-records.
+    [Theory]
+    [InlineData(9, 3, 3)]
+    [InlineData(12, 4, 4)]
+    public void Compact_RootProvenLowerBound_PersistsFromDefaultPhase(int n, int m, int k)
+    {
+        var snapshots = new List<SearchProgressSnapshot>();
+        (int Optimum, int CompactLowerBound) result = TestTimeoutHelper.RunWithTimeout(
+            $"StrategyBuilder default+compact({n}, {m}, {k}) [proven LB persistence]",
+            RegressionTestTimeout,
+            cancellationToken =>
+            {
+                var builder = new StrategyBuilder(n, m, k, cancellationToken, snapshot => snapshots.Add(snapshot));
+                StrategyPlan defaultPlan = builder.BuildDefaultPlan();
+                StrategyPlan compactPlan = builder.BuildCompactPlan();
+                return (defaultPlan.MaxStep, compactPlan.SearchStatistics.RootProvenLowerBound);
+            });
+
+        // The compact plan keeps the closed squeeze (L == opt) recorded during the default phase.
+        Assert.Equal(result.Optimum, result.CompactLowerBound);
+
+        // Every snapshot emitted while the compact phase is active (CompactStatesSolved > 0) still
+        // carries the proven optimum, so the live display never regresses to an unknown bound.
+        List<SearchProgressSnapshot> compactSnapshots =
+            snapshots.FindAll(s => s.CompactStatesSolved > 0);
+        Assert.NotEmpty(compactSnapshots);
+        foreach (SearchProgressSnapshot snapshot in compactSnapshots)
+        {
+            Assert.Equal(result.Optimum, snapshot.RootProvenLowerBound);
+        }
+    }
+
     [Fact]
     public void N10M3K5_RecordsDescendingRootIncumbentMilestones()
     {

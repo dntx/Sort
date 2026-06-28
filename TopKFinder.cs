@@ -68,6 +68,10 @@ partial class StrategyBuilder
     private bool _rootSearchInitialized;
     // Best proven lower bound on the root optimum (opt >= this). Lifted each failed iterative-
     // deepening pass; recorded only during the phase-1 root search. The L side of the squeeze.
+    // Like the phase-1 incumbents and the _rootSearchInitialized latch, this is a product of the
+    // once-only phase-1 solve (memoized by _phase1Solved) and is therefore NOT cleared by
+    // ResetPerBuildTransientState; otherwise the later compact build would reset it to 0 and the
+    // squeeze display would regress from "opt = N (proven)" back to "? <= opt <= ?".
     private int _rootProvenLowerBound;
     private bool _phase1Solved;
     private bool _phase1bSolved;
@@ -898,9 +902,6 @@ partial class StrategyBuilder
         _nextStateId = 1;
 
         _visitedSearchStates.Clear();
-        _rootIncumbents.Clear();
-        _rootSearchInitialized = false;
-        _rootProvenLowerBound = 0;
         _searchedStates = 0;
         _pendingStates = 0;
         _peakPendingStates = 0;
