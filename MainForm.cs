@@ -106,6 +106,7 @@ class MainForm : Form
     private SearchStatistics? _completedCompactStats;
     private SearchStatistics? _completedFeasibleStats;
     private int _activePhase;
+    private long _feasibleElapsedMs = -1;
     private long _phase1ElapsedMs = -1;
 
     public MainForm()
@@ -548,6 +549,7 @@ class MainForm : Form
         _exactImproved = false;
         _compactImproved = false;
         _activePhase = 0;
+        Interlocked.Exchange(ref _feasibleElapsedMs, -1);
         Interlocked.Exchange(ref _phase1ElapsedMs, -1);
         ClearResultsView();
         _runStopwatch = Stopwatch.StartNew();
@@ -573,6 +575,7 @@ class MainForm : Form
             // resolves (e.g. 25,5,5), so it gives the user a real, browsable strategy plus a
             // squeeze L <= opt <= U immediately, before the (possibly unbounded) exact search.
             StrategyPlan feasiblePlan = await Task.Run(() => builder.BuildFeasiblePlan(), cancellationToken);
+            Interlocked.Exchange(ref _feasibleElapsedMs, _runStopwatch?.ElapsedMilliseconds ?? 0);
             _feasiblePlan = feasiblePlan;
             _latestProgress = CreateSnapshotFromPlan(feasiblePlan);
             PopulateTree(feasiblePlan, defaultPlan: null, compactPlan: null, exactImproved: false, compactImproved: false);
@@ -1497,6 +1500,7 @@ class MainForm : Form
         string defaultLine;
         string compactLine;
         int phase = Volatile.Read(ref _activePhase);
+        long feasibleMs = Interlocked.Read(ref _feasibleElapsedMs);
         long phase1Ms = Interlocked.Read(ref _phase1ElapsedMs);
         long totalMs = (long)((_runStopwatch?.Elapsed.TotalMilliseconds) ?? 0);
 
@@ -1519,7 +1523,10 @@ class MainForm : Form
         }
         else if (_runStopwatch is not null && phase >= 1)
         {
-            long liveDefaultMs = phase1Ms >= 0 ? phase1Ms : totalMs;
+            // Show the default phase elapsed from 0, not the total run clock: subtract the feasible
+            // phase boundary so the user sees how long the exact pass alone has been running.
+            long defaultEndMs = phase1Ms >= 0 ? phase1Ms : totalMs;
+            long liveDefaultMs = feasibleMs >= 0 ? Math.Max(0, defaultEndMs - feasibleMs) : defaultEndMs;
             defaultLine = $"exact: {liveDefaultMs / 1000.0:F3} s";
         }
         else
