@@ -15,11 +15,22 @@ partial class StrategyBuilder
     private readonly CancellationToken _cancellationToken;
     private readonly Action<SearchProgressSnapshot>? _progressCallback;
     private readonly bool _reportCombinedRunProgress;
+    // Iterative deepening (IDA*-style bounded minimax) is enabled only in the deep, large-k regime
+    // where measurement shows the tight global budget prunes enough deep nodes to outweigh the
+    // re-exploration cost of multiple passes. Shallow/wide shapes keep the single-pass exact search
+    // (GetMinWorstCaseStepsExact), which is byte-identical to the pre-ID algorithm, so they never
+    // pay the re-exploration overhead. The threshold is an empirical heuristic, not a soundness
+    // boundary: both code paths return the same exact optimum and materialize the same tree.
+    private readonly bool _useIterativeDeepening;
     private readonly Dictionary<IntSequenceKey, int> _stateIds = new();
     private readonly Dictionary<IntSequenceKey, ExpandedStateSnapshot> _expandedStates = new();
     private readonly HashSet<SearchStateKey> _visitedSearchStates = new();
     private readonly Dictionary<SearchStateKey, int> _minWorstCaseStepsCache = new();
     private readonly Dictionary<SearchStateKey, int> _lowerBoundStepsCache = new();
+    // Iterative-deepening transposition memo: the best lower bound on a state's exact cost learned
+    // from passes that failed to resolve it under their budget. Lets a later node/pass prune a state
+    // immediately when this learned bound already exceeds the current budget.
+    private readonly Dictionary<SearchStateKey, int> _searchLowerBoundCache = new();
     private readonly Dictionary<SearchStateKey, FeasibleTopSetInfo> _feasibleTopSetCache = new();
     private readonly Dictionary<SearchStateKey, BestGroupPattern> _bestGroupPatternCache = new();
     private readonly Stopwatch _progressStopwatch = Stopwatch.StartNew();
@@ -41,6 +52,11 @@ partial class StrategyBuilder
     private long _phase1Milliseconds;
     private long _phase1bMilliseconds;
     private long _phase2Milliseconds;
+    // Set true only around the phase-1 iterative-deepening driver so root incumbents are recorded
+    // for the progress UI; other callers (optimality-gap, compact) reuse the search silently.
+    private bool _recordRootIncumbents;
+    // First-top-level-entry latch for the single-pass exact search path (matches the pre-ID
+    // algorithm): root incumbents are recorded only for the first (phase-1) search of a build.
     private bool _rootSearchInitialized;
     private bool _phase1Solved;
     private bool _phase1bSolved;
@@ -72,6 +88,7 @@ partial class StrategyBuilder
         _m = m;
         _requestedK = k;
         _k = k > n - k ? n - k : k;
+        _useIterativeDeepening = _m >= 5 && _k >= 5 && _n >= 2 * _m;
         _cancellationToken = cancellationToken;
         _progressCallback = progressCallback;
         _reportCombinedRunProgress = reportCombinedRunProgress;
@@ -827,7 +844,15 @@ partial class StrategyBuilder
 
         // Phase 1: solve the exact minimum worst-case cost for every reachable state,
         // caching the optimal comparison-group pattern per state along the way.
-        _ = GetMinWorstCaseSteps(new ComparisonState(_n), _k);
+        _recordRootIncumbents = true;
+        try
+        {
+            _ = GetMinWorstCaseSteps(new ComparisonState(_n), _k);
+        }
+        finally
+        {
+            _recordRootIncumbents = false;
+        }
         _phase1Solved = true;
     }
 
@@ -847,10 +872,10 @@ partial class StrategyBuilder
         _stateIds.Clear();
         _expandedStates.Clear();
         _nextStateId = 1;
-        _rootSearchInitialized = _phase1Solved;
 
         _visitedSearchStates.Clear();
         _rootIncumbents.Clear();
+        _rootSearchInitialized = false;
         _searchedStates = 0;
         _pendingStates = 0;
         _peakPendingStates = 0;
