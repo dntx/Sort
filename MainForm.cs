@@ -201,7 +201,7 @@ class MainForm : Form
         {
             AutoSize = true,
             Margin = Padding.Empty,
-            Text = "0.000 s\ndefault: -\ncompact: -",
+            Text = "0.000 s\ndefault: -\ncompact: -\nprogress: 0.0%\neta: -",
             Font = new Font(Font.FontFamily, 11, FontStyle.Bold),
         };
         _statesLabel = new Label
@@ -512,7 +512,13 @@ class MainForm : Form
         {
             var result = await Task.Run(() =>
             {
-                var builder = new StrategyBuilder(n, m, k, cancellationToken, snapshot => progress.Report(snapshot));
+                var builder = new StrategyBuilder(
+                    n,
+                    m,
+                    k,
+                    cancellationToken,
+                    snapshot => progress.Report(snapshot),
+                    reportCombinedRunProgress: true);
                 StrategyPlan defaultPlan = builder.BuildDefaultPlan();
                 Interlocked.Exchange(ref _phase1ElapsedMs, _runStopwatch?.ElapsedMilliseconds ?? 0);
                 Interlocked.Exchange(ref _activePhase, 2);
@@ -1198,7 +1204,12 @@ class MainForm : Form
             compactLine = "compact: -";
         }
 
-        string text = $"{GetElapsedSeconds():F3} s\n{defaultLine}\n{compactLine}";
+        string etaLineValue = _latestProgress.EstimatedRemainingMilliseconds >= 0
+            ? $"{_latestProgress.EstimatedRemainingMilliseconds / 1000.0:F1} s"
+            : "-";
+        string progressLine = $"progress: {_latestProgress.EstimatedProgress01 * 100.0:F1}%";
+        string etaLine = $"eta: {etaLineValue}";
+        string text = $"{GetElapsedSeconds():F3} s\n{defaultLine}\n{compactLine}\n{progressLine}\n{etaLine}";
         _elapsedLabel.Text = text;
     }
 
@@ -1207,9 +1218,13 @@ class MainForm : Form
         _latestProgress = snapshot;
         UpdateStatsPanels();
         string incumbent = snapshot.LatestRootIncumbent is null
-            ? "incumbent -"
-            : $"incumbent <= {snapshot.LatestRootIncumbent.BestWorstCaseSteps}";
-        _statusLabel.Text = $"Running (phase {GetPhaseLabel()})... {GetElapsedSeconds():F1} s, searched {snapshot.SearchedStates}, {incumbent}.";
+            ? "incumbent: -"
+            : $"incumbent: <= {snapshot.LatestRootIncumbent.BestWorstCaseSteps}";
+        string etaText = snapshot.EstimatedRemainingMilliseconds >= 0
+            ? $"{snapshot.EstimatedRemainingMilliseconds / 1000.0:F1} s"
+            : "-";
+        _statusLabel.Text = $"Running (phase {GetPhaseLabel()})... elapsed: {GetElapsedSeconds():F1} s, searched: {snapshot.SearchedStates}, {incumbent}, " +
+            $"progress: {snapshot.EstimatedProgress01 * 100.0:F1}%, eta: {etaText}.";
         _detailsTextBox.Text = BuildLiveDiagnosticsText(snapshot);
     }
 
@@ -1245,7 +1260,7 @@ class MainForm : Form
 
     private static SearchProgressSnapshot CreateInitialProgressSnapshot()
     {
-        return new SearchProgressSnapshot(0, 0, 0, 0, 0, null, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+        return new SearchProgressSnapshot(0, 0, 0, 0, 0, null, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.0, -1);
     }
 
     private static SearchProgressSnapshot CreateSnapshotFromPlan(StrategyPlan plan)
@@ -1271,7 +1286,9 @@ class MainForm : Form
             plan.SearchStatistics.FeasibleTopSetStates,
             plan.SearchStatistics.CompactStatesSolved,
             plan.SearchStatistics.CompactGroupsEnumerated,
-            plan.SearchStatistics.CompactStepOptimalGroups);
+            plan.SearchStatistics.CompactStepOptimalGroups,
+            1.0,
+            0);
     }
 
     private string GetPhaseLabel()

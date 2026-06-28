@@ -73,16 +73,119 @@ partial class StrategyBuilder
         if (buckets.Count == familyOutcomes.Count)
             return null;
 
-        var specs = new List<BranchSpec>(buckets.Count);
-        foreach (string key in bucketOrder)
+        // The doomed-prefix buckets above only fold orderings that agree up to free-symmetry
+        // relabeling (items with identical active neighbor sets). Two buckets can still be related
+        // by a deeper parent-state automorphism — e.g. the chains #1>#2 and #5>#6 are swapped by
+        // (#1 #5)(#2 #6) even though #1 and #5 are not free-symmetric (their descendants differ).
+        // Such buckets are a single decision orbit and must render as one branch. Partition the
+        // buckets into automorphism orbits and, for every multi-bucket orbit the pattern engine can
+        // unify into one disjunction-free template (e.g. "{#1 > #2, #5 > #6}" or "{#1, #5} > {#2,
+        // #6}"), emit a single merged branch; otherwise keep the per-bucket doomed-tail lines.
+        var bucketList = bucketOrder.Select(key => buckets[key]).ToList();
+        var specs = new List<BranchSpec>(bucketList.Count);
+        foreach (List<DoomedTailBucket> orbit in PartitionDoomedBucketsIntoOrbits(state, bucketList))
         {
-            DoomedTailBucket bucket = buckets[key];
-            EquivalentOrderSummary summary = BuildDoomedTailSummary(state, symmetryInfo, bucket);
-            specs.Add(new BranchSpec(
-                bucket.Representative.Family.RepresentativeOrder, bucket.Representative, summary));
+            if (orbit.Count == 1)
+            {
+                DoomedTailBucket only = orbit[0];
+                specs.Add(new BranchSpec(
+                    only.Representative.Family.RepresentativeOrder,
+                    only.Representative,
+                    BuildDoomedTailSummary(state, symmetryInfo, only)));
+                continue;
+            }
+
+            DoomedTailBucket representative = orbit
+                .OrderBy(b => b.Representative.Family.RepresentativeOrder, StringComparer.Ordinal)
+                .First();
+            List<OrderFamilyDescriptor> orbitFamilies = orbit
+                .SelectMany(b => b.Families)
+                .Select(outcome => outcome.Family)
+                .ToList();
+            EquivalentOrderSummary? combinedSummary = BuildEquivalentOrderSummary(orbitFamilies);
+
+            if (MergedOrderingsFormSingleOrbit(combinedSummary))
+            {
+                specs.Add(new BranchSpec(
+                    representative.Representative.Family.RepresentativeOrder,
+                    representative.Representative,
+                    combinedSummary));
+            }
+            else
+            {
+                foreach (DoomedTailBucket bucket in orbit)
+                    specs.Add(new BranchSpec(
+                        bucket.Representative.Family.RepresentativeOrder,
+                        bucket.Representative,
+                        BuildDoomedTailSummary(state, symmetryInfo, bucket)));
+            }
         }
 
         return specs;
+    }
+
+    // Groups doomed-prefix buckets into parent-automorphism orbits: two buckets are unioned when an
+    // automorphism of the parent active poset maps one bucket's doomed prefix onto the other's. Only
+    // the prefix matters because each bucket's tail is doomed (its order never affects the outcome),
+    // so a prefix automorphism extends to a full decision symmetry. Matching prefixes rather than full
+    // representatives is essential: an automorphism may send a bucket's prefix to another bucket's
+    // prefix while sending the canonical representative's doomed tail to a non-canonical permutation of
+    // the other bucket's tail (e.g. (#1 #5)(#2 #6) maps "#1 > #5" onto "#5 > #1" but maps the full
+    // "#1 > #5 > #2 > #6" onto "#5 > #1 > #6 > #2"). Mirrors PartitionFamiliesIntoOrbits over buckets.
+    private List<List<DoomedTailBucket>> PartitionDoomedBucketsIntoOrbits(
+        ComparisonState state, List<DoomedTailBucket> buckets)
+    {
+        int n = buckets.Count;
+        var prefixes = new List<int>[n];
+        for (int i = 0; i < n; i++)
+        {
+            IReadOnlyList<int> repOrder = buckets[i].Representative.Family.RepresentativeOrderItems;
+            var prefix = new List<int>(buckets[i].PrefixLength);
+            for (int p = 0; p < buckets[i].PrefixLength; p++)
+                prefix.Add(repOrder[p]);
+            prefixes[i] = prefix;
+        }
+
+        var parent = new int[n];
+        for (int i = 0; i < n; i++)
+            parent[i] = i;
+
+        int Find(int x)
+        {
+            while (parent[x] != x)
+            {
+                parent[x] = parent[parent[x]];
+                x = parent[x];
+            }
+            return x;
+        }
+
+        for (int i = 0; i < n; i++)
+        {
+            for (int j = i + 1; j < n; j++)
+            {
+                if (Find(i) == Find(j) || prefixes[i].Count != prefixes[j].Count)
+                    continue;
+                if (state.TryMapOrderByAutomorphism(0, prefixes[i], prefixes[j]))
+                    parent[Find(i)] = Find(j);
+            }
+        }
+
+        var orbitsByRoot = new Dictionary<int, List<DoomedTailBucket>>();
+        var order = new List<int>();
+        for (int i = 0; i < n; i++)
+        {
+            int root = Find(i);
+            if (!orbitsByRoot.TryGetValue(root, out List<DoomedTailBucket>? orbit))
+            {
+                orbit = new List<DoomedTailBucket>();
+                orbitsByRoot[root] = orbit;
+                order.Add(root);
+            }
+            orbit.Add(buckets[i]);
+        }
+
+        return order.Select(root => orbitsByRoot[root]).ToList();
     }
 
     private int[] ComputeOutsideAncestors(ComparisonState state, IReadOnlyList<int> group)
@@ -392,12 +495,19 @@ partial class StrategyBuilder
         {
             Representative = representative;
             PrefixLength = prefixLength;
+            Families = new List<MergedFamilyOutcome> { representative };
         }
 
         public MergedFamilyOutcome Representative { get; }
         public int PrefixLength { get; }
         public int TotalCount { get; private set; }
+        public List<MergedFamilyOutcome> Families { get; }
 
-        public void Add(MergedFamilyOutcome outcome) => TotalCount += outcome.Family.Count;
+        public void Add(MergedFamilyOutcome outcome)
+        {
+            TotalCount += outcome.Family.Count;
+            if (!ReferenceEquals(outcome, Representative))
+                Families.Add(outcome);
+        }
     }
 }

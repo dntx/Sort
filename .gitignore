@@ -1,2 +1,7 @@
 bin/
 obj/
+anomaly-report.txt
+compact-gap-report.txt
+compact-gap-*.txt
+dump-*.txt
+block-honesty-*.txt
