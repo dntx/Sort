@@ -116,6 +116,14 @@ public sealed class StrategyRegressionTests
     // the deterministic search-work counters (searched / outcomes / candidate groups). Ratchet the
     // counter caps DOWN when an optimization cuts work; an increase is a regression.
     //
+    // TIME-PROXY ROLE (P2): these counter caps -- above all OutcomesConstructed, the dominant
+    // per-state search cost (Clone + ApplyOrder + Eliminate + Normalize per outcome) -- are the
+    // MACHINE-INDEPENDENT stand-in for wall-clock time on the heavy (5,5) frontier. Wall-clock perf
+    // tests are noisy and machine-dependent (see TopKFinder.PerfTests, now diagnostic-only); these
+    // deterministic counts are the real net. If a core-algorithm change makes one of these grow, the
+    // build WILL get slower on the 25,5,5 path even though no timer is asserted here -- treat such a
+    // diff as a performance regression unless it is a deliberate, documented trade-off.
+    //
     // NOTE: edges/outputStates here are the ID-path values and may differ from what the single-pass
     // exact path would produce for the same case -- both are valid MaxStep-optimal trees, they only
     // break ties between equally-optimal groups differently (see Default_IterativeDeepening_BeatsExactPath
@@ -689,6 +697,44 @@ public sealed class StrategyRegressionTests
         Assert.True(
             compact.TotalBranchEdges <= baseline.TotalBranchEdges,
             $"compact total edges {compact.TotalBranchEdges} exceeded baseline {baseline.TotalBranchEdges}");
+    }
+
+    // P2.1 -- compact-phase work-counter monitor (deterministic time proxy for the compact pass).
+    // The compact selection runs a SECOND DP (StrategyBuilder.Compact.cs) on top of phase 1 and is
+    // sometimes the dominant cost of a full build -- occasionally slower than the default search
+    // itself. Yet no test pinned its work counters, so a compact-phase regression would only show up
+    // (loosely) in the noisy wall-clock layer. These caps lock the compact pass's machine-independent
+    // work: CompactStatesSolved (states the secondary DP solved), CompactGroupsEnumerated (candidate
+    // groups it enumerated -- the dominant compact cost, mirrors CandidateGroupsEnumerated for the
+    // default search) and CompactStepOptimalGroups (the step-optimal subset it actually costed). Caps
+    // are the current deterministic counts; ratchet them DOWN when a compact optimization cuts work,
+    // an increase is a regression. (13,4,3 is intentionally omitted: its compact pass solves 0 states
+    // because the default tree is already minimal, so there is no work to monitor.)
+    [Theory]
+    [InlineData(9, 3, 3, 77, 1213, 366)]
+    [InlineData(11, 3, 3, 131, 2847, 647)]
+    [InlineData(12, 4, 4, 46, 1395, 165)]
+    [InlineData(10, 3, 4, 321, 11156, 2765)]
+    [InlineData(12, 4, 3, 41, 799, 187)]
+    [InlineData(12, 3, 4, 690, 40377, 5931)]
+    [InlineData(10, 2, 4, 4118, 120336, 29291)]
+    public void Compact_WorkCountersStayWithinBaseline(
+        int n, int m, int k, int statesSolvedCap, int groupsEnumeratedCap, int stepOptimalGroupsCap)
+    {
+        StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
+            $"StrategyBuilder.BuildCompactPlan({n}, {m}, {k})",
+            RegressionTestTimeout,
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildCompactPlan());
+
+        Assert.True(
+            compact.SearchStatistics.CompactStatesSolved <= statesSolvedCap,
+            $"compact states solved regressed to {compact.SearchStatistics.CompactStatesSolved} (cap {statesSolvedCap})");
+        Assert.True(
+            compact.SearchStatistics.CompactGroupsEnumerated <= groupsEnumeratedCap,
+            $"compact groups enumerated regressed to {compact.SearchStatistics.CompactGroupsEnumerated} (cap {groupsEnumeratedCap})");
+        Assert.True(
+            compact.SearchStatistics.CompactStepOptimalGroups <= stepOptimalGroupsCap,
+            $"compact step-optimal groups regressed to {compact.SearchStatistics.CompactStepOptimalGroups} (cap {stepOptimalGroupsCap})");
     }
 
     [Theory]
