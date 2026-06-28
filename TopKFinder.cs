@@ -20,8 +20,16 @@ partial class StrategyBuilder
     // re-exploration cost of multiple passes. Shallow/wide shapes keep the single-pass exact search
     // (GetMinWorstCaseStepsExact), which is byte-identical to the pre-ID algorithm, so they never
     // pay the re-exploration overhead. The threshold is an empirical heuristic, not a soundness
-    // boundary: both code paths return the same exact optimum and materialize the same tree.
+    // boundary: both code paths return the same exact MaxStep optimum. They do NOT necessarily
+    // materialize the same tree -- among equally-optimal groups the bounded path can break ties
+    // differently, so a gated (5,5) case may yield a different (still MaxStep-optimal) tree than the
+    // single-pass path. See docs/core-algorithm.md sec 4.3.
     private readonly bool _useIterativeDeepening;
+    // Test-only override of the iterative-deepening gate. When non-null it forces the search path
+    // regardless of the (m, k, n) heuristic, letting a regression test run the SAME case under both
+    // paths and assert they reach the same MaxStep optimum while iterative deepening constructs
+    // strictly fewer outcomes. Null in production.
+    internal bool? ForceIterativeDeepeningForTesting { get; set; }
     private readonly Dictionary<IntSequenceKey, int> _stateIds = new();
     private readonly Dictionary<IntSequenceKey, ExpandedStateSnapshot> _expandedStates = new();
     private readonly HashSet<SearchStateKey> _visitedSearchStates = new();
