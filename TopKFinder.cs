@@ -647,6 +647,7 @@ partial class StrategyBuilder
 
         (double progressBase, double progressSpan) = _progressScope switch
         {
+            ProgressScope.FeasibleInCombinedRun => (0.0, 0.0),
             ProgressScope.DefaultInCombinedRun => (0.0, 0.60),
             ProgressScope.CompactPrimaryInCombinedRun => (0.60, 0.39),
             ProgressScope.CompactFallbackInCombinedRun => (0.99, 0.01),
@@ -1021,6 +1022,7 @@ partial class StrategyBuilder
         DefaultInCombinedRun = 1,
         CompactPrimaryInCombinedRun = 2,
         CompactFallbackInCombinedRun = 3,
+        FeasibleInCombinedRun = 4,
     }
 
 }

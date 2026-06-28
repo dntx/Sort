@@ -11,7 +11,7 @@ class Program
         "\n" +
         "Usage:\n" +
         "  TopKFinder                      Launch the desktop (WinForms) explorer.\n" +
-        "  TopKFinder <n> <m> <k>          Run two-phase search: print default, then compact if improved.\n" +
+        "  TopKFinder <n> <m> <k>          Run three-phase search: print feasible upper bound, exact, then compact if improved.\n" +
         "  ... | TopKFinder                Read n, m, k from stdin (one value per line).\n" +
         "\n" +
         "Options:\n" +

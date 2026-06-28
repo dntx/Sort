@@ -328,8 +328,9 @@ foreach (var outcome in group.EnumerateComparisonOutcomes(state))      // 但展
 - **夹逼**：`L = GetMinWorstCaseLowerBound(root, k)`（解析下界，与精确搜索**无关**、极便宜；`25,5,5 → 6`），经
   `RecordRootProvenLowerBound` 写入；`U = ` 贪心树的 `MaxStep`。于是 `L ≤ opt ≤ U`。若 `L == U` 则该可行解
   **恰好达到了已证明下界**，即**已证明最优**（显示 `opt = U (proven optimal)`）。
-- **always-on phase 0**：贪心解作为**第 0 阶段**总是先跑、并**始终保留**在 default / compact 旁边（不是「精确解出后替换」），
-  因此用户在精确搜索还在跑（甚至跑不完）时，就有一棵可浏览的可行树和一个有保证的夹逼区间。
+- **always-on phase 0**：贪心解作为**第 0 阶段**总是先跑、并**始终保留**在 exact / compact 旁边（不是「精确解出后替换」），
+  因此用户在精确搜索还在跑（甚至跑不完）时，就有一棵可浏览的可行树和一个有保证的夹逼区间。CLI / GUI 把三棵展示树
+  统一命名为 **feasible / exact / compact**（`exact` 即此前文档中所称的「default 选择路径」`BuildDefaultPlan`）。
 - `StrategyPlan.IsFeasibleUpperBound == true` 标记这棵树是「可行上界」而非「精确最优」，CLI / GUI 据此渲染独立的
   「feasible upper bound」区域。
 

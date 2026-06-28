@@ -25,9 +25,12 @@ partial class StrategyBuilder
 
     public StrategyPlan BuildFeasiblePlan()
     {
-        // The greedy phase is effectively instant, so it does not need a dedicated combined-run
-        // progress band; the standalone scope maps its local progress straight through.
-        _progressScope = ProgressScope.DefaultStandalone;
+        // The greedy phase is effectively instant. In a combined run it occupies a zero-width band at
+        // the very front of the unified progress bar, so it never reports a misleading local fraction
+        // and the bar starts cleanly at 0% when the exact (default) phase begins.
+        _progressScope = _reportCombinedRunProgress
+            ? ProgressScope.FeasibleInCombinedRun
+            : ProgressScope.DefaultStandalone;
 
         ResetPerBuildTransientState();
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
