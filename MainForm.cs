@@ -538,42 +538,53 @@ class MainForm : Form
         _statusLabel.Text = $"Running n={n}, m={m}, k={k}...";
         _detailsTextBox.Text = BuildLiveDiagnosticsText(_latestProgress);
 
+        // The builder is shared across both phases so the compact pass reuses the phase-1 search
+        // caches the default pass already populated.
+        var builder = new StrategyBuilder(
+            n,
+            m,
+            k,
+            cancellationToken,
+            snapshot => progress.Report(snapshot),
+            reportCombinedRunProgress: true);
         try
         {
-            var result = await Task.Run(() =>
-            {
-                var builder = new StrategyBuilder(
-                    n,
-                    m,
-                    k,
-                    cancellationToken,
-                    snapshot => progress.Report(snapshot),
-                    reportCombinedRunProgress: true);
-                StrategyPlan defaultPlan = builder.BuildDefaultPlan();
-                Interlocked.Exchange(ref _phase1ElapsedMs, _runStopwatch?.ElapsedMilliseconds ?? 0);
-                Interlocked.Exchange(ref _activePhase, 2);
-                StrategyPlan compactPlan = builder.BuildCompactPlan();
-                return (defaultPlan, compactPlan);
-            }, cancellationToken);
+            // Phase 1: the default plan is already MaxStep-optimal (the compact pass only trims
+            // edges among equally-optimal groups), so render it as soon as it is ready instead of
+            // blocking the whole view on the compact refinement.
+            StrategyPlan defaultPlan = await Task.Run(() => builder.BuildDefaultPlan(), cancellationToken);
+            Interlocked.Exchange(ref _phase1ElapsedMs, _runStopwatch?.ElapsedMilliseconds ?? 0);
+
+            _defaultPlan = defaultPlan;
+            _latestProgress = CreateSnapshotFromPlan(defaultPlan);
+            PopulateTree(defaultPlan, compactPlan: null, compactImproved: false);
+            _completedDefaultStats = defaultPlan.SearchStatistics;
+            UpdateSummaryText(defaultPlan, compactPlan: null, compactImproved: false);
+            UpdateStatsPanels();
+
+            // Phase 2: compact refinement.
+            Interlocked.Exchange(ref _activePhase, 2);
+            StrategyPlan compactPlan = await Task.Run(() => builder.BuildCompactPlan(), cancellationToken);
             _runStopwatch?.Stop();
 
-            _defaultPlan = result.defaultPlan;
-            _compactPlan = result.compactPlan;
+            _compactPlan = compactPlan;
             _compactImproved =
-                result.compactPlan.MaxStep == result.defaultPlan.MaxStep &&
-                result.compactPlan.TotalBranchEdges < result.defaultPlan.TotalBranchEdges;
+                compactPlan.MaxStep == defaultPlan.MaxStep &&
+                compactPlan.TotalBranchEdges < defaultPlan.TotalBranchEdges;
 
-            _latestProgress = CreateSnapshotFromPlan(result.compactPlan);
-            PopulateTree(result.defaultPlan, result.compactPlan, _compactImproved);
-            _completedDefaultStats = result.defaultPlan.SearchStatistics;
-            _completedCompactStats = result.compactPlan.SearchStatistics;
-            UpdateSummaryText(result.defaultPlan, result.compactPlan, _compactImproved);
+            _latestProgress = CreateSnapshotFromPlan(compactPlan);
+            PopulateTree(defaultPlan, compactPlan, _compactImproved);
+            _completedCompactStats = compactPlan.SearchStatistics;
+            UpdateSummaryText(defaultPlan, compactPlan, _compactImproved);
             UpdateStatsPanels();
         }
         catch (OperationCanceledException)
         {
             _runStopwatch?.Stop();
-            _statusLabel.Text = $"Stopped after {GetElapsedSeconds():F1} s. {FormatSearchStatsSummary(_latestProgress, includeOutputStates: true)}. {FormatLiveDiagnosticsSummary(_latestProgress)}.";
+            string shownDefault = _defaultPlan is not null
+                ? " Showing the completed default strategy."
+                : string.Empty;
+            _statusLabel.Text = $"Stopped after {GetElapsedSeconds():F1} s.{shownDefault} {FormatSearchStatsSummary(_latestProgress, includeOutputStates: true)}. {FormatLiveDiagnosticsSummary(_latestProgress)}.";
             _detailsTextBox.Text = BuildLiveDiagnosticsText(_latestProgress);
         }
         catch (Exception ex)
@@ -594,7 +605,7 @@ class MainForm : Form
         }
     }
 
-    private void PopulateTree(StrategyPlan defaultPlan, StrategyPlan compactPlan, bool compactImproved)
+    private void PopulateTree(StrategyPlan defaultPlan, StrategyPlan? compactPlan, bool compactImproved)
     {
         _treeView.BeginUpdate();
         _treeView.Nodes.Clear();
@@ -603,16 +614,32 @@ class MainForm : Form
         _navigationHistory.Clear();
         _backButton.Enabled = false;
 
-        double totalElapsedMs = defaultPlan.Elapsed.TotalMilliseconds + compactPlan.Elapsed.TotalMilliseconds;
-        var root = new TreeNode(
-            $"n={defaultPlan.N}, m={defaultPlan.M}, k={defaultPlan.K}, two-phase elapsed={totalElapsedMs:F1} ms")
+        string rootLabel;
+        string rootDetails;
+        if (compactPlan is null)
         {
-            Tag = BuildTwoPhaseDetails(defaultPlan, compactPlan, compactImproved),
+            rootLabel =
+                $"n={defaultPlan.N}, m={defaultPlan.M}, k={defaultPlan.K}, " +
+                $"default elapsed={defaultPlan.Elapsed.TotalMilliseconds:F1} ms (computing compact refinement...)";
+            rootDetails = BuildDefaultOnlyDetails(defaultPlan);
+        }
+        else
+        {
+            double totalElapsedMs = defaultPlan.Elapsed.TotalMilliseconds + compactPlan.Elapsed.TotalMilliseconds;
+            rootLabel = $"n={defaultPlan.N}, m={defaultPlan.M}, k={defaultPlan.K}, two-phase elapsed={totalElapsedMs:F1} ms";
+            rootDetails = BuildTwoPhaseDetails(defaultPlan, compactPlan, compactImproved);
+        }
+
+        var root = new TreeNode(rootLabel)
+        {
+            Tag = rootDetails,
             NodeFont = new Font(_treeView.Font, FontStyle.Bold),
             ForeColor = _palette.ForeColor,
         };
         root.Nodes.Add(CreatePlanTreeRoot("default", defaultPlan, "default"));
-        if (compactImproved)
+        if (compactPlan is null)
+            root.Nodes.Add(new TreeNode("compact refinement: computing...") { ForeColor = _palette.MutedForeColor });
+        else if (compactImproved)
             root.Nodes.Add(CreatePlanTreeRoot("compact", compactPlan, "compact"));
         else
             root.Nodes.Add(new TreeNode("compact refinement: no better result (total edges unchanged or worse)") { ForeColor = _palette.MutedForeColor });
@@ -623,7 +650,7 @@ class MainForm : Form
         _treeView.EndUpdate();
         _treeView.SelectedNode = root;
 
-        if (compactImproved)
+        if (compactPlan is not null && compactImproved)
             PopulateOverview(compactPlan, "compact", "Overview of the 'compact' strategy below");
         else
             PopulateOverview(defaultPlan, "default", "Overview of the 'default' strategy below");
@@ -1095,6 +1122,12 @@ class MainForm : Form
             if (_runCancellationSource is null)
                 UpdateSummaryText(_defaultPlan, _compactPlan, _compactImproved);
         }
+        else if (_defaultPlan is not null)
+        {
+            PopulateTree(_defaultPlan, compactPlan: null, compactImproved: false);
+            if (_runCancellationSource is null)
+                UpdateSummaryText(_defaultPlan, compactPlan: null, compactImproved: false);
+        }
         else if (_runCancellationSource is null)
         {
             _statusLabel.Text = "Ready.";
@@ -1164,8 +1197,17 @@ class MainForm : Form
             ApplyThemeToControlTree(child);
     }
 
-    private void UpdateSummaryText(StrategyPlan defaultPlan, StrategyPlan compactPlan, bool compactImproved)
+    private void UpdateSummaryText(StrategyPlan defaultPlan, StrategyPlan? compactPlan, bool compactImproved)
     {
+        if (compactPlan is null)
+        {
+            _statusLabel.Text =
+                $"n={defaultPlan.N}, m={defaultPlan.M}, k={defaultPlan.K}, " +
+                $"default elapsed={defaultPlan.Elapsed.TotalMilliseconds:F1} ms, " +
+                $"worst-case steps={defaultPlan.MaxStep}. Computing compact refinement...";
+            return;
+        }
+
         double totalElapsedMs = defaultPlan.Elapsed.TotalMilliseconds + compactPlan.Elapsed.TotalMilliseconds;
         string compactText = compactImproved
             ? $"compact reduced total edges {defaultPlan.TotalBranchEdges} -> {compactPlan.TotalBranchEdges}"
@@ -1338,6 +1380,24 @@ class MainForm : Form
             2 => "2/2 compact refinement",
             _ => "-",
         };
+    }
+
+    private static string BuildDefaultOnlyDetails(StrategyPlan defaultPlan)
+    {
+        string defaultText = StrategyTextRenderer.Render(defaultPlan).TrimEnd();
+        var lines = new List<string>
+        {
+            "Default result (compact refinement in progress)",
+            $"default elapsed: {defaultPlan.Elapsed.TotalMilliseconds:F1} ms",
+            $"default total edges: {defaultPlan.TotalBranchEdges}",
+            $"default output states: {defaultPlan.SearchStatistics.OutputStates}",
+            $"worst-case steps: {defaultPlan.MaxStep}",
+            string.Empty,
+            "----- default -----",
+            defaultText,
+        };
+
+        return string.Join(Environment.NewLine, lines);
     }
 
     private static string BuildTwoPhaseDetails(StrategyPlan defaultPlan, StrategyPlan compactPlan, bool compactImproved)
