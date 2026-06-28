@@ -272,7 +272,7 @@ class MainForm : Form
 
         var statusContextMenu = new ContextMenuStrip();
         var copyStatus = new ToolStripMenuItem("Copy");
-        copyStatus.Click += (_, _) => SetClipboardText(_statusLabel.Text);
+        copyStatus.Click += (_, _) => SetClipboardText(_statusLabel.Text, updateStatus: false);
         statusContextMenu.Items.Add(copyStatus);
         _statusLabel.MouseUp += (_, e) =>
         {
@@ -337,6 +337,16 @@ class MainForm : Form
             WordWrap = false,
             ScrollBars = RichTextBoxScrollBars.Both,
         };
+        var detailsContextMenu = new ContextMenuStrip();
+        var detailsCopy = new ToolStripMenuItem("Copy") { ShortcutKeyDisplayString = "Ctrl+C" };
+        detailsCopy.Click += (_, _) => SetClipboardText(_detailsTextBox.SelectedText);
+        var detailsCopyAll = new ToolStripMenuItem("Copy all");
+        detailsCopyAll.Click += (_, _) => SetClipboardText(_detailsTextBox.Text);
+        detailsContextMenu.Items.Add(detailsCopy);
+        detailsContextMenu.Items.Add(detailsCopyAll);
+        detailsContextMenu.Opening += (_, _) =>
+            detailsCopy.Enabled = _detailsTextBox.SelectionLength > 0;
+        _detailsTextBox.ContextMenuStrip = detailsContextMenu;
         innerSplit.Panel2.Controls.Add(_detailsTextBox);
 
         _toggleDetailsButton.Click += (_, _) =>
@@ -1015,7 +1025,9 @@ class MainForm : Form
             AppendNodeSubtree(child, indent + 1, builder);
     }
 
-    private void SetClipboardText(string text)
+    private void SetClipboardText(string text) => SetClipboardText(text, updateStatus: true);
+
+    private void SetClipboardText(string text, bool updateStatus)
     {
         if (string.IsNullOrEmpty(text))
             return;
@@ -1023,11 +1035,13 @@ class MainForm : Form
         try
         {
             Clipboard.SetText(text);
-            _statusLabel.Text = "Copied to clipboard.";
+            if (updateStatus)
+                _statusLabel.Text = "Copied to clipboard.";
         }
         catch (Exception ex)
         {
-            _statusLabel.Text = $"Copy failed: {ex.Message}";
+            if (updateStatus)
+                _statusLabel.Text = $"Copy failed: {ex.Message}";
         }
     }
 
