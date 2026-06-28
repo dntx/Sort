@@ -602,9 +602,7 @@ class MainForm : Form
             _runStopwatch?.Stop();
 
             _compactPlan = compactPlan;
-            _compactImproved =
-                compactPlan.MaxStep == defaultPlan.MaxStep &&
-                compactPlan.TotalBranchEdges < defaultPlan.TotalBranchEdges;
+            _compactImproved = compactPlan.IsStrictRefinementOver(defaultPlan);
 
             _latestProgress = CreateSnapshotFromPlan(compactPlan);
             FinalizeCompactInTree(defaultPlan, compactPlan, _compactImproved);

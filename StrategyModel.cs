@@ -42,6 +42,18 @@ sealed class StrategyPlan
         IsFeasibleUpperBound = isFeasibleUpperBound;
     }
 
+    // Mainline refinement rule shared by every orchestrator (CLI and GUI): a later phase's plan is
+    // kept only when it strictly improves on the current best, comparing lexicographically by
+    // worst-case steps first (fewer is better) and then by displayed branch edges (fewer is better).
+    // This is the single place that decides whether a refinement (e.g. the compact pass) is shown, so
+    // individual builders may return raw candidates that are not guaranteed to beat the incumbent.
+    public bool IsStrictRefinementOver(StrategyPlan incumbent)
+    {
+        if (MaxStep != incumbent.MaxStep)
+            return MaxStep < incumbent.MaxStep;
+        return TotalBranchEdges < incumbent.TotalBranchEdges;
+    }
+
     private static int GetMaxStep(StrategyNode node)
     {
         int selfStep = node.Step ?? 0;

@@ -196,9 +196,7 @@ class Program
         Console.Write(StrategyTextRenderer.Render(defaultPlan));
 
         StrategyPlan compactPlan = builder.BuildCompactPlan();
-        bool compactImproved =
-            compactPlan.MaxStep == defaultPlan.MaxStep &&
-            compactPlan.TotalBranchEdges < defaultPlan.TotalBranchEdges;
+        bool compactImproved = compactPlan.IsStrictRefinementOver(defaultPlan);
         if (!compactImproved)
             return;
 

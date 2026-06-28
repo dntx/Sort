@@ -94,7 +94,7 @@ compact 是一个跑在 phase 1 之上的**二级 DP**（`StrategyBuilder.Compac
 - 另有 `Compact_PreservesMaxStepAndDoesNotRegressEdges`、`Compact_ShrinksTreesWithRedundantSolutions`
   等测试守护 compact 的**正确性**（保持 MaxStep、边数不劣于 default、在已知冗余算例上确实变小）。
 
-> compact 的最优性边界（最小化的是边数**代理量**、可能比 default 差因而有兜底取 min）见
+> compact 的最优性边界（最小化的是边数**代理量**、原始候选可能比 default 差，由编排层「严格更优才展示」裁决）见
 > `docs/core-algorithm.md` §4.4。
 
 ### 3.4 夹逼报告（squeeze）的「已证明下界 L」一侧

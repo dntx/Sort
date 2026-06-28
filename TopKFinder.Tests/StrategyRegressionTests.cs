@@ -806,7 +806,12 @@ public sealed class StrategyRegressionTests
     // equally-optimal solutions, prefers the one with the smallest materialized tree. These
     // tests pin the two invariants: max step is preserved and output states never regress
     // above the default, plus the concrete shrink on cases known to have redundant trees.
-
+    //
+    // The builder no longer falls back to default internally (the orchestrator decides what to
+    // show), so this test asserts the RAW compact candidate directly. Only shapes where the raw
+    // candidate already satisfies edges <= default are listed; anomaly shapes where the edge proxy
+    // overshoots default are intentionally not covered here -- see the "compact edge-proxy gap" todo
+    // for improving compact itself so it stops overshooting.
     [Theory]
     [InlineData(9, 3, 3)]
     [InlineData(11, 3, 3)]
@@ -933,9 +938,12 @@ public sealed class StrategyRegressionTests
     [InlineData(10, 3, 4, 1088)]
     [InlineData(12, 4, 3, 131)]
     [InlineData(12, 3, 3, 538)]
-    [InlineData(8, 4, 2, 3)]
-    [InlineData(10, 3, 5, 8)]
-    [InlineData(13, 4, 3, 13)]
+    // These three shapes are ties/anomalies where the compact candidate does not strictly beat
+    // default. They formerly measured the discarded default-fallback plan's tiny counts; now that
+    // BuildCompactPlan returns the genuine compact candidate, the caps reflect the real compact pass.
+    [InlineData(8, 4, 2, 7)]
+    [InlineData(10, 3, 5, 623)]
+    [InlineData(13, 4, 3, 142)]
     public void Compact_SearchedStateCountStaysWithinBaseline(int n, int m, int k, int searchedStateCap)
     {
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
@@ -1046,9 +1054,11 @@ public sealed class StrategyRegressionTests
     [InlineData(10, 3, 4, 46300)]
     [InlineData(12, 4, 3, 6011)]
     [InlineData(12, 3, 3, 8531)]
-    [InlineData(8, 4, 2, 2)]
-    [InlineData(10, 3, 5, 7)]
-    [InlineData(13, 4, 3, 34)]
+    // Ties/anomalies (see Compact_SearchedStateCountStaysWithinBaseline): now measure the genuine
+    // compact candidate instead of the discarded default fallback.
+    [InlineData(8, 4, 2, 28)]
+    [InlineData(10, 3, 5, 9828)]
+    [InlineData(13, 4, 3, 2352)]
     public void Compact_OutcomesConstructedStaysWithinBaseline(int n, int m, int k, int outcomesCap)
     {
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
@@ -1170,9 +1180,11 @@ public sealed class StrategyRegressionTests
     [InlineData(10, 3, 4, 4982)]
     [InlineData(12, 4, 3, 2387)]
     [InlineData(12, 3, 3, 617)]
-    [InlineData(8, 4, 2, 0)]
-    [InlineData(10, 3, 5, 0)]
-    [InlineData(13, 4, 3, 15)]
+    // Ties/anomalies (see Compact_SearchedStateCountStaysWithinBaseline): now measure the genuine
+    // compact candidate instead of the discarded default fallback.
+    [InlineData(8, 4, 2, 11)]
+    [InlineData(10, 3, 5, 625)]
+    [InlineData(13, 4, 3, 547)]
     public void Compact_DuplicateOutcomeSkipsStaysWithinBaseline(int n, int m, int k, int duplicateSkipCap)
     {
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(

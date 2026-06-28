@@ -17,15 +17,14 @@ using Xunit;
 // Known findings (n <= 12 sweep, recorded so re-runs are not surprising):
 //   * Every rendered CountFormula evaluates exactly to its displayed Count across all 550 cases,
 //     so the factorial / hook-length equivalent-forms notation is globally self-consistent.
-//   * CompactEdgesIncreased is now FIXED and should never fire. Previously the compact pass could
-//     materialize MORE displayed edges than default (e.g. (12,3,7) 13->17, (10,4,8) 8->10) because
-//     its edge proxy (StrategyBuilder.Compact.cs) sums each child subtree independently and does
-//     not model the materializer's display-key Reference de-duplication (TopKFinder.cs: a state
-//     seen a second time becomes a zero-edge Reference leaf), so minimizing the proxy did not
-//     strictly minimize rendered edges. BuildCompactPlan now falls back to the default selection
-//     whenever the compact selection does not strictly reduce the materialized edge count, so the
-//     compact plan is guaranteed never worse than default. The check below therefore now acts as a
-//     regression guard rather than a documented exception.
+//   * CompactEdgesIncreased is informational, not a bug. The compact pass minimizes an ADDITIVE
+//     per-state edge proxy that (a) double-counts shared subtrees and (b) memoizes on the coarser
+//     SearchStateKey while the materializer de-dups on the finer display key, so on rare shapes the
+//     RAW compact selection materializes MORE displayed edges than default (e.g. (12,3,7) 13->17,
+//     (10,4,8) 8->10). BuildCompactPlan returns that raw candidate; the orchestrator's mainline rule
+//     (StrategyPlan.IsStrictRefinementOver) then keeps the compact plan only when it strictly beats
+//     default, so a worse-than-default candidate is simply never shown. This Review finding therefore
+//     records the proxy-vs-display gap for those shapes rather than flagging a regression.
 public sealed class AnomalyScanTests
 {
     [Fact]
@@ -97,8 +96,10 @@ public sealed class AnomalyScanTests
             {
                 CheckPlan(compact, "compact", findings, branchCounts);
 
-                // Compact may never be worse than default: it must keep the same worst-case depth
-                // and never increase the number of displayed edges.
+                // Compact must keep the same worst-case depth as default. It MAY render more edges
+                // than default at the builder level (the raw candidate's proxy is not display-exact);
+                // the orchestrator only shows it when it strictly improves, so an edge increase here
+                // is informational (Severity.Review), not a hard invariant violation.
                 if (compact.MaxStep != def.MaxStep)
                     findings.Add(new Finding(Severity.Bug, n, m, k, "CompactDepthChanged",
                         $"compact MaxStep {compact.MaxStep} != default MaxStep {def.MaxStep}"));

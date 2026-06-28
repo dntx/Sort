@@ -120,25 +120,18 @@ partial class StrategyBuilder
 
     public StrategyPlan BuildCompactPlan()
     {
+        // Returns the raw compact candidate: the compact DP keeps the optimal worst-case step count
+        // (so MaxStep always matches default) and, among equally-optimal groups, minimizes a per-state
+        // displayed-edge proxy. That proxy does not model the materializer's display-key Reference
+        // de-duplication, so on rare shapes the compact selection can render MORE branch edges than
+        // default (e.g. 10,4,8: 8 -> 10). This builder no longer guards against that internally --
+        // the orchestrator's mainline rule (keep a phase's plan only when it strictly improves on the
+        // global best) is the single place that decides whether the compact plan is shown, so a
+        // worse-than-default compact candidate is simply never used.
         _progressScope = _reportCombinedRunProgress
             ? ProgressScope.CompactPrimaryInCombinedRun
             : ProgressScope.DefaultStandalone;
-        StrategyPlan compact = BuildPlan(useCompactSelection: true);
-
-        // The compact DP minimizes a per-state edge proxy that sums each child subtree
-        // independently; it does not model the materializer's display-key Reference
-        // de-duplication (a state reached a second time renders as a zero-edge Reference
-        // leaf). On rare states this proxy mismatch makes the compact selection render
-        // MORE branch edges than the default selection (e.g. 10,4,8: 8 -> 10). The compact
-        // pass must never be worse than default, so when it fails to strictly reduce the
-        // materialized edge count, fall back to the default selection. Compact only ever
-        // chooses among step-optimal groups, so MaxStep already matches default and the
-        // edge count is the sole tie-breaker.
-        _progressScope = _reportCombinedRunProgress
-            ? ProgressScope.CompactFallbackInCombinedRun
-            : ProgressScope.DefaultStandalone;
-        StrategyPlan fallback = BuildPlan(useCompactSelection: false);
-        return compact.TotalBranchEdges < fallback.TotalBranchEdges ? compact : fallback;
+        return BuildPlan(useCompactSelection: true);
     }
 
     private StrategyPlan BuildPlan(bool useCompactSelection)
@@ -649,8 +642,7 @@ partial class StrategyBuilder
         {
             ProgressScope.FeasibleInCombinedRun => (0.0, 0.01),
             ProgressScope.DefaultInCombinedRun => (0.01, 0.59),
-            ProgressScope.CompactPrimaryInCombinedRun => (0.60, 0.39),
-            ProgressScope.CompactFallbackInCombinedRun => (0.99, 0.01),
+            ProgressScope.CompactPrimaryInCombinedRun => (0.60, 0.40),
             _ => (0.0, 1.0),
         };
 
@@ -1027,7 +1019,6 @@ partial class StrategyBuilder
         DefaultStandalone = 0,
         DefaultInCombinedRun = 1,
         CompactPrimaryInCombinedRun = 2,
-        CompactFallbackInCombinedRun = 3,
         FeasibleInCombinedRun = 4,
     }
 
