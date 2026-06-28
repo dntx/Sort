@@ -190,13 +190,30 @@ class Program
 
         StrategyPlan defaultPlan = builder.BuildDefaultPlan();
         ClearProgressLine();
-        Console.WriteLine("==================== exact optimal ====================");
-        Console.Write(StrategyOverviewRenderer.RenderText(defaultPlan));
         Console.WriteLine();
-        Console.Write(StrategyTextRenderer.Render(defaultPlan));
+
+        // The exact search always PROVES the optimum, but its tree only earns a fresh section when
+        // it strictly refines the feasible strategy already shown (fewer steps, or equal steps with
+        // fewer edges). When it does not, we skip the redundant tree and just record the proof that
+        // the feasible strategy above is already optimal. The better of the two becomes the incumbent
+        // the compact phase must beat.
+        bool exactImproved = defaultPlan.IsStrictRefinementOver(feasiblePlan);
+        StrategyPlan incumbent = exactImproved ? defaultPlan : feasiblePlan;
+        if (exactImproved)
+        {
+            Console.WriteLine("==================== exact optimal ====================");
+            Console.Write(StrategyOverviewRenderer.RenderText(defaultPlan));
+            Console.WriteLine();
+            Console.Write(StrategyTextRenderer.Render(defaultPlan));
+        }
+        else
+        {
+            Console.WriteLine($"==================== exact optimal (opt = {defaultPlan.MaxStep}, proven) ====================");
+            Console.WriteLine("the feasible strategy above is already optimal; exact search found nothing better.");
+        }
 
         StrategyPlan compactPlan = builder.BuildCompactPlan();
-        bool compactImproved = compactPlan.IsStrictRefinementOver(defaultPlan);
+        bool compactImproved = compactPlan.IsStrictRefinementOver(incumbent);
         if (!compactImproved)
             return;
 

@@ -94,6 +94,7 @@ class MainForm : Form
     private StrategyPlan? _feasiblePlan;
     private StrategyPlan? _defaultPlan;
     private StrategyPlan? _compactPlan;
+    private bool _exactImproved;
     private bool _compactImproved;
     private Stopwatch? _runStopwatch;
     private CancellationTokenSource? _runCancellationSource;
@@ -544,6 +545,7 @@ class MainForm : Form
         _feasiblePlan = null;
         _defaultPlan = null;
         _compactPlan = null;
+        _exactImproved = false;
         _compactImproved = false;
         _activePhase = 0;
         Interlocked.Exchange(ref _phase1ElapsedMs, -1);
@@ -573,7 +575,7 @@ class MainForm : Form
             StrategyPlan feasiblePlan = await Task.Run(() => builder.BuildFeasiblePlan(), cancellationToken);
             _feasiblePlan = feasiblePlan;
             _latestProgress = CreateSnapshotFromPlan(feasiblePlan);
-            PopulateTree(feasiblePlan, defaultPlan: null, compactPlan: null, compactImproved: false);
+            PopulateTree(feasiblePlan, defaultPlan: null, compactPlan: null, exactImproved: false, compactImproved: false);
             _completedFeasibleStats = feasiblePlan.SearchStatistics;
             UpdateSummaryText(feasiblePlan, defaultPlan: null, compactPlan: null, compactImproved: false);
             UpdateStatsPanels();
@@ -590,8 +592,10 @@ class MainForm : Form
             Interlocked.Exchange(ref _phase1ElapsedMs, _runStopwatch?.ElapsedMilliseconds ?? 0);
 
             _defaultPlan = defaultPlan;
+            _exactImproved = defaultPlan.IsStrictRefinementOver(feasiblePlan);
+            StrategyPlan incumbent = _exactImproved ? defaultPlan : feasiblePlan;
             _latestProgress = CreateSnapshotFromPlan(defaultPlan);
-            FinalizeDefaultInTree(feasiblePlan, defaultPlan);
+            FinalizeDefaultInTree(feasiblePlan, defaultPlan, _exactImproved);
             _completedDefaultStats = defaultPlan.SearchStatistics;
             UpdateSummaryText(feasiblePlan, defaultPlan, compactPlan: null, compactImproved: false);
             UpdateStatsPanels();
@@ -602,7 +606,7 @@ class MainForm : Form
             _runStopwatch?.Stop();
 
             _compactPlan = compactPlan;
-            _compactImproved = compactPlan.IsStrictRefinementOver(defaultPlan);
+            _compactImproved = compactPlan.IsStrictRefinementOver(incumbent);
 
             _latestProgress = CreateSnapshotFromPlan(compactPlan);
             FinalizeCompactInTree(defaultPlan, compactPlan, _compactImproved);
@@ -639,7 +643,7 @@ class MainForm : Form
         }
     }
 
-    private void PopulateTree(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool compactImproved)
+    private void PopulateTree(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool exactImproved, bool compactImproved)
     {
         _treeView.BeginUpdate();
         _treeView.Nodes.Clear();
@@ -649,7 +653,7 @@ class MainForm : Form
         _backButton.Enabled = false;
 
         string rootLabel = BuildRootLabel(feasiblePlan, defaultPlan, compactPlan);
-        string rootDetails = BuildRootDetails(feasiblePlan, defaultPlan, compactPlan, compactImproved);
+        string rootDetails = BuildRootDetails(feasiblePlan, defaultPlan, compactPlan, exactImproved, compactImproved);
 
         var root = new TreeNode(rootLabel)
         {
@@ -666,8 +670,10 @@ class MainForm : Form
         // Section 1: the exact plan (placeholder until phase 1 completes).
         if (defaultPlan is null)
             root.Nodes.Add(new TreeNode("exact strategy: computing...") { ForeColor = _palette.MutedForeColor });
-        else
+        else if (exactImproved)
             root.Nodes.Add(CreatePlanTreeRoot("exact", defaultPlan, "default"));
+        else
+            root.Nodes.Add(new TreeNode($"exact strategy: no better than feasible — opt = {defaultPlan.MaxStep} (proven optimal)") { ForeColor = _palette.MutedForeColor });
 
         // Section 2: the compact refinement (placeholder until phase 2 completes).
         if (compactPlan is null)
@@ -683,7 +689,7 @@ class MainForm : Form
         _treeView.EndUpdate();
         _treeView.SelectedNode = root;
 
-        RebuildOverview(feasiblePlan, defaultPlan, compactPlan, compactImproved);
+        RebuildOverview(feasiblePlan, defaultPlan, compactPlan, exactImproved, compactImproved);
     }
 
     // Squeeze on the optimum for a plan: L is the proven analytic lower bound
@@ -714,7 +720,7 @@ class MainForm : Form
         return $"{head}, exact worst-case steps={defaultPlan.MaxStep}, total elapsed={totalMs:F1} ms";
     }
 
-    private static string BuildRootDetails(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool compactImproved)
+    private static string BuildRootDetails(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool exactImproved, bool compactImproved)
     {
         if (defaultPlan is null)
             return BuildFeasibleOnlyDetails(feasiblePlan);
@@ -726,13 +732,13 @@ class MainForm : Form
     // Folds the finished default exact plan into the tree by replacing only its "computing..."
     // placeholder (section 1), leaving the feasible section (0) and the compact placeholder (2) --
     // along with the user's expand/scroll/selection state over them -- untouched.
-    private void FinalizeDefaultInTree(StrategyPlan feasiblePlan, StrategyPlan defaultPlan)
+    private void FinalizeDefaultInTree(StrategyPlan feasiblePlan, StrategyPlan defaultPlan, bool exactImproved)
     {
         // Defensive fallback: if the tree was cleared/rebuilt out from under us (e.g. a theme switch
         // mid-search), rebuild from scratch with the compact slot still pending.
         if (_treeView.Nodes.Count == 0 || _treeView.Nodes[0].Nodes.Count < 3)
         {
-            PopulateTree(feasiblePlan, defaultPlan, compactPlan: null, compactImproved: false);
+            PopulateTree(feasiblePlan, defaultPlan, compactPlan: null, exactImproved, compactImproved: false);
             return;
         }
 
@@ -742,10 +748,13 @@ class MainForm : Form
         root.Tag = BuildDefaultOnlyDetails(defaultPlan);
 
         root.Nodes.RemoveAt(1);
-        root.Nodes.Insert(1, CreatePlanTreeRoot("exact", defaultPlan, "default"));
+        if (exactImproved)
+            root.Nodes.Insert(1, CreatePlanTreeRoot("exact", defaultPlan, "default"));
+        else
+            root.Nodes.Insert(1, new TreeNode($"exact strategy: no better than feasible — opt = {defaultPlan.MaxStep} (proven optimal)") { ForeColor = _palette.MutedForeColor });
         _treeView.EndUpdate();
 
-        FinalizeDefaultInOverview(defaultPlan);
+        FinalizeDefaultInOverview(defaultPlan, exactImproved);
     }
 
     // Incrementally folds the finished compact result into the already-rendered tree instead of
@@ -762,7 +771,7 @@ class MainForm : Form
         if (_treeView.Nodes.Count == 0 || _feasiblePlan is null)
         {
             if (_feasiblePlan is not null)
-                PopulateTree(_feasiblePlan, defaultPlan, compactPlan, compactImproved);
+                PopulateTree(_feasiblePlan, defaultPlan, compactPlan, _exactImproved, compactImproved);
             return;
         }
 
@@ -832,7 +841,7 @@ class MainForm : Form
     // "compact strategy" section / "no better result" note / "computing..." placeholder. Each
     // section is an independent root, so the strategies' overviews can be browsed and collapsed
     // separately. This is the full-rebuild path used for the initial render and theme switches.
-    private void RebuildOverview(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool compactImproved)
+    private void RebuildOverview(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool exactImproved, bool compactImproved)
     {
         _overviewTree.BeginUpdate();
         _overviewTree.Nodes.Clear();
@@ -842,8 +851,10 @@ class MainForm : Form
 
         if (defaultPlan is null)
             _overviewTree.Nodes.Add(BuildOverviewNoteNode("exact strategy overview: computing..."));
-        else
+        else if (exactImproved)
             _overviewTree.Nodes.Add(BuildOverviewSectionNode(defaultPlan, "default", "exact strategy overview"));
+        else
+            _overviewTree.Nodes.Add(BuildOverviewNoteNode($"exact strategy overview: no better than feasible — opt = {defaultPlan.MaxStep} (proven optimal)"));
 
         if (compactPlan is null)
             _overviewTree.Nodes.Add(BuildOverviewNoteNode("compact strategy overview: computing..."));
@@ -858,14 +869,17 @@ class MainForm : Form
     // Incrementally folds the finished exact result into the overview, mirroring the tree
     // update: the feasible section (0) and the trailing compact placeholder (2) are left untouched,
     // and only the middle "computing..." placeholder (1) is replaced with the exact section.
-    private void FinalizeDefaultInOverview(StrategyPlan defaultPlan)
+    private void FinalizeDefaultInOverview(StrategyPlan defaultPlan, bool exactImproved)
     {
         if (_overviewTree.Nodes.Count < 3)
             return;
 
         _overviewTree.BeginUpdate();
         _overviewTree.Nodes.RemoveAt(1);
-        _overviewTree.Nodes.Insert(1, BuildOverviewSectionNode(defaultPlan, "default", "exact strategy overview"));
+        if (exactImproved)
+            _overviewTree.Nodes.Insert(1, BuildOverviewSectionNode(defaultPlan, "default", "exact strategy overview"));
+        else
+            _overviewTree.Nodes.Insert(1, BuildOverviewNoteNode($"exact strategy overview: no better than feasible — opt = {defaultPlan.MaxStep} (proven optimal)"));
         _overviewTree.EndUpdate();
     }
 
@@ -1329,7 +1343,7 @@ class MainForm : Form
 
         if (_feasiblePlan is not null)
         {
-            PopulateTree(_feasiblePlan, _defaultPlan, _compactPlan, _compactImproved);
+            PopulateTree(_feasiblePlan, _defaultPlan, _compactPlan, _exactImproved, _compactImproved);
             if (_runCancellationSource is null)
                 UpdateSummaryText(_feasiblePlan, _defaultPlan, _compactPlan, _compactImproved);
         }
