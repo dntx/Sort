@@ -270,16 +270,6 @@ class MainForm : Form
         };
         _statusStrip.Items.Add(_statusLabel);
 
-        var statusContextMenu = new ContextMenuStrip();
-        var copyStatus = new ToolStripMenuItem("Copy");
-        copyStatus.Click += (_, _) => SetClipboardText(_statusLabel.Text, updateStatus: false);
-        statusContextMenu.Items.Add(copyStatus);
-        _statusLabel.MouseUp += (_, e) =>
-        {
-            if (e.Button == MouseButtons.Right)
-                statusContextMenu.Show(Cursor.Position);
-        };
-
         var split = new SplitContainer
         {
             Dock = DockStyle.Fill,
@@ -1025,9 +1015,7 @@ class MainForm : Form
             AppendNodeSubtree(child, indent + 1, builder);
     }
 
-    private void SetClipboardText(string text) => SetClipboardText(text, updateStatus: true);
-
-    private void SetClipboardText(string text, bool updateStatus)
+    private void SetClipboardText(string text)
     {
         if (string.IsNullOrEmpty(text))
             return;
@@ -1035,13 +1023,11 @@ class MainForm : Form
         try
         {
             Clipboard.SetText(text);
-            if (updateStatus)
-                _statusLabel.Text = "Copied to clipboard.";
+            _statusLabel.Text = "Copied to clipboard.";
         }
         catch (Exception ex)
         {
-            if (updateStatus)
-                _statusLabel.Text = $"Copy failed: {ex.Message}";
+            _statusLabel.Text = $"Copy failed: {ex.Message}";
         }
     }
 
