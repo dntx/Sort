@@ -75,8 +75,10 @@ class MainForm : Form
     private readonly ComboBox _themeComboBox;
     private readonly Button _runButton;
     private readonly Button _stopButton;
-    private readonly Button _expandAllButton;
-    private readonly Button _collapseAllButton;
+    private readonly Button _treeExpandButton;
+    private readonly Button _treeCollapseButton;
+    private readonly Button _overviewExpandButton;
+    private readonly Button _overviewCollapseButton;
     private readonly Button _backButton;
     private readonly Button _toggleDetailsButton;
     private readonly TextBox _progressTextBox;
@@ -164,20 +166,36 @@ class MainForm : Form
         };
         _stopButton.Click += (_, _) => StopStrategy();
 
-        _expandAllButton = new Button
+        _treeExpandButton = new Button
         {
-            Text = "Expand All",
+            Text = "Expand",
             AutoSize = true,
-            Height = 30,
-            Margin = new Padding(0, 4, 8, 0),
+            Height = 26,
+            Margin = new Padding(0, 0, 6, 0),
         };
 
-        _collapseAllButton = new Button
+        _treeCollapseButton = new Button
         {
-            Text = "Collapse All",
+            Text = "Collapse",
             AutoSize = true,
-            Height = 30,
-            Margin = new Padding(0, 4, 0, 0),
+            Height = 26,
+            Margin = new Padding(0, 0, 0, 0),
+        };
+
+        _overviewExpandButton = new Button
+        {
+            Text = "Expand",
+            AutoSize = true,
+            Height = 26,
+            Margin = new Padding(0, 0, 6, 0),
+        };
+
+        _overviewCollapseButton = new Button
+        {
+            Text = "Collapse",
+            AutoSize = true,
+            Height = 26,
+            Margin = new Padding(0, 0, 0, 0),
         };
 
         _backButton = new Button
@@ -225,8 +243,6 @@ class MainForm : Form
         };
         actionsPanel.Controls.Add(_runButton);
         actionsPanel.Controls.Add(_stopButton);
-        actionsPanel.Controls.Add(_expandAllButton);
-        actionsPanel.Controls.Add(_collapseAllButton);
         actionsPanel.Controls.Add(_backButton);
         actionsPanel.Controls.Add(_toggleDetailsButton);
 
@@ -290,8 +306,8 @@ class MainForm : Form
         _treeView.MouseDown += TreeView_MouseDown;
         _treeView.KeyDown += TreeView_KeyDown;
         _treeView.ContextMenuStrip = CreateTreeContextMenu();
-        _expandAllButton.Click += (_, _) => _treeView.ExpandAll();
-        _collapseAllButton.Click += (_, _) => _treeView.CollapseAll();
+        _treeExpandButton.Click += (_, _) => _treeView.ExpandAll();
+        _treeCollapseButton.Click += (_, _) => _treeView.CollapseAll();
         _backButton.Click += (_, _) => NavigateBack();
 
         _overviewTree = new TreeView
@@ -306,6 +322,8 @@ class MainForm : Form
         _overviewTree.AfterSelect += (_, _) => JumpFromOverviewSelection();
         _overviewTree.ContextMenuStrip = CreateOverviewContextMenu();
         _overviewTree.KeyDown += OverviewTree_KeyDown;
+        _overviewExpandButton.Click += (_, _) => _overviewTree.ExpandAll();
+        _overviewCollapseButton.Click += (_, _) => _overviewTree.CollapseAll();
 
         var innerSplit = new SplitContainer
         {
@@ -314,7 +332,7 @@ class MainForm : Form
             Panel2Collapsed = true,
             SplitterWidth = 6,
         };
-        innerSplit.Panel1.Controls.Add(_treeView);
+        innerSplit.Panel1.Controls.Add(CreateTreeRegion(_treeView, _treeExpandButton, _treeCollapseButton));
 
         _detailsTextBox = new RichTextBox
         {
@@ -342,7 +360,7 @@ class MainForm : Form
             _toggleDetailsButton.Text = innerSplit.Panel2Collapsed ? "Show Details" : "Hide Details";
         };
 
-        split.Panel1.Controls.Add(_overviewTree);
+        split.Panel1.Controls.Add(CreateTreeRegion(_overviewTree, _overviewExpandButton, _overviewCollapseButton));
         split.Panel2.Controls.Add(innerSplit);
 
         headerLayout.Controls.Add(controlsLayout, 0, 0);
@@ -646,7 +664,6 @@ class MainForm : Form
             root.Nodes.Add(new TreeNode("compact refinement: no better result (total edges unchanged or worse)") { ForeColor = _palette.MutedForeColor });
         _treeView.Nodes.Add(root);
         root.Expand();
-        root.Nodes[0].Expand();
 
         _treeView.EndUpdate();
         _treeView.SelectedNode = root;
@@ -688,6 +705,30 @@ class MainForm : Form
         _treeView.EndUpdate();
 
         FinalizeCompactInOverview(compactPlan, compactImproved);
+    }
+
+    // Wraps a tree in a panel with a small top toolbar holding that tree's own Expand/Collapse
+    // buttons, so each of the two tree regions (overview and strategy) is controlled independently.
+    private static Panel CreateTreeRegion(TreeView tree, Button expandButton, Button collapseButton)
+    {
+        var toolbar = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            WrapContents = false,
+            Padding = new Padding(2, 2, 2, 2),
+            Margin = Padding.Empty,
+        };
+        toolbar.Controls.Add(expandButton);
+        toolbar.Controls.Add(collapseButton);
+
+        tree.Dock = DockStyle.Fill;
+
+        var region = new Panel { Dock = DockStyle.Fill };
+        // Add the fill control first, then the top toolbar, so the toolbar docks above the tree.
+        region.Controls.Add(tree);
+        region.Controls.Add(toolbar);
+        return region;
     }
 
     // Resets the result surfaces (overview list, tree, navigation state, details) so a fresh Run
@@ -777,7 +818,7 @@ class MainForm : Form
         }
 
         _overviewTree.Nodes.Add(sectionNode);
-        sectionNode.ExpandAll();
+        sectionNode.Expand();
     }
 
     private void AppendOverviewNote(string text)
@@ -1328,8 +1369,10 @@ class MainForm : Form
         UseWaitCursor = state == RunUiState.Running;
         _runButton.Enabled = !running;
         _stopButton.Enabled = running;
-        _expandAllButton.Enabled = interactive;
-        _collapseAllButton.Enabled = interactive;
+        _treeExpandButton.Enabled = interactive;
+        _treeCollapseButton.Enabled = interactive;
+        _overviewExpandButton.Enabled = interactive;
+        _overviewCollapseButton.Enabled = interactive;
         _backButton.Enabled = interactive && _navigationHistory.Count > 0;
     }
 
