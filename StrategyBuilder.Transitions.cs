@@ -53,16 +53,56 @@ partial class StrategyBuilder
         {
             foreach (List<MergedFamilyOutcome> line in SplitMergedBucketIntoBranchLines(state, merged.FamilyOutcomes))
             {
-                MergedFamilyOutcome representative = line[0];
-                EquivalentOrderSummary? summary = BuildEquivalentOrderSummary(
-                    line.Select(outcome => outcome.Family).ToList());
-                specs.Add(new BranchSpec(representative.Family.RepresentativeOrder, representative, summary));
+                specs.Add(BuildBranchSpecForLine(state, line));
             }
         }
 
         return specs
             .OrderBy(spec => spec.OrderText, StringComparer.Ordinal)
             .ToList();
+    }
+
+    // Builds the spec for one displayed branch line. A line with a single family, or several
+    // families the pattern engine unifies into one disjunction-free template, is summarized
+    // directly. A line that is a genuine parent-automorphism orbit the engine cannot express as a
+    // single template (e.g. two symmetric sorted chains, where "#1 > #11 > ..." mirrors
+    // "#11 > #1 > ...") would otherwise render as a misleading "(... | ...)" disjunction; instead we
+    // fold it onto one representative line annotated with the relabeling that proves the equivalence.
+    private BranchSpec BuildBranchSpecForLine(ComparisonState state, List<MergedFamilyOutcome> line)
+    {
+        var families = line.Select(outcome => outcome.Family).ToList();
+        EquivalentOrderSummary? summary = BuildEquivalentOrderSummary(families);
+
+        if (line.Count >= 2
+            && families.All(family => family.Count == 1)
+            && summary is not null
+            && summary.PatternText.Contains(" | ", StringComparison.Ordinal))
+        {
+            MergedFamilyOutcome representative = SelectOrbitRepresentative(line);
+            EquivalentOrderSummary relabelSummary = BuildRelabelingOrbitSummary(state, line, representative);
+            return new BranchSpec(representative.Family.RepresentativeOrder, representative, relabelSummary);
+        }
+
+        MergedFamilyOutcome lineRepresentative = line[0];
+        return new BranchSpec(lineRepresentative.Family.RepresentativeOrder, lineRepresentative, summary);
+    }
+
+    // The lexicographically smallest ordering in a relabeling orbit, so the folded line shows the
+    // most natural representative (e.g. the "#1 > ..." form rather than a mirror "#11 > ..." form).
+    private static MergedFamilyOutcome SelectOrbitRepresentative(List<MergedFamilyOutcome> line)
+    {
+        MergedFamilyOutcome best = line[0];
+        string bestText = best.Family.RepresentativeOrder;
+        for (int i = 1; i < line.Count; i++)
+        {
+            string text = line[i].Family.RepresentativeOrder;
+            if (string.CompareOrdinal(text, bestText) < 0)
+            {
+                best = line[i];
+                bestText = text;
+            }
+        }
+        return best;
     }
 
     // Splits one merged bucket's order families into the exact set of displayed branch lines.
@@ -99,7 +139,16 @@ partial class StrategyBuilder
 
             EquivalentOrderSummary? combinedSummary = BuildEquivalentOrderSummary(
                 orbit.Select(outcome => outcome.Family).ToList());
-            if (MergedOrderingsFormSingleOrbit(combinedSummary))
+
+            // The orbit is parent-automorphism-backed (interchangeable up to relabeling). Keep it on
+            // one line when it is either a clean disjunction-free template ("permute {...}") or an
+            // all-singleton relabeling orbit, which BuildBranchSpecForLine renders as one
+            // representative annotated with the relabeling. Only fall back to per-family lines when
+            // neither honest single-line form applies (e.g. a member carries its own internal
+            // permutation), which would otherwise read as a misleading "(... | ...)" disjunction.
+            bool isCleanTemplate = MergedOrderingsFormSingleOrbit(combinedSummary);
+            bool isRelabelingOrbit = orbit.All(outcome => outcome.Family.Count == 1);
+            if (isCleanTemplate || isRelabelingOrbit)
             {
                 lines.Add(orbit);
             }

@@ -96,6 +96,34 @@ TryBuildDoomedTailSpecs(...)  // 轨道 A：尾部已出局 → 折叠成 {...}
 引擎内部先用一种可解析的中间形式 `<alias>=permute{...}, ...; <body>`，最后才翻译成展示用的
 `{...}` / `A = {...}` 记号。
 
+#### 轨道 B 的同构折叠：跨链 relabel 等价
+
+通用引擎只看排序、看不到父状态 P，所以遇到「两条排序互为父状态自同构的镜像」时，它无法用一个
+无析取的模板表达，只能退化成 `(... | ...)`。但这类镜像**确实**是真等价：在把一个分桶切成展示行时，
+`SplitMergedBucketIntoBranchLines`（`StrategyBuilder.Transitions.cs`）先用
+`PartitionFamiliesIntoOrbits` 按父状态自同构（`ComparisonState.TryFindOrderAutomorphism`，
+`fixedTopMask: 0`）把族并成轨道——只有被一个真实的活跃偏序自同构连起来的族才会同轨道。
+
+典型例子是 20,10,10 可行解的 S3：活跃偏序是两条等价长链（`#1~#10` 与 `#11~#20`），链交换
+`#i ↔ #i+10` 是真自同构，于是每条排序都有一个镜像收敛到同一个规范子状态。对这种**全单例**轨道，
+`BuildBranchSpecForLine` 选字典序最小的排序当代表，并交给 `BuildRelabelingOrbitSummary`
+（`StrategyBuilder.EquivalentOrders.cs`）渲染成一行 + 一句 relabel 图例，例如：
+
+```
+equivalent forms: 2 = 2
+pattern: #1 > #11 > ... > #5 ; (#1 ~ #10) ↔ (#11 ~ #20)
+```
+
+图例由自同构见证映射 run-collapse 而来：对合（chain-swap）压成 `(#a ~ #b) ↔ (#c ~ #d)` 区间对，
+非对合退化为有方向的 `#a→#b`。只有轨道里**所有族都是单例**才走这条折叠；任一族自带内部排列
+（`Family.Count > 1`）则保持旧的按族拆行，避免把内部对称误并进 relabel 图例。
+
+> 诚实性边界：仅「父状态自同构连起来」的镜像才折叠；纯收敛（下一状态同构但父状态**无**自同构）
+> 不会被 `TryFindOrderAutomorphism` 接受、也就不会并轨道，仍各自成行。回归网由
+> `TopKFinder.PerfTests/RelabelingOrbitFoldingTests.cs` 用计数断言守护（20,10,10 可行解的
+> `CheckPlanFalseSplits` 必须为 0）。
+
+
 ### 轨道 A：doomed-tail 边（`StrategyBuilder.DoomedTailEdges.cs`）
 
 这是本文的重点，下面几节专门讲。
@@ -259,13 +287,14 @@ doomed-tail 边的计数被分解为**对称因子 × 尾部因子**：
 |------|-------------|
 | 数据模型 | `StrategyModel.cs` → `EquivalentOrderSummary` |
 | 文本渲染 | `StrategyTextRenderer.cs` → `FormatEquivalentFormsSummary`、`FormatEquivalentPatternLine`、`FormatSet`（`#i ~ #j` 缩写） |
-| 轨道选择 | `StrategyBuilder.Transitions.cs` → `BuildBranchSpecs`；`StrategyBuilder.Compact.cs`（compact 版） |
+| 轨道选择 | `StrategyBuilder.Transitions.cs` → `BuildBranchSpecs`、`SplitMergedBucketIntoBranchLines`、`PartitionFamiliesIntoOrbits`；`StrategyBuilder.Compact.cs`（compact 版） |
+| relabel 同构折叠 | `StrategyBuilder.Transitions.cs` → `BuildBranchSpecForLine`、`SelectOrbitRepresentative`；`StrategyBuilder.EquivalentOrders.cs` → `BuildRelabelingOrbitSummary`、`FormatRelabelingMap`；`ComparisonState.cs` → `TryFindOrderAutomorphism` |
 | 通用 pattern 引擎 | `StrategyBuilder.EquivalentOrders.cs` → `BuildEquivalentOrderSummary`、`BuildEquivalentPatternSummary`、`TryBuild*Summary` 系列 |
 | 归一化 / 图例 | `StrategyBuilder.EquivalentOrders.cs` → `SplitPlaceholderLegend`、`NormalizeEquivalentPattern`、`FormatBraceSet` |
 | 对称类信息 | `StrategyBuilder.EquivalentOrders.cs` → `BuildGroupSymmetryInfo`；`GroupSymmetryInfo` / `GroupSymmetryClass` |
 | doomed-tail 检测/分桶/轨道 | `StrategyBuilder.DoomedTailEdges.cs` → `TryBuildDoomedTailSpecs`、`ComputeDoomedPrefixLength`、`BuildDoomedPrefixKey`、`PartitionDoomedBucketsIntoOrbits` |
 | doomed-tail 渲染 | `StrategyBuilder.DoomedTailEdges.cs` → `BuildDoomedTailSummary`、`BuildTailResidualConstraints`、`BuildTailFactorFormula`、peel forced-first head（~L285–349） |
-| 回归 / 诚实性测试 | `TopKFinder.Tests/StrategyRegressionTests.cs`、`TopKFinder.PerfTests/OrderedBlockHonestyTests.cs` |
+| 回归 / 诚实性测试 | `TopKFinder.Tests/StrategyRegressionTests.cs`、`TopKFinder.PerfTests/OrderedBlockHonestyTests.cs`、`TopKFinder.PerfTests/RelabelingOrbitFoldingTests.cs` |
 
 > 搜索 / 剪枝 / 最优性相关内容见 [`core-algorithm.md`](./core-algorithm.md)。本文只覆盖它未涉及的
 > **分支等价 pattern 渲染（可读性）** 部分。
