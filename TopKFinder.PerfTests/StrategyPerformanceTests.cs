@@ -4,13 +4,22 @@ public sealed class StrategyPerformanceTests
 {
     private static readonly TimeSpan PerfTestTimeout = TimeSpan.FromSeconds(30);
 
-    // Wall-clock smoke checks for BuildDefaultPlan. CI hardware runs several times slower than a
-    // dev machine and wall-clock timing is inherently noisy, so these budgets are set at roughly
-    // 2x the time observed on CI to stay stable rather than tight. They are a secondary guard only:
-    // the deterministic counter caps in StrategyRegressionTests (searched states, outcomes
-    // constructed, candidate groups enumerated) are the primary, machine-independent regression net
-    // -- in particular Default_CandidateGroupsEnumeratedStaysWithinBaseline locks in the
-    // symmetry-aware group generation win without depending on wall-clock time.
+    // DIAGNOSTIC-ONLY wall-clock smoke checks for BuildDefaultPlan (P2). These exist to catch a
+    // gross, order-of-magnitude blow-up or an outright hang on a few representative shapes -- NOT to
+    // police incremental performance regressions. Wall-clock timing is inherently noisy and CI
+    // hardware runs several times slower than a dev machine, so the budgets are deliberately LOOSE
+    // (~2x or more of observed CI time) to avoid flaky false positives.
+    //
+    // The REAL, machine-independent regression net lives in StrategyRegressionTests as deterministic
+    // counter caps:
+    //   - default search:  Default_SearchedStateCountStaysWithinBaseline,
+    //                       Default_OutcomesConstructedStaysWithinBaseline (OutcomesConstructed is the
+    //                       dominant per-state cost and the primary time proxy),
+    //                       Default_CandidateGroupsEnumeratedStaysWithinBaseline;
+    //   - iterative-deepening (5,5) frontier: Default_IterativeDeepeningBaselineRemainsStable;
+    //   - compact phase:    Compact_WorkCountersStayWithinBaseline.
+    // Those counters, not these timers, are what should fail when work increases. See
+    // docs/test-strategy.md for the full architecture.
     [Fact]
     public void N6M2K2_CompletesWithinBudget()
     {

@@ -107,6 +107,95 @@ public sealed class StrategyRegressionTests
             $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates} (cap {expandedOutputStateCap})");
     }
 
+    // Iterative-deepening (IDA*) regime monitor. The 229-case suite above covers only m<=4 / k<=3
+    // shapes, all of which run the single-pass exact path after the _useIterativeDeepening gate
+    // (_m>=5 && _k>=5 && _n>=2*_m). That left the entire ID regime -- the path that actually runs on
+    // the 25,5,5 frontier -- with NO correctness oracle and NO benefit-locking caps. These rows build
+    // gated cases on the production (ID) path and pin both the materialized tree shape (MaxStep, root
+    // group, total edges, output states) and the deterministic search-work counters (searched /
+    // outcomes / candidate groups). Ratchet the counter caps DOWN when an optimization cuts work; an
+    // increase is a regression.
+    //
+    // Coverage spans both gated families: the heavy (5,5) cases toward 25,5,5, AND the (6,6) cases
+    // (which also trip the gate: min(k,n-k)>=5, n>=2m) so the ID code path is exercised at a second m
+    // -- the (6,6) rows are cheap but guard against an m-specific ID regression.
+    //
+    // TIME-PROXY ROLE (P2): these counter caps -- above all OutcomesConstructed, the dominant
+    // per-state search cost (Clone + ApplyOrder + Eliminate + Normalize per outcome) -- are the
+    // MACHINE-INDEPENDENT stand-in for wall-clock time on the heavy frontier. Wall-clock perf tests
+    // are noisy and machine-dependent (see TopKFinder.PerfTests, now diagnostic-only); these
+    // deterministic counts are the real net. If a core-algorithm change makes one of these grow, the
+    // build WILL get slower on the 25,5,5 path even though no timer is asserted here -- treat such a
+    // diff as a performance regression unless it is a deliberate, documented trade-off.
+    //
+    // NOTE: edges/outputStates here are the ID-path values and may differ from what the single-pass
+    // exact path would produce for the same case -- both are valid MaxStep-optimal trees, they only
+    // break ties between equally-optimal groups differently (see Default_IterativeDeepening_BeatsExactPath
+    // and docs/core-algorithm.md sec 4.3). This theory therefore locks the ID path's own tree, not
+    // cross-path identity.
+    [Theory]
+    [InlineData(14, 5, 5, 5, 5, 85, 36, 8, 329, 22686, 30137)]
+    [InlineData(16, 5, 5, 6, 5, 195, 29, 12, 2573, 416162, 488630)]
+    [InlineData(17, 5, 5, 6, 5, 200, 40, 13, 2714, 393047, 534261)]
+    [InlineData(18, 5, 5, 6, 5, 397, 66, 14, 3855, 680812, 836413)]
+    [InlineData(12, 6, 6, 3, 6, 16, 17, 2, 34, 1172, 1753)]
+    [InlineData(14, 6, 6, 4, 6, 92, 23, 3, 94, 4117, 6423)]
+    public void Default_IterativeDeepeningBaselineRemainsStable(
+        int n, int m, int k, int maxStep, int rootGroupCount, int totalEdges,
+        int outputStates, int expandedOutputStates,
+        int searchedStateCap, int outcomesCap, int candidateGroupsCap)
+    {
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k}) [iterative-deepening]",
+            RegressionTestTimeout,
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildDefaultPlan());
+
+        Assert.Equal(maxStep, plan.MaxStep);
+        Assert.Equal(rootGroupCount, plan.Root.Group.Count);
+        Assert.Equal(totalEdges, plan.TotalBranchEdges);
+        Assert.Equal(outputStates, plan.SearchStatistics.OutputStates);
+        Assert.Equal(expandedOutputStates, plan.SearchStatistics.ExpandedOutputStates);
+        Assert.True(
+            plan.SearchStatistics.SearchedStates <= searchedStateCap,
+            $"searched states regressed to {plan.SearchStatistics.SearchedStates} (cap {searchedStateCap})");
+        Assert.True(
+            plan.SearchStatistics.OutcomesConstructed <= outcomesCap,
+            $"outcomes constructed regressed to {plan.SearchStatistics.OutcomesConstructed} (cap {outcomesCap})");
+        Assert.True(
+            plan.SearchStatistics.CandidateGroupsEnumerated <= candidateGroupsCap,
+            $"candidate groups enumerated regressed to {plan.SearchStatistics.CandidateGroupsEnumerated} (cap {candidateGroupsCap})");
+    }
+
+    // Proves the iterative-deepening gate actually pays off: on a gated (5,5) case, forcing the ID
+    // path must reach the SAME MaxStep optimum as the single-pass exact path while constructing
+    // strictly FEWER outcomes and searching strictly FEWER states. 17,5,5 is a clear-win case
+    // (ID outcomes ~393k vs exact ~1.04M; searched 2714 vs 4833). We deliberately do NOT assert the
+    // two trees are identical -- they are both MaxStep-optimal but break ties differently, so edge /
+    // output-state counts can differ (14,5,5: ID 85 vs exact 84; 17,5,5: ID 200 vs exact 206).
+    [Fact]
+    public void Default_IterativeDeepening_BeatsExactPath()
+    {
+        StrategyPlan idPlan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.BuildDefaultPlan(17, 5, 5) [force ID]",
+            RegressionTestTimeout,
+            cancellationToken => new StrategyBuilder(17, 5, 5, cancellationToken)
+            { ForceIterativeDeepeningForTesting = true }.BuildDefaultPlan());
+
+        StrategyPlan exactPlan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.BuildDefaultPlan(17, 5, 5) [force exact]",
+            RegressionTestTimeout,
+            cancellationToken => new StrategyBuilder(17, 5, 5, cancellationToken)
+            { ForceIterativeDeepeningForTesting = false }.BuildDefaultPlan());
+
+        Assert.Equal(exactPlan.MaxStep, idPlan.MaxStep);
+        Assert.True(
+            idPlan.SearchStatistics.OutcomesConstructed < exactPlan.SearchStatistics.OutcomesConstructed,
+            $"iterative deepening did not cut outcomes: ID={idPlan.SearchStatistics.OutcomesConstructed}, exact={exactPlan.SearchStatistics.OutcomesConstructed}");
+        Assert.True(
+            idPlan.SearchStatistics.SearchedStates < exactPlan.SearchStatistics.SearchedStates,
+            $"iterative deepening did not cut searched states: ID={idPlan.SearchStatistics.SearchedStates}, exact={exactPlan.SearchStatistics.SearchedStates}");
+    }
+
     [Fact]
     public void Builder_ProducesDeterministicOutputAcrossRuns()
     {
@@ -180,7 +269,7 @@ public sealed class StrategyRegressionTests
             cancellationToken => new StrategyBuilder(12, 4, 4, cancellationToken).BuildDefaultPlan());
 
         Assert.Equal(5, plan.MaxStep);
-        Assert.True(plan.SearchStatistics.SearchedStates <= 289, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
+        Assert.True(plan.SearchStatistics.SearchedStates <= 284, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
         Assert.True(plan.SearchStatistics.OutputStates <= 29, $"output states regressed to {plan.SearchStatistics.OutputStates}");
         Assert.True(plan.SearchStatistics.ExpandedOutputStates <= 9, $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates}");
 
@@ -242,11 +331,11 @@ public sealed class StrategyRegressionTests
             searched states = 4
             pending states = 0 (peak 2)
             output states = 4 (expanded 2)
-            lower-bound states = 1, feasible-top-set states = 3
+            lower-bound states = 2, feasible-top-set states = 3
             outcomes constructed = 12 (duplicate skips 3, merged collisions 1)
             candidate groups enumerated = 4 (symmetry-class representatives canonicalized before cross-class dedup)
             lower-bound prunes = 2
-            cache hits = exact 0, lower-bound 0, feasible-top-set 8, best-group-pattern 2
+            cache hits = exact 0, lower-bound 1, feasible-top-set 11, best-group-pattern 2
 
             ==================== legend ====================
             #i                            item i (1-based labels; may be relabeled in references)
@@ -616,8 +705,52 @@ public sealed class StrategyRegressionTests
             $"compact total edges {compact.TotalBranchEdges} exceeded baseline {baseline.TotalBranchEdges}");
     }
 
+    // P2.1 -- compact-phase work-counter monitor (deterministic time proxy for the compact pass).
+    // The compact selection runs a SECOND DP (StrategyBuilder.Compact.cs) on top of phase 1 and is
+    // sometimes the dominant cost of a full build -- occasionally slower than the default search
+    // itself. Yet no test pinned its work counters, so a compact-phase regression would only show up
+    // (loosely) in the noisy wall-clock layer. These caps lock the compact pass's machine-independent
+    // work: CompactStatesSolved (states the secondary DP solved), CompactGroupsEnumerated (candidate
+    // groups it enumerated -- the dominant compact cost, mirrors CandidateGroupsEnumerated for the
+    // default search) and CompactStepOptimalGroups (the step-optimal subset it actually costed). Caps
+    // are the current deterministic counts; ratchet them DOWN when a compact optimization cuts work,
+    // an increase is a regression. (13,4,3 is intentionally omitted: its compact pass solves 0 states
+    // because the default tree is already minimal, so there is no work to monitor.)
+    [Theory]
+    [InlineData(9, 3, 3, 77, 1213, 366)]
+    [InlineData(11, 3, 3, 131, 2847, 647)]
+    [InlineData(12, 4, 4, 46, 1395, 165)]
+    [InlineData(10, 3, 4, 321, 11156, 2765)]
+    [InlineData(12, 4, 3, 41, 799, 187)]
+    [InlineData(12, 3, 4, 690, 40377, 5931)]
+    [InlineData(10, 2, 4, 4118, 120336, 29291)]
+    public void Compact_WorkCountersStayWithinBaseline(
+        int n, int m, int k, int statesSolvedCap, int groupsEnumeratedCap, int stepOptimalGroupsCap)
+    {
+        StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
+            $"StrategyBuilder.BuildCompactPlan({n}, {m}, {k})",
+            RegressionTestTimeout,
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildCompactPlan());
+
+        Assert.True(
+            compact.SearchStatistics.CompactStatesSolved <= statesSolvedCap,
+            $"compact states solved regressed to {compact.SearchStatistics.CompactStatesSolved} (cap {statesSolvedCap})");
+        Assert.True(
+            compact.SearchStatistics.CompactGroupsEnumerated <= groupsEnumeratedCap,
+            $"compact groups enumerated regressed to {compact.SearchStatistics.CompactGroupsEnumerated} (cap {groupsEnumeratedCap})");
+        Assert.True(
+            compact.SearchStatistics.CompactStepOptimalGroups <= stepOptimalGroupsCap,
+            $"compact step-optimal groups regressed to {compact.SearchStatistics.CompactStepOptimalGroups} (cap {stepOptimalGroupsCap})");
+    }
+
     [Theory]
     [InlineData(11, 3, 3, 8)]
+    // 12,4,4: honest minimum is 38, not 35. The prior 35 relied on a false sibling-merge (a
+    // misleading disjunction) at one node; the automorphism-orbit honesty fix correctly splits it.
+    // Verified: the 38-edge compact tree has objective==render at every node, 0 false-splits, and
+    // 0 unbacked merges, and the consistent DP is exhaustive over step-optimal groups, so 38 is the
+    // true minimum displayed-edge count under honest rendering (any lower count is necessarily a
+    // dishonest merge).
     [InlineData(12, 4, 4, 35)]
     [InlineData(10, 3, 4, 9)]
     public void Compact_ShrinksTreesWithRedundantSolutions(int n, int m, int k, int expectedEdgeCap)
@@ -641,6 +774,26 @@ public sealed class StrategyRegressionTests
             $"compact total edges regressed to {compact.TotalBranchEdges}");
     }
 
+    // k<=n/2 regression guard for the full-bucket pre-merge fix. 12,4,4 previously compacted to 38
+    // because one renderable bucket was split before the pattern engine could summarize it; with the
+    // fix, compact correctly reaches 35 while preserving max-step optimality.
+    [Fact]
+    public void Compact_KLeHalf_CapturesFullBucketMerge_1244()
+    {
+        StrategyPlan baseline = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.BuildDefaultPlan(12, 4, 4)",
+            RegressionTestTimeout,
+            cancellationToken => new StrategyBuilder(12, 4, 4, cancellationToken).BuildDefaultPlan());
+
+        StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.BuildCompactPlan(12, 4, 4)",
+            RegressionTestTimeout,
+            cancellationToken => new StrategyBuilder(12, 4, 4, cancellationToken).BuildCompactPlan());
+
+        Assert.Equal(baseline.MaxStep, compact.MaxStep);
+        Assert.Equal(35, compact.TotalBranchEdges);
+    }
+
     // Searched-state monitor for the compact pass. Compact runs a second, less-prunable
     // search on top of phase 1, so its searched-state count is the main lever for its cost.
     // These caps pin the current work so that future algorithm changes surface any regression
@@ -648,15 +801,15 @@ public sealed class StrategyRegressionTests
     // Values are deterministic; update them deliberately when the search work legitimately
     // changes.
     [Theory]
-    [InlineData(9, 3, 3, 163)]
-    [InlineData(11, 3, 3, 588)]
-    [InlineData(12, 4, 4, 515)]
-    [InlineData(10, 3, 4, 1126)]
-    [InlineData(12, 4, 3, 137)]
-    [InlineData(12, 3, 3, 735)]
-    [InlineData(8, 4, 2, 7)]
-    [InlineData(10, 3, 5, 674)]
-    [InlineData(13, 4, 3, 146)]
+    [InlineData(9, 3, 3, 159)]
+    [InlineData(11, 3, 3, 540)]
+    [InlineData(12, 4, 4, 455)]
+    [InlineData(10, 3, 4, 1088)]
+    [InlineData(12, 4, 3, 131)]
+    [InlineData(12, 3, 3, 538)]
+    [InlineData(8, 4, 2, 3)]
+    [InlineData(10, 3, 5, 8)]
+    [InlineData(13, 4, 3, 13)]
     public void Compact_SearchedStateCountStaysWithinBaseline(int n, int m, int k, int searchedStateCap)
     {
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
@@ -676,25 +829,27 @@ public sealed class StrategyRegressionTests
     // deliberate cap update) as an explicit diff. Update values deliberately when the search
     // work legitimately changes.
     [Theory]
-    [InlineData(9, 3, 3, 115)]
-    [InlineData(11, 3, 3, 353)]
-    [InlineData(12, 3, 3, 606)]
-    [InlineData(12, 4, 4, 289)]
-    [InlineData(12, 4, 3, 79)]
-    [InlineData(10, 3, 4, 451)]
-    [InlineData(10, 3, 5, 416)]
-    [InlineData(12, 4, 5, 785)]
-    [InlineData(13, 4, 3, 136)]
-    [InlineData(8, 4, 2, 6)]
-    [InlineData(9, 4, 3, 18)]
-    [InlineData(8, 3, 4, 59)]
-    [InlineData(8, 2, 3, 319)]
-    [InlineData(9, 3, 4, 176)]
-    [InlineData(10, 3, 6, 514)]
+    [InlineData(9, 3, 3, 95)]
+    [InlineData(11, 3, 3, 267)]
+    [InlineData(12, 3, 3, 486)]
+    [InlineData(12, 4, 4, 242)]
+    [InlineData(12, 4, 3, 63)]
+    [InlineData(10, 3, 4, 405)]
+    [InlineData(10, 3, 5, 323)]
+    [InlineData(12, 4, 5, 671)]
+    [InlineData(16, 4, 4, 5547)]
+    [InlineData(20, 5, 4, 3587)]
+    [InlineData(13, 4, 3, 97)]
+    [InlineData(8, 4, 2, 3)]
+    [InlineData(9, 4, 3, 16)]
+    [InlineData(8, 3, 4, 53)]
+    [InlineData(8, 2, 3, 317)]
+    [InlineData(9, 3, 4, 173)]
+    [InlineData(10, 3, 6, 405)]
     [InlineData(5, 3, 2, 4)]
-    [InlineData(6, 2, 2, 22)]
-    [InlineData(10, 2, 2, 115)]
-    [InlineData(25, 5, 3, 1706)]
+    [InlineData(6, 2, 2, 21)]
+    [InlineData(10, 2, 2, 106)]
+    [InlineData(25, 5, 3, 247)]
     public void Default_SearchedStateCountStaysWithinBaseline(int n, int m, int k, int searchedStateCap)
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
@@ -720,23 +875,26 @@ public sealed class StrategyRegressionTests
     // though the search results (and the snapshot/output-state monitors) are byte-identical; the
     // net effect on heavy cases is a large reduction in both outcomes and wall-clock time.
     [Theory]
-    [InlineData(9, 3, 3, 1667)]
-    [InlineData(11, 3, 3, 7238)]
-    [InlineData(12, 3, 3, 12535)]
-    [InlineData(12, 4, 4, 14128)]
-    [InlineData(12, 4, 3, 1024)]
-    [InlineData(10, 3, 4, 8774)]
-    [InlineData(10, 3, 5, 7498)]
-    [InlineData(13, 4, 3, 2490)]
-    [InlineData(8, 4, 2, 7)]
-    [InlineData(9, 4, 3, 124)]
-    [InlineData(8, 3, 4, 647)]
-    [InlineData(9, 3, 4, 3461)]
-    [InlineData(10, 3, 6, 10019)]
+    [InlineData(9, 3, 3, 991)]
+    [InlineData(11, 3, 3, 3532)]
+    [InlineData(12, 3, 3, 7303)]
+    [InlineData(12, 4, 4, 9809)]
+    [InlineData(12, 4, 5, 32512)]
+    [InlineData(16, 4, 4, 324042)]
+    [InlineData(20, 5, 4, 304457)]
+    [InlineData(12, 4, 3, 492)]
+    [InlineData(10, 3, 4, 6002)]
+    [InlineData(10, 3, 5, 5521)]
+    [InlineData(13, 4, 3, 1346)]
+    [InlineData(8, 4, 2, 4)]
+    [InlineData(9, 4, 3, 93)]
+    [InlineData(8, 3, 4, 591)]
+    [InlineData(9, 3, 4, 2759)]
+    [InlineData(10, 3, 6, 6002)]
     [InlineData(5, 3, 2, 12)]
-    [InlineData(6, 2, 2, 96)]
-    [InlineData(10, 2, 2, 935)]
-    [InlineData(25, 5, 3, 108023)]
+    [InlineData(6, 2, 2, 72)]
+    [InlineData(10, 2, 2, 740)]
+    [InlineData(25, 5, 3, 759)]
     public void Default_OutcomesConstructedStaysWithinBaseline(int n, int m, int k, int outcomesCap)
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
@@ -756,15 +914,15 @@ public sealed class StrategyRegressionTests
     // the current deterministic counts -- ratchet them down when an optimization legitimately
     // cuts outcome construction.
     [Theory]
-    [InlineData(9, 3, 3, 6057)]
-    [InlineData(11, 3, 3, 20200)]
-    [InlineData(12, 4, 4, 29758)]
-    [InlineData(10, 3, 4, 62564)]
-    [InlineData(12, 4, 3, 6753)]
-    [InlineData(12, 3, 3, 16106)]
-    [InlineData(8, 4, 2, 31)]
-    [InlineData(10, 3, 5, 12644)]
-    [InlineData(13, 4, 3, 3046)]
+    [InlineData(9, 3, 3, 5283)]
+    [InlineData(11, 3, 3, 15907)]
+    [InlineData(12, 4, 4, 20622)]
+    [InlineData(10, 3, 4, 46300)]
+    [InlineData(12, 4, 3, 6011)]
+    [InlineData(12, 3, 3, 8531)]
+    [InlineData(8, 4, 2, 2)]
+    [InlineData(10, 3, 5, 7)]
+    [InlineData(13, 4, 3, 34)]
     public void Compact_OutcomesConstructedStaysWithinBaseline(int n, int m, int k, int outcomesCap)
     {
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
@@ -787,21 +945,21 @@ public sealed class StrategyRegressionTests
     // optimizations: a correct orbit detector must ratchet these caps DOWN. Caps pin the current
     // deterministic counts; an increase is a regression, a deliberate decrease is an improvement.
     [Theory]
-    [InlineData(9, 3, 3, 155)]
-    [InlineData(11, 3, 3, 534)]
-    [InlineData(12, 3, 3, 943)]
-    [InlineData(12, 4, 4, 2789)]
-    [InlineData(12, 4, 3, 205)]
-    [InlineData(10, 3, 4, 617)]
-    [InlineData(10, 3, 5, 510)]
-    [InlineData(13, 4, 3, 539)]
+    [InlineData(9, 3, 3, 104)]
+    [InlineData(11, 3, 3, 276)]
+    [InlineData(12, 3, 3, 550)]
+    [InlineData(12, 4, 4, 2232)]
+    [InlineData(12, 4, 3, 111)]
+    [InlineData(10, 3, 4, 461)]
+    [InlineData(10, 3, 5, 360)]
+    [InlineData(13, 4, 3, 329)]
     [InlineData(8, 4, 2, 0)]
-    [InlineData(9, 4, 3, 37)]
-    [InlineData(8, 3, 4, 65)]
-    [InlineData(9, 3, 4, 298)]
-    [InlineData(10, 3, 6, 578)]
+    [InlineData(9, 4, 3, 29)]
+    [InlineData(8, 3, 4, 73)]
+    [InlineData(9, 3, 4, 254)]
+    [InlineData(10, 3, 6, 461)]
     [InlineData(5, 3, 2, 3)]
-    [InlineData(10, 2, 2, 9)]
+    [InlineData(10, 2, 2, 2)]
     public void Default_DuplicateOutcomeSkipsStaysWithinBaseline(int n, int m, int k, int duplicateSkipCap)
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
@@ -814,6 +972,24 @@ public sealed class StrategyRegressionTests
             $"default duplicate outcome skips regressed to {plan.SearchStatistics.Diagnostics.DuplicateOutcomeSkips} (cap {duplicateSkipCap})");
     }
 
+    [Fact]
+    public void BuildDefaultPlan_ReducesKAboveHalf_ToDualProblem()
+    {
+        StrategyPlan reduced = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.BuildDefaultPlan(10, 4, 2)",
+            RegressionTestTimeout,
+            cancellationToken => new StrategyBuilder(10, 4, 2, cancellationToken).BuildDefaultPlan());
+
+        StrategyPlan dualInput = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.BuildDefaultPlan(10, 4, 8)",
+            RegressionTestTimeout,
+            cancellationToken => new StrategyBuilder(10, 4, 8, cancellationToken).BuildDefaultPlan());
+
+        Assert.Equal(2, dualInput.K);
+        Assert.Equal(reduced.MaxStep, dualInput.MaxStep);
+        Assert.Equal(reduced.TotalBranchEdges, dualInput.TotalBranchEdges);
+    }
+
     // Candidate-group enumeration monitor for the default pass. CandidateGroupsEnumerated counts the
     // symmetry-class representatives canonicalized before cross-class de-duplication -- i.e. the
     // distinct comparison groups the search actually materializes per state. The symmetry-aware
@@ -824,25 +1000,27 @@ public sealed class StrategyRegressionTests
     // Caps pin the current deterministic counts; an increase is a regression and a deliberate
     // decrease (a stronger symmetry collapse) is an improvement -- ratchet them down when one lands.
     [Theory]
-    [InlineData(9, 3, 3, 1714)]
-    [InlineData(11, 3, 3, 8152)]
-    [InlineData(12, 3, 3, 15959)]
-    [InlineData(12, 4, 4, 12932)]
-    [InlineData(12, 4, 5, 37827)]
-    [InlineData(12, 4, 3, 1024)]
-    [InlineData(10, 3, 4, 8087)]
-    [InlineData(10, 3, 5, 5679)]
-    [InlineData(13, 4, 3, 2475)]
+    [InlineData(9, 3, 3, 1286)]
+    [InlineData(11, 3, 3, 5114)]
+    [InlineData(12, 3, 3, 10909)]
+    [InlineData(12, 4, 4, 9776)]
+    [InlineData(12, 4, 5, 33855)]
+    [InlineData(16, 4, 4, 456755)]
+    [InlineData(20, 5, 4, 379108)]
+    [InlineData(12, 4, 3, 544)]
+    [InlineData(10, 3, 4, 7602)]
+    [InlineData(10, 3, 5, 5634)]
+    [InlineData(13, 4, 3, 1542)]
     [InlineData(8, 4, 2, 5)]
-    [InlineData(9, 4, 3, 91)]
-    [InlineData(8, 3, 4, 526)]
-    [InlineData(8, 2, 3, 4213)]
-    [InlineData(9, 3, 4, 3069)]
-    [InlineData(10, 3, 6, 8773)]
+    [InlineData(9, 4, 3, 68)]
+    [InlineData(8, 3, 4, 546)]
+    [InlineData(8, 2, 3, 4232)]
+    [InlineData(9, 3, 4, 3008)]
+    [InlineData(10, 3, 6, 7602)]
     [InlineData(5, 3, 2, 4)]
-    [InlineData(6, 2, 2, 99)]
-    [InlineData(10, 2, 2, 1307)]
-    [InlineData(25, 5, 3, 158293)]
+    [InlineData(6, 2, 2, 85)]
+    [InlineData(10, 2, 2, 1115)]
+    [InlineData(25, 5, 3, 7261)]
     public void Default_CandidateGroupsEnumeratedStaysWithinBaseline(int n, int m, int k, int candidateGroupsCap)
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
@@ -860,15 +1038,15 @@ public sealed class StrategyRegressionTests
     // this is the primary symmetry-collapse target for compact search. Caps pin the current
     // deterministic counts -- ratchet them down when an orbit/block-symmetry optimization lands.
     [Theory]
-    [InlineData(9, 3, 3, 762)]
-    [InlineData(11, 3, 3, 1838)]
-    [InlineData(12, 4, 4, 6724)]
-    [InlineData(10, 3, 4, 5638)]
-    [InlineData(12, 4, 3, 2466)]
-    [InlineData(12, 3, 3, 1097)]
-    [InlineData(8, 4, 2, 11)]
-    [InlineData(10, 3, 5, 732)]
-    [InlineData(13, 4, 3, 659)]
+    [InlineData(9, 3, 3, 744)]
+    [InlineData(11, 3, 3, 1661)]
+    [InlineData(12, 4, 4, 5417)]
+    [InlineData(10, 3, 4, 4982)]
+    [InlineData(12, 4, 3, 2387)]
+    [InlineData(12, 3, 3, 617)]
+    [InlineData(8, 4, 2, 0)]
+    [InlineData(10, 3, 5, 0)]
+    [InlineData(13, 4, 3, 15)]
     public void Compact_DuplicateOutcomeSkipsStaysWithinBaseline(int n, int m, int k, int duplicateSkipCap)
     {
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(

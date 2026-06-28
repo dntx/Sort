@@ -21,6 +21,7 @@ class Program
         "  n   total number of elements   (1 <= n <= 64)\n" +
         "  m   max sort capacity          (2 <= m <= n)\n" +
         "  k   how many top elements      (1 <= k <= n)\n" +
+        "      if k > n/2, the solver automatically reduces to the dual k' = n-k\n" +
         "\n" +
         "Progress is written to stderr; the strategy is written to stdout, so you can\n" +
         "redirect them independently (e.g. TopKFinder 12 3 3 > tree.txt).\n" +
@@ -129,6 +130,10 @@ class Program
 
     private static void RunHeadless(int n, int m, int k)
     {
+        int canonicalK = Math.Min(k, n - k);
+        if (canonicalK != k)
+            Console.Error.WriteLine($"note: k={k} > n/2; solving the dual problem with k'={canonicalK}.");
+
         bool showProgress = !Console.IsErrorRedirected;
         long lastEmitMs = -1;
         int lastLineLength = 0;
@@ -146,8 +151,13 @@ class Program
             }
 
             lastEmitMs = snapshot.ElapsedMilliseconds;
+            string progressText = $"{snapshot.EstimatedProgress01 * 100.0:F1}%";
+            string etaText = snapshot.EstimatedRemainingMilliseconds >= 0
+                ? $"{snapshot.EstimatedRemainingMilliseconds / 1000.0:F1}s"
+                : "-";
             string line = $"searching... elapsed={snapshot.ElapsedMilliseconds / 1000.0:F1}s " +
-                $"searched={snapshot.SearchedStates} pending={snapshot.PendingStates} output={snapshot.OutputStates}";
+                $"searched={snapshot.SearchedStates} pending={snapshot.PendingStates} output={snapshot.OutputStates} " +
+                $"progress: {progressText} eta: {etaText}";
             Console.Error.Write("\r" + line.PadRight(lastLineLength));
             lastLineLength = line.Length;
         }
@@ -158,7 +168,13 @@ class Program
                 Console.Error.Write("\r" + new string(' ', lastLineLength) + "\r");
         }
 
-        var builder = new StrategyBuilder(n, m, k, System.Threading.CancellationToken.None, ReportProgress);
+        var builder = new StrategyBuilder(
+            n,
+            m,
+            k,
+            System.Threading.CancellationToken.None,
+            ReportProgress,
+            reportCombinedRunProgress: true);
         StrategyPlan defaultPlan = builder.BuildDefaultPlan();
         ClearProgressLine();
         Console.Write(StrategyOverviewRenderer.RenderText(defaultPlan));

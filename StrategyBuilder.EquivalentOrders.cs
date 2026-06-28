@@ -876,6 +876,16 @@ partial class StrategyBuilder
         if (windowPermutationFamilySummary is not null)
             return windowPermutationFamilySummary;
 
+        EquivalentPatternSummary? orderedBlockPermutationSummary =
+            TryBuildOrderedBlockPermutationSummary(orders, remainingItems, representativePositions);
+        if (orderedBlockPermutationSummary is not null)
+            return orderedBlockPermutationSummary;
+
+        EquivalentPatternSummary? orderedChainTrackPermutationSummary =
+            TryBuildOrderedChainTrackPermutationSummary(orders, remainingItems, representativePositions);
+        if (orderedChainTrackPermutationSummary is not null)
+            return orderedChainTrackPermutationSummary;
+
         var groups = orders
             .GroupBy(order => order[0])
             .OrderBy(group => representativePositions[group.Key])
@@ -1256,6 +1266,273 @@ partial class StrategyBuilder
                 candidate.FirstOrderIndex,
                 candidate.PatternText,
                 candidate.Formula)).ToList());
+    }
+
+    // Detects an "ordered-block permutation": the remaining items split into chains (blocks) whose
+    // internal order is identical in every ordering, and the orderings are exactly the p! ways of
+    // arranging those blocks. The other templates only permute items WITHIN fixed-position blocks,
+    // never the multi-item blocks themselves, so such orderings otherwise fall through to the " | "
+    // disjunction and get split into one branch each (e.g. 10,4,8 S3: {#3>#4>#7>#8, #7>#8>#3>#4}).
+    // Rendered as an inline brace set of ordered chains, "{#3 > #4, #7 > #8}" (= these blocks in any
+    // order). Requires p >= 2 blocks, at least one block of size >= 2 (an all-singleton partition is
+    // the plain full permutation handled earlier), and all p! arrangements present exactly once.
+    private static EquivalentPatternSummary? TryBuildOrderedBlockPermutationSummary(
+        IReadOnlyList<IReadOnlyList<int>> orders,
+        IReadOnlyList<int> remainingItems,
+        IReadOnlyDictionary<int, int> representativePositions)
+    {
+        if (orders.Count < 2 || orders[0].Count < 2)
+            return null;
+
+        // a -> b is a block-internal edge iff b immediately follows a in EVERY ordering. An item with
+        // no such fixed successor is a block tail; one with no fixed predecessor is a block head.
+        var fixedSuccessor = new Dictionary<int, int>();
+        var hasFixedPredecessor = new HashSet<int>();
+        foreach (int a in remainingItems)
+        {
+            int? candidate = null;
+            bool fixedEdge = true;
+            foreach (IReadOnlyList<int> order in orders)
+            {
+                int pos = -1;
+                for (int i = 0; i < order.Count; i++)
+                    if (order[i] == a) { pos = i; break; }
+                int? next = pos >= 0 && pos + 1 < order.Count ? order[pos + 1] : null;
+                if (next is null) { fixedEdge = false; break; }
+                if (candidate is null)
+                    candidate = next;
+                else if (candidate != next) { fixedEdge = false; break; }
+            }
+
+            if (fixedEdge && candidate is not null)
+            {
+                fixedSuccessor[a] = candidate.Value;
+                hasFixedPredecessor.Add(candidate.Value);
+            }
+        }
+
+        // Assemble blocks by following fixed-successor chains from each head.
+        var blocks = new List<List<int>>();
+        foreach (int item in remainingItems)
+        {
+            if (hasFixedPredecessor.Contains(item))
+                continue;
+
+            var block = new List<int> { item };
+            int current = item;
+            while (fixedSuccessor.TryGetValue(current, out int next))
+            {
+                block.Add(next);
+                current = next;
+            }
+            blocks.Add(block);
+        }
+
+        int p = blocks.Count;
+        if (p < 2 || blocks.All(block => block.Count < 2))
+            return null;
+        if (orders.Count != (int)Factorial(p))
+            return null;
+
+        // The orderings must be EXACTLY the p! arrangements of the blocks (internal order fixed).
+        var expected = new HashSet<string>(StringComparer.Ordinal);
+        foreach (List<int> permutation in EnumerateIndexPermutations(p))
+            expected.Add(string.Join(",", permutation.SelectMany(blockIndex => blocks[blockIndex])));
+        var actual = new HashSet<string>(orders.Select(order => string.Join(",", order)), StringComparer.Ordinal);
+        if (!expected.SetEquals(actual))
+            return null;
+
+        string inner = string.Join(", ", blocks
+            .OrderBy(block => representativePositions[block[0]])
+            .Select(block => string.Join(" > ", block.Select(item => $"#{item + 1}"))));
+        return new EquivalentPatternSummary("{" + inner + "}", $"{p}!", Factorial(p));
+    }
+
+    // Generalizes the ordered-block permutation to INTERLEAVED chains: the items form k equal-length
+    // ordered chains (each chain's internal order is identical in every ordering) woven into k fixed
+    // position-tracks, and the orderings are exactly the k! ways of assigning the interchangeable
+    // chains to those tracks. TryBuildOrderedBlockPermutationSummary already covers the contiguous
+    // case (tracks = consecutive runs, rendered "{#3 > #4, #7 > #8}"); this catches the case where the
+    // tracks interleave (e.g. 9,4,7 S3: {#3>#7>#4>#8, #7>#3>#8>#4} = chains #3>#4 and #7>#8 woven as
+    // A B A B / B A B A), which otherwise falls through to the " | " disjunction and splits into one
+    // branch per ordering. Rendered as "{#3 > #4, #7 > #8} interleaved as #3 > #7 > #4 > #8": the
+    // listed ordered chains, in any order, woven into the shown representative frame.
+    private static EquivalentPatternSummary? TryBuildOrderedChainTrackPermutationSummary(
+        IReadOnlyList<IReadOnlyList<int>> orders,
+        IReadOnlyList<int> remainingItems,
+        IReadOnlyDictionary<int, int> representativePositions)
+    {
+        int n = remainingItems.Count;
+        if (orders.Count < 2 || n < 4 || n > 8)
+            return null;
+
+        List<List<int>>? bestChains = null;
+        int bestK = 0;
+        int bestSpan = int.MaxValue;
+        string? bestChainKey = null;
+
+        for (int s = 2; s <= n / 2; s++)
+        {
+            if (n % s != 0)
+                continue;
+            int k = n / s;
+            if (k < 2 || orders.Count != (int)Factorial(k))
+                continue;
+
+            foreach (List<List<int>> tracks in EnumerateEqualTrackPartitions(n, s))
+            {
+                // Only interleaved track layouts are new here; contiguous ones are handled (and
+                // rendered as concatenation) by the ordered-block detector that runs earlier.
+                if (tracks.All(IsContiguousTrack))
+                    continue;
+
+                List<int[]>? chains = TryResolveChainTracks(orders, tracks, k);
+                if (chains is null)
+                    continue;
+
+                var ordered = chains
+                    .OrderBy(chain => representativePositions[chain[0]])
+                    .Select(chain => chain.ToList())
+                    .ToList();
+                int span = ordered.Sum(chain => chain.Max() - chain.Min());
+                string chainKey = string.Join("|", ordered.Select(chain => string.Join(",", chain)));
+                if (span < bestSpan || (span == bestSpan && string.CompareOrdinal(chainKey, bestChainKey) < 0))
+                {
+                    bestChains = ordered;
+                    bestK = k;
+                    bestSpan = span;
+                    bestChainKey = chainKey;
+                }
+            }
+        }
+
+        if (bestChains is null)
+            return null;
+
+        string chainSetText = "{" + string.Join(", ", bestChains
+            .Select(chain => string.Join(" > ", chain.Select(item => $"#{item + 1}")))) + "}";
+        string frameText = string.Join(" > ", orders[0].Select(item => $"#{item + 1}"));
+        return new EquivalentPatternSummary(
+            $"{chainSetText} interleaved as {frameText}",
+            $"{bestK}!",
+            Factorial(bestK));
+    }
+
+    private static bool IsContiguousTrack(List<int> track)
+    {
+        for (int i = 1; i < track.Count; i++)
+        {
+            if (track[i] != track[i - 1] + 1)
+                return false;
+        }
+
+        return true;
+    }
+
+    // Validates that every ordering places the SAME k ordered chains into the given tracks (one chain
+    // per track, a bijection) and that all k! distinct chain->track assignments appear exactly once.
+    // Returns the k chains (taken from the representative ordering) on success, otherwise null.
+    private static List<int[]>? TryResolveChainTracks(
+        IReadOnlyList<IReadOnlyList<int>> orders,
+        List<List<int>> tracks,
+        int k)
+    {
+        var chainSet = new HashSet<string>(StringComparer.Ordinal);
+        var repChains = new List<int[]>(k);
+        foreach (List<int> track in tracks)
+        {
+            int[] content = track.Select(pos => orders[0][pos]).ToArray();
+            repChains.Add(content);
+            chainSet.Add(string.Join(",", content));
+        }
+
+        if (chainSet.Count != k)
+            return null;
+
+        var assignmentKeys = new HashSet<string>(StringComparer.Ordinal);
+        foreach (IReadOnlyList<int> order in orders)
+        {
+            var contents = new List<string>(k);
+            var localSet = new HashSet<string>(StringComparer.Ordinal);
+            foreach (List<int> track in tracks)
+            {
+                string content = string.Join(",", track.Select(pos => order[pos]));
+                contents.Add(content);
+                localSet.Add(content);
+            }
+
+            if (!localSet.SetEquals(chainSet))
+                return null;
+
+            assignmentKeys.Add(string.Join("|", contents));
+        }
+
+        if (assignmentKeys.Count != orders.Count)
+            return null;
+
+        return repChains;
+    }
+
+    // Enumerates the unordered partitions of positions 0..n-1 into n/s tracks, each of size s, with
+    // every track sorted ascending. Uses the restricted-growth rule (a position joins an existing
+    // not-full track or starts the next track) so each unordered partition is produced exactly once.
+    private static IEnumerable<List<List<int>>> EnumerateEqualTrackPartitions(int n, int s)
+    {
+        int k = n / s;
+        var tracks = new List<List<int>>();
+        return Recurse(0);
+
+        IEnumerable<List<List<int>>> Recurse(int pos)
+        {
+            if (pos == n)
+            {
+                if (tracks.Count == k)
+                    yield return tracks.Select(track => new List<int>(track)).ToList();
+                yield break;
+            }
+
+            for (int i = 0; i < tracks.Count; i++)
+            {
+                if (tracks[i].Count >= s)
+                    continue;
+
+                tracks[i].Add(pos);
+                foreach (List<List<int>> result in Recurse(pos + 1))
+                    yield return result;
+                tracks[i].RemoveAt(tracks[i].Count - 1);
+            }
+
+            if (tracks.Count < k)
+            {
+                tracks.Add(new List<int> { pos });
+                foreach (List<List<int>> result in Recurse(pos + 1))
+                    yield return result;
+                tracks.RemoveAt(tracks.Count - 1);
+            }
+        }
+    }
+
+    private static IEnumerable<List<int>> EnumerateIndexPermutations(int count)
+    {
+        var indices = Enumerable.Range(0, count).ToList();
+        return Permute(indices, 0);
+
+        static IEnumerable<List<int>> Permute(List<int> items, int start)
+        {
+            if (start >= items.Count - 1)
+            {
+                yield return new List<int>(items);
+                yield break;
+            }
+
+            for (int i = start; i < items.Count; i++)
+            {
+                (items[start], items[i]) = (items[i], items[start]);
+                foreach (List<int> permutation in Permute(items, start + 1))
+                    yield return permutation;
+                (items[start], items[i]) = (items[i], items[start]);
+            }
+        }
     }
 
     private static EquivalentPatternSummary? BuildPartialPatternFamilySummary(

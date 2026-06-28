@@ -13,6 +13,7 @@ sealed class StrategyPlan
 {
     public int N { get; }
     public int M { get; }
+    public int RequestedK { get; }
     public int K { get; }
     public StrategyNode Root { get; }
     public TimeSpan Elapsed { get; }
@@ -20,10 +21,11 @@ sealed class StrategyPlan
     public int TotalBranchEdges { get; }
     public SearchStatistics SearchStatistics { get; }
 
-    public StrategyPlan(int n, int m, int k, StrategyNode root, TimeSpan elapsed, SearchStatistics searchStatistics)
+    public StrategyPlan(int n, int m, int requestedK, int k, StrategyNode root, TimeSpan elapsed, SearchStatistics searchStatistics)
     {
         N = n;
         M = m;
+        RequestedK = requestedK;
         K = k;
         Root = root;
         Elapsed = elapsed;
@@ -141,7 +143,9 @@ readonly struct SearchProgressSnapshot
         int feasibleTopSetStates,
         int compactStatesSolved,
         int compactGroupsEnumerated,
-        int compactStepOptimalGroups)
+        int compactStepOptimalGroups,
+        double estimatedProgress01,
+        long estimatedRemainingMilliseconds)
     {
         ElapsedMilliseconds = elapsedMilliseconds;
         SearchedStates = searchedStates;
@@ -164,6 +168,8 @@ readonly struct SearchProgressSnapshot
         CompactStatesSolved = compactStatesSolved;
         CompactGroupsEnumerated = compactGroupsEnumerated;
         CompactStepOptimalGroups = compactStepOptimalGroups;
+        EstimatedProgress01 = estimatedProgress01;
+        EstimatedRemainingMilliseconds = estimatedRemainingMilliseconds;
     }
 
     public long ElapsedMilliseconds { get; }
@@ -187,6 +193,8 @@ readonly struct SearchProgressSnapshot
     public int CompactStatesSolved { get; }
     public int CompactGroupsEnumerated { get; }
     public int CompactStepOptimalGroups { get; }
+    public double EstimatedProgress01 { get; }
+    public long EstimatedRemainingMilliseconds { get; }
 }
 
 sealed class SearchStatistics

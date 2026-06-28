@@ -25,6 +25,8 @@ static class StrategyTextRenderer
         // Summary: the problem and its answer first, so the key number is not buried.
         writer.WriteLine(Banner("summary"));
         writer.WriteLine($"n={plan.N}, m={plan.M}, k={plan.K}");
+        if (plan.RequestedK != plan.K)
+            writer.WriteLine($"requested k = {plan.RequestedK}; effective k = {plan.K} (dual reduction: k' = n-k)");
         writer.WriteLine($"worst-case steps = {plan.MaxStep}");
         writer.WriteLine($"total edges = {plan.TotalBranchEdges}");
         writer.WriteLine($"elapsed = {plan.Elapsed.TotalMilliseconds:F1} ms");

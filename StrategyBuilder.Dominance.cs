@@ -109,6 +109,15 @@ partial class StrategyBuilder
             AncestorCount = ancestorCount;
             DescendantCount = descendantCount;
             EdgeCount = edgeCount;
+
+            // Degree sequences sorted descending, used as a cheap O(count) necessary condition for
+            // embedding before the expensive verified backtracking is attempted.
+            SortedAncestor = (int[])ancestorCount.Clone();
+            SortedDescendant = (int[])descendantCount.Clone();
+            Array.Sort(SortedAncestor);
+            Array.Reverse(SortedAncestor);
+            Array.Sort(SortedDescendant);
+            Array.Reverse(SortedDescendant);
         }
 
         public int Count { get; }
@@ -117,6 +126,25 @@ partial class StrategyBuilder
         public int[] AncestorCount { get; }
         public int[] DescendantCount { get; }
         public int EdgeCount { get; }
+        public int[] SortedAncestor { get; }
+        public int[] SortedDescendant { get; }
+    }
+
+    // Cheap necessary condition for an embedding src ⊆ dst (same item count): the bijection must map
+    // every src vertex to a dst vertex with at least as many ancestors and descendants, so the
+    // descending-sorted degree sequences of dst must elementwise dominate those of src. O(count).
+    private static bool EmbedDegreeFeasible(LocalRelation src, LocalRelation dst)
+    {
+        int count = src.Count;
+        for (int i = 0; i < count; i++)
+        {
+            if (dst.SortedAncestor[i] < src.SortedAncestor[i])
+                return false;
+            if (dst.SortedDescendant[i] < src.SortedDescendant[i])
+                return false;
+        }
+
+        return true;
     }
 
     private LocalRelation BuildLocalRelation(ComparisonState state)
@@ -203,6 +231,8 @@ partial class StrategyBuilder
                 continue;                                       // cannot raise the bound
             if (entry.Relation.EdgeCount < current.EdgeCount)
                 continue;                                       // current's relation cannot embed into a sparser one
+            if (!EmbedDegreeFeasible(current, entry.Relation))
+                continue;                                       // cheap degree-sequence necessary condition fails
             if (TryEmbedRelation(current, entry.Relation))      // current <= entry in information
                 best = entry.Cost;                              // so cost(state) >= entry.Cost
             if (_dominanceProbeBudgetRemaining <= 0)
@@ -238,6 +268,7 @@ partial class StrategyBuilder
             // information), so cost(current) <= entry.Cost.
             if (other.EdgeCount <= current.EdgeCount &&
                 (!hasUpper || entry.Cost < upper) &&
+                EmbedDegreeFeasible(other, current) &&
                 TryEmbedRelation(other, current))
             {
                 hasUpper = true;
@@ -248,6 +279,7 @@ partial class StrategyBuilder
             // information), so cost(current) >= entry.Cost.
             if (current.EdgeCount <= other.EdgeCount &&
                 (!hasLower || entry.Cost > lower) &&
+                EmbedDegreeFeasible(current, other) &&
                 TryEmbedRelation(current, other))
             {
                 hasLower = true;
