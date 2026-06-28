@@ -11,7 +11,7 @@ class Program
         "\n" +
         "Usage:\n" +
         "  TopKFinder                      Launch the desktop (WinForms) explorer.\n" +
-        "  TopKFinder <n> <m> <k>          Run two-phase search: print default, then compact if improved.\n" +
+        "  TopKFinder <n> <m> <k>          Run three-phase search: print feasible upper bound, exact, then compact if improved.\n" +
         "  ... | TopKFinder                Read n, m, k from stdin (one value per line).\n" +
         "\n" +
         "Options:\n" +
@@ -175,8 +175,22 @@ class Program
             System.Threading.CancellationToken.None,
             ReportProgress,
             reportCombinedRunProgress: true);
+
+        // Phase 0: greedy feasible strategy. Instant even on shapes the exact search never
+        // resolves (e.g. 25,5,5), so it always gives the user a real strategy plus a squeeze
+        // L <= opt <= U before the (possibly unbounded) exact search begins.
+        StrategyPlan feasiblePlan = builder.BuildFeasiblePlan();
+        ClearProgressLine();
+        Console.WriteLine($"==================== feasible upper bound ({FormatSqueeze(feasiblePlan)}) ====================");
+        Console.WriteLine("(a valid strategy that achieves the upper bound; not proven optimal)");
+        Console.Write(StrategyOverviewRenderer.RenderText(feasiblePlan));
+        Console.WriteLine();
+        Console.Write(StrategyTextRenderer.Render(feasiblePlan));
+        Console.WriteLine();
+
         StrategyPlan defaultPlan = builder.BuildDefaultPlan();
         ClearProgressLine();
+        Console.WriteLine("==================== exact optimal ====================");
         Console.Write(StrategyOverviewRenderer.RenderText(defaultPlan));
         Console.WriteLine();
         Console.Write(StrategyTextRenderer.Render(defaultPlan));
@@ -194,6 +208,20 @@ class Program
         Console.Write(StrategyOverviewRenderer.RenderText(compactPlan));
         Console.WriteLine();
         Console.Write(StrategyTextRenderer.Render(compactPlan));
+    }
+
+    // Squeeze on the optimum for a feasible plan: L is the proven analytic lower bound
+    // (RootProvenLowerBound), U is the achieved feasible upper bound (MaxStep). When L == U the
+    // greedy strategy is in fact optimal (a proven floor met by an achievable strategy).
+    private static string FormatSqueeze(StrategyPlan plan)
+    {
+        int lower = plan.SearchStatistics.RootProvenLowerBound;
+        int upper = plan.MaxStep;
+        if (lower > 0 && lower == upper)
+            return $"opt = {upper} (proven optimal)";
+
+        string lowerText = lower > 0 ? lower.ToString() : "?";
+        return $"{lowerText} <= opt <= {upper}";
     }
 
     public static bool TryParseAndValidate(

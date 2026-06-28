@@ -155,6 +155,7 @@ partial class StrategyBuilder
         _phase1bMilliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds;
 
         // Phase 2: materialize the strategy tree, reusing the cached group patterns.
+        _useGreedySelection = false;
         _useCompactSelection = useCompactSelection;
         var root = BuildState(new ComparisonState(_n), 0, _k, 1);
         _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds - _phase1bMilliseconds;
@@ -224,8 +225,16 @@ partial class StrategyBuilder
         // Phase 1 solves the optimal worst-case for every reachable state and caches the
         // chosen comparison-group pattern, so phase 2 always finds a populated entry here.
         // The compact PoC overrides the choice with its size-minimizing pattern when enabled.
+        // The greedy feasible plan instead supplies a single-policy pattern computed without the
+        // exact search (see StrategyBuilder.Greedy.cs) and never consults the exact cache.
         BestGroupPattern cachedPattern;
-        if (_useCompactSelection && _compactGroupPatternCache.TryGetValue(currentKey, out BestGroupPattern compactPattern))
+        if (_useGreedySelection)
+        {
+            if (!_greedyGroupPatternCache.TryGetValue(currentKey, out cachedPattern))
+                throw new InvalidOperationException(
+                    "Greedy selection must populate the group pattern cache for every state materialized in the feasible plan.");
+        }
+        else if (_useCompactSelection && _compactGroupPatternCache.TryGetValue(currentKey, out BestGroupPattern compactPattern))
         {
             cachedPattern = compactPattern;
         }
@@ -638,13 +647,20 @@ partial class StrategyBuilder
 
         (double progressBase, double progressSpan) = _progressScope switch
         {
-            ProgressScope.DefaultInCombinedRun => (0.0, 0.60),
+            ProgressScope.FeasibleInCombinedRun => (0.0, 0.01),
+            ProgressScope.DefaultInCombinedRun => (0.01, 0.59),
             ProgressScope.CompactPrimaryInCombinedRun => (0.60, 0.39),
             ProgressScope.CompactFallbackInCombinedRun => (0.99, 0.01),
             _ => (0.0, 1.0),
         };
 
-        double progress = Math.Clamp(progressBase + (Math.Clamp(localProgress01, 0.0, 1.0) * progressSpan), 0.0, 1.0);
+        // The feasible phase is a single indivisible greedy slice with no internal progress signal,
+        // so instead of sitting at 0% (which reads as "nothing happening") it fills its whole 1% band
+        // and hands off continuously to the default phase, which starts at 1%.
+        double localFraction = _progressScope == ProgressScope.FeasibleInCombinedRun
+            ? 1.0
+            : Math.Clamp(localProgress01, 0.0, 1.0);
+        double progress = Math.Clamp(progressBase + (localFraction * progressSpan), 0.0, 1.0);
         if (progress <= 0.0 || elapsedMs <= 0)
             return (progress, -1);
 
@@ -918,6 +934,7 @@ partial class StrategyBuilder
         _compactStatesSolved = 0;
         _compactGroupsEnumerated = 0;
         _compactStepOptimalGroups = 0;
+        _greedyStatesSolved = 0;
         _progressEstimateInitialized = false;
         _progressEstimateEma01 = 0.0;
         _lastProgressSampleElapsedMs = -1;
@@ -1011,6 +1028,7 @@ partial class StrategyBuilder
         DefaultInCombinedRun = 1,
         CompactPrimaryInCombinedRun = 2,
         CompactFallbackInCombinedRun = 3,
+        FeasibleInCombinedRun = 4,
     }
 
 }

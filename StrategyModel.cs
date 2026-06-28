@@ -21,7 +21,14 @@ sealed class StrategyPlan
     public int TotalBranchEdges { get; }
     public SearchStatistics SearchStatistics { get; }
 
-    public StrategyPlan(int n, int m, int requestedK, int k, StrategyNode root, TimeSpan elapsed, SearchStatistics searchStatistics)
+    // True for a greedy feasible plan: MaxStep is a feasible upper bound on the optimum
+    // (a strategy that achieves it), NOT a proven optimum. Surfacing code must label such a
+    // plan as "feasible / not proven optimal" and never collapse the squeeze to "opt = N
+    // (proven)" off MaxStep alone -- only the proven lower bound (RootProvenLowerBound) may
+    // close the squeeze.
+    public bool IsFeasibleUpperBound { get; }
+
+    public StrategyPlan(int n, int m, int requestedK, int k, StrategyNode root, TimeSpan elapsed, SearchStatistics searchStatistics, bool isFeasibleUpperBound = false)
     {
         N = n;
         M = m;
@@ -32,6 +39,7 @@ sealed class StrategyPlan
         MaxStep = GetMaxStep(root);
         TotalBranchEdges = GetTotalBranchEdges(root);
         SearchStatistics = searchStatistics;
+        IsFeasibleUpperBound = isFeasibleUpperBound;
     }
 
     private static int GetMaxStep(StrategyNode node)

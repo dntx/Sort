@@ -282,10 +282,11 @@ while (true)
   **始终 ≤ 真实 opt**。搜索若被中途取消，`_rootProvenLowerBound` 保留的就是「**已证明 opt ≥ L**」这一结论
   （`25,5,5` 上 L 会实时从 3 往上爬）。这一侧通过 `SearchStatistics.RootProvenLowerBound`、以及每次进度
   回调的 `SearchProgressSnapshot.RootProvenLowerBound` 暴露出来。
-- **U 一侧（可行上界）= incumbent**：`RecordRootIncumbent` 记录的「当前找到的最好可行策略步数」就是上界 `U`。
+- **U 一侧（可行上界）= incumbent 或贪心可行解**：`RecordRootIncumbent` 记录的「当前找到的最好可行策略步数」是上界 `U`。
   但要注意：incumbent 只在某一趟**成功**（找到 ≤ budget 的解）时才更新，对硬算例那一趟成功 ≈ 整题已解完，
-  所以**失败趟期间通常还没有有限的 U**。要在搜索早期就拿到有意义的 U，需要一个**独立的、便宜的启发式构造器**
-  单独造一棵可行（非最优）策略树——这属于后续工作（与 `anytime-feasible-incumbent` 合流）。
+  所以**失败趟期间通常还没有有限的 U**。为在搜索早期（甚至**根本算不完**时）就拿到有意义的 U，本项目用一个
+  **独立的、便宜的贪心构造器**单独造一棵可行（非最优）策略树——见 4.6。`25,5,5` 上它瞬间给出 `U = 9`，于是即便
+  精确搜索跑不完，也能立刻显示 `6 ≤ opt ≤ 9`。
 - **夹逼闭合**：一旦完整解出，最后一趟成功时 `budget == opt`，于是 `L == opt`；此时 `RootProvenLowerBound`
   恰等于 `MaxStep`，区间收拢成一个点。
 
@@ -300,6 +301,38 @@ while (true)
 > 阶段复用缓存、**不会重跑** IDA* driver 去重新记录，导致夹逼显示从「`opt = N (proven)`」回退成
 > 「`? ≤ opt ≤ ?`」。其余按 build 重新统计的计数器（`searched` / `output` / cache 命中等）仍照常重置，
 > 因为 compact 阶段会通过 `ObserveSearchState` / `VisitComparisonOutcomes` 重新填充它们。
+
+### 4.6 贪心可行解构造器（always-on phase 0）
+
+精确 minimax 之所以会爆炸，是因为它在**每个状态**上对**所有**候选分组取 min、并且要**证明最优**。
+贪心构造器把这两件昂贵的事都砍掉：
+
+- **每个状态只承诺一个分组**：取 `EnumeratePrioritizedGroups` 排在**第一**的分组（与精确搜索的首选优先级一致），
+  不做 min、不回溯。
+- **但仍展开所有对手分支**：对该分组的每一种比较结果都递归下去——于是整棵策略树是一个**单策略闭包**而非搜索树。
+  `25,5,5` 上这个闭包只有 11 个状态，**1 秒内**就能解完。
+
+```csharp
+// StrategyBuilder.Greedy.cs -> SolveGreedySelection（DFS，按 SearchStateKey 记忆化）
+var group = EnumeratePrioritizedGroups(state, remainingSlots).First(); // 只取第一名，不做 minimax
+_greedyGroupPatternCache[key] = group.ToPattern();                     // 给物化阶段复用
+foreach (var outcome in group.EnumerateComparisonOutcomes(state))      // 但展开全部对手结果
+    SolveGreedySelection(outcome.ResultState, outcome.RemainingSlots);
+```
+
+物化（materialize）阶段完全复用既有路径：`ChooseGroup` 在 `_useGreedySelection == true` 时改读
+`_greedyGroupPatternCache`（与 compact 的 `_useCompactSelection` / `_compactGroupPatternCache` 同构）。
+这样造出的策略树**结构合法**、可直接展示，其 `MaxStep` 就是**可行上界 `U`**（注意：`U` 不是已证明最优，只是一个
+**确实可达**的步数）。
+
+- **夹逼**：`L = GetMinWorstCaseLowerBound(root, k)`（解析下界，与精确搜索**无关**、极便宜；`25,5,5 → 6`），经
+  `RecordRootProvenLowerBound` 写入；`U = ` 贪心树的 `MaxStep`。于是 `L ≤ opt ≤ U`。若 `L == U` 则该可行解
+  **恰好达到了已证明下界**，即**已证明最优**（显示 `opt = U (proven optimal)`）。
+- **always-on phase 0**：贪心解作为**第 0 阶段**总是先跑、并**始终保留**在 exact / compact 旁边（不是「精确解出后替换」），
+  因此用户在精确搜索还在跑（甚至跑不完）时，就有一棵可浏览的可行树和一个有保证的夹逼区间。CLI / GUI 把三棵展示树
+  统一命名为 **feasible / exact / compact**（`exact` 即此前文档中所称的「default 选择路径」`BuildDefaultPlan`）。
+- `StrategyPlan.IsFeasibleUpperBound == true` 标记这棵树是「可行上界」而非「精确最优」，CLI / GUI 据此渲染独立的
+  「feasible upper bound」区域。
 
 ---
 
@@ -549,4 +582,5 @@ width = ActiveCount - maxBipartiteMatching;   // GetActivePosetWidth
 | 规范形 / 对称约减 | `ComparisonState.ComputeCanonicalForm`、`GetCanonicalKey`、`GetGroupCanonicalKey` |
 | 支配下界 | `StrategyBuilder.Dominance.cs`、`ApplyDominanceLowerBound` |
 | 紧凑搜索变体 | `StrategyBuilder.Compact.cs` |
+| 贪心可行解构造器（phase 0 / 可行上界 U） | `StrategyBuilder.Greedy.cs` → `BuildFeasiblePlan`、`SolveGreedySelection`；`StrategyPlan.IsFeasibleUpperBound` |
 | 回归 / 计数监控 | `TopKFinder.Tests/StrategyRegressionTests.cs`、`DominanceMetricTests.cs` |
