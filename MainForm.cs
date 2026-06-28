@@ -202,9 +202,9 @@ class MainForm : Form
         {
             Text = "Back",
             AutoSize = true,
-            Height = 30,
+            Height = 26,
             Enabled = false,
-            Margin = new Padding(8, 4, 0, 0),
+            Margin = new Padding(12, 0, 0, 0),
         };
 
         _toggleDetailsButton = new Button
@@ -243,7 +243,6 @@ class MainForm : Form
         };
         actionsPanel.Controls.Add(_runButton);
         actionsPanel.Controls.Add(_stopButton);
-        actionsPanel.Controls.Add(_backButton);
         actionsPanel.Controls.Add(_toggleDetailsButton);
 
         var controlsLayout = new TableLayoutPanel
@@ -332,7 +331,7 @@ class MainForm : Form
             Panel2Collapsed = true,
             SplitterWidth = 6,
         };
-        innerSplit.Panel1.Controls.Add(CreateTreeRegion(_treeView, _treeExpandButton, _treeCollapseButton));
+        innerSplit.Panel1.Controls.Add(CreateTreeRegion(_treeView, _treeExpandButton, _treeCollapseButton, _backButton));
 
         _detailsTextBox = new RichTextBox
         {
@@ -707,9 +706,10 @@ class MainForm : Form
         FinalizeCompactInOverview(compactPlan, compactImproved);
     }
 
-    // Wraps a tree in a panel with a small top toolbar holding that tree's own Expand/Collapse
-    // buttons, so each of the two tree regions (overview and strategy) is controlled independently.
-    private static Panel CreateTreeRegion(TreeView tree, Button expandButton, Button collapseButton)
+    // Wraps a tree in a panel with a small top toolbar holding that tree's own buttons (Expand /
+    // Collapse, plus Back on the strategy tree), so each of the two tree regions is controlled
+    // independently.
+    private static Panel CreateTreeRegion(TreeView tree, params Button[] buttons)
     {
         var toolbar = new FlowLayoutPanel
         {
@@ -719,8 +719,8 @@ class MainForm : Form
             Padding = new Padding(2, 2, 2, 2),
             Margin = Padding.Empty,
         };
-        toolbar.Controls.Add(expandButton);
-        toolbar.Controls.Add(collapseButton);
+        foreach (Button button in buttons)
+            toolbar.Controls.Add(button);
 
         tree.Dock = DockStyle.Fill;
 
