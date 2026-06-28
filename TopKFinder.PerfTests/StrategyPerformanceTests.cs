@@ -55,6 +55,19 @@ public sealed class StrategyPerformanceTests
         Assert.True(medianMs <= 2500, $"Median elapsed regressed to {medianMs:F1} ms.");
     }
 
+    // Regression guard for the ChooseGroup/feasible materialization rendering path. The 20,10,10
+    // default plan materializes a node that sorts m=10 items into ~250 branch lines; each line runs
+    // the equivalent-order pattern engine, which used to enumerate every set partition of the 10
+    // remaining items (Bell(10) ~= 116k) per line and cost ~11 s. Pruning the partition enumeration
+    // by the block-factorial product cut that to well under a second. A gross regression here would
+    // re-introduce the multi-second blow-up, so the budget is loose but far below the old cost.
+    [Fact]
+    public void N20M10K10_CompletesWithinBudget()
+    {
+        double medianMs = MeasureMedianElapsedMilliseconds(20, 10, 10, iterations: 3);
+        Assert.True(medianMs <= 6000, $"Median elapsed regressed to {medianMs:F1} ms.");
+    }
+
     private static double MeasureMedianElapsedMilliseconds(int n, int m, int k, int iterations)
     {
         _ = TestTimeoutHelper.RunWithTimeout(

@@ -952,13 +952,30 @@ partial class StrategyBuilder
             return null;
 
         PermutationTemplateCandidate? bestCandidate = null;
-        foreach (var partition in EnumeratePartitions(remainingItems.OrderBy(item => representativePositions[item]).ToArray()))
+        foreach (var partition in EnumeratePartitions(
+            remainingItems.OrderBy(item => representativePositions[item]).ToArray(), orders.Count))
         {
             int multiBlockCount = partition.Count(block => block.Count > 1);
             if (multiBlockCount == 0)
                 continue;
 
             if (multiBlockCount == 1 && partition.Count == 1)
+                continue;
+
+            // Necessary condition, identical to the orders.Count == expectedTotal gate below: a
+            // block of size s that permutes fully contributes s! orderings, so the product of the
+            // block factorials must equal the order count. Checking it here from block sizes alone
+            // skips the expensive per-order projection/template work for the overwhelming majority
+            // of partitions (Bell(n) grows fast; only a tiny fraction can ever match).
+            BigInteger blockPermutationProduct = BigInteger.One;
+            foreach (var block in partition)
+            {
+                if (block.Count > 1)
+                    blockPermutationProduct *= Factorial(block.Count);
+                if (blockPermutationProduct > orders.Count)
+                    break;
+            }
+            if (blockPermutationProduct != orders.Count)
                 continue;
 
             var blockLookup = new Dictionary<int, int>();
@@ -1900,17 +1917,26 @@ partial class StrategyBuilder
         }
     }
 
-    private static IEnumerable<List<List<int>>> EnumeratePartitions(IReadOnlyList<int> items)
+    // Enumerates set partitions of items, pruning any branch whose running product of completed
+    // block factorials already exceeds targetFactorialProduct. A fully-permuting block of size s
+    // contributes s! orderings and blocks only grow as later items are assigned, so the running
+    // product is a lower bound on every descendant partition's product. Callers that need
+    // partitions whose block-factorial product equals a target order count can therefore never
+    // miss a match, while the explosive majority of partitions (Bell(n) grows super-exponentially)
+    // are skipped before they are even built.
+    private static IEnumerable<List<List<int>>> EnumeratePartitions(IReadOnlyList<int> items, int targetFactorialProduct)
     {
         var blocks = new List<List<int>>();
-        foreach (var partition in EnumeratePartitions(items, 0, blocks))
+        foreach (var partition in EnumeratePartitions(items, 0, blocks, BigInteger.One, targetFactorialProduct))
             yield return partition;
     }
 
     private static IEnumerable<List<List<int>>> EnumeratePartitions(
         IReadOnlyList<int> items,
         int index,
-        List<List<int>> blocks)
+        List<List<int>> blocks,
+        BigInteger currentFactorialProduct,
+        int targetFactorialProduct)
     {
         if (index == items.Count)
         {
@@ -1921,14 +1947,21 @@ partial class StrategyBuilder
         int item = items[index];
         for (int blockIndex = 0; blockIndex < blocks.Count; blockIndex++)
         {
-            blocks[blockIndex].Add(item);
-            foreach (var partition in EnumeratePartitions(items, index + 1, blocks))
-                yield return partition;
-            blocks[blockIndex].RemoveAt(blocks[blockIndex].Count - 1);
+            int currentSize = blocks[blockIndex].Count;
+            // Growing a block from size c to c+1 multiplies its factorial contribution by (c+1).
+            BigInteger nextProduct = currentFactorialProduct * (currentSize + 1);
+            if (nextProduct <= targetFactorialProduct)
+            {
+                blocks[blockIndex].Add(item);
+                foreach (var partition in EnumeratePartitions(items, index + 1, blocks, nextProduct, targetFactorialProduct))
+                    yield return partition;
+                blocks[blockIndex].RemoveAt(blocks[blockIndex].Count - 1);
+            }
         }
 
+        // A fresh singleton block contributes 1! = 1, leaving the running product unchanged.
         blocks.Add(new List<int> { item });
-        foreach (var partition in EnumeratePartitions(items, index + 1, blocks))
+        foreach (var partition in EnumeratePartitions(items, index + 1, blocks, currentFactorialProduct, targetFactorialProduct))
             yield return partition;
         blocks.RemoveAt(blocks.Count - 1);
     }
