@@ -99,7 +99,7 @@ partial class StrategyBuilder
         if (chosen is null)
             throw new InvalidOperationException("Greedy selection found no candidate comparison group.");
 
-        _greedyGroupPatternCache[key] = new BestGroupPattern(chosen.Count, GetGroupPattern(state, chosen));
+        _greedyGroupPatternCache[key] = MakeGroupPattern(state, chosen);
         _greedyStatesSolved++;
         ReportProgress();
 

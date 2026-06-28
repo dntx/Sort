@@ -237,8 +237,14 @@ partial class StrategyBuilder
                 "Phase 1 must populate the best-group pattern cache for every state materialized in phase 2.");
         }
 
+        int[]? colorSignature = cachedPattern.ColorSignature;
+        int[]? activeColors = colorSignature is null ? null : state.GetActiveItemColors();
+
         foreach (var group in EnumerateCombinations(candidates, cachedPattern.GroupSize))
         {
+            if (activeColors is not null && !GroupMatchesColorSignature(activeColors, group, colorSignature!))
+                continue;
+
             if (GetGroupPattern(state, group) == cachedPattern.Pattern)
             {
                 _bestGroupPatternCacheHits++;
@@ -268,6 +274,56 @@ partial class StrategyBuilder
         for (int i = 0; i < group.Count; i++)
             mask |= 1UL << group[i];
         return state.GetGroupCanonicalKey(mask);
+    }
+
+    // Builds a BestGroupPattern carrying both the canonical group pattern and a cheap color
+    // pre-filter signature (the sorted multiset of the group's per-item active colors). ChooseGroup
+    // uses the signature to skip the expensive canonical-key check for groups that cannot match.
+    private static BestGroupPattern MakeGroupPattern(ComparisonState state, IReadOnlyList<int> group)
+    {
+        int[] colors = state.GetActiveItemColors();
+        return new BestGroupPattern(group.Count, GetGroupPattern(state, group), BuildSortedColorSignature(colors, group));
+    }
+
+    private static int[] BuildSortedColorSignature(int[] colors, IReadOnlyList<int> group)
+    {
+        var signature = new int[group.Count];
+        for (int i = 0; i < group.Count; i++)
+            signature[i] = colors[group[i]];
+        Array.Sort(signature);
+        return signature;
+    }
+
+    // Necessary condition for GetGroupPattern(state, group) == target pattern: the group's sorted
+    // color multiset must equal the cached signature. Allocation-free (group size is tiny).
+    private static bool GroupMatchesColorSignature(int[] colors, IReadOnlyList<int> group, int[] target)
+    {
+        int count = group.Count;
+        if (target.Length != count)
+            return false;
+
+        Span<int> signature = stackalloc int[count];
+        for (int i = 0; i < count; i++)
+            signature[i] = colors[group[i]];
+
+        for (int i = 1; i < count; i++)
+        {
+            int value = signature[i];
+            int j = i - 1;
+            while (j >= 0 && signature[j] > value)
+            {
+                signature[j + 1] = signature[j];
+                j--;
+            }
+
+            signature[j + 1] = value;
+        }
+
+        for (int i = 0; i < count; i++)
+            if (signature[i] != target[i])
+                return false;
+
+        return true;
     }
 
     private IEnumerable<List<int>> EnumerateDistinctGroups(

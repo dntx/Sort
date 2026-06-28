@@ -476,12 +476,19 @@ readonly struct FeasibleTopSetSubproblemKey : IEquatable<FeasibleTopSetSubproble
 
 readonly struct BestGroupPattern
 {
-    public BestGroupPattern(int groupSize, IntSequenceKey pattern)
+    public BestGroupPattern(int groupSize, IntSequenceKey pattern, int[]? colorSignature = null)
     {
         GroupSize = groupSize;
         Pattern = pattern;
+        ColorSignature = colorSignature;
     }
 
     public int GroupSize { get; }
     public IntSequenceKey Pattern { get; }
+
+    // Sorted multiset of the chosen group's per-item active colors (ComparisonState.GetActiveItemColors).
+    // A cheap necessary condition for Pattern equality: any group materialized for this cache entry must
+    // carry this exact sorted color multiset, letting ChooseGroup skip the expensive canonical-key check
+    // for groups that cannot match. Null when the writer did not supply it (then no pre-filter is applied).
+    public int[]? ColorSignature { get; }
 }
