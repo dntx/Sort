@@ -654,10 +654,7 @@ class MainForm : Form
         _treeView.EndUpdate();
         _treeView.SelectedNode = root;
 
-        if (compactPlan is not null && compactImproved)
-            PopulateOverview(compactPlan, "compact", "Overview of the 'compact' strategy below");
-        else
-            PopulateOverview(defaultPlan, "default", "Overview of the 'default' strategy below");
+        RebuildOverview(defaultPlan, compactPlan, compactImproved);
     }
 
     // Incrementally folds the finished compact result into the already-rendered default tree instead
@@ -693,11 +690,7 @@ class MainForm : Form
 
         _treeView.EndUpdate();
 
-        // The overview list is a separate panel from the tree the user browses. Only swap it to the
-        // compact strategy when compact actually improved; otherwise the default overview already on
-        // screen stays valid.
-        if (compactImproved)
-            PopulateOverview(compactPlan, "compact", "Overview of the 'compact' strategy below");
+        FinalizeCompactInOverview(compactPlan, compactImproved);
     }
 
     // Resets the result surfaces (overview list, tree, navigation state, details) so a fresh Run
@@ -717,11 +710,52 @@ class MainForm : Form
         _backButton.Enabled = false;
     }
 
-    private void PopulateOverview(StrategyPlan plan, string scope, string title)
+    // Renders the overview panel so it mirrors the tree one-to-one: a "default strategy" section
+    // plus, depending on the compact phase, a "compact strategy" section (when it improved), a
+    // "no better result" note (when it did not), or a "computing..." placeholder (still running).
+    // This is the full-rebuild path used for the initial render and theme switches.
+    private void RebuildOverview(StrategyPlan defaultPlan, StrategyPlan? compactPlan, bool compactImproved)
     {
         _overviewList.BeginUpdate();
         _overviewList.Items.Clear();
 
+        AppendOverviewSection(defaultPlan, "default", "default strategy overview");
+        if (compactPlan is null)
+            AppendOverviewNote("compact strategy overview: computing...");
+        else if (compactImproved)
+            AppendOverviewSection(compactPlan, "compact", "compact strategy overview");
+        else
+            AppendOverviewNote("compact strategy overview: no better result (total edges unchanged or worse)");
+
+        if (_overviewList.Columns.Count > 0)
+            ResizeOverviewColumn();
+        _overviewList.EndUpdate();
+    }
+
+    // Incrementally folds the finished compact result into the overview, mirroring the tree update:
+    // the default section (and the user's scroll position over it) is left untouched, and only the
+    // trailing "computing..." placeholder is replaced with the compact section or a "no better
+    // result" note.
+    private void FinalizeCompactInOverview(StrategyPlan compactPlan, bool compactImproved)
+    {
+        _overviewList.BeginUpdate();
+
+        // Drop the single-line "computing..." placeholder appended during the default render.
+        if (_overviewList.Items.Count > 0)
+            _overviewList.Items.RemoveAt(_overviewList.Items.Count - 1);
+
+        if (compactImproved)
+            AppendOverviewSection(compactPlan, "compact", "compact strategy overview");
+        else
+            AppendOverviewNote("compact strategy overview: no better result (total edges unchanged or worse)");
+
+        if (_overviewList.Columns.Count > 0)
+            ResizeOverviewColumn();
+        _overviewList.EndUpdate();
+    }
+
+    private void AppendOverviewSection(StrategyPlan plan, string scope, string title)
+    {
         _overviewList.Items.Add(new ListViewItem(title)
         {
             Font = new Font(_overviewList.Font, FontStyle.Bold),
@@ -742,10 +776,14 @@ class MainForm : Form
                 });
             }
         }
+    }
 
-        if (_overviewList.Columns.Count > 0)
-            ResizeOverviewColumn();
-        _overviewList.EndUpdate();
+    private void AppendOverviewNote(string text)
+    {
+        _overviewList.Items.Add(new ListViewItem(text)
+        {
+            ForeColor = _palette.MutedForeColor,
+        });
     }
 
     private void ResizeOverviewColumn()
