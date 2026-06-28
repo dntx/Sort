@@ -25,9 +25,9 @@ partial class StrategyBuilder
 
     public StrategyPlan BuildFeasiblePlan()
     {
-        // The greedy phase is effectively instant. In a combined run it occupies a zero-width band at
-        // the very front of the unified progress bar, so it never reports a misleading local fraction
-        // and the bar starts cleanly at 0% when the exact (default) phase begins.
+        // The greedy phase is effectively instant. In a combined run it occupies the first 1% band of
+        // the unified progress bar (a single indivisible slice), so the bar shows 1% while it runs and
+        // the exact (default) phase then continues cleanly from 1%.
         _progressScope = _reportCombinedRunProgress
             ? ProgressScope.FeasibleInCombinedRun
             : ProgressScope.DefaultStandalone;

@@ -647,14 +647,20 @@ partial class StrategyBuilder
 
         (double progressBase, double progressSpan) = _progressScope switch
         {
-            ProgressScope.FeasibleInCombinedRun => (0.0, 0.0),
-            ProgressScope.DefaultInCombinedRun => (0.0, 0.60),
+            ProgressScope.FeasibleInCombinedRun => (0.0, 0.01),
+            ProgressScope.DefaultInCombinedRun => (0.01, 0.59),
             ProgressScope.CompactPrimaryInCombinedRun => (0.60, 0.39),
             ProgressScope.CompactFallbackInCombinedRun => (0.99, 0.01),
             _ => (0.0, 1.0),
         };
 
-        double progress = Math.Clamp(progressBase + (Math.Clamp(localProgress01, 0.0, 1.0) * progressSpan), 0.0, 1.0);
+        // The feasible phase is a single indivisible greedy slice with no internal progress signal,
+        // so instead of sitting at 0% (which reads as "nothing happening") it fills its whole 1% band
+        // and hands off continuously to the default phase, which starts at 1%.
+        double localFraction = _progressScope == ProgressScope.FeasibleInCombinedRun
+            ? 1.0
+            : Math.Clamp(localProgress01, 0.0, 1.0);
+        double progress = Math.Clamp(progressBase + (localFraction * progressSpan), 0.0, 1.0);
         if (progress <= 0.0 || elapsedMs <= 0)
             return (progress, -1);
 
