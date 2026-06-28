@@ -152,7 +152,7 @@ partial class StrategyBuilder
             throw new InvalidOperationException("Compact selection found no step-optimal comparison group.");
         }
 
-        _compactGroupPatternCache[key] = new BestGroupPattern(bestGroup.Count, GetGroupPattern(state, bestGroup));
+        _compactGroupPatternCache[key] = MakeGroupPattern(state, bestGroup);
         _compactCostMemo[key] = bestCost;
         return bestCost;
     }

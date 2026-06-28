@@ -261,6 +261,66 @@ class ComparisonState
         return ComputeCanonicalForm(ActiveMask, fixedTopMask: 0, highlightMask: groupMask);
     }
 
+    // Per-item 1-WL color of the active sub-poset (no group highlighted), matching the coloring
+    // GetGroupCanonicalKey refines on top of. Colors are assigned in canonical order, so isomorphic
+    // states produce identical color labelings. Returns an array indexed by item; inactive items
+    // hold -1. Two groups can share a GetGroupCanonicalKey only if their members carry the same
+    // multiset of these colors (an automorphism mapping one group onto the other must preserve the
+    // coloring), so the sorted color multiset is a cheap necessary condition used to skip the
+    // expensive canonical-key computation for groups that cannot match a target pattern.
+    public int[] GetActiveItemColors()
+    {
+        int n = _n;
+        var colors = new int[n];
+        for (int i = 0; i < n; i++)
+            colors[i] = -1;
+
+        var verts = new int[n];
+        int a = 0;
+        ulong remaining = ActiveMask;
+        while (remaining != 0)
+        {
+            int i = BitOperations.TrailingZeroCount(remaining);
+            remaining &= remaining - 1;
+            verts[a++] = i;
+        }
+
+        if (a == 0)
+            return colors;
+
+        var pos = new int[n];
+        for (int p = 0; p < a; p++)
+            pos[verts[p]] = p;
+
+        var anc = new ulong[a];
+        var desc = new ulong[a];
+        for (int p = 0; p < a; p++)
+        {
+            ulong upMask = _ancestors[verts[p]] & ActiveMask;
+            while (upMask != 0)
+            {
+                int b = BitOperations.TrailingZeroCount(upMask);
+                upMask &= upMask - 1;
+                desc[p] |= 1UL << pos[b];
+            }
+
+            ulong downMask = _descendants[verts[p]] & ActiveMask;
+            while (downMask != 0)
+            {
+                int b = BitOperations.TrailingZeroCount(downMask);
+                downMask &= downMask - 1;
+                anc[p] |= 1UL << pos[b];
+            }
+        }
+
+        var seed = new int[a];
+        int[] refined = RefineCanonicalColoring(a, anc, desc, seed);
+        for (int p = 0; p < a; p++)
+            colors[verts[p]] = refined[p];
+
+        return colors;
+    }
+
     // Produces a COMPLETE canonical invariant of the included sub-poset via
     // individualization-refinement (a McKay-style canonical labeling). 1-WL color
     // refinement alone is not a complete graph invariant: non-isomorphic posets can share

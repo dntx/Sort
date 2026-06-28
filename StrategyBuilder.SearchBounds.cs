@@ -165,7 +165,7 @@ partial class StrategyBuilder
             throw new InvalidOperationException("Expected at least one useful comparison group when unresolved candidates exceed comparison size.");
 
         if (bestGroup is not null)
-            _bestGroupPatternCache[key] = new BestGroupPattern(bestGroup.Count, GetGroupPattern(state, bestGroup));
+            _bestGroupPatternCache[key] = MakeGroupPattern(state, bestGroup);
 
         _minWorstCaseStepsCache[key] = bestWorstCase;
 
@@ -312,7 +312,7 @@ partial class StrategyBuilder
             // Resolved exactly under the budget: commit the optimum and its first-priority optimal
             // group so the materialized tree matches the unbounded search.
             if (bestGroup is not null)
-                _bestGroupPatternCache[key] = new BestGroupPattern(bestGroup.Count, GetGroupPattern(state, bestGroup));
+                _bestGroupPatternCache[key] = MakeGroupPattern(state, bestGroup);
 
             _minWorstCaseStepsCache[key] = bestWorstCase;
 
