@@ -201,20 +201,20 @@ class MainForm : Form
         {
             AutoSize = true,
             Margin = Padding.Empty,
-            Text = "0.000 s\ndefault: -\ncompact: -\nprogress: 0.0%\neta: -",
+            Text = "0.000 s\n[default] bound: ? <= opt <= ?\ndefault: -\ncompact: -\nprogress: 0.0%\neta: -",
             Font = new Font(Font.FontFamily, 11, FontStyle.Bold),
         };
         _statesLabel = new Label
         {
             AutoSize = true,
             Margin = Padding.Empty,
-            Text = "searched: 0\npending: 0 (peak 0)\noutput: 0\nlower-bound: 0\nfeasible-top-set: 0",
+            Text = "(cumulative: default + compact)\nsearched: 0\npending: 0 (peak 0)\noutput: 0\nlower-bound: 0\nfeasible-top-set: 0",
         };
         _workLabel = new Label
         {
             AutoSize = true,
             Margin = Padding.Empty,
-            Text = "outcomes: 0\nduplicate skips: 0\nmerged collisions: 0\nprunes: 0\ncache: 0/0/0/0\ncompact: -",
+            Text = "(cumulative: default + compact)\noutcomes: 0\nduplicate skips: 0\nmerged collisions: 0\nprunes: 0\ncache: 0/0/0/0\n[compact] -",
         };
         var inputsPanel = new FlowLayoutPanel
         {
@@ -1209,7 +1209,8 @@ class MainForm : Form
             : "-";
         string progressLine = $"progress: {_latestProgress.EstimatedProgress01 * 100.0:F1}%";
         string etaLine = $"eta: {etaLineValue}";
-        string text = $"{GetElapsedSeconds():F3} s\n{defaultLine}\n{compactLine}\n{progressLine}\n{etaLine}";
+        string boundLine = $"[default] {FormatSqueeze(_latestProgress)}";
+        string text = $"{GetElapsedSeconds():F3} s\n{boundLine}\n{defaultLine}\n{compactLine}\n{progressLine}\n{etaLine}";
         _elapsedLabel.Text = text;
     }
 
@@ -1235,6 +1236,7 @@ class MainForm : Form
         SearchProgressSnapshot p = _latestProgress;
 
         _statesLabel.Text =
+            "(cumulative: default + compact)\n" +
             $"searched: {p.SearchedStates}\n" +
             $"pending: {p.PendingStates} (peak {p.PeakPendingStates})\n" +
             $"output: {p.OutputStates}\n" +
@@ -1242,9 +1244,10 @@ class MainForm : Form
             $"feasible-top-set: {p.FeasibleTopSetStates}";
 
         string compactText = p.CompactStatesSolved > 0
-            ? $"compact: {p.CompactStatesSolved} solved, {p.CompactGroupsEnumerated} groups ({p.CompactStepOptimalGroups} opt)"
-            : "compact: -";
+            ? $"[compact] {p.CompactStatesSolved} solved, {p.CompactGroupsEnumerated} groups ({p.CompactStepOptimalGroups} opt)"
+            : "[compact] -";
         _workLabel.Text =
+            "(cumulative: default + compact)\n" +
             $"outcomes: {p.OutcomesConstructed} (cand groups {p.CandidateGroupsEnumerated})\n" +
             $"duplicate skips: {p.DuplicateOutcomeSkips}\n" +
             $"merged collisions: {p.MergedOutcomeCollisions}\n" +
