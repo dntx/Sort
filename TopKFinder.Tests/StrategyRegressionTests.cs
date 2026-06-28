@@ -107,14 +107,26 @@ public sealed class StrategyRegressionTests
             $"expanded output states regressed to {plan.SearchStatistics.ExpandedOutputStates} (cap {expandedOutputStateCap})");
     }
 
-    // Heavy (5, 5) monitor for the iterative-deepening (IDA*) regime. The 229-case suite above
-    // covers only m<=4 / k<=3 shapes, all of which run the single-pass exact path after the
-    // _useIterativeDeepening gate (_m>=5 && _k>=5 && _n>=2*_m). That left the entire ID regime --
-    // the path that actually runs on the 25,5,5 frontier -- with NO correctness oracle and NO
-    // benefit-locking caps. These rows build the gated (5,5) cases on the production (ID) path and
-    // pin both the materialized tree shape (MaxStep, root group, total edges, output states) and
-    // the deterministic search-work counters (searched / outcomes / candidate groups). Ratchet the
-    // counter caps DOWN when an optimization cuts work; an increase is a regression.
+    // Iterative-deepening (IDA*) regime monitor. The 229-case suite above covers only m<=4 / k<=3
+    // shapes, all of which run the single-pass exact path after the _useIterativeDeepening gate
+    // (_m>=5 && _k>=5 && _n>=2*_m). That left the entire ID regime -- the path that actually runs on
+    // the 25,5,5 frontier -- with NO correctness oracle and NO benefit-locking caps. These rows build
+    // gated cases on the production (ID) path and pin both the materialized tree shape (MaxStep, root
+    // group, total edges, output states) and the deterministic search-work counters (searched /
+    // outcomes / candidate groups). Ratchet the counter caps DOWN when an optimization cuts work; an
+    // increase is a regression.
+    //
+    // Coverage spans both gated families: the heavy (5,5) cases toward 25,5,5, AND the (6,6) cases
+    // (which also trip the gate: min(k,n-k)>=5, n>=2m) so the ID code path is exercised at a second m
+    // -- the (6,6) rows are cheap but guard against an m-specific ID regression.
+    //
+    // TIME-PROXY ROLE (P2): these counter caps -- above all OutcomesConstructed, the dominant
+    // per-state search cost (Clone + ApplyOrder + Eliminate + Normalize per outcome) -- are the
+    // MACHINE-INDEPENDENT stand-in for wall-clock time on the heavy frontier. Wall-clock perf tests
+    // are noisy and machine-dependent (see TopKFinder.PerfTests, now diagnostic-only); these
+    // deterministic counts are the real net. If a core-algorithm change makes one of these grow, the
+    // build WILL get slower on the 25,5,5 path even though no timer is asserted here -- treat such a
+    // diff as a performance regression unless it is a deliberate, documented trade-off.
     //
     // NOTE: edges/outputStates here are the ID-path values and may differ from what the single-pass
     // exact path would produce for the same case -- both are valid MaxStep-optimal trees, they only
@@ -126,6 +138,8 @@ public sealed class StrategyRegressionTests
     [InlineData(16, 5, 5, 6, 5, 195, 29, 12, 2573, 416162, 488630)]
     [InlineData(17, 5, 5, 6, 5, 200, 40, 13, 2714, 393047, 534261)]
     [InlineData(18, 5, 5, 6, 5, 397, 66, 14, 3855, 680812, 836413)]
+    [InlineData(12, 6, 6, 3, 6, 16, 17, 2, 34, 1172, 1753)]
+    [InlineData(14, 6, 6, 4, 6, 92, 23, 3, 94, 4117, 6423)]
     public void Default_IterativeDeepeningBaselineRemainsStable(
         int n, int m, int k, int maxStep, int rootGroupCount, int totalEdges,
         int outputStates, int expandedOutputStates,
@@ -691,6 +705,44 @@ public sealed class StrategyRegressionTests
             $"compact total edges {compact.TotalBranchEdges} exceeded baseline {baseline.TotalBranchEdges}");
     }
 
+    // P2.1 -- compact-phase work-counter monitor (deterministic time proxy for the compact pass).
+    // The compact selection runs a SECOND DP (StrategyBuilder.Compact.cs) on top of phase 1 and is
+    // sometimes the dominant cost of a full build -- occasionally slower than the default search
+    // itself. Yet no test pinned its work counters, so a compact-phase regression would only show up
+    // (loosely) in the noisy wall-clock layer. These caps lock the compact pass's machine-independent
+    // work: CompactStatesSolved (states the secondary DP solved), CompactGroupsEnumerated (candidate
+    // groups it enumerated -- the dominant compact cost, mirrors CandidateGroupsEnumerated for the
+    // default search) and CompactStepOptimalGroups (the step-optimal subset it actually costed). Caps
+    // are the current deterministic counts; ratchet them DOWN when a compact optimization cuts work,
+    // an increase is a regression. (13,4,3 is intentionally omitted: its compact pass solves 0 states
+    // because the default tree is already minimal, so there is no work to monitor.)
+    [Theory]
+    [InlineData(9, 3, 3, 77, 1213, 366)]
+    [InlineData(11, 3, 3, 131, 2847, 647)]
+    [InlineData(12, 4, 4, 46, 1395, 165)]
+    [InlineData(10, 3, 4, 321, 11156, 2765)]
+    [InlineData(12, 4, 3, 41, 799, 187)]
+    [InlineData(12, 3, 4, 690, 40377, 5931)]
+    [InlineData(10, 2, 4, 4118, 120336, 29291)]
+    public void Compact_WorkCountersStayWithinBaseline(
+        int n, int m, int k, int statesSolvedCap, int groupsEnumeratedCap, int stepOptimalGroupsCap)
+    {
+        StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
+            $"StrategyBuilder.BuildCompactPlan({n}, {m}, {k})",
+            RegressionTestTimeout,
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildCompactPlan());
+
+        Assert.True(
+            compact.SearchStatistics.CompactStatesSolved <= statesSolvedCap,
+            $"compact states solved regressed to {compact.SearchStatistics.CompactStatesSolved} (cap {statesSolvedCap})");
+        Assert.True(
+            compact.SearchStatistics.CompactGroupsEnumerated <= groupsEnumeratedCap,
+            $"compact groups enumerated regressed to {compact.SearchStatistics.CompactGroupsEnumerated} (cap {groupsEnumeratedCap})");
+        Assert.True(
+            compact.SearchStatistics.CompactStepOptimalGroups <= stepOptimalGroupsCap,
+            $"compact step-optimal groups regressed to {compact.SearchStatistics.CompactStepOptimalGroups} (cap {stepOptimalGroupsCap})");
+    }
+
     [Theory]
     [InlineData(11, 3, 3, 8)]
     // 12,4,4: honest minimum is 38, not 35. The prior 35 relied on a false sibling-merge (a
@@ -785,6 +837,8 @@ public sealed class StrategyRegressionTests
     [InlineData(10, 3, 4, 405)]
     [InlineData(10, 3, 5, 323)]
     [InlineData(12, 4, 5, 671)]
+    [InlineData(16, 4, 4, 5547)]
+    [InlineData(20, 5, 4, 3587)]
     [InlineData(13, 4, 3, 97)]
     [InlineData(8, 4, 2, 3)]
     [InlineData(9, 4, 3, 16)]
@@ -825,6 +879,9 @@ public sealed class StrategyRegressionTests
     [InlineData(11, 3, 3, 3532)]
     [InlineData(12, 3, 3, 7303)]
     [InlineData(12, 4, 4, 9809)]
+    [InlineData(12, 4, 5, 32512)]
+    [InlineData(16, 4, 4, 324042)]
+    [InlineData(20, 5, 4, 304457)]
     [InlineData(12, 4, 3, 492)]
     [InlineData(10, 3, 4, 6002)]
     [InlineData(10, 3, 5, 5521)]
@@ -948,6 +1005,8 @@ public sealed class StrategyRegressionTests
     [InlineData(12, 3, 3, 10909)]
     [InlineData(12, 4, 4, 9776)]
     [InlineData(12, 4, 5, 33855)]
+    [InlineData(16, 4, 4, 456755)]
+    [InlineData(20, 5, 4, 379108)]
     [InlineData(12, 4, 3, 544)]
     [InlineData(10, 3, 4, 7602)]
     [InlineData(10, 3, 5, 5634)]
