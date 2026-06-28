@@ -75,8 +75,10 @@ class MainForm : Form
     private readonly ComboBox _themeComboBox;
     private readonly Button _runButton;
     private readonly Button _stopButton;
-    private readonly Button _expandAllButton;
-    private readonly Button _collapseAllButton;
+    private readonly Button _treeExpandButton;
+    private readonly Button _treeCollapseButton;
+    private readonly Button _overviewExpandButton;
+    private readonly Button _overviewCollapseButton;
     private readonly Button _backButton;
     private readonly Button _toggleDetailsButton;
     private readonly TextBox _progressTextBox;
@@ -85,7 +87,7 @@ class MainForm : Form
     private readonly StatusStrip _statusStrip;
     private readonly ToolStripStatusLabel _statusLabel;
     private readonly TreeView _treeView;
-    private readonly ListView _overviewList;
+    private readonly TreeView _overviewTree;
     private readonly RichTextBox _detailsTextBox;
     private readonly System.Windows.Forms.Timer _elapsedTimer;
     private ThemePalette _palette = DarkPalette;
@@ -164,29 +166,45 @@ class MainForm : Form
         };
         _stopButton.Click += (_, _) => StopStrategy();
 
-        _expandAllButton = new Button
+        _treeExpandButton = new Button
         {
-            Text = "Expand All",
+            Text = "Expand",
             AutoSize = true,
-            Height = 30,
-            Margin = new Padding(0, 4, 8, 0),
+            Height = 26,
+            Margin = new Padding(0, 0, 6, 0),
         };
 
-        _collapseAllButton = new Button
+        _treeCollapseButton = new Button
         {
-            Text = "Collapse All",
+            Text = "Collapse",
             AutoSize = true,
-            Height = 30,
-            Margin = new Padding(0, 4, 0, 0),
+            Height = 26,
+            Margin = new Padding(0, 0, 0, 0),
+        };
+
+        _overviewExpandButton = new Button
+        {
+            Text = "Expand",
+            AutoSize = true,
+            Height = 26,
+            Margin = new Padding(0, 0, 6, 0),
+        };
+
+        _overviewCollapseButton = new Button
+        {
+            Text = "Collapse",
+            AutoSize = true,
+            Height = 26,
+            Margin = new Padding(0, 0, 0, 0),
         };
 
         _backButton = new Button
         {
             Text = "Back",
             AutoSize = true,
-            Height = 30,
+            Height = 26,
             Enabled = false,
-            Margin = new Padding(8, 4, 0, 0),
+            Margin = new Padding(12, 0, 0, 0),
         };
 
         _toggleDetailsButton = new Button
@@ -225,9 +243,6 @@ class MainForm : Form
         };
         actionsPanel.Controls.Add(_runButton);
         actionsPanel.Controls.Add(_stopButton);
-        actionsPanel.Controls.Add(_expandAllButton);
-        actionsPanel.Controls.Add(_collapseAllButton);
-        actionsPanel.Controls.Add(_backButton);
         actionsPanel.Controls.Add(_toggleDetailsButton);
 
         var controlsLayout = new TableLayoutPanel
@@ -290,25 +305,24 @@ class MainForm : Form
         _treeView.MouseDown += TreeView_MouseDown;
         _treeView.KeyDown += TreeView_KeyDown;
         _treeView.ContextMenuStrip = CreateTreeContextMenu();
-        _expandAllButton.Click += (_, _) => _treeView.ExpandAll();
-        _collapseAllButton.Click += (_, _) => _treeView.CollapseAll();
+        _treeExpandButton.Click += (_, _) => _treeView.ExpandAll();
+        _treeCollapseButton.Click += (_, _) => _treeView.CollapseAll();
         _backButton.Click += (_, _) => NavigateBack();
 
-        _overviewList = new ListView
+        _overviewTree = new TreeView
         {
             Dock = DockStyle.Fill,
-            View = View.Details,
-            HeaderStyle = ColumnHeaderStyle.None,
-            FullRowSelect = true,
-            MultiSelect = true,
             HideSelection = false,
+            ShowLines = true,
+            ShowPlusMinus = true,
+            ShowRootLines = true,
             Font = new Font(FontFamily.GenericSansSerif, 9),
         };
-        _overviewList.Columns.Add("Overview", -2, HorizontalAlignment.Left);
-        _overviewList.SelectedIndexChanged += (_, _) => JumpFromOverviewSelection();
-        _overviewList.Resize += (_, _) => ResizeOverviewColumn();
-        _overviewList.ContextMenuStrip = CreateOverviewContextMenu();
-        _overviewList.KeyDown += OverviewList_KeyDown;
+        _overviewTree.AfterSelect += (_, _) => JumpFromOverviewSelection();
+        _overviewTree.ContextMenuStrip = CreateOverviewContextMenu();
+        _overviewTree.KeyDown += OverviewTree_KeyDown;
+        _overviewExpandButton.Click += (_, _) => _overviewTree.ExpandAll();
+        _overviewCollapseButton.Click += (_, _) => _overviewTree.CollapseAll();
 
         var innerSplit = new SplitContainer
         {
@@ -317,7 +331,7 @@ class MainForm : Form
             Panel2Collapsed = true,
             SplitterWidth = 6,
         };
-        innerSplit.Panel1.Controls.Add(_treeView);
+        innerSplit.Panel1.Controls.Add(CreateTreeRegion(_treeView, _treeExpandButton, _treeCollapseButton, _backButton));
 
         _detailsTextBox = new RichTextBox
         {
@@ -345,7 +359,7 @@ class MainForm : Form
             _toggleDetailsButton.Text = innerSplit.Panel2Collapsed ? "Show Details" : "Hide Details";
         };
 
-        split.Panel1.Controls.Add(_overviewList);
+        split.Panel1.Controls.Add(CreateTreeRegion(_overviewTree, _overviewExpandButton, _overviewCollapseButton));
         split.Panel2.Controls.Add(innerSplit);
 
         headerLayout.Controls.Add(controlsLayout, 0, 0);
@@ -538,42 +552,57 @@ class MainForm : Form
         _statusLabel.Text = $"Running n={n}, m={m}, k={k}...";
         _detailsTextBox.Text = BuildLiveDiagnosticsText(_latestProgress);
 
+        // The builder is shared across both phases so the compact pass reuses the phase-1 search
+        // caches the default pass already populated.
+        var builder = new StrategyBuilder(
+            n,
+            m,
+            k,
+            cancellationToken,
+            snapshot => progress.Report(snapshot),
+            reportCombinedRunProgress: true);
         try
         {
-            var result = await Task.Run(() =>
-            {
-                var builder = new StrategyBuilder(
-                    n,
-                    m,
-                    k,
-                    cancellationToken,
-                    snapshot => progress.Report(snapshot),
-                    reportCombinedRunProgress: true);
-                StrategyPlan defaultPlan = builder.BuildDefaultPlan();
-                Interlocked.Exchange(ref _phase1ElapsedMs, _runStopwatch?.ElapsedMilliseconds ?? 0);
-                Interlocked.Exchange(ref _activePhase, 2);
-                StrategyPlan compactPlan = builder.BuildCompactPlan();
-                return (defaultPlan, compactPlan);
-            }, cancellationToken);
+            // Phase 1: the default plan is already MaxStep-optimal (the compact pass only trims
+            // edges among equally-optimal groups), so render it as soon as it is ready instead of
+            // blocking the whole view on the compact refinement.
+            StrategyPlan defaultPlan = await Task.Run(() => builder.BuildDefaultPlan(), cancellationToken);
+            Interlocked.Exchange(ref _phase1ElapsedMs, _runStopwatch?.ElapsedMilliseconds ?? 0);
+
+            _defaultPlan = defaultPlan;
+            _latestProgress = CreateSnapshotFromPlan(defaultPlan);
+            PopulateTree(defaultPlan, compactPlan: null, compactImproved: false);
+            _completedDefaultStats = defaultPlan.SearchStatistics;
+            UpdateSummaryText(defaultPlan, compactPlan: null, compactImproved: false);
+            UpdateStatsPanels();
+
+            // The default plan is fully rendered; the compact pass now runs on a background thread.
+            // Free the UI: drop the wait cursor and re-enable tree navigation while it computes.
+            SetRunUiState(RunUiState.CompactComputingInteractive);
+
+            // Phase 2: compact refinement.
+            Interlocked.Exchange(ref _activePhase, 2);
+            StrategyPlan compactPlan = await Task.Run(() => builder.BuildCompactPlan(), cancellationToken);
             _runStopwatch?.Stop();
 
-            _defaultPlan = result.defaultPlan;
-            _compactPlan = result.compactPlan;
+            _compactPlan = compactPlan;
             _compactImproved =
-                result.compactPlan.MaxStep == result.defaultPlan.MaxStep &&
-                result.compactPlan.TotalBranchEdges < result.defaultPlan.TotalBranchEdges;
+                compactPlan.MaxStep == defaultPlan.MaxStep &&
+                compactPlan.TotalBranchEdges < defaultPlan.TotalBranchEdges;
 
-            _latestProgress = CreateSnapshotFromPlan(result.compactPlan);
-            PopulateTree(result.defaultPlan, result.compactPlan, _compactImproved);
-            _completedDefaultStats = result.defaultPlan.SearchStatistics;
-            _completedCompactStats = result.compactPlan.SearchStatistics;
-            UpdateSummaryText(result.defaultPlan, result.compactPlan, _compactImproved);
+            _latestProgress = CreateSnapshotFromPlan(compactPlan);
+            FinalizeCompactInTree(defaultPlan, compactPlan, _compactImproved);
+            _completedCompactStats = compactPlan.SearchStatistics;
+            UpdateSummaryText(defaultPlan, compactPlan, _compactImproved);
             UpdateStatsPanels();
         }
         catch (OperationCanceledException)
         {
             _runStopwatch?.Stop();
-            _statusLabel.Text = $"Stopped after {GetElapsedSeconds():F1} s. {FormatSearchStatsSummary(_latestProgress, includeOutputStates: true)}. {FormatLiveDiagnosticsSummary(_latestProgress)}.";
+            string shownDefault = _defaultPlan is not null
+                ? " Showing the completed default strategy."
+                : string.Empty;
+            _statusLabel.Text = $"Stopped after {GetElapsedSeconds():F1} s.{shownDefault} {FormatSearchStatsSummary(_latestProgress, includeOutputStates: true)}. {FormatLiveDiagnosticsSummary(_latestProgress)}.";
             _detailsTextBox.Text = BuildLiveDiagnosticsText(_latestProgress);
         }
         catch (Exception ex)
@@ -594,7 +623,7 @@ class MainForm : Form
         }
     }
 
-    private void PopulateTree(StrategyPlan defaultPlan, StrategyPlan compactPlan, bool compactImproved)
+    private void PopulateTree(StrategyPlan defaultPlan, StrategyPlan? compactPlan, bool compactImproved)
     {
         _treeView.BeginUpdate();
         _treeView.Nodes.Clear();
@@ -603,30 +632,103 @@ class MainForm : Form
         _navigationHistory.Clear();
         _backButton.Enabled = false;
 
-        double totalElapsedMs = defaultPlan.Elapsed.TotalMilliseconds + compactPlan.Elapsed.TotalMilliseconds;
-        var root = new TreeNode(
-            $"n={defaultPlan.N}, m={defaultPlan.M}, k={defaultPlan.K}, two-phase elapsed={totalElapsedMs:F1} ms")
+        string rootLabel;
+        string rootDetails;
+        if (compactPlan is null)
         {
-            Tag = BuildTwoPhaseDetails(defaultPlan, compactPlan, compactImproved),
+            rootLabel =
+                $"n={defaultPlan.N}, m={defaultPlan.M}, k={defaultPlan.K}, " +
+                $"default elapsed={defaultPlan.Elapsed.TotalMilliseconds:F1} ms (computing compact refinement...)";
+            rootDetails = BuildDefaultOnlyDetails(defaultPlan);
+        }
+        else
+        {
+            double totalElapsedMs = defaultPlan.Elapsed.TotalMilliseconds + compactPlan.Elapsed.TotalMilliseconds;
+            rootLabel = $"n={defaultPlan.N}, m={defaultPlan.M}, k={defaultPlan.K}, two-phase elapsed={totalElapsedMs:F1} ms";
+            rootDetails = BuildTwoPhaseDetails(defaultPlan, compactPlan, compactImproved);
+        }
+
+        var root = new TreeNode(rootLabel)
+        {
+            Tag = rootDetails,
             NodeFont = new Font(_treeView.Font, FontStyle.Bold),
             ForeColor = _palette.ForeColor,
         };
         root.Nodes.Add(CreatePlanTreeRoot("default", defaultPlan, "default"));
-        if (compactImproved)
+        if (compactPlan is null)
+            root.Nodes.Add(new TreeNode("compact refinement: computing...") { ForeColor = _palette.MutedForeColor });
+        else if (compactImproved)
             root.Nodes.Add(CreatePlanTreeRoot("compact", compactPlan, "compact"));
         else
             root.Nodes.Add(new TreeNode("compact refinement: no better result (total edges unchanged or worse)") { ForeColor = _palette.MutedForeColor });
         _treeView.Nodes.Add(root);
         root.Expand();
-        root.Nodes[0].Expand();
 
         _treeView.EndUpdate();
         _treeView.SelectedNode = root;
 
+        RebuildOverview(defaultPlan, compactPlan, compactImproved);
+    }
+
+    // Incrementally folds the finished compact result into the already-rendered default tree instead
+    // of rebuilding from scratch. The default subtree (root.Nodes[0]) and its navigation map entries
+    // are left untouched, so a user mid-browse keeps their expand/scroll/selection state. Only the
+    // transient "compact refinement: computing..." placeholder (root.Nodes[1]) is replaced -- either
+    // with the compact subtree (a sibling of default, scoped "compact" so its state keys never
+    // collide with default's) when it improved, or with a "no better result" note when it did not.
+    private void FinalizeCompactInTree(StrategyPlan defaultPlan, StrategyPlan compactPlan, bool compactImproved)
+    {
+        // Defensive fallback: if the tree was cleared/rebuilt out from under us (e.g. a theme switch
+        // mid-compact), there is no default root to extend, so do a full rebuild.
+        if (_treeView.Nodes.Count == 0)
+        {
+            PopulateTree(defaultPlan, compactPlan, compactImproved);
+            return;
+        }
+
+        _treeView.BeginUpdate();
+
+        TreeNode root = _treeView.Nodes[0];
+        double totalElapsedMs = defaultPlan.Elapsed.TotalMilliseconds + compactPlan.Elapsed.TotalMilliseconds;
+        root.Text = $"n={defaultPlan.N}, m={defaultPlan.M}, k={defaultPlan.K}, two-phase elapsed={totalElapsedMs:F1} ms";
+        root.Tag = BuildTwoPhaseDetails(defaultPlan, compactPlan, compactImproved);
+
+        // Replace only the placeholder/compact slot (everything after the default subtree).
+        while (root.Nodes.Count > 1)
+            root.Nodes.RemoveAt(root.Nodes.Count - 1);
         if (compactImproved)
-            PopulateOverview(compactPlan, "compact", "Overview of the 'compact' strategy below");
+            root.Nodes.Add(CreatePlanTreeRoot("compact", compactPlan, "compact"));
         else
-            PopulateOverview(defaultPlan, "default", "Overview of the 'default' strategy below");
+            root.Nodes.Add(new TreeNode("compact refinement: no better result (total edges unchanged or worse)") { ForeColor = _palette.MutedForeColor });
+
+        _treeView.EndUpdate();
+
+        FinalizeCompactInOverview(compactPlan, compactImproved);
+    }
+
+    // Wraps a tree in a panel with a small top toolbar holding that tree's own buttons (Expand /
+    // Collapse, plus Back on the strategy tree), so each of the two tree regions is controlled
+    // independently.
+    private static Panel CreateTreeRegion(TreeView tree, params Button[] buttons)
+    {
+        var toolbar = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            WrapContents = false,
+            Padding = new Padding(2, 2, 2, 2),
+            Margin = Padding.Empty,
+        };
+        foreach (Button button in buttons)
+            toolbar.Controls.Add(button);
+
+        tree.Dock = DockStyle.Fill;
+
+        var region = new Panel { Dock = DockStyle.Fill };
+        // Add the fill control first, then the top toolbar, so the toolbar docks above the tree.
+        region.Controls.Add(tree);
+        region.Controls.Add(toolbar);
+        return region;
     }
 
     // Resets the result surfaces (overview list, tree, navigation state, details) so a fresh Run
@@ -634,7 +736,7 @@ class MainForm : Form
     // if it is cancelled / fails before producing a plan.
     private void ClearResultsView()
     {
-        _overviewList.Items.Clear();
+        _overviewTree.Nodes.Clear();
 
         _treeView.BeginUpdate();
         _treeView.Nodes.Clear();
@@ -646,53 +748,90 @@ class MainForm : Form
         _backButton.Enabled = false;
     }
 
-    private void PopulateOverview(StrategyPlan plan, string scope, string title)
+    // Renders the overview panel so it mirrors the tree one-to-one: a collapsible "default strategy"
+    // section node plus, depending on the compact phase, a "compact strategy" section node (when it
+    // improved), a "no better result" note (when it did not), or a "computing..." placeholder (still
+    // running). Each section is an independent root, so the two strategies' overviews can be browsed
+    // and collapsed separately. This is the full-rebuild path used for the initial render and theme
+    // switches.
+    private void RebuildOverview(StrategyPlan defaultPlan, StrategyPlan? compactPlan, bool compactImproved)
     {
-        _overviewList.BeginUpdate();
-        _overviewList.Items.Clear();
+        _overviewTree.BeginUpdate();
+        _overviewTree.Nodes.Clear();
 
-        _overviewList.Items.Add(new ListViewItem(title)
+        AppendOverviewSection(defaultPlan, "default", "default strategy overview");
+        if (compactPlan is null)
+            AppendOverviewNote("compact strategy overview: computing...");
+        else if (compactImproved)
+            AppendOverviewSection(compactPlan, "compact", "compact strategy overview");
+        else
+            AppendOverviewNote("compact strategy overview: no better result (total edges unchanged or worse)");
+
+        _overviewTree.EndUpdate();
+    }
+
+    // Incrementally folds the finished compact result into the overview, mirroring the tree update:
+    // the default section node (and the user's expand/scroll state over it) is left untouched, and
+    // only the trailing "computing..." placeholder root is replaced with the compact section node or
+    // a "no better result" note.
+    private void FinalizeCompactInOverview(StrategyPlan compactPlan, bool compactImproved)
+    {
+        _overviewTree.BeginUpdate();
+
+        // Drop the "computing..." placeholder root appended during the default render.
+        if (_overviewTree.Nodes.Count > 0)
+            _overviewTree.Nodes.RemoveAt(_overviewTree.Nodes.Count - 1);
+
+        if (compactImproved)
+            AppendOverviewSection(compactPlan, "compact", "compact strategy overview");
+        else
+            AppendOverviewNote("compact strategy overview: no better result (total edges unchanged or worse)");
+
+        _overviewTree.EndUpdate();
+    }
+
+    private void AppendOverviewSection(StrategyPlan plan, string scope, string title)
+    {
+        var sectionNode = new TreeNode(title)
         {
-            Font = new Font(_overviewList.Font, FontStyle.Bold),
+            NodeFont = new Font(_overviewTree.Font, FontStyle.Bold),
             ForeColor = _palette.ForeColor,
-        });
+        };
 
         foreach (OverviewRow row in StrategyOverviewRenderer.Build(plan).Rows)
         {
             string? key = row.LinkStateId is int id ? $"{scope}:{id}" : null;
-            var headlineItem = new ListViewItem(row.Headline) { Tag = key };
-            _overviewList.Items.Add(headlineItem);
+            var headlineNode = new TreeNode(row.Headline)
+            {
+                Tag = key,
+                ForeColor = _palette.ForeColor,
+            };
             foreach (string detail in row.Details)
             {
-                _overviewList.Items.Add(new ListViewItem("        " + detail)
+                headlineNode.Nodes.Add(new TreeNode(detail)
                 {
                     Tag = key,
                     ForeColor = _palette.MutedForeColor,
                 });
             }
+            sectionNode.Nodes.Add(headlineNode);
         }
 
-        if (_overviewList.Columns.Count > 0)
-            ResizeOverviewColumn();
-        _overviewList.EndUpdate();
+        _overviewTree.Nodes.Add(sectionNode);
+        sectionNode.Expand();
     }
 
-    private void ResizeOverviewColumn()
+    private void AppendOverviewNote(string text)
     {
-        if (_overviewList.Columns.Count == 0)
-            return;
-
-        _overviewList.Columns[0].Width = _overviewList.Items.Count > 0 ? -1 : _overviewList.ClientSize.Width;
-        if (_overviewList.Columns[0].Width < _overviewList.ClientSize.Width)
-            _overviewList.Columns[0].Width = _overviewList.ClientSize.Width;
+        _overviewTree.Nodes.Add(new TreeNode(text)
+        {
+            ForeColor = _palette.MutedForeColor,
+        });
     }
 
     private void JumpFromOverviewSelection()
     {
-        if (_overviewList.SelectedItems.Count == 0)
-            return;
-
-        if (_overviewList.SelectedItems[0].Tag is not string targetStateKey)
+        if (_overviewTree.SelectedNode?.Tag is not string targetStateKey)
             return;
 
         if (!_stateNodesByKey.TryGetValue(targetStateKey, out TreeNode? targetNode))
@@ -717,20 +856,20 @@ class MainForm : Form
 
         menu.Opening += (_, e) =>
         {
-            if (_overviewList.Items.Count == 0)
+            if (_overviewTree.Nodes.Count == 0)
             {
                 e.Cancel = true;
                 return;
             }
 
-            copySelected.Enabled = _overviewList.SelectedItems.Count > 0;
+            copySelected.Enabled = _overviewTree.SelectedNode is not null;
             copyAll.Enabled = true;
         };
 
         return menu;
     }
 
-    private void OverviewList_KeyDown(object? sender, KeyEventArgs e)
+    private void OverviewTree_KeyDown(object? sender, KeyEventArgs e)
     {
         if (e.Control && e.KeyCode == Keys.C)
         {
@@ -738,35 +877,36 @@ class MainForm : Form
             e.Handled = true;
             e.SuppressKeyPress = true;
         }
-        else if (e.Control && e.KeyCode == Keys.A)
-        {
-            foreach (ListViewItem item in _overviewList.Items)
-                item.Selected = true;
-            e.Handled = true;
-            e.SuppressKeyPress = true;
-        }
     }
 
+    // Copies the selected node and its descendants (each level indented by four spaces), so copying
+    // a section root yields that whole strategy's overview and copying a row yields its detail lines.
     private void CopyOverviewSelection()
     {
-        if (_overviewList.SelectedItems.Count == 0)
+        if (_overviewTree.SelectedNode is not TreeNode selected)
             return;
 
         var builder = new System.Text.StringBuilder();
-        foreach (ListViewItem item in _overviewList.SelectedItems)
-            builder.AppendLine(item.Text);
+        AppendOverviewNodeText(builder, selected, depth: 0);
         SetClipboardText(builder.ToString().TrimEnd());
     }
 
     private void CopyOverviewAll()
     {
-        if (_overviewList.Items.Count == 0)
+        if (_overviewTree.Nodes.Count == 0)
             return;
 
         var builder = new System.Text.StringBuilder();
-        foreach (ListViewItem item in _overviewList.Items)
-            builder.AppendLine(item.Text);
+        foreach (TreeNode root in _overviewTree.Nodes)
+            AppendOverviewNodeText(builder, root, depth: 0);
         SetClipboardText(builder.ToString().TrimEnd());
+    }
+
+    private static void AppendOverviewNodeText(System.Text.StringBuilder builder, TreeNode node, int depth)
+    {
+        builder.Append(' ', depth * 4).AppendLine(node.Text);
+        foreach (TreeNode child in node.Nodes)
+            AppendOverviewNodeText(builder, child, depth + 1);
     }
 
     private TreeNode CreatePlanTreeRoot(string label, StrategyPlan plan, string scope)
@@ -1095,6 +1235,12 @@ class MainForm : Form
             if (_runCancellationSource is null)
                 UpdateSummaryText(_defaultPlan, _compactPlan, _compactImproved);
         }
+        else if (_defaultPlan is not null)
+        {
+            PopulateTree(_defaultPlan, compactPlan: null, compactImproved: false);
+            if (_runCancellationSource is null)
+                UpdateSummaryText(_defaultPlan, compactPlan: null, compactImproved: false);
+        }
         else if (_runCancellationSource is null)
         {
             _statusLabel.Text = "Ready.";
@@ -1114,10 +1260,6 @@ class MainForm : Form
             case RichTextBox richTextBox:
                 richTextBox.BackColor = _palette.SurfaceBackColor;
                 richTextBox.ForeColor = _palette.ForeColor;
-                break;
-            case ListView listView:
-                listView.BackColor = _palette.SurfaceBackColor;
-                listView.ForeColor = _palette.ForeColor;
                 break;
             case TextBox statBox when statBox.ReadOnly:
                 statBox.BackColor = _palette.FormBackColor;
@@ -1164,8 +1306,17 @@ class MainForm : Form
             ApplyThemeToControlTree(child);
     }
 
-    private void UpdateSummaryText(StrategyPlan defaultPlan, StrategyPlan compactPlan, bool compactImproved)
+    private void UpdateSummaryText(StrategyPlan defaultPlan, StrategyPlan? compactPlan, bool compactImproved)
     {
+        if (compactPlan is null)
+        {
+            _statusLabel.Text =
+                $"n={defaultPlan.N}, m={defaultPlan.M}, k={defaultPlan.K}, " +
+                $"default elapsed={defaultPlan.Elapsed.TotalMilliseconds:F1} ms, " +
+                $"worst-case steps={defaultPlan.MaxStep}. Computing compact refinement...";
+            return;
+        }
+
         double totalElapsedMs = defaultPlan.Elapsed.TotalMilliseconds + compactPlan.Elapsed.TotalMilliseconds;
         string compactText = compactImproved
             ? $"compact reduced total edges {defaultPlan.TotalBranchEdges} -> {compactPlan.TotalBranchEdges}"
@@ -1193,14 +1344,36 @@ class MainForm : Form
         _runCancellationSource?.Cancel();
     }
 
+    private enum RunUiState
+    {
+        Idle,
+        Running,
+        CompactComputingInteractive,
+    }
+
     private void SetRunningState(bool isRunning)
     {
-        UseWaitCursor = isRunning;
-        _runButton.Enabled = !isRunning;
-        _stopButton.Enabled = isRunning;
-        _expandAllButton.Enabled = !isRunning;
-        _collapseAllButton.Enabled = !isRunning;
-        _backButton.Enabled = !isRunning && _navigationHistory.Count > 0;
+        SetRunUiState(isRunning ? RunUiState.Running : RunUiState.Idle);
+    }
+
+    // Three-state UI model. While phase 1 (default) runs the whole form shows the wait cursor and
+    // all result-interaction buttons are disabled. Once the default plan is on screen but the
+    // compact refinement is still computing on a background thread, the UI thread is free, so we
+    // drop the wait cursor and re-enable tree navigation -- only Run stays disabled (a new search
+    // cannot start) while Stop can still cancel the compact phase.
+    private void SetRunUiState(RunUiState state)
+    {
+        bool running = state != RunUiState.Idle;
+        bool interactive = state != RunUiState.Running;
+
+        UseWaitCursor = state == RunUiState.Running;
+        _runButton.Enabled = !running;
+        _stopButton.Enabled = running;
+        _treeExpandButton.Enabled = interactive;
+        _treeCollapseButton.Enabled = interactive;
+        _overviewExpandButton.Enabled = interactive;
+        _overviewCollapseButton.Enabled = interactive;
+        _backButton.Enabled = interactive && _navigationHistory.Count > 0;
     }
 
     private void UpdateElapsedLabel()
@@ -1338,6 +1511,24 @@ class MainForm : Form
             2 => "2/2 compact refinement",
             _ => "-",
         };
+    }
+
+    private static string BuildDefaultOnlyDetails(StrategyPlan defaultPlan)
+    {
+        string defaultText = StrategyTextRenderer.Render(defaultPlan).TrimEnd();
+        var lines = new List<string>
+        {
+            "Default result (compact refinement in progress)",
+            $"default elapsed: {defaultPlan.Elapsed.TotalMilliseconds:F1} ms",
+            $"default total edges: {defaultPlan.TotalBranchEdges}",
+            $"default output states: {defaultPlan.SearchStatistics.OutputStates}",
+            $"worst-case steps: {defaultPlan.MaxStep}",
+            string.Empty,
+            "----- default -----",
+            defaultText,
+        };
+
+        return string.Join(Environment.NewLine, lines);
     }
 
     private static string BuildTwoPhaseDetails(StrategyPlan defaultPlan, StrategyPlan compactPlan, bool compactImproved)
