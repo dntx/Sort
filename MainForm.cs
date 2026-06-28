@@ -577,7 +577,7 @@ class MainForm : Form
                 compactPlan.TotalBranchEdges < defaultPlan.TotalBranchEdges;
 
             _latestProgress = CreateSnapshotFromPlan(compactPlan);
-            PopulateTree(defaultPlan, compactPlan, _compactImproved);
+            FinalizeCompactInTree(defaultPlan, compactPlan, _compactImproved);
             _completedCompactStats = compactPlan.SearchStatistics;
             UpdateSummaryText(defaultPlan, compactPlan, _compactImproved);
             UpdateStatsPanels();
@@ -658,6 +658,46 @@ class MainForm : Form
             PopulateOverview(compactPlan, "compact", "Overview of the 'compact' strategy below");
         else
             PopulateOverview(defaultPlan, "default", "Overview of the 'default' strategy below");
+    }
+
+    // Incrementally folds the finished compact result into the already-rendered default tree instead
+    // of rebuilding from scratch. The default subtree (root.Nodes[0]) and its navigation map entries
+    // are left untouched, so a user mid-browse keeps their expand/scroll/selection state. Only the
+    // transient "compact refinement: computing..." placeholder (root.Nodes[1]) is replaced -- either
+    // with the compact subtree (a sibling of default, scoped "compact" so its state keys never
+    // collide with default's) when it improved, or with a "no better result" note when it did not.
+    private void FinalizeCompactInTree(StrategyPlan defaultPlan, StrategyPlan compactPlan, bool compactImproved)
+    {
+        // Defensive fallback: if the tree was cleared/rebuilt out from under us (e.g. a theme switch
+        // mid-compact), there is no default root to extend, so do a full rebuild.
+        if (_treeView.Nodes.Count == 0)
+        {
+            PopulateTree(defaultPlan, compactPlan, compactImproved);
+            return;
+        }
+
+        _treeView.BeginUpdate();
+
+        TreeNode root = _treeView.Nodes[0];
+        double totalElapsedMs = defaultPlan.Elapsed.TotalMilliseconds + compactPlan.Elapsed.TotalMilliseconds;
+        root.Text = $"n={defaultPlan.N}, m={defaultPlan.M}, k={defaultPlan.K}, two-phase elapsed={totalElapsedMs:F1} ms";
+        root.Tag = BuildTwoPhaseDetails(defaultPlan, compactPlan, compactImproved);
+
+        // Replace only the placeholder/compact slot (everything after the default subtree).
+        while (root.Nodes.Count > 1)
+            root.Nodes.RemoveAt(root.Nodes.Count - 1);
+        if (compactImproved)
+            root.Nodes.Add(CreatePlanTreeRoot("compact", compactPlan, "compact"));
+        else
+            root.Nodes.Add(new TreeNode("compact refinement: no better result (total edges unchanged or worse)") { ForeColor = _palette.MutedForeColor });
+
+        _treeView.EndUpdate();
+
+        // The overview list is a separate panel from the tree the user browses. Only swap it to the
+        // compact strategy when compact actually improved; otherwise the default overview already on
+        // screen stays valid.
+        if (compactImproved)
+            PopulateOverview(compactPlan, "compact", "Overview of the 'compact' strategy below");
     }
 
     // Resets the result surfaces (overview list, tree, navigation state, details) so a fresh Run
