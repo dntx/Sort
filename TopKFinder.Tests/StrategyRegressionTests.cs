@@ -803,9 +803,12 @@ public sealed class StrategyRegressionTests
     }
 
     // Compact selection (opt-in) keeps the optimal worst-case step count but, among the
-    // equally-optimal solutions, prefers the one with the smallest materialized tree. These
-    // tests pin the two invariants: max step is preserved and output states never regress
-    // above the default, plus the concrete shrink on cases known to have redundant trees.
+    // equally-optimal solutions, prefers the one with the smallest materialized tree. The builder
+    // returns the RAW compact candidate, which on rare shapes can render more edges than default
+    // (its edge proxy does not model display-key de-duplication). The "never worse than default"
+    // guarantee lives in the orchestrator's mainline rule (StrategyPlan.IsStrictRefinementOver): the
+    // compact plan is only shown when it strictly improves on default. These tests pin both halves:
+    // the builder always preserves max step, and the orchestrator-selected plan never regresses edges.
 
     [Theory]
     [InlineData(9, 3, 3)]
@@ -825,10 +828,16 @@ public sealed class StrategyRegressionTests
             RegressionTestTimeout,
             cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildCompactPlan());
 
+        // Builder invariant: compact only ever picks step-optimal groups, so the worst-case depth
+        // always matches default regardless of the edge outcome.
         Assert.Equal(baseline.MaxStep, compact.MaxStep);
+
+        // Orchestrator invariant: the plan actually shown (compact only when it strictly improves on
+        // default) never renders more edges than default.
+        StrategyPlan shown = compact.IsStrictRefinementOver(baseline) ? compact : baseline;
         Assert.True(
-            compact.TotalBranchEdges <= baseline.TotalBranchEdges,
-            $"compact total edges {compact.TotalBranchEdges} exceeded baseline {baseline.TotalBranchEdges}");
+            shown.TotalBranchEdges <= baseline.TotalBranchEdges,
+            $"shown total edges {shown.TotalBranchEdges} exceeded baseline {baseline.TotalBranchEdges}");
     }
 
     // P2.1 -- compact-phase work-counter monitor (deterministic time proxy for the compact pass).
@@ -933,9 +942,12 @@ public sealed class StrategyRegressionTests
     [InlineData(10, 3, 4, 1088)]
     [InlineData(12, 4, 3, 131)]
     [InlineData(12, 3, 3, 538)]
-    [InlineData(8, 4, 2, 3)]
-    [InlineData(10, 3, 5, 8)]
-    [InlineData(13, 4, 3, 13)]
+    // These three shapes are ties/anomalies where the compact candidate does not strictly beat
+    // default. They formerly measured the discarded default-fallback plan's tiny counts; now that
+    // BuildCompactPlan returns the genuine compact candidate, the caps reflect the real compact pass.
+    [InlineData(8, 4, 2, 7)]
+    [InlineData(10, 3, 5, 623)]
+    [InlineData(13, 4, 3, 142)]
     public void Compact_SearchedStateCountStaysWithinBaseline(int n, int m, int k, int searchedStateCap)
     {
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
@@ -1046,9 +1058,11 @@ public sealed class StrategyRegressionTests
     [InlineData(10, 3, 4, 46300)]
     [InlineData(12, 4, 3, 6011)]
     [InlineData(12, 3, 3, 8531)]
-    [InlineData(8, 4, 2, 2)]
-    [InlineData(10, 3, 5, 7)]
-    [InlineData(13, 4, 3, 34)]
+    // Ties/anomalies (see Compact_SearchedStateCountStaysWithinBaseline): now measure the genuine
+    // compact candidate instead of the discarded default fallback.
+    [InlineData(8, 4, 2, 28)]
+    [InlineData(10, 3, 5, 9828)]
+    [InlineData(13, 4, 3, 2352)]
     public void Compact_OutcomesConstructedStaysWithinBaseline(int n, int m, int k, int outcomesCap)
     {
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
@@ -1170,9 +1184,11 @@ public sealed class StrategyRegressionTests
     [InlineData(10, 3, 4, 4982)]
     [InlineData(12, 4, 3, 2387)]
     [InlineData(12, 3, 3, 617)]
-    [InlineData(8, 4, 2, 0)]
-    [InlineData(10, 3, 5, 0)]
-    [InlineData(13, 4, 3, 15)]
+    // Ties/anomalies (see Compact_SearchedStateCountStaysWithinBaseline): now measure the genuine
+    // compact candidate instead of the discarded default fallback.
+    [InlineData(8, 4, 2, 11)]
+    [InlineData(10, 3, 5, 625)]
+    [InlineData(13, 4, 3, 547)]
     public void Compact_DuplicateOutcomeSkipsStaysWithinBaseline(int n, int m, int k, int duplicateSkipCap)
     {
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
