@@ -704,10 +704,7 @@ class MainForm : Form
         // Slot 0: "step" -- the worst-case step strategy. While the exact pass runs it shows the
         // greedy bound; once exact finishes it is replaced in place. Greedy mode keeps the greedy tree.
         StrategyPlan stepPlan = defaultPlan ?? feasiblePlan;
-        string stepLabel = defaultPlan is null
-            ? $"step [{FormatPlanSqueeze(feasiblePlan)}]"
-            : $"step (worst-case {defaultPlan.MaxStep})";
-        root.Nodes.Add(CreatePlanTreeRoot(stepLabel, stepPlan, "default"));
+        root.Nodes.Add(CreatePlanTreeRoot("step", stepPlan, "default"));
 
         // Slot 1: "edge" -- minimizes displayed edges at the fixed step count (placeholder until done).
         if (compactPlan is null)
@@ -748,10 +745,10 @@ class MainForm : Form
         if (compactPlan is null)
         {
             double ms = feasiblePlan.Elapsed.TotalMilliseconds + defaultPlan.Elapsed.TotalMilliseconds;
-            return $"{head}, worst-case steps={defaultPlan.MaxStep}, elapsed={ms:F1} ms (computing edge stage...)";
+            return $"{head}, max steps={defaultPlan.MaxStep}, elapsed={ms:F1} ms (computing edge stage...)";
         }
         double totalMs = feasiblePlan.Elapsed.TotalMilliseconds + defaultPlan.Elapsed.TotalMilliseconds + compactPlan.Elapsed.TotalMilliseconds;
-        return $"{head}, worst-case steps={defaultPlan.MaxStep}, total elapsed={totalMs:F1} ms";
+        return $"{head}, max steps={defaultPlan.MaxStep}, total elapsed={totalMs:F1} ms";
     }
 
     private static string BuildRootDetails(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool exactImproved, bool compactImproved)
@@ -852,10 +849,7 @@ class MainForm : Form
         _overviewTree.Nodes.Clear();
 
         StrategyPlan stepPlan = defaultPlan ?? feasiblePlan;
-        string stepTitle = defaultPlan is null
-            ? $"step overview [{FormatPlanSqueeze(feasiblePlan)}]"
-            : "step overview";
-        _overviewTree.Nodes.Add(BuildOverviewSectionNode(stepPlan, "default", stepTitle));
+        _overviewTree.Nodes.Add(BuildOverviewSectionNode(stepPlan, "default", "step overview"));
 
         if (compactPlan is null)
             _overviewTree.Nodes.Add(BuildOverviewNoteNode("edge overview: computing..."));
@@ -1009,7 +1003,7 @@ class MainForm : Form
     {
         StrategyDepthIndex depthIndex = StrategyDepthIndex.Build(plan.Root);
         var planNode = new TreeNode(
-            $"{label}: elapsed={plan.Elapsed.TotalMilliseconds:F1} ms, worst-case steps={plan.MaxStep}, edges={plan.TotalBranchEdges}, output={plan.SearchStatistics.OutputStates}")
+            $"{label}: elapsed={plan.Elapsed.TotalMilliseconds:F1} ms, max steps={plan.MaxStep}, edges={plan.TotalBranchEdges}, output={plan.SearchStatistics.OutputStates}")
         {
             Tag = BuildPlanDetails(plan),
             NodeFont = new Font(_treeView.Font, FontStyle.Bold),
@@ -1034,6 +1028,8 @@ class MainForm : Form
     {
         int maxStep = depthIndex.SubtreeMaxStep(node);
         string headerText = $"S{node.StateId} [step {node.Step}/{maxStep}] sort({StrategyTextRenderer.FormatSet(node.Group)})";
+        if (node.FinalChoice is null)
+            headerText += node.Branches.Count == 1 ? " (1 edge)" : $" ({node.Branches.Count} edges)";
 
         var treeNode = new TreeNode(headerText)
         {
@@ -1404,7 +1400,7 @@ class MainForm : Form
         {
             _statusLabel.Text =
                 $"{head}, step {FormatPlanSqueeze(feasiblePlan)} " +
-                $"(worst-case steps={feasiblePlan.MaxStep}, not proven optimal). Computing step...";
+                $"(max steps={feasiblePlan.MaxStep}, not proven optimal). Computing step...";
             return;
         }
 
@@ -1412,7 +1408,7 @@ class MainForm : Form
         {
             double ms = feasiblePlan.Elapsed.TotalMilliseconds + defaultPlan.Elapsed.TotalMilliseconds;
             _statusLabel.Text =
-                $"{head}, step worst-case={defaultPlan.MaxStep}, elapsed={ms:F1} ms. Computing edge stage...";
+                $"{head}, step max={defaultPlan.MaxStep}, elapsed={ms:F1} ms. Computing edge stage...";
             return;
         }
 
@@ -1422,7 +1418,7 @@ class MainForm : Form
             : $"edge produced no better result (step total edges {defaultPlan.TotalBranchEdges}, edge {compactPlan.TotalBranchEdges})";
         _statusLabel.Text =
             $"{head}, total elapsed={totalElapsedMs:F1} ms, " +
-            $"worst-case steps={defaultPlan.MaxStep}, {compactText}.";
+            $"max steps={defaultPlan.MaxStep}, {compactText}.";
     }
 
     private static string BuildCompressedFinalChoiceText(FinalChoiceSummary summary, int k)
@@ -1509,12 +1505,11 @@ class MainForm : Form
         else
             edgeLine = "edge: -";
 
-        string etaLineValue = _latestProgress.EstimatedRemainingMilliseconds >= 0
-            ? $"{_latestProgress.EstimatedRemainingMilliseconds / 1000.0:F1} s"
-            : "-";
+        double etaSeconds = EstimateLiveEtaSeconds(totalMs);
+        string etaLineValue = etaSeconds >= 0 ? $"{etaSeconds:F3} s" : "-";
         string progressLine = $"progress: {_latestProgress.EstimatedProgress01 * 100.0:F1}%";
         string etaLine = $"eta: {etaLineValue}";
-        string text = $"{GetElapsedSeconds():F3} s\n{stepLine}\n{edgeLine}\n{progressLine}\n{etaLine}";
+        string text = $"{totalMs / 1000.0:F3} s\n{stepLine}\n{edgeLine}\n{progressLine}\n{etaLine}";
         SetStatText(_progressTextBox, text);
     }
 
@@ -1525,9 +1520,8 @@ class MainForm : Form
         string incumbent = snapshot.LatestRootIncumbent is null
             ? "incumbent: -"
             : $"incumbent: <= {snapshot.LatestRootIncumbent.BestWorstCaseSteps}";
-        string etaText = snapshot.EstimatedRemainingMilliseconds >= 0
-            ? $"{snapshot.EstimatedRemainingMilliseconds / 1000.0:F1} s"
-            : "-";
+        double statusEtaSeconds = EstimateLiveEtaSeconds((long)(GetElapsedSeconds() * 1000));
+        string etaText = statusEtaSeconds >= 0 ? $"{statusEtaSeconds:F1} s" : "-";
         _statusLabel.Text = $"Running (phase {GetPhaseLabel()})... elapsed: {GetElapsedSeconds():F1} s, searched: {snapshot.SearchedStates}, {FormatSqueeze(snapshot)}, {incumbent}, " +
             $"progress: {snapshot.EstimatedProgress01 * 100.0:F1}%, eta: {etaText}.";
         _detailsTextBox.Text = BuildLiveDiagnosticsText(snapshot);
@@ -1624,7 +1618,7 @@ class MainForm : Form
             $"step elapsed: {feasiblePlan.Elapsed.TotalMilliseconds:F1} ms",
             $"step total edges: {feasiblePlan.TotalBranchEdges}",
             $"step output states: {feasiblePlan.SearchStatistics.OutputStates}",
-            $"worst-case steps (upper bound): {feasiblePlan.MaxStep}",
+            $"max steps (upper bound): {feasiblePlan.MaxStep}",
             string.Empty,
             "----- step -----",
             feasibleText,
@@ -1642,7 +1636,7 @@ class MainForm : Form
             $"step elapsed: {defaultPlan.Elapsed.TotalMilliseconds:F1} ms",
             $"step total edges: {defaultPlan.TotalBranchEdges}",
             $"step output states: {defaultPlan.SearchStatistics.OutputStates}",
-            $"worst-case steps: {defaultPlan.MaxStep}",
+            $"max steps: {defaultPlan.MaxStep}",
             string.Empty,
             "----- step -----",
             defaultText,
@@ -1708,7 +1702,7 @@ class MainForm : Form
             foreach (SearchMilestone milestone in diagnostics.RootIncumbents)
             {
                 lines.Add(
-                    $"  {milestone.ElapsedMilliseconds / 1000.0:F1}s: worst-case steps <= {milestone.BestWorstCaseSteps} via {milestone.ComparisonGroupText} " +
+                    $"  {milestone.ElapsedMilliseconds / 1000.0:F1}s: max steps <= {milestone.BestWorstCaseSteps} via {milestone.ComparisonGroupText} " +
                     $"(searched {milestone.SearchedStates}, pending {milestone.PendingStates}, peak {milestone.PeakPendingStates}, output {milestone.OutputStates}, prunes {milestone.LowerBoundPrunes})");
             }
         }
@@ -1734,7 +1728,7 @@ class MainForm : Form
         else
         {
             SearchMilestone latest = snapshot.LatestRootIncumbent;
-            lines.Add($"latest incumbent: worst-case steps <= {latest.BestWorstCaseSteps} via {latest.ComparisonGroupText}");
+            lines.Add($"latest incumbent: max steps <= {latest.BestWorstCaseSteps} via {latest.ComparisonGroupText}");
             lines.Add(
                 $"  found at t={latest.ElapsedMilliseconds / 1000.0:F1}s, searched={latest.SearchedStates}, output={latest.OutputStates}, prunes={latest.LowerBoundPrunes}");
         }
@@ -1800,6 +1794,25 @@ class MainForm : Form
     private double GetElapsedSeconds()
     {
         return _runStopwatch?.Elapsed.TotalSeconds ?? 0;
+    }
+
+    // ETA derived from the live elapsed clock and the latest reported progress, in seconds, or -1
+    // when no usable estimate exists yet. Recomputing from the live clock (instead of echoing the
+    // snapshot's frozen remaining estimate) keeps the three displayed quantities -- elapsed,
+    // progress, eta -- mutually consistent and lets eta count down on every elapsed tick rather than
+    // only when a new progress snapshot arrives. Assuming roughly linear progress, total =
+    // elapsed / progress, so remaining = elapsed * (1 - progress) / progress. The engine's own
+    // remaining estimate still gates visibility: a negative value means "no usable estimate yet".
+    private double EstimateLiveEtaSeconds(long liveElapsedMs)
+    {
+        if (_latestProgress.EstimatedRemainingMilliseconds < 0)
+            return -1;
+        double progress = _latestProgress.EstimatedProgress01;
+        if (progress <= 0.0)
+            return -1;
+        if (progress >= 1.0)
+            return 0.0;
+        return liveElapsedMs * (1.0 - progress) / progress / 1000.0;
     }
 
     private void ShowNodeDetails(TreeNode? node)
