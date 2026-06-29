@@ -304,37 +304,44 @@ while (true)
 > 「`? ≤ opt ≤ ?`」。其余按 build 重新统计的计数器（`searched` / `output` / cache 命中等）仍照常重置，
 > 因为 compact 阶段会通过 `ObserveSearchState` / `VisitComparisonOutcomes` 重新填充它们。
 
-### 4.6 贪心可行解构造器（greedy 模式的 step 阶段）
+### 4.6 构造式可行解（greedy 模式的 step 阶段）
 
 精确 minimax 之所以会爆炸，是因为它在**每个状态**上对**所有**候选分组取 min、并且要**证明最优**。
-贪心构造器把这两件昂贵的事都砍掉：
+greedy 模式把这两件昂贵的事都砍掉：只承诺一个分组（不做 min、不回溯、非最优），但仍展开所有对手分支，
+于是整棵策略树是一个**单策略闭包**而非搜索树。
 
-- **每个状态只承诺一个分组**：取 `EnumeratePrioritizedGroups` 排在**第一**的分组（与精确搜索的首选优先级一致），
-  不做 min、不回溯。
-- **但仍展开所有对手分支**：对该分组的每一种比较结果都递归下去——于是整棵策略树是一个**单策略闭包**而非搜索树。
-  `25,5,5` 上这个闭包只有 11 个状态，**1 秒内**就能解完。
+早期实现仍然靠**完整枚举**来挑这个分组（`EnumeratePrioritizedGroups → ~C(active, m)`），在大 `m` 上这个
+「只为取第一名却枚举全部」的选择反而成了瓶颈（`25,10,10` 的 step 阶段约 49 s）。现在改成**构造式选择**
+（`StrategyBuilder.Constructive.cs → ChooseConstructiveGroup`）：直接从当前偏序里以 `O(m·active²)` 现算分组，
+**完全不枚举**。它是一场「保留偏序的锦标赛」——每一步竞争极大「前沿」（被证明更大的元素最少的那些项），
+增量地拼出一个近似**反链**（两两互不可比、单次排序就能一次性解析最多对），既让新的 top 候选浮现，又把败者推向淘汰，
+同时跳过所有已知关系。`25,10,10` 的 step 阶段因此从约 86 s 降到约 3 s。
 
 ```csharp
-// StrategyBuilder.Greedy.cs -> SolveGreedySelection（DFS，按 SearchStateKey 记忆化）
-var group = EnumeratePrioritizedGroups(state, remainingSlots).First(); // 只取第一名，不做 minimax
-_greedyGroupPatternCache[key] = group.ToPattern();                     // 给物化阶段复用
-foreach (var outcome in group.EnumerateComparisonOutcomes(state))      // 但展开全部对手结果
-    SolveGreedySelection(outcome.ResultState, outcome.RemainingSlots);
+// StrategyBuilder.Constructive.cs -> ChooseConstructiveGroup（无枚举、无预解闭包）
+// 增量反链：每次挑「与当前组内成员互不可比数最多」的活跃项，平局偏向前沿（祖先最少）。
+List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·active^2)
 ```
 
-物化（materialize）阶段完全复用既有路径：`ChooseGroup` 在 `_useGreedySelection == true` 时改读
-`_greedyGroupPatternCache`（与 compact 的 `_useCompactSelection` / `_compactGroupPatternCache` 同构）。
+物化（materialize）阶段完全复用既有路径：`ChooseGroup` 在 `_useConstructiveSelection == true` 时**当场**调用
+`ChooseConstructiveGroup` 算出分组（无需 compact/精确那样的预算 pattern 缓存，因为选择器本身便宜且确定）。
 这样造出的策略树**结构合法**、可直接展示，其 `MaxStep` 就是**可行上界 `U`**（注意：`U` 不是已证明最优，只是一个
-**确实可达**的步数）。
+**确实可达**的步数）。正确性（`U ≥ opt`）只需「严格进展」：每次排序都至少新增一条比较关系——只要所选分组含有一对
+互不可比项即可，而 `ChooseConstructiveGroup` 保证了这一点（总链兜底见 `ForceUnresolvedPair`）。
 
 - **夹逼**：`L = GetMinWorstCaseLowerBound(root, k)`（解析下界，与精确搜索**无关**、极便宜；`25,5,5 → 6`），经
-  `RecordRootProvenLowerBound` 写入；`U = ` 贪心树的 `MaxStep`。于是 `L ≤ opt ≤ U`。若 `L == U` 则该可行解
+  `RecordRootProvenLowerBound` 写入；`U = ` 构造树的 `MaxStep`。于是 `L ≤ opt ≤ U`。若 `L == U` 则该可行解
   **恰好达到了已证明下界**，即**已证明最优**（显示 `opt = U (proven optimal)`）。
 - **两种模式、各两阶段**：编排层提供两条互斥的「step → edge」流水线，CLI 用 `--mode exact|greedy`、GUI 用下拉框切换：
   - **exact 模式（默认）**：step = 精确求解 `BuildDefaultPlan`（已证明最优），edge = compact `BuildCompactPlan`。
-    **不跑贪心 feasible**。
-  - **greedy 模式（快速）**：step = 贪心 feasible `BuildFeasiblePlan`（可行上界 `U`），edge = 有界 compact
+    **不跑可行 feasible**。
+  - **greedy 模式（快速）**：step = 构造式 feasible `BuildFeasiblePlan`（可行上界 `U`），edge = 有界 compact
     `BuildFeasibleCompactPlan`（以 `U` 为步数上限收紧边数，可顺带「免费」拿到更小步数）。快速、可中断、非证明最优。
+    edge 阶段的根预算优先取**step 阶段物化得到的 `U`**（同一个 builder 实例先跑 step、再跑 edge，编排层正是这样复用的）——
+    这是最紧且可靠的预算：step 树本身就是一个 `U` 步解的见证，所以 compact 在该上限下绝不会需要超过 `U` 步，从而保证
+    **edge 计划不会比 step 更差**。若 edge 阶段被独立调用（builder 上没有先跑 step），则回退到**精简版**上界
+    `ConstructiveRootUpperBound`（不做物化去重、计满整条最长路径，因此 `≥` 物化 `U`，可靠但略松）。注意：`25,10,10`
+    这类大 `m` 形状的 edge 阶段（`EnumerateDistinctGroups`）本身就很慢，与预算松紧无关，按设计可中断。
 - `StrategyPlan.IsFeasibleUpperBound == true` 标记这棵树是「可行上界」而非「精确最优」，CLI / GUI 据此渲染相应的
   step 区域。
 
@@ -586,5 +593,5 @@ width = ActiveCount - maxBipartiteMatching;   // GetActivePosetWidth
 | 规范形 / 对称约减 | `ComparisonState.ComputeCanonicalForm`、`GetCanonicalKey`、`GetGroupCanonicalKey` |
 | 支配下界 | `StrategyBuilder.Dominance.cs`、`ApplyDominanceLowerBound` |
 | 紧凑搜索变体 | `StrategyBuilder.Compact.cs` |
-| 贪心可行解构造器（greedy 模式 step / 可行上界 U） | `StrategyBuilder.Greedy.cs` → `BuildFeasiblePlan`、`SolveGreedySelection`；`StrategyPlan.IsFeasibleUpperBound` |
+| 构造式可行解（greedy 模式 step / 可行上界 U） | `StrategyBuilder.Constructive.cs` → `BuildFeasiblePlan`、`ChooseConstructiveGroup`、`ConstructiveRootUpperBound`；`StrategyPlan.IsFeasibleUpperBound` |
 | 回归 / 计数监控 | `TopKFinder.Tests/StrategyRegressionTests.cs`、`DominanceMetricTests.cs` |
