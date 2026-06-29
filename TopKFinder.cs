@@ -134,10 +134,10 @@ partial class StrategyBuilder
         return BuildPlan(useCompactSelection: true, useFeasibleBudget: false);
     }
 
-    // Feasible+compact (mode A): the step ceiling is the greedy feasible upper bound U instead of the
-    // proven optimum, so the exact search is never run. The compact DP minimizes displayed edges under
-    // U and reports the actual MaxStep realized (often below U via free pickup). Fast and interruptible,
-    // not proven optimal.
+    // Feasible+compact (greedy mode edge phase): the step ceiling is the constructive feasible upper
+    // bound U instead of the proven optimum, so the exact search is never run. The compact DP minimizes
+    // displayed edges under U and reports the actual MaxStep realized (often below U via free pickup).
+    // Fast and interruptible, not proven optimal.
     public StrategyPlan BuildFeasibleCompactPlan()
     {
         _progressScope = _reportCombinedRunProgress
@@ -153,9 +153,7 @@ partial class StrategyBuilder
         ReportProgress(force: true);
 
         _compactUsesFeasibleBudget = useFeasibleBudget;
-        if (useFeasibleBudget)
-            EnsureGreedySolved();
-        else
+        if (!useFeasibleBudget)
             EnsurePhase1Solved();
         _phase1Milliseconds = stopwatch.ElapsedMilliseconds;
 
@@ -164,7 +162,6 @@ partial class StrategyBuilder
         _phase1bMilliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds;
 
         // Phase 2: materialize the strategy tree, reusing the cached group patterns.
-        _useGreedySelection = false;
         _useCompactSelection = useCompactSelection;
         var root = BuildState(new ComparisonState(_n), 0, _k, 1);
         _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds - _phase1bMilliseconds;
@@ -230,22 +227,25 @@ partial class StrategyBuilder
     private SelectedComparisonGroup ChooseGroup(ComparisonState state, ulong fixedTopMask, int remainingSlots)
     {
         ThrowIfCancellationRequested();
+
+        // The constructive feasible plan computes its group directly from the current partial order
+        // (cheap, O(m*active^2)), so unlike greedy/compact it needs no precomputed pattern cache.
+        if (_useConstructiveSelection)
+        {
+            List<int> constructiveGroup = ChooseConstructiveGroup(state, remainingSlots);
+            return new SelectedComparisonGroup(
+                constructiveGroup,
+                BuildMergedComparisonOutcomes(state, fixedTopMask, remainingSlots, constructiveGroup));
+        }
+
         var candidates = state.GetActiveItemsOrdered();
         SearchStateKey currentKey = GetSearchStateKey(state, remainingSlots);
 
         // Phase 1 solves the optimal worst-case for every reachable state and caches the
         // chosen comparison-group pattern, so phase 2 always finds a populated entry here.
         // The compact PoC overrides the choice with its size-minimizing pattern when enabled.
-        // The greedy feasible plan instead supplies a single-policy pattern computed without the
-        // exact search (see StrategyBuilder.Greedy.cs) and never consults the exact cache.
         BestGroupPattern cachedPattern;
-        if (_useGreedySelection)
-        {
-            if (!_greedyGroupPatternCache.TryGetValue(currentKey, out cachedPattern))
-                throw new InvalidOperationException(
-                    "Greedy selection must populate the group pattern cache for every state materialized in the feasible plan.");
-        }
-        else if (_useCompactSelection && _compactGroupPatternCache.TryGetValue(currentKey, out BestGroupPattern compactPattern))
+        if (_useCompactSelection && _compactGroupPatternCache.TryGetValue(currentKey, out BestGroupPattern compactPattern))
         {
             cachedPattern = compactPattern;
         }
@@ -977,9 +977,12 @@ partial class StrategyBuilder
 
         // Optional phase 1b: among equally-optimal groups, choose the ones that minimize the
         // materialized subtree size (a proxy for displayed output states). The root budget is the
-        // proven optimum for exact mode, or the greedy feasible upper bound U for feasible mode.
+        // proven optimum for exact mode, or the constructive feasible upper bound U for feasible mode.
+        // The lean U is used (it matches the prior greedy budget): the tighter materialized MaxStep
+        // would over-constrain the compact constraint-satisfaction and blow up the edge phase on large
+        // m, while the step tree already surfaces the tighter U to the user.
         int rootBudget = _compactUsesFeasibleBudget
-            ? GetGreedyFeasibleSteps(new ComparisonState(_n), _k)
+            ? ConstructiveRootUpperBound()
             : int.MaxValue;
         _ = SolveCompactSelection(new ComparisonState(_n), _k, rootBudget);
         _phase1bSolved = true;
@@ -1008,7 +1011,6 @@ partial class StrategyBuilder
         _compactStatesSolved = 0;
         _compactGroupsEnumerated = 0;
         _compactStepOptimalGroups = 0;
-        _greedyStatesSolved = 0;
         _progressEstimateInitialized = false;
         _progressEstimateEma01 = 0.0;
         _lastProgressSampleElapsedMs = -1;
