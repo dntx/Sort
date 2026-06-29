@@ -849,10 +849,7 @@ class MainForm : Form
         _overviewTree.Nodes.Clear();
 
         StrategyPlan stepPlan = defaultPlan ?? feasiblePlan;
-        string stepTitle = defaultPlan is null
-            ? $"step overview [{FormatPlanSqueeze(feasiblePlan)}]"
-            : "step overview";
-        _overviewTree.Nodes.Add(BuildOverviewSectionNode(stepPlan, "default", stepTitle));
+        _overviewTree.Nodes.Add(BuildOverviewSectionNode(stepPlan, "default", "step overview"));
 
         if (compactPlan is null)
             _overviewTree.Nodes.Add(BuildOverviewNoteNode("edge overview: computing..."));
