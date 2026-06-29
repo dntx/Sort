@@ -704,10 +704,7 @@ class MainForm : Form
         // Slot 0: "step" -- the worst-case step strategy. While the exact pass runs it shows the
         // greedy bound; once exact finishes it is replaced in place. Greedy mode keeps the greedy tree.
         StrategyPlan stepPlan = defaultPlan ?? feasiblePlan;
-        string stepLabel = defaultPlan is null
-            ? $"step [{FormatPlanSqueeze(feasiblePlan)}]"
-            : $"step (max {defaultPlan.MaxStep})";
-        root.Nodes.Add(CreatePlanTreeRoot(stepLabel, stepPlan, "default"));
+        root.Nodes.Add(CreatePlanTreeRoot("step", stepPlan, "default"));
 
         // Slot 1: "edge" -- minimizes displayed edges at the fixed step count (placeholder until done).
         if (compactPlan is null)
@@ -1035,7 +1032,7 @@ class MainForm : Form
         int maxStep = depthIndex.SubtreeMaxStep(node);
         string headerText = $"S{node.StateId} [step {node.Step}/{maxStep}] sort({StrategyTextRenderer.FormatSet(node.Group)})";
         if (node.FinalChoice is null)
-            headerText += $" ({node.Branches.Count} edges)";
+            headerText += node.Branches.Count == 1 ? " (1 edge)" : $" ({node.Branches.Count} edges)";
 
         var treeNode = new TreeNode(headerText)
         {
