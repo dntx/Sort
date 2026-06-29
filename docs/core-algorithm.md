@@ -337,9 +337,11 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     **不跑可行 feasible**。
   - **greedy 模式（快速）**：step = 构造式 feasible `BuildFeasiblePlan`（可行上界 `U`），edge = 有界 compact
     `BuildFeasibleCompactPlan`（以 `U` 为步数上限收紧边数，可顺带「免费」拿到更小步数）。快速、可中断、非证明最优。
-    edge 阶段的根预算取**精简版**构造上界 `ConstructiveRootUpperBound`（不做物化去重、计满整条最长路径，因此 `≥`
-    物化 `MaxStep`）——刻意用这个略松的上界：物化得到的更紧 `U` 会过度约束 compact 的可行性搜索、在大 `m` 上拖慢
-    edge 阶段，而 step 树本身已经把更紧的 `U` 展示给用户了。
+    edge 阶段的根预算优先取**step 阶段物化得到的 `U`**（同一个 builder 实例先跑 step、再跑 edge，编排层正是这样复用的）——
+    这是最紧且可靠的预算：step 树本身就是一个 `U` 步解的见证，所以 compact 在该上限下绝不会需要超过 `U` 步，从而保证
+    **edge 计划不会比 step 更差**。若 edge 阶段被独立调用（builder 上没有先跑 step），则回退到**精简版**上界
+    `ConstructiveRootUpperBound`（不做物化去重、计满整条最长路径，因此 `≥` 物化 `U`，可靠但略松）。注意：`25,10,10`
+    这类大 `m` 形状的 edge 阶段（`EnumerateDistinctGroups`）本身就很慢，与预算松紧无关，按设计可中断。
 - `StrategyPlan.IsFeasibleUpperBound == true` 标记这棵树是「可行上界」而非「精确最优」，CLI / GUI 据此渲染相应的
   step 区域。
 

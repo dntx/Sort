@@ -977,12 +977,11 @@ partial class StrategyBuilder
 
         // Optional phase 1b: among equally-optimal groups, choose the ones that minimize the
         // materialized subtree size (a proxy for displayed output states). The root budget is the
-        // proven optimum for exact mode, or the constructive feasible upper bound U for feasible mode.
-        // The lean U is used (it matches the prior greedy budget): the tighter materialized MaxStep
-        // would over-constrain the compact constraint-satisfaction and blow up the edge phase on large
-        // m, while the step tree already surfaces the tighter U to the user.
+        // proven optimum for exact mode, or the constructive feasible upper bound U for feasible mode:
+        // the materialized U threaded from the step phase when present (tightest, keeps the edge plan
+        // no worse than step), else the sound-but-looser lean ConstructiveRootUpperBound.
         int rootBudget = _compactUsesFeasibleBudget
-            ? ConstructiveRootUpperBound()
+            ? (_feasibleRootBudget >= 0 ? _feasibleRootBudget : ConstructiveRootUpperBound())
             : int.MaxValue;
         _ = SolveCompactSelection(new ComparisonState(_n), _k, rootBudget);
         _phase1bSolved = true;

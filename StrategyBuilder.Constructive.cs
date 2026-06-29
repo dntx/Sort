@@ -31,6 +31,16 @@ partial class StrategyBuilder
     private bool _useConstructiveSelection;
     private Dictionary<SearchStateKey, int>? _constructiveDepthMemo;
 
+    // Feasible step budget U threaded from the step phase to the edge phase within one combined run.
+    // BuildFeasiblePlan sets it to the MATERIALIZED MaxStep of the just-built step tree (the tightest
+    // sound budget: the step plan itself witnesses a U-step solution, so the compact pass under this
+    // ceiling can never need more than U). The edge phase (BuildFeasibleCompactPlan) reads it so it
+    // never produces a plan worse than the step phase. -1 until a step plan is built; deliberately NOT
+    // cleared by ResetPerBuildTransientState so it survives the step->edge build boundary on the same
+    // builder. When the edge phase runs standalone (no prior step build) it falls back to the lean
+    // ConstructiveRootUpperBound, which is sound but looser.
+    private int _feasibleRootBudget = -1;
+
     // Builds the greedy-mode feasible strategy (step tree): a valid, displayable strategy whose
     // worst-case step count is a feasible UPPER bound U on the optimum -- never a proof of optimality.
     // Combined with the analytic proven lower bound L (GetMinWorstCaseLowerBound on the root) this
@@ -71,14 +81,18 @@ partial class StrategyBuilder
         var plan = new StrategyPlan(
             _n, _m, _requestedK, _k, root, stopwatch.Elapsed, CreateSearchStatistics(),
             isFeasibleUpperBound: true);
+
+        // Surface the exact U this materialized tree achieves so the edge (compact) phase in the same
+        // combined run uses it as its step ceiling -- the tightest sound budget, guaranteeing the edge
+        // plan is never worse than this step plan.
+        _feasibleRootBudget = plan.MaxStep;
         return plan;
     }
 
-    // Lean worst-case step count of the constructive strategy from the root: the feasible step budget
-    // U for the edge (compact) phase. Without the materializer's display-key Reference de-duplication
-    // this counts the full longest path, so it is >= the materialized MaxStep -- a deliberately looser
-    // budget. The tighter materialized U would over-constrain the compact feasibility search and blow
-    // up the edge phase on large m; the step tree already shows the user that tighter U.
+    // Lean worst-case step count of the constructive strategy from the root: a sound but looser
+    // feasible step budget for the edge phase when the materialized U is unavailable (the edge phase
+    // run standalone, with no prior step build on this builder). Without the materializer's display-key
+    // Reference de-duplication this counts the full longest path, so it is >= the materialized MaxStep.
     private int ConstructiveRootUpperBound()
     {
         _constructiveDepthMemo = new Dictionary<SearchStateKey, int>();
