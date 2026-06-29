@@ -131,16 +131,32 @@ partial class StrategyBuilder
         _progressScope = _reportCombinedRunProgress
             ? ProgressScope.CompactPrimaryInCombinedRun
             : ProgressScope.DefaultStandalone;
-        return BuildPlan(useCompactSelection: true);
+        return BuildPlan(useCompactSelection: true, useFeasibleBudget: false);
     }
 
-    private StrategyPlan BuildPlan(bool useCompactSelection)
+    // Feasible+compact (mode A): the step ceiling is the greedy feasible upper bound U instead of the
+    // proven optimum, so the exact search is never run. The compact DP minimizes displayed edges under
+    // U and reports the actual MaxStep realized (often below U via free pickup). Fast and interruptible,
+    // not proven optimal.
+    public StrategyPlan BuildFeasibleCompactPlan()
+    {
+        _progressScope = _reportCombinedRunProgress
+            ? ProgressScope.CompactFeasibleInCombinedRun
+            : ProgressScope.DefaultStandalone;
+        return BuildPlan(useCompactSelection: true, useFeasibleBudget: true);
+    }
+
+    private StrategyPlan BuildPlan(bool useCompactSelection, bool useFeasibleBudget = false)
     {
         ResetPerBuildTransientState();
         var stopwatch = Stopwatch.StartNew();
         ReportProgress(force: true);
 
-        EnsurePhase1Solved();
+        _compactUsesFeasibleBudget = useFeasibleBudget;
+        if (useFeasibleBudget)
+            EnsureGreedySolved();
+        else
+            EnsurePhase1Solved();
         _phase1Milliseconds = stopwatch.ElapsedMilliseconds;
 
         if (useCompactSelection)
@@ -154,7 +170,9 @@ partial class StrategyBuilder
         _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds - _phase1bMilliseconds;
         stopwatch.Stop();
         ReportProgress(force: true);
-        return new StrategyPlan(_n, _m, _requestedK, _k, root, stopwatch.Elapsed, CreateSearchStatistics());
+        bool feasible = useFeasibleBudget;
+        return new StrategyPlan(_n, _m, _requestedK, _k, root, stopwatch.Elapsed, CreateSearchStatistics(),
+            isFeasibleUpperBound: feasible);
     }
 
     private StrategyNode BuildState(ComparisonState state, ulong fixedTopMask, int remainingSlots, int step)
@@ -694,17 +712,21 @@ partial class StrategyBuilder
         if (!_reportCombinedRunProgress)
             return (localProgress01, localRemainingMs);
 
+        // The combined-run bar is split into two visible stages: step then edge. The ratio differs
+        // per mode. Exact mode: step (exact solve) gets 60%, edge (compact) gets 40%. Greedy mode:
+        // step (feasible bound) gets 10%, so edge (feasible-compact) gets the remaining 90%.
         (double progressBase, double progressSpan) = _progressScope switch
         {
-            ProgressScope.FeasibleInCombinedRun => (0.0, 0.01),
-            ProgressScope.DefaultInCombinedRun => (0.01, 0.59),
+            ProgressScope.FeasibleInCombinedRun => (0.0, 0.10),
+            ProgressScope.DefaultInCombinedRun => (0.0, 0.60),
             ProgressScope.CompactPrimaryInCombinedRun => (0.60, 0.40),
+            ProgressScope.CompactFeasibleInCombinedRun => (0.10, 0.90),
             _ => (0.0, 1.0),
         };
 
         // The feasible phase is a single indivisible greedy slice with no internal progress signal,
-        // so instead of sitting at 0% (which reads as "nothing happening") it fills its whole 1% band
-        // and hands off continuously to the default phase, which starts at 1%.
+        // so instead of sitting at 0% (which reads as "nothing happening") it fills its whole 10% band
+        // and hands off continuously to the default phase, which starts at 10%.
         double localFraction = _progressScope == ProgressScope.FeasibleInCombinedRun
             ? 1.0
             : Math.Clamp(localProgress01, 0.0, 1.0);
@@ -953,9 +975,13 @@ partial class StrategyBuilder
         if (_phase1bSolved)
             return;
 
-        // Optional phase 1b (PoC): among equally-optimal groups, choose the ones that
-        // minimize the materialized subtree size (a proxy for displayed output states).
-        _ = SolveCompactSelection(new ComparisonState(_n), _k);
+        // Optional phase 1b: among equally-optimal groups, choose the ones that minimize the
+        // materialized subtree size (a proxy for displayed output states). The root budget is the
+        // proven optimum for exact mode, or the greedy feasible upper bound U for feasible mode.
+        int rootBudget = _compactUsesFeasibleBudget
+            ? GetGreedyFeasibleSteps(new ComparisonState(_n), _k)
+            : int.MaxValue;
+        _ = SolveCompactSelection(new ComparisonState(_n), _k, rootBudget);
         _phase1bSolved = true;
     }
 
@@ -1076,6 +1102,7 @@ partial class StrategyBuilder
         DefaultInCombinedRun = 1,
         CompactPrimaryInCombinedRun = 2,
         FeasibleInCombinedRun = 4,
+        CompactFeasibleInCombinedRun = 8,
     }
 
 }

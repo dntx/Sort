@@ -11,11 +11,13 @@ class Program
         "\n" +
         "Usage:\n" +
         "  TopKFinder                      Launch the desktop (WinForms) explorer.\n" +
-        "  TopKFinder <n> <m> <k>          Run three-phase search: print feasible upper bound, exact, then compact if improved.\n" +
+        "  TopKFinder <n> <m> <k>          Run two-stage search: print the step strategy, then the edge refinement if improved.\n" +
         "  ... | TopKFinder                Read n, m, k from stdin (one value per line).\n" +
         "\n" +
         "Options:\n" +
         "  -h, --help      Show this help and exit.\n" +
+        "  --mode <mode>   Search mode. exact (default) = exact + compact (proven optimal).\n" +
+        "                  greedy = feasible + compact (fast, interruptible, not proven optimal).\n" +
         "\n" +
         "Arguments:\n" +
         "  n   total number of elements   (1 <= n <= 64)\n" +
@@ -42,7 +44,7 @@ class Program
                 return;
             }
 
-            if (!TryParseCliArgs(args, out string? nText, out string? mText, out string? kText, out string? argError))
+            if (!TryParseCliArgs(args, out string? nText, out string? mText, out string? kText, out bool feasibleMode, out string? argError))
             {
                 Console.WriteLine(argError);
                 Console.WriteLine(UsageText);
@@ -55,7 +57,7 @@ class Program
                 return;
             }
 
-            RunHeadless(nFromArgs, mFromArgs, kFromArgs);
+            RunHeadless(nFromArgs, mFromArgs, kFromArgs, feasibleMode);
             return;
         }
 
@@ -81,7 +83,7 @@ class Program
             return;
         }
 
-        RunHeadless(n, m, k);
+        RunHeadless(n, m, k, feasibleMode: false);
     }
 
     public static bool IsHelpRequested(string[] args)
@@ -94,18 +96,39 @@ class Program
         out string? nText,
         out string? mText,
         out string? kText,
+        out bool feasibleMode,
         out string? error)
     {
         nText = null;
         mText = null;
         kText = null;
+        feasibleMode = false;
         error = null;
 
         var positionals = new System.Collections.Generic.List<string>();
 
-        foreach (string arg in args)
+        for (int i = 0; i < args.Length; i++)
         {
-            if (arg.StartsWith("-", StringComparison.Ordinal))
+            string arg = args[i];
+            if (arg == "--mode")
+            {
+                if (i + 1 >= args.Length)
+                {
+                    error = "Error: --mode requires a value (exact or greedy)";
+                    return false;
+                }
+                string value = args[++i];
+                if (string.Equals(value, "greedy", StringComparison.OrdinalIgnoreCase))
+                    feasibleMode = true;
+                else if (string.Equals(value, "exact", StringComparison.OrdinalIgnoreCase))
+                    feasibleMode = false;
+                else
+                {
+                    error = $"Error: unknown mode '{value}' (expected exact or greedy)";
+                    return false;
+                }
+            }
+            else if (arg.StartsWith("-", StringComparison.Ordinal))
             {
                 error = $"Error: unknown option '{arg}'";
                 return false;
@@ -128,7 +151,7 @@ class Program
         return true;
     }
 
-    private static void RunHeadless(int n, int m, int k)
+    private static void RunHeadless(int n, int m, int k, bool feasibleMode)
     {
         int canonicalK = Math.Min(k, n - k);
         if (canonicalK != k)
@@ -176,42 +199,43 @@ class Program
             ReportProgress,
             reportCombinedRunProgress: true);
 
-        // Phase 0: greedy feasible strategy. Instant even on shapes the exact search never
-        // resolves (e.g. 25,5,5), so it always gives the user a real strategy plus a squeeze
-        // L <= opt <= U before the (possibly unbounded) exact search begins.
-        StrategyPlan feasiblePlan = builder.BuildFeasiblePlan();
-        ClearProgressLine();
-        Console.WriteLine($"==================== feasible upper bound ({FormatSqueeze(feasiblePlan)}) ====================");
-        Console.WriteLine("(a valid strategy that achieves the upper bound; not proven optimal)");
-        Console.Write(StrategyOverviewRenderer.RenderText(feasiblePlan));
-        Console.WriteLine();
-        Console.Write(StrategyTextRenderer.Render(feasiblePlan));
-        Console.WriteLine();
+        if (feasibleMode)
+        {
+            // Greedy mode: a fast greedy feasible plan (step) gives a valid bound, then the edge
+            // stage uses U as its step ceiling, minimizes edges under U, and may pick up a smaller
+            // real step for free. Fast/interruptible, not proven optimal.
+            StrategyPlan feasiblePlan = builder.BuildFeasiblePlan();
+            ClearProgressLine();
+            Console.WriteLine($"==================== step ({FormatSqueeze(feasiblePlan)}) ====================");
+            Console.WriteLine("(a valid strategy that achieves the upper bound; not proven optimal)");
+            Console.Write(StrategyOverviewRenderer.RenderText(feasiblePlan));
+            Console.WriteLine();
+            Console.Write(StrategyTextRenderer.Render(feasiblePlan));
+            Console.WriteLine();
 
+            StrategyPlan feasibleCompact = builder.BuildFeasibleCompactPlan();
+            ClearProgressLine();
+            if (feasibleCompact.IsStrictRefinementOver(feasiblePlan))
+            {
+                Console.WriteLine();
+                Console.WriteLine("==================== edge ====================");
+                Console.Write(StrategyOverviewRenderer.RenderText(feasibleCompact));
+                Console.WriteLine();
+                Console.Write(StrategyTextRenderer.Render(feasibleCompact));
+            }
+            return;
+        }
+
+        // Exact mode: no feasible phase. The exact search (step) proves the optimum, then the
+        // compact phase (edge) trims displayed edges among equally optimal groups.
         StrategyPlan defaultPlan = builder.BuildDefaultPlan();
         ClearProgressLine();
+        Console.WriteLine($"==================== step ({FormatSqueeze(defaultPlan)}) ====================");
+        Console.Write(StrategyOverviewRenderer.RenderText(defaultPlan));
         Console.WriteLine();
+        Console.Write(StrategyTextRenderer.Render(defaultPlan));
 
-        // The exact search always PROVES the optimum, but its tree only earns a fresh section when
-        // it strictly refines the feasible strategy already shown (fewer steps, or equal steps with
-        // fewer edges). When it does not, we skip the redundant tree and just record the proof that
-        // the feasible strategy above is already optimal. The better of the two becomes the incumbent
-        // the compact phase must beat.
-        bool exactImproved = defaultPlan.IsStrictRefinementOver(feasiblePlan);
-        StrategyPlan incumbent = exactImproved ? defaultPlan : feasiblePlan;
-        if (exactImproved)
-        {
-            Console.WriteLine("==================== exact optimal ====================");
-            Console.Write(StrategyOverviewRenderer.RenderText(defaultPlan));
-            Console.WriteLine();
-            Console.Write(StrategyTextRenderer.Render(defaultPlan));
-        }
-        else
-        {
-            Console.WriteLine($"==================== exact optimal (opt = {defaultPlan.MaxStep}, proven) ====================");
-            Console.WriteLine("the feasible strategy above is already optimal; exact search found nothing better.");
-        }
-
+        StrategyPlan incumbent = defaultPlan;
         StrategyPlan compactPlan = builder.BuildCompactPlan();
         bool compactImproved = compactPlan.IsStrictRefinementOver(incumbent);
         if (!compactImproved)
@@ -219,7 +243,7 @@ class Program
 
         ClearProgressLine();
         Console.WriteLine();
-        Console.WriteLine("==================== compact refinement ====================");
+        Console.WriteLine("==================== edge ====================");
         Console.Write(StrategyOverviewRenderer.RenderText(compactPlan));
         Console.WriteLine();
         Console.Write(StrategyTextRenderer.Render(compactPlan));

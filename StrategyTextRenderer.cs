@@ -30,7 +30,7 @@ static class StrategyTextRenderer
         writer.WriteLine($"worst-case steps = {plan.MaxStep}");
         writer.WriteLine($"total edges = {plan.TotalBranchEdges}");
         writer.WriteLine($"elapsed = {plan.Elapsed.TotalMilliseconds:F1} ms");
-        writer.WriteLine($"phases: exact-step = {stats.Phase1Milliseconds} ms, compact = {stats.Phase1bMilliseconds} ms, build = {stats.Phase2Milliseconds} ms");
+        writer.WriteLine($"phases: step = {stats.Phase1Milliseconds} ms, edge = {stats.Phase1bMilliseconds} ms, build = {stats.Phase2Milliseconds} ms");
         writer.WriteLine();
 
         // Diagnostics: internal search-engine telemetry, grouped so it does not crowd the summary.

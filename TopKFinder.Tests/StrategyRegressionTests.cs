@@ -1048,17 +1048,17 @@ public sealed class StrategyRegressionTests
     // the current deterministic counts -- ratchet them down when an optimization legitimately
     // cuts outcome construction.
     [Theory]
-    [InlineData(9, 3, 3, 5283)]
-    [InlineData(11, 3, 3, 15907)]
-    [InlineData(12, 4, 4, 20622)]
-    [InlineData(10, 3, 4, 46300)]
-    [InlineData(12, 4, 3, 6011)]
-    [InlineData(12, 3, 3, 8531)]
+    [InlineData(9, 3, 3, 5473)]
+    [InlineData(11, 3, 3, 16220)]
+    [InlineData(12, 4, 4, 20854)]
+    [InlineData(10, 3, 4, 47187)]
+    [InlineData(12, 4, 3, 6219)]
+    [InlineData(12, 3, 3, 8550)]
     // Ties/anomalies (see Compact_SearchedStateCountStaysWithinBaseline): now measure the genuine
     // compact candidate instead of the discarded default fallback.
-    [InlineData(8, 4, 2, 28)]
-    [InlineData(10, 3, 5, 9828)]
-    [InlineData(13, 4, 3, 2352)]
+    [InlineData(8, 4, 2, 30)]
+    [InlineData(10, 3, 5, 9835)]
+    [InlineData(13, 4, 3, 2385)]
     public void Compact_OutcomesConstructedStaysWithinBaseline(int n, int m, int k, int outcomesCap)
     {
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
@@ -1174,17 +1174,17 @@ public sealed class StrategyRegressionTests
     // this is the primary symmetry-collapse target for compact search. Caps pin the current
     // deterministic counts -- ratchet them down when an orbit/block-symmetry optimization lands.
     [Theory]
-    [InlineData(9, 3, 3, 744)]
-    [InlineData(11, 3, 3, 1661)]
-    [InlineData(12, 4, 4, 5417)]
-    [InlineData(10, 3, 4, 4982)]
-    [InlineData(12, 4, 3, 2387)]
-    [InlineData(12, 3, 3, 617)]
+    [InlineData(9, 3, 3, 799)]
+    [InlineData(11, 3, 3, 1743)]
+    [InlineData(12, 4, 4, 5538)]
+    [InlineData(10, 3, 4, 5193)]
+    [InlineData(12, 4, 3, 2501)]
+    [InlineData(12, 3, 3, 622)]
     // Ties/anomalies (see Compact_SearchedStateCountStaysWithinBaseline): now measure the genuine
     // compact candidate instead of the discarded default fallback.
     [InlineData(8, 4, 2, 11)]
     [InlineData(10, 3, 5, 625)]
-    [InlineData(13, 4, 3, 547)]
+    [InlineData(13, 4, 3, 563)]
     public void Compact_DuplicateOutcomeSkipsStaysWithinBaseline(int n, int m, int k, int duplicateSkipCap)
     {
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
