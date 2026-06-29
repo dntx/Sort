@@ -714,19 +714,19 @@ partial class StrategyBuilder
 
         // The combined-run bar is split into two visible stages: step then edge. The ratio differs
         // per mode. Exact mode: step (exact solve) gets 60%, edge (compact) gets 40%. Greedy mode:
-        // step (feasible bound) is a trivial 1%, so edge (feasible-compact) gets the remaining 99%.
+        // step (feasible bound) gets 10%, so edge (feasible-compact) gets the remaining 90%.
         (double progressBase, double progressSpan) = _progressScope switch
         {
-            ProgressScope.FeasibleInCombinedRun => (0.0, 0.01),
+            ProgressScope.FeasibleInCombinedRun => (0.0, 0.10),
             ProgressScope.DefaultInCombinedRun => (0.0, 0.60),
             ProgressScope.CompactPrimaryInCombinedRun => (0.60, 0.40),
-            ProgressScope.CompactFeasibleInCombinedRun => (0.01, 0.99),
+            ProgressScope.CompactFeasibleInCombinedRun => (0.10, 0.90),
             _ => (0.0, 1.0),
         };
 
         // The feasible phase is a single indivisible greedy slice with no internal progress signal,
-        // so instead of sitting at 0% (which reads as "nothing happening") it fills its whole 1% band
-        // and hands off continuously to the default phase, which starts at 1%.
+        // so instead of sitting at 0% (which reads as "nothing happening") it fills its whole 10% band
+        // and hands off continuously to the default phase, which starts at 10%.
         double localFraction = _progressScope == ProgressScope.FeasibleInCombinedRun
             ? 1.0
             : Math.Clamp(localProgress01, 0.0, 1.0);
