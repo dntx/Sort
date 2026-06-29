@@ -16,8 +16,8 @@ class Program
         "\n" +
         "Options:\n" +
         "  -h, --help      Show this help and exit.\n" +
-        "  --mode A|B      Search mode. B (default) = exact + compact (proven optimal).\n" +
-        "                  A = feasible + compact (fast, interruptible, not proven optimal).\n" +
+        "  --mode <mode>   Search mode. exact (default) = exact + compact (proven optimal).\n" +
+        "                  greedy = feasible + compact (fast, interruptible, not proven optimal).\n" +
         "\n" +
         "Arguments:\n" +
         "  n   total number of elements   (1 <= n <= 64)\n" +
@@ -114,17 +114,17 @@ class Program
             {
                 if (i + 1 >= args.Length)
                 {
-                    error = "Error: --mode requires a value (A or B)";
+                    error = "Error: --mode requires a value (exact or greedy)";
                     return false;
                 }
                 string value = args[++i];
-                if (string.Equals(value, "A", StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(value, "greedy", StringComparison.OrdinalIgnoreCase))
                     feasibleMode = true;
-                else if (string.Equals(value, "B", StringComparison.OrdinalIgnoreCase))
+                else if (string.Equals(value, "exact", StringComparison.OrdinalIgnoreCase))
                     feasibleMode = false;
                 else
                 {
-                    error = $"Error: unknown mode '{value}' (expected A or B)";
+                    error = $"Error: unknown mode '{value}' (expected exact or greedy)";
                     return false;
                 }
             }
@@ -201,7 +201,7 @@ class Program
 
         if (feasibleMode)
         {
-            // Mode A (greedy): a fast greedy feasible plan (step) gives a valid bound, then the edge
+            // Greedy mode: a fast greedy feasible plan (step) gives a valid bound, then the edge
             // stage uses U as its step ceiling, minimizes edges under U, and may pick up a smaller
             // real step for free. Fast/interruptible, not proven optimal.
             StrategyPlan feasiblePlan = builder.BuildFeasiblePlan();
@@ -226,7 +226,7 @@ class Program
             return;
         }
 
-        // Mode B (exact): no feasible phase. The exact search (step) proves the optimum, then the
+        // Exact mode: no feasible phase. The exact search (step) proves the optimum, then the
         // compact phase (edge) trims displayed edges among equally optimal groups.
         StrategyPlan defaultPlan = builder.BuildDefaultPlan();
         ClearProgressLine();

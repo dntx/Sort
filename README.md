@@ -56,16 +56,16 @@ The program has three entry points that share the same input validation
 ### Command-line arguments
 
 ```bash
-dotnet run -- <n> <m> <k> [--mode A|B]
+dotnet run -- <n> <m> <k> [--mode exact|greedy]
 ```
 
 - Prints the strategy tree for `n`, `m`, `k` to **stdout**.
 - The CLI always runs in two stages: **step** (find the worst-case step count),
   then **edge** (minimize displayed branch edges at that fixed step count).
 - Two modes select how the step stage is found:
-  - **B = exact** (default): a proven-optimal exact solve for step, then compact
+  - **exact** (default): a proven-optimal exact solve for step, then compact
     refinement for edge.
-  - **A = greedy**: a fast greedy feasible strategy for step, then a budget-bounded
+  - **greedy**: a fast greedy feasible strategy for step, then a budget-bounded
     compact pass for edge. Fast and interruptible, but not proven optimal.
 - If the edge stage does not reduce output states, only the step strategy is
   printed; otherwise both step and edge strategies are printed.
@@ -126,7 +126,7 @@ printed; otherwise only the step tree is printed.
 ### Desktop UI details
 
 Running without redirected input opens the WinForms explorer. A mode dropdown
-selects **exact (proven)** or **greedy (fast)**, matching the CLI `--mode B / A`.
+selects **exact (proven)** or **greedy (fast)**, matching the CLI `--mode exact / greedy`.
 During a run it shows live:
 
 - searched / pending / output state counts

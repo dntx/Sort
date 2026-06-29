@@ -18,10 +18,10 @@ public sealed class CliArgsTests
     }
 
     [Theory]
-    [InlineData("A", true)]
-    [InlineData("a", true)]
-    [InlineData("B", false)]
-    [InlineData("b", false)]
+    [InlineData("greedy", true)]
+    [InlineData("GREEDY", true)]
+    [InlineData("exact", false)]
+    [InlineData("EXACT", false)]
     public void TryParseCliArgs_ParsesMode(string value, bool expected)
     {
         bool ok = Program.TryParseCliArgs(
@@ -41,7 +41,7 @@ public sealed class CliArgsTests
             out _, out _, out _, out _, out string? error);
 
         Assert.False(ok);
-        Assert.Equal("Error: unknown mode 'X' (expected A or B)", error);
+        Assert.Equal("Error: unknown mode 'X' (expected exact or greedy)", error);
     }
 
     [Fact]
@@ -52,7 +52,7 @@ public sealed class CliArgsTests
             out _, out _, out _, out _, out string? error);
 
         Assert.False(ok);
-        Assert.Equal("Error: --mode requires a value (A or B)", error);
+        Assert.Equal("Error: --mode requires a value (exact or greedy)", error);
     }
 
     [Theory]

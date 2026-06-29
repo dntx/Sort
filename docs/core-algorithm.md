@@ -330,10 +330,10 @@ foreach (var outcome in group.EnumerateComparisonOutcomes(state))      // 但展
 - **夹逼**：`L = GetMinWorstCaseLowerBound(root, k)`（解析下界，与精确搜索**无关**、极便宜；`25,5,5 → 6`），经
   `RecordRootProvenLowerBound` 写入；`U = ` 贪心树的 `MaxStep`。于是 `L ≤ opt ≤ U`。若 `L == U` 则该可行解
   **恰好达到了已证明下界**，即**已证明最优**（显示 `opt = U (proven optimal)`）。
-- **两种模式、各两阶段**：编排层提供两条互斥的「step → edge」流水线，CLI 用 `--mode A|B`、GUI 用下拉框切换：
-  - **exact 模式（B，默认）**：step = 精确求解 `BuildDefaultPlan`（已证明最优），edge = compact `BuildCompactPlan`。
+- **两种模式、各两阶段**：编排层提供两条互斥的「step → edge」流水线，CLI 用 `--mode exact|greedy`、GUI 用下拉框切换：
+  - **exact 模式（默认）**：step = 精确求解 `BuildDefaultPlan`（已证明最优），edge = compact `BuildCompactPlan`。
     **不跑贪心 feasible**。
-  - **greedy 模式（A，快速）**：step = 贪心 feasible `BuildFeasiblePlan`（可行上界 `U`），edge = 有界 compact
+  - **greedy 模式（快速）**：step = 贪心 feasible `BuildFeasiblePlan`（可行上界 `U`），edge = 有界 compact
     `BuildFeasibleCompactPlan`（以 `U` 为步数上限收紧边数，可顺带「免费」拿到更小步数）。快速、可中断、非证明最优。
 - `StrategyPlan.IsFeasibleUpperBound == true` 标记这棵树是「可行上界」而非「精确最优」，CLI / GUI 据此渲染相应的
   step 区域。
