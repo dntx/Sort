@@ -11,7 +11,7 @@ class Program
         "\n" +
         "Usage:\n" +
         "  TopKFinder                      Launch the desktop (WinForms) explorer.\n" +
-        "  TopKFinder <n> <m> <k>          Run three-phase search: print feasible upper bound, exact, then compact if improved.\n" +
+        "  TopKFinder <n> <m> <k>          Run two-stage search: print the step strategy, then the edge refinement if improved.\n" +
         "  ... | TopKFinder                Read n, m, k from stdin (one value per line).\n" +
         "\n" +
         "Options:\n" +
@@ -204,7 +204,7 @@ class Program
         // L <= opt <= U before the (possibly unbounded) exact search begins.
         StrategyPlan feasiblePlan = builder.BuildFeasiblePlan();
         ClearProgressLine();
-        Console.WriteLine($"==================== feasible upper bound ({FormatSqueeze(feasiblePlan)}) ====================");
+        Console.WriteLine($"==================== step ({FormatSqueeze(feasiblePlan)}) ====================");
         Console.WriteLine("(a valid strategy that achieves the upper bound; not proven optimal)");
         Console.Write(StrategyOverviewRenderer.RenderText(feasiblePlan));
         Console.WriteLine();
@@ -213,15 +213,15 @@ class Program
 
         if (feasibleMode)
         {
-            // Mode A (feasible + compact): skip the exact search entirely. The compact phase uses the
-            // feasible upper bound U as its step ceiling, minimizes edges under U, and may pick up a
-            // smaller real step for free. Fast/interruptible, not proven optimal.
+            // Mode A (greedy): skip the exact search entirely. The edge stage uses the greedy upper
+            // bound U as its step ceiling, minimizes edges under U, and may pick up a smaller real step
+            // for free. Fast/interruptible, not proven optimal.
             StrategyPlan feasibleCompact = builder.BuildFeasibleCompactPlan();
             ClearProgressLine();
             if (feasibleCompact.IsStrictRefinementOver(feasiblePlan))
             {
                 Console.WriteLine();
-                Console.WriteLine("==================== compact refinement ====================");
+                Console.WriteLine("==================== edge ====================");
                 Console.Write(StrategyOverviewRenderer.RenderText(feasibleCompact));
                 Console.WriteLine();
                 Console.Write(StrategyTextRenderer.Render(feasibleCompact));
@@ -242,14 +242,14 @@ class Program
         StrategyPlan incumbent = exactImproved ? defaultPlan : feasiblePlan;
         if (exactImproved)
         {
-            Console.WriteLine("==================== exact optimal ====================");
+            Console.WriteLine("==================== step (exact) ====================");
             Console.Write(StrategyOverviewRenderer.RenderText(defaultPlan));
             Console.WriteLine();
             Console.Write(StrategyTextRenderer.Render(defaultPlan));
         }
         else
         {
-            Console.WriteLine($"==================== exact optimal (opt = {defaultPlan.MaxStep}, proven) ====================");
+            Console.WriteLine($"==================== step (exact, opt = {defaultPlan.MaxStep}, proven) ====================");
             Console.WriteLine("the feasible strategy above is already optimal; exact search found nothing better.");
         }
 
@@ -260,7 +260,7 @@ class Program
 
         ClearProgressLine();
         Console.WriteLine();
-        Console.WriteLine("==================== compact refinement ====================");
+        Console.WriteLine("==================== edge ====================");
         Console.Write(StrategyOverviewRenderer.RenderText(compactPlan));
         Console.WriteLine();
         Console.Write(StrategyTextRenderer.Render(compactPlan));
