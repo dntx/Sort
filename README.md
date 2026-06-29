@@ -56,14 +56,19 @@ The program has three entry points that share the same input validation
 ### Command-line arguments
 
 ```bash
-dotnet run -- <n> <m> <k>
+dotnet run -- <n> <m> <k> [--mode A|B]
 ```
 
 - Prints the strategy tree for `n`, `m`, `k` to **stdout**.
-- The CLI always runs in two phases: it first prints the default strategy, then
-  performs compact refinement reusing the solved exact-step cache.
-- If compact refinement does not reduce output states, only the default strategy
-  is printed; otherwise both default and refined compact strategies are printed.
+- The CLI always runs in two stages: **step** (find the worst-case step count),
+  then **edge** (minimize displayed branch edges at that fixed step count).
+- Two modes select how the step stage is found:
+  - **B = exact** (default): a proven-optimal exact solve for step, then compact
+    refinement for edge.
+  - **A = greedy**: a fast greedy feasible strategy for step, then a budget-bounded
+    compact pass for edge. Fast and interruptible, but not proven optimal.
+- If the edge stage does not reduce output states, only the step strategy is
+  printed; otherwise both step and edge strategies are printed.
 - Search progress is written to **stderr**, so you can redirect the result on its
   own: `dotnet run -- 12 3 3 > tree.txt`.
 - `--help` (or `-h`) prints usage and exits.
@@ -91,7 +96,7 @@ $ dotnet run -- 5 3 2
 n=5, m=3, k=2
 worst-case steps = 3
 elapsed = 36.9 ms
-phases: exact-step = 18 ms, compact = 0 ms, build = 18 ms
+phases: step = 18 ms, edge = 0 ms, build = 18 ms
 
 ==================== diagnostics ====================
 searched states = 4
@@ -114,18 +119,20 @@ S1 [step 1/3] sort(#1, #2, #3)
 The output is grouped into four banner-delimited sections: a **summary**
 (parameters and the worst-case number of sorts), **diagnostics** (search
 telemetry), a **legend** explaining the notation, and the **strategy** tree
-itself. The CLI now runs default first and then compact refinement automatically:
-if refinement improves output-state count, both trees are printed; otherwise only
-the default tree is printed.
+itself. The CLI runs the step stage first and then the edge refinement
+automatically: if the edge stage improves output-state count, both trees are
+printed; otherwise only the step tree is printed.
 
 ### Desktop UI details
 
-Running without redirected input opens the WinForms explorer. During a run it
-shows live:
+Running without redirected input opens the WinForms explorer. A mode dropdown
+selects **exact (proven)** or **greedy (fast)**, matching the CLI `--mode B / A`.
+During a run it shows live:
 
 - searched / pending / output state counts
 - the current best root worst-case bound as incumbents improve
 - lower-bound pruning and cache-hit counters
+- two-stage timing (step, then edge), each counting from zero
 
 You can press **Stop** at any time to cancel a running search. For parameter
 combinations that are known to be expensive (large `n` with a mid-range sort

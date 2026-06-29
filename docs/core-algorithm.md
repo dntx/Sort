@@ -304,7 +304,7 @@ while (true)
 > 「`? ≤ opt ≤ ?`」。其余按 build 重新统计的计数器（`searched` / `output` / cache 命中等）仍照常重置，
 > 因为 compact 阶段会通过 `ObserveSearchState` / `VisitComparisonOutcomes` 重新填充它们。
 
-### 4.6 贪心可行解构造器（always-on phase 0）
+### 4.6 贪心可行解构造器（greedy 模式的 step 阶段）
 
 精确 minimax 之所以会爆炸，是因为它在**每个状态**上对**所有**候选分组取 min、并且要**证明最优**。
 贪心构造器把这两件昂贵的事都砍掉：
@@ -330,11 +330,13 @@ foreach (var outcome in group.EnumerateComparisonOutcomes(state))      // 但展
 - **夹逼**：`L = GetMinWorstCaseLowerBound(root, k)`（解析下界，与精确搜索**无关**、极便宜；`25,5,5 → 6`），经
   `RecordRootProvenLowerBound` 写入；`U = ` 贪心树的 `MaxStep`。于是 `L ≤ opt ≤ U`。若 `L == U` 则该可行解
   **恰好达到了已证明下界**，即**已证明最优**（显示 `opt = U (proven optimal)`）。
-- **always-on phase 0**：贪心解作为**第 0 阶段**总是先跑、并**始终保留**在 exact / compact 旁边（不是「精确解出后替换」），
-  因此用户在精确搜索还在跑（甚至跑不完）时，就有一棵可浏览的可行树和一个有保证的夹逼区间。CLI / GUI 把三棵展示树
-  统一命名为 **feasible / exact / compact**（`exact` 即此前文档中所称的「default 选择路径」`BuildDefaultPlan`）。
-- `StrategyPlan.IsFeasibleUpperBound == true` 标记这棵树是「可行上界」而非「精确最优」，CLI / GUI 据此渲染独立的
-  「feasible upper bound」区域。
+- **两种模式、各两阶段**：编排层提供两条互斥的「step → edge」流水线，CLI 用 `--mode A|B`、GUI 用下拉框切换：
+  - **exact 模式（B，默认）**：step = 精确求解 `BuildDefaultPlan`（已证明最优），edge = compact `BuildCompactPlan`。
+    **不跑贪心 feasible**。
+  - **greedy 模式（A，快速）**：step = 贪心 feasible `BuildFeasiblePlan`（可行上界 `U`），edge = 有界 compact
+    `BuildFeasibleCompactPlan`（以 `U` 为步数上限收紧边数，可顺带「免费」拿到更小步数）。快速、可中断、非证明最优。
+- `StrategyPlan.IsFeasibleUpperBound == true` 标记这棵树是「可行上界」而非「精确最优」，CLI / GUI 据此渲染相应的
+  step 区域。
 
 ---
 
@@ -584,5 +586,5 @@ width = ActiveCount - maxBipartiteMatching;   // GetActivePosetWidth
 | 规范形 / 对称约减 | `ComparisonState.ComputeCanonicalForm`、`GetCanonicalKey`、`GetGroupCanonicalKey` |
 | 支配下界 | `StrategyBuilder.Dominance.cs`、`ApplyDominanceLowerBound` |
 | 紧凑搜索变体 | `StrategyBuilder.Compact.cs` |
-| 贪心可行解构造器（phase 0 / 可行上界 U） | `StrategyBuilder.Greedy.cs` → `BuildFeasiblePlan`、`SolveGreedySelection`；`StrategyPlan.IsFeasibleUpperBound` |
+| 贪心可行解构造器（greedy 模式 step / 可行上界 U） | `StrategyBuilder.Greedy.cs` → `BuildFeasiblePlan`、`SolveGreedySelection`；`StrategyPlan.IsFeasibleUpperBound` |
 | 回归 / 计数监控 | `TopKFinder.Tests/StrategyRegressionTests.cs`、`DominanceMetricTests.cs` |
