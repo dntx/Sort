@@ -587,27 +587,21 @@ class MainForm : Form
             reportCombinedRunProgress: true);
         try
         {
-            // Phase 0: greedy feasible strategy. Instant even on shapes the exact search never
-            // resolves (e.g. 25,5,5), so it gives the user a real, browsable strategy plus a
-            // squeeze L <= opt <= U immediately, before the (possibly unbounded) exact search.
-            StrategyPlan feasiblePlan = await Task.Run(() => builder.BuildFeasiblePlan(), cancellationToken);
-            Interlocked.Exchange(ref _feasibleElapsedMs, _runStopwatch?.ElapsedMilliseconds ?? 0);
-            _feasiblePlan = feasiblePlan;
-            _latestProgress = CreateSnapshotFromPlan(feasiblePlan);
-            PopulateTree(feasiblePlan, defaultPlan: null, compactPlan: null, exactImproved: false, compactImproved: false);
-            _completedFeasibleStats = feasiblePlan.SearchStatistics;
-            UpdateSummaryText(feasiblePlan, defaultPlan: null, compactPlan: null, compactImproved: false);
-            UpdateStatsPanels();
-
-            // The feasible plan is on screen and the exact phases run on a background thread, so the
-            // UI thread is free: drop the wait cursor and keep tree navigation enabled for the rest
-            // of the run (the user can browse the feasible strategy while exact search continues).
-            SetRunUiState(RunUiState.CompactComputingInteractive);
-
             if (feasibleMode)
             {
-                // Mode A: skip the exact search; compact uses the feasible upper bound U as its step
-                // ceiling. The feasible plan stays the incumbent the compact pass must strictly beat.
+                // Greedy mode: a fast greedy feasible plan (step) gives an instant browsable strategy
+                // even on shapes exact never resolves (e.g. 25,5,5), then a budget-bounded compact
+                // pass (edge) trims displayed edges under the feasible ceiling U.
+                StrategyPlan feasiblePlan = await Task.Run(() => builder.BuildFeasiblePlan(), cancellationToken);
+                Interlocked.Exchange(ref _feasibleElapsedMs, _runStopwatch?.ElapsedMilliseconds ?? 0);
+                _feasiblePlan = feasiblePlan;
+                _latestProgress = CreateSnapshotFromPlan(feasiblePlan);
+                PopulateTree(feasiblePlan, defaultPlan: null, compactPlan: null, exactImproved: false, compactImproved: false);
+                _completedFeasibleStats = feasiblePlan.SearchStatistics;
+                UpdateSummaryText(feasiblePlan, defaultPlan: null, compactPlan: null, compactImproved: false);
+                UpdateStatsPanels();
+                SetRunUiState(RunUiState.CompactComputingInteractive);
+
                 Interlocked.Exchange(ref _activePhase, 2);
                 StrategyPlan feasibleCompactPlan = await Task.Run(() => builder.BuildFeasibleCompactPlan(), cancellationToken);
                 _runStopwatch?.Stop();
@@ -622,20 +616,28 @@ class MainForm : Form
                 return;
             }
 
-            // Phase 1: default exact plan. Already MaxStep-optimal (compact only trims edges among
-            // equally-optimal groups), so fold it into the tree as soon as it is ready.
+            // Exact mode: no feasible phase. Phase 1 is the proven-optimal exact plan (step), used as
+            // both the incumbent and the displayed step strategy; phase 2 is the compact refinement
+            // (edge). The exact plan is MaxStep-optimal, so compact only trims edges among equally
+            // optimal groups.
             Interlocked.Exchange(ref _activePhase, 1);
             StrategyPlan defaultPlan = await Task.Run(() => builder.BuildDefaultPlan(), cancellationToken);
             Interlocked.Exchange(ref _phase1ElapsedMs, _runStopwatch?.ElapsedMilliseconds ?? 0);
 
             _defaultPlan = defaultPlan;
-            _exactImproved = defaultPlan.IsStrictRefinementOver(feasiblePlan);
-            StrategyPlan incumbent = _exactImproved ? defaultPlan : feasiblePlan;
+            _feasiblePlan = defaultPlan;
+            _exactImproved = true;
+            StrategyPlan incumbent = defaultPlan;
             _latestProgress = CreateSnapshotFromPlan(defaultPlan);
-            FinalizeDefaultInTree(feasiblePlan, defaultPlan, _exactImproved);
+            PopulateTree(defaultPlan, defaultPlan, compactPlan: null, exactImproved: true, compactImproved: false);
             _completedDefaultStats = defaultPlan.SearchStatistics;
-            UpdateSummaryText(feasiblePlan, defaultPlan, compactPlan: null, compactImproved: false);
+            UpdateSummaryText(defaultPlan, defaultPlan, compactPlan: null, compactImproved: false);
             UpdateStatsPanels();
+
+            // The exact plan is on screen; the compact pass runs on a background thread, so the UI
+            // thread is free: drop the wait cursor and keep tree navigation enabled for the rest of
+            // the run (the user can browse the step strategy while compact search continues).
+            SetRunUiState(RunUiState.CompactComputingInteractive);
 
             // Phase 2: compact refinement.
             Interlocked.Exchange(ref _activePhase, 2);
@@ -648,7 +650,7 @@ class MainForm : Form
             _latestProgress = CreateSnapshotFromPlan(compactPlan);
             FinalizeCompactInTree(defaultPlan, compactPlan, _compactImproved);
             _completedCompactStats = compactPlan.SearchStatistics;
-            UpdateSummaryText(feasiblePlan, defaultPlan, compactPlan, _compactImproved);
+            UpdateSummaryText(defaultPlan, defaultPlan, compactPlan, _compactImproved);
             UpdateStatsPanels();
         }
         catch (OperationCanceledException)
@@ -761,30 +763,6 @@ class MainForm : Form
         return BuildTwoPhaseDetails(defaultPlan, compactPlan, compactImproved);
     }
 
-    // Folds the finished exact plan into the tree by replacing the step slot (0) in place, leaving
-    // the edge placeholder (1) -- and the user's expand/scroll/selection state -- untouched.
-    private void FinalizeDefaultInTree(StrategyPlan feasiblePlan, StrategyPlan defaultPlan, bool exactImproved)
-    {
-        // Defensive fallback: if the tree was cleared/rebuilt out from under us (e.g. a theme switch
-        // mid-search), rebuild from scratch with the edge slot still pending.
-        if (_treeView.Nodes.Count == 0 || _treeView.Nodes[0].Nodes.Count < 2)
-        {
-            PopulateTree(feasiblePlan, defaultPlan, compactPlan: null, exactImproved, compactImproved: false);
-            return;
-        }
-
-        _treeView.BeginUpdate();
-        TreeNode root = _treeView.Nodes[0];
-        root.Text = BuildRootLabel(feasiblePlan, defaultPlan, compactPlan: null);
-        root.Tag = BuildDefaultOnlyDetails(defaultPlan);
-
-        root.Nodes.RemoveAt(0);
-        root.Nodes.Insert(0, CreatePlanTreeRoot($"step (worst-case {defaultPlan.MaxStep})", defaultPlan, "default"));
-        _treeView.EndUpdate();
-
-        FinalizeDefaultInOverview(defaultPlan, exactImproved);
-    }
-
     // Incrementally folds the finished edge result into the already-rendered tree instead of
     // rebuilding from scratch. The step subtree (root.Nodes[0]) -- along with its navigation map
     // entries -- is left untouched, so a user mid-browse keeps their expand/scroll/selection state.
@@ -886,19 +864,6 @@ class MainForm : Form
         else
             _overviewTree.Nodes.Add(BuildOverviewNoteNode("edge overview: no better result (total edges unchanged or worse)"));
 
-        _overviewTree.EndUpdate();
-    }
-
-    // Incrementally folds the finished exact result into the overview, mirroring the tree update:
-    // the step section (0) is replaced in place, leaving the trailing edge placeholder (1) untouched.
-    private void FinalizeDefaultInOverview(StrategyPlan defaultPlan, bool exactImproved)
-    {
-        if (_overviewTree.Nodes.Count < 2)
-            return;
-
-        _overviewTree.BeginUpdate();
-        _overviewTree.Nodes.RemoveAt(0);
-        _overviewTree.Nodes.Insert(0, BuildOverviewSectionNode(defaultPlan, "default", "step overview"));
         _overviewTree.EndUpdate();
     }
 
@@ -1518,28 +1483,29 @@ class MainForm : Form
         long phase1Ms = Interlocked.Read(ref _phase1ElapsedMs);
         long totalMs = (long)((_runStopwatch?.Elapsed.TotalMilliseconds) ?? 0);
 
-        // Two-stage clock: the "step" stage finds the worst-case step count (feasible bound, plus the
-        // exact proof in exact mode), then the "edge" stage minimizes displayed edges (compact). Each
-        // stage counts from zero. The exact pass folds into step, so step ends at the phase-1 boundary.
+        // Two-stage clock: the "step" stage finds the worst-case step count (greedy bound in greedy
+        // mode, exact solve in exact mode), then the "edge" stage minimizes displayed edges (compact).
+        // Each stage counts from zero. The step pass folds into step, so step ends at the phase-1 boundary.
         long stepDoneMs = -1;
-        if (_completedFeasibleStats is { } fStats)
+        if (_feasibleMode && _completedFeasibleStats is { } fStats)
             stepDoneMs = fStats.Phase1Milliseconds + fStats.Phase2Milliseconds;
-        if (!_feasibleMode && _completedDefaultStats is { } dStats)
-            stepDoneMs += dStats.Phase1Milliseconds + dStats.Phase2Milliseconds;
+        else if (!_feasibleMode && _completedDefaultStats is { } dStats)
+            stepDoneMs = dStats.Phase1Milliseconds + dStats.Phase2Milliseconds;
 
         string stepLine;
-        if (stepDoneMs >= 0 && (_feasibleMode || _completedDefaultStats is not null))
+        if (stepDoneMs >= 0)
             stepLine = $"step: {stepDoneMs / 1000.0:F3} s";
         else if (_runStopwatch is not null && phase < 2)
             stepLine = $"step: {totalMs / 1000.0:F3} s";
         else
             stepLine = "step: -";
 
+        long edgeBaseMs = _feasibleMode ? feasibleMs : phase1Ms;
         string edgeLine;
         if (_completedCompactStats is { } compactStats)
             edgeLine = $"edge: {(compactStats.Phase1bMilliseconds + compactStats.Phase2Milliseconds) / 1000.0:F3} s";
-        else if (_runStopwatch is not null && phase >= 2 && phase1Ms >= 0)
-            edgeLine = $"edge: {Math.Max(0, totalMs - phase1Ms) / 1000.0:F3} s";
+        else if (_runStopwatch is not null && phase >= 2 && edgeBaseMs >= 0)
+            edgeLine = $"edge: {Math.Max(0, totalMs - edgeBaseMs) / 1000.0:F3} s";
         else
             edgeLine = "edge: -";
 
@@ -1642,7 +1608,6 @@ class MainForm : Form
             };
         return _activePhase switch
         {
-            0 => "step: greedy bound",
             1 => "step: exact solve+build",
             2 => "edge",
             _ => "-",

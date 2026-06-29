@@ -199,23 +199,20 @@ class Program
             ReportProgress,
             reportCombinedRunProgress: true);
 
-        // Phase 0: greedy feasible strategy. Instant even on shapes the exact search never
-        // resolves (e.g. 25,5,5), so it always gives the user a real strategy plus a squeeze
-        // L <= opt <= U before the (possibly unbounded) exact search begins.
-        StrategyPlan feasiblePlan = builder.BuildFeasiblePlan();
-        ClearProgressLine();
-        Console.WriteLine($"==================== step ({FormatSqueeze(feasiblePlan)}) ====================");
-        Console.WriteLine("(a valid strategy that achieves the upper bound; not proven optimal)");
-        Console.Write(StrategyOverviewRenderer.RenderText(feasiblePlan));
-        Console.WriteLine();
-        Console.Write(StrategyTextRenderer.Render(feasiblePlan));
-        Console.WriteLine();
-
         if (feasibleMode)
         {
-            // Mode A (greedy): skip the exact search entirely. The edge stage uses the greedy upper
-            // bound U as its step ceiling, minimizes edges under U, and may pick up a smaller real step
-            // for free. Fast/interruptible, not proven optimal.
+            // Mode A (greedy): a fast greedy feasible plan (step) gives a valid bound, then the edge
+            // stage uses U as its step ceiling, minimizes edges under U, and may pick up a smaller
+            // real step for free. Fast/interruptible, not proven optimal.
+            StrategyPlan feasiblePlan = builder.BuildFeasiblePlan();
+            ClearProgressLine();
+            Console.WriteLine($"==================== step ({FormatSqueeze(feasiblePlan)}) ====================");
+            Console.WriteLine("(a valid strategy that achieves the upper bound; not proven optimal)");
+            Console.Write(StrategyOverviewRenderer.RenderText(feasiblePlan));
+            Console.WriteLine();
+            Console.Write(StrategyTextRenderer.Render(feasiblePlan));
+            Console.WriteLine();
+
             StrategyPlan feasibleCompact = builder.BuildFeasibleCompactPlan();
             ClearProgressLine();
             if (feasibleCompact.IsStrictRefinementOver(feasiblePlan))
@@ -229,30 +226,16 @@ class Program
             return;
         }
 
+        // Mode B (exact): no feasible phase. The exact search (step) proves the optimum, then the
+        // compact phase (edge) trims displayed edges among equally optimal groups.
         StrategyPlan defaultPlan = builder.BuildDefaultPlan();
         ClearProgressLine();
+        Console.WriteLine($"==================== step ({FormatSqueeze(defaultPlan)}) ====================");
+        Console.Write(StrategyOverviewRenderer.RenderText(defaultPlan));
         Console.WriteLine();
+        Console.Write(StrategyTextRenderer.Render(defaultPlan));
 
-        // The exact search always PROVES the optimum, but its tree only earns a fresh section when
-        // it strictly refines the feasible strategy already shown (fewer steps, or equal steps with
-        // fewer edges). When it does not, we skip the redundant tree and just record the proof that
-        // the feasible strategy above is already optimal. The better of the two becomes the incumbent
-        // the compact phase must beat.
-        bool exactImproved = defaultPlan.IsStrictRefinementOver(feasiblePlan);
-        StrategyPlan incumbent = exactImproved ? defaultPlan : feasiblePlan;
-        if (exactImproved)
-        {
-            Console.WriteLine("==================== step (exact) ====================");
-            Console.Write(StrategyOverviewRenderer.RenderText(defaultPlan));
-            Console.WriteLine();
-            Console.Write(StrategyTextRenderer.Render(defaultPlan));
-        }
-        else
-        {
-            Console.WriteLine($"==================== step (exact, opt = {defaultPlan.MaxStep}, proven) ====================");
-            Console.WriteLine("the feasible strategy above is already optimal; exact search found nothing better.");
-        }
-
+        StrategyPlan incumbent = defaultPlan;
         StrategyPlan compactPlan = builder.BuildCompactPlan();
         bool compactImproved = compactPlan.IsStrictRefinementOver(incumbent);
         if (!compactImproved)
