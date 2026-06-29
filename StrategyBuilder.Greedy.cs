@@ -19,9 +19,21 @@ partial class StrategyBuilder
     // beam width > 1 does NOT improve U on 25,5,5 while it does blow up the closure, so the
     // constructor deliberately keeps beam width 1.
     private bool _useGreedySelection;
+    private bool _greedySolved;
     private int _greedyStatesSolved;
     private readonly Dictionary<SearchStateKey, BestGroupPattern> _greedyGroupPatternCache = new();
     private readonly HashSet<SearchStateKey> _greedyVisited = new();
+    private readonly Dictionary<SearchStateKey, int> _greedyStepsMemo = new();
+
+    // Solves the greedy single-policy closure once and reuses it across phases. Feasible+compact
+    // depends on the per-state feasible step memo this populates.
+    private void EnsureGreedySolved()
+    {
+        if (_greedySolved)
+            return;
+        SolveGreedySelection(new ComparisonState(_n), _k);
+        _greedySolved = true;
+    }
 
     public StrategyPlan BuildFeasiblePlan()
     {
@@ -39,7 +51,7 @@ partial class StrategyBuilder
         // Greedy "phase 1": pick the single best-priority group per reachable state and cache its
         // pattern. This does NOT call EnsurePhase1Solved -- the exact search is exactly what we are
         // avoiding here.
-        SolveGreedySelection(new ComparisonState(_n), _k);
+        EnsureGreedySolved();
         _phase1Milliseconds = stopwatch.ElapsedMilliseconds;
 
         // L side of the squeeze: a proven analytic lower bound on the root optimum, computed
@@ -104,6 +116,9 @@ partial class StrategyBuilder
         ReportProgress();
 
         // Recurse on every adversary outcome (the "max" layer is unavoidable for a valid strategy).
+        // Track the deepest branch so this state's feasible worst-case step count is cached: it is
+        // the per-state upper bound the feasible+compact pass uses as its edge-minimization budget.
+        int maxBranchSteps = 0;
         VisitComparisonOutcomes(
             state,
             fixedTopMask: 0,
@@ -114,7 +129,29 @@ partial class StrategyBuilder
             onUsefulOutcome: outcome =>
             {
                 SolveGreedySelection(outcome.NextState, outcome.NextRemainingSlots);
+                int branchSteps = GetGreedyFeasibleSteps(outcome.NextState, outcome.NextRemainingSlots);
+                if (branchSteps > maxBranchSteps)
+                    maxBranchSteps = branchSteps;
                 return true;
             });
+
+        _greedyStepsMemo[key] = 1 + maxBranchSteps;
+    }
+
+    // Feasible worst-case steps for a state under the greedy policy: 0 for the no-comparison
+    // terminals (mirrors SolveGreedySelection's base cases), otherwise the cached subtree depth.
+    private int GetGreedyFeasibleSteps(ComparisonState state, int remainingSlots)
+    {
+        ulong ignoredFixedTopMask = 0;
+        NormalizeState(state, ref ignoredFixedTopMask, ref remainingSlots);
+        if (remainingSlots == 0)
+            return 0;
+        if (TryGetDeterminedTopSet(state, remainingSlots, out _))
+            return 0;
+        if (state.ActiveCount <= remainingSlots)
+            return 0;
+        if (state.ActiveCount <= _m)
+            return 0;
+        return _greedyStepsMemo.TryGetValue(GetSearchStateKey(state, remainingSlots), out int steps) ? steps : 0;
     }
 }

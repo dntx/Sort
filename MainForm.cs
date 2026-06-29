@@ -73,6 +73,7 @@ class MainForm : Form
     private readonly TextBox _mTextBox;
     private readonly TextBox _kTextBox;
     private readonly ComboBox _themeComboBox;
+    private readonly ComboBox _modeComboBox;
     private readonly Button _runButton;
     private readonly Button _stopButton;
     private readonly Button _treeExpandButton;
@@ -150,6 +151,17 @@ class MainForm : Form
         _themeComboBox.Items.AddRange(Enum.GetNames<ColorTheme>());
         _themeComboBox.SelectedItem = ColorTheme.Dark.ToString();
         _themeComboBox.SelectedIndexChanged += (_, _) => ApplyTheme(ParseSelectedTheme());
+
+        // Search mode: B (default) = exact + compact (proven optimal); A = feasible + compact
+        // (fast, interruptible, not proven optimal).
+        _modeComboBox = new ComboBox
+        {
+            Width = 200,
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Margin = new Padding(0, 4, 0, 0),
+        };
+        _modeComboBox.Items.AddRange(new object[] { "B: exact + compact", "A: feasible + compact" });
+        _modeComboBox.SelectedIndex = 0;
 
         _runButton = new Button
         {
@@ -236,6 +248,7 @@ class MainForm : Form
         inputsPanel.Controls.Add(CreateLabeledInput("n", _nTextBox));
         inputsPanel.Controls.Add(CreateLabeledInput("m", _mTextBox));
         inputsPanel.Controls.Add(CreateLabeledInput("k", _kTextBox));
+        inputsPanel.Controls.Add(CreateLabeledInput("mode", _modeComboBox));
         inputsPanel.Controls.Add(CreateLabeledInput("theme", _themeComboBox));
 
         var actionsPanel = new FlowLayoutPanel
@@ -537,6 +550,7 @@ class MainForm : Form
 
         _runCancellationSource?.Dispose();
         _runCancellationSource = new CancellationTokenSource();
+        bool feasibleMode = _modeComboBox.SelectedIndex == 1;
         CancellationToken cancellationToken = _runCancellationSource.Token;
         IProgress<SearchProgressSnapshot> progress = new Progress<SearchProgressSnapshot>(UpdateSearchProgress);
         _latestProgress = CreateInitialProgressSnapshot();
@@ -587,6 +601,24 @@ class MainForm : Form
             // UI thread is free: drop the wait cursor and keep tree navigation enabled for the rest
             // of the run (the user can browse the feasible strategy while exact search continues).
             SetRunUiState(RunUiState.CompactComputingInteractive);
+
+            if (feasibleMode)
+            {
+                // Mode A: skip the exact search; compact uses the feasible upper bound U as its step
+                // ceiling. The feasible plan stays the incumbent the compact pass must strictly beat.
+                Interlocked.Exchange(ref _activePhase, 2);
+                StrategyPlan feasibleCompactPlan = await Task.Run(() => builder.BuildFeasibleCompactPlan(), cancellationToken);
+                _runStopwatch?.Stop();
+
+                _compactPlan = feasibleCompactPlan;
+                _compactImproved = feasibleCompactPlan.IsStrictRefinementOver(feasiblePlan);
+                _latestProgress = CreateSnapshotFromPlan(feasibleCompactPlan);
+                FinalizeCompactInTree(feasiblePlan, feasibleCompactPlan, _compactImproved);
+                _completedCompactStats = feasibleCompactPlan.SearchStatistics;
+                UpdateSummaryText(feasiblePlan, defaultPlan: null, compactPlan: feasibleCompactPlan, compactImproved: _compactImproved);
+                UpdateStatsPanels();
+                return;
+            }
 
             // Phase 1: default exact plan. Already MaxStep-optimal (compact only trims edges among
             // equally-optimal groups), so fold it into the tree as soon as it is ready.
@@ -1487,6 +1519,7 @@ class MainForm : Form
         UseWaitCursor = state == RunUiState.Running;
         _runButton.Enabled = !running;
         _stopButton.Enabled = running;
+        _modeComboBox.Enabled = !running;
         _treeExpandButton.Enabled = interactive;
         _treeCollapseButton.Enabled = interactive;
         _overviewExpandButton.Enabled = interactive;

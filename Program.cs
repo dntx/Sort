@@ -16,6 +16,8 @@ class Program
         "\n" +
         "Options:\n" +
         "  -h, --help      Show this help and exit.\n" +
+        "  --mode A|B      Search mode. B (default) = exact + compact (proven optimal).\n" +
+        "                  A = feasible + compact (fast, interruptible, not proven optimal).\n" +
         "\n" +
         "Arguments:\n" +
         "  n   total number of elements   (1 <= n <= 64)\n" +
@@ -42,7 +44,7 @@ class Program
                 return;
             }
 
-            if (!TryParseCliArgs(args, out string? nText, out string? mText, out string? kText, out string? argError))
+            if (!TryParseCliArgs(args, out string? nText, out string? mText, out string? kText, out bool feasibleMode, out string? argError))
             {
                 Console.WriteLine(argError);
                 Console.WriteLine(UsageText);
@@ -55,7 +57,7 @@ class Program
                 return;
             }
 
-            RunHeadless(nFromArgs, mFromArgs, kFromArgs);
+            RunHeadless(nFromArgs, mFromArgs, kFromArgs, feasibleMode);
             return;
         }
 
@@ -81,7 +83,7 @@ class Program
             return;
         }
 
-        RunHeadless(n, m, k);
+        RunHeadless(n, m, k, feasibleMode: false);
     }
 
     public static bool IsHelpRequested(string[] args)
@@ -94,18 +96,39 @@ class Program
         out string? nText,
         out string? mText,
         out string? kText,
+        out bool feasibleMode,
         out string? error)
     {
         nText = null;
         mText = null;
         kText = null;
+        feasibleMode = false;
         error = null;
 
         var positionals = new System.Collections.Generic.List<string>();
 
-        foreach (string arg in args)
+        for (int i = 0; i < args.Length; i++)
         {
-            if (arg.StartsWith("-", StringComparison.Ordinal))
+            string arg = args[i];
+            if (arg == "--mode")
+            {
+                if (i + 1 >= args.Length)
+                {
+                    error = "Error: --mode requires a value (A or B)";
+                    return false;
+                }
+                string value = args[++i];
+                if (string.Equals(value, "A", StringComparison.OrdinalIgnoreCase))
+                    feasibleMode = true;
+                else if (string.Equals(value, "B", StringComparison.OrdinalIgnoreCase))
+                    feasibleMode = false;
+                else
+                {
+                    error = $"Error: unknown mode '{value}' (expected A or B)";
+                    return false;
+                }
+            }
+            else if (arg.StartsWith("-", StringComparison.Ordinal))
             {
                 error = $"Error: unknown option '{arg}'";
                 return false;
@@ -128,7 +151,7 @@ class Program
         return true;
     }
 
-    private static void RunHeadless(int n, int m, int k)
+    private static void RunHeadless(int n, int m, int k, bool feasibleMode)
     {
         int canonicalK = Math.Min(k, n - k);
         if (canonicalK != k)
@@ -187,6 +210,24 @@ class Program
         Console.WriteLine();
         Console.Write(StrategyTextRenderer.Render(feasiblePlan));
         Console.WriteLine();
+
+        if (feasibleMode)
+        {
+            // Mode A (feasible + compact): skip the exact search entirely. The compact phase uses the
+            // feasible upper bound U as its step ceiling, minimizes edges under U, and may pick up a
+            // smaller real step for free. Fast/interruptible, not proven optimal.
+            StrategyPlan feasibleCompact = builder.BuildFeasibleCompactPlan();
+            ClearProgressLine();
+            if (feasibleCompact.IsStrictRefinementOver(feasiblePlan))
+            {
+                Console.WriteLine();
+                Console.WriteLine("==================== compact refinement ====================");
+                Console.Write(StrategyOverviewRenderer.RenderText(feasibleCompact));
+                Console.WriteLine();
+                Console.Write(StrategyTextRenderer.Render(feasibleCompact));
+            }
+            return;
+        }
 
         StrategyPlan defaultPlan = builder.BuildDefaultPlan();
         ClearProgressLine();
