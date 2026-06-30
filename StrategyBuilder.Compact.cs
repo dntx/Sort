@@ -13,6 +13,15 @@ partial class StrategyBuilder
     private bool _useCompactSelection;
     private bool _compactUsesFeasibleBudget;
     private int _compactStatesSolved;
+
+    // Per-state cap on how many candidate groups the greedy edge phase (mode A) generates and
+    // evaluates before committing. At large m a single state can have 1000+ distinct step-optimal
+    // groups, and generating + orbit-deduping + FitChildren over all of them is what makes the edge
+    // phase appear to hang on shapes like 25,10,10 while the constructive step phase finishes in
+    // seconds. The constructive group is always evaluated first (a proven within-budget choice), so any
+    // cap keeps the phase correct -- it only trades a little per-state edge-count minimization for a
+    // bounded, interruptible runtime. int.MaxValue preserves the original exhaustive behavior.
+    internal int CompactGreedyCandidateCap = 128;
     private int _compactGroupsEnumerated;
     private int _compactStepOptimalGroups;
     private readonly Dictionary<SearchStateKey, BestGroupPattern> _compactGroupPatternCache = new();
@@ -235,8 +244,33 @@ partial class StrategyBuilder
         }
 
         var fits = new List<(List<int> Group, List<(ComparisonState State, int RemainingSlots)> Children)>();
-        foreach (var group in EnumerateDistinctGroups(state, candidates, groupSize))
+
+        // Always evaluate the constructive group first: it is the exact choice the step phase made and
+        // is therefore guaranteed solvable within the threaded budget for THIS state, so it always
+        // provides a within-budget seed. (The cap must still be generous enough -- 128 by default -- that
+        // children reached through the greedy recursion can likewise find a solvable group; starving the
+        // candidate set too aggressively makes a descendant return the unsolvable sentinel and cascade
+        // failures back up, which is why very low caps are unsound.)
+        List<int> constructiveGroup = ChooseConstructiveGroup(state, remainingSlots);
+        var seen = new HashSet<IntSequenceKey>();
+        var constructiveChildren = FitChildren(constructiveGroup);
+        if (constructiveChildren is not null)
         {
+            _compactGroupsEnumerated++;
+            _compactStepOptimalGroups++;
+            seen.Add(new IntSequenceKey(constructiveGroup.ToArray()));
+            fits.Add((constructiveGroup, constructiveChildren));
+        }
+
+        // Evaluate enumerated groups (generation-capped by CompactGreedyCandidateCap), looking for one
+        // with fewer distinct children (a cheap displayed-edge proxy) than the constructive choice. The
+        // cap bounds BOTH the representative generation/dedup and the FitChildren cost per state -- the
+        // materialized full enumeration over thousands of large-m groups is what makes the edge phase
+        // hang. The constructive group above guarantees correctness regardless of the cap.
+        foreach (var group in EnumerateDistinctGroups(state, candidates, groupSize, CompactGreedyCandidateCap))
+        {
+            if (!seen.Add(new IntSequenceKey(group.ToArray())))
+                continue;
             ThrowIfCancellationRequested();
             _compactGroupsEnumerated++;
             var children = FitChildren(group);

@@ -340,8 +340,14 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     edge 阶段的根预算优先取**step 阶段物化得到的 `U`**（同一个 builder 实例先跑 step、再跑 edge，编排层正是这样复用的）——
     这是最紧且可靠的预算：step 树本身就是一个 `U` 步解的见证，所以 compact 在该上限下绝不会需要超过 `U` 步，从而保证
     **edge 计划不会比 step 更差**。若 edge 阶段被独立调用（builder 上没有先跑 step），则回退到**精简版**上界
-    `ConstructiveRootUpperBound`（不做物化去重、计满整条最长路径，因此 `≥` 物化 `U`，可靠但略松）。注意：`25,10,10`
-    这类大 `m` 形状的 edge 阶段（`EnumerateDistinctGroups`）本身就很慢，与预算松紧无关，按设计可中断。
+    `ConstructiveRootUpperBound`（不做物化去重、计满整条最长路径，因此 `≥` 物化 `U`，可靠但略松）。在大 `m`
+    形状（如 `25,10,10`）上，单个状态可能有上千个不同的步最优分组，过去 edge 阶段（`EnumerateDistinctGroups`）
+    会把它们**全部生成 + McKay 去重**，于是几乎卡死。现在生成本身带一个 per-state 上限
+    `CompactGreedyCandidateCap`（默认 128，见 `GenerateClassRepresentatives` 的 `generationCap`）：先把 step 阶段的
+    构造式分组作为种子第一个评估（保证有界内必有可行解），再生成至多 `cap` 个代表参与「子节点最少」的贪心挑选。
+    分组数 `≤ cap` 的状态因此与穷举**逐字节相同**（小/中形状毫无变化），只有分组数超过 `cap` 的大 `m` 状态被截断——
+    用一点边数紧凑度换取**有界、可中断**的运行时间（`25,10,10` 由「出不来」降到约 23 s）。`int.MaxValue` 恢复原先
+    的完整穷举，精确（exact）模式与最优性审计仍走未截断路径。
 - `StrategyPlan.IsFeasibleUpperBound == true` 标记这棵树是「可行上界」而非「精确最优」，CLI / GUI 据此渲染相应的
   step 区域。
 
