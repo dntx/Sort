@@ -76,6 +76,26 @@ sealed class StrategyPlan
     }
 }
 
+// One stage of the greedy edge progression as it is produced by BuildFeasibleCompactPlan: the
+// baseline compact pass, each successful downward tightening, or the final proven-infeasible ceiling.
+// Name is the stage label (e.g. "compact", "compact<=4"); Plan is the materialized strategy, or null
+// when the stage proved no better solution exists (no-solution). Elapsed is the stage's own wall time,
+// not a cumulative total.
+readonly struct GreedyEdgeStage
+{
+    public GreedyEdgeStage(string name, StrategyPlan? plan, TimeSpan elapsed)
+    {
+        Name = name;
+        Plan = plan;
+        Elapsed = elapsed;
+    }
+
+    public string Name { get; }
+    public StrategyPlan? Plan { get; }
+    public TimeSpan Elapsed { get; }
+    public bool HasSolution => Plan is not null;
+}
+
 sealed class SearchMilestone
 {
     public SearchMilestone(

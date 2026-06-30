@@ -138,11 +138,12 @@ partial class StrategyBuilder
     // bound U instead of the proven optimum, so the exact search is never run. The compact DP minimizes
     // displayed edges under U and reports the actual MaxStep realized (often below U via free pickup).
     // Fast and interruptible, not proven optimal.
-    // onImprovedPlan, when supplied, is invoked synchronously on this thread each time a better edge
-    // plan becomes available: first for the baseline pass, then once per accepted tightening step
-    // (each strictly smaller max-step than the last). This drives an anytime UI/CLI that surfaces every
-    // intermediate strategy as it is found, rather than only the final result.
-    public StrategyPlan BuildFeasibleCompactPlan(Action<StrategyPlan>? onImprovedPlan = null)
+    // onStage, when supplied, is invoked synchronously on this thread each time an edge stage becomes
+    // available: first for the baseline compact pass ("compact"), then once per downward tightening
+    // attempt ("compact≤N", carrying the smaller plan), and finally once for the proven-infeasible
+    // ceiling (a no-solution stage whose plan is null). This drives an anytime UI/CLI that surfaces the
+    // full compact → compact≤N progression as it is found, rather than only the final result.
+    public StrategyPlan BuildFeasibleCompactPlan(Action<GreedyEdgeStage>? onStage = null)
     {
         _progressScope = _reportCombinedRunProgress
             ? ProgressScope.CompactFeasibleInCombinedRun
@@ -151,8 +152,8 @@ partial class StrategyBuilder
         // Baseline compact pass at the threaded step ceiling U (always feasible: the step tree itself
         // witnesses a U-step solution).
         StrategyPlan baseline = BuildPlan(useCompactSelection: true, useFeasibleBudget: true);
-        onImprovedPlan?.Invoke(baseline);
-        return EnableFeasibleTightening ? TightenFeasibleCompact(baseline, onImprovedPlan) : baseline;
+        onStage?.Invoke(new GreedyEdgeStage("compact", baseline, baseline.Elapsed));
+        return EnableFeasibleTightening ? TightenFeasibleCompact(baseline, onStage) : baseline;
     }
 
     // Opportunistically lowers the greedy edge plan's max-step by re-running the compact pass at
@@ -160,7 +161,7 @@ partial class StrategyBuilder
     // max-step; the loop stops at the first infeasible ceiling (optimum reached), at the proven lower
     // bound L, when the soft time budget is exhausted, or on user cancellation -- always returning the
     // best (smallest max-step) plan found, never worse than the baseline.
-    private StrategyPlan TightenFeasibleCompact(StrategyPlan baseline, Action<StrategyPlan>? onImprovedPlan)
+    private StrategyPlan TightenFeasibleCompact(StrategyPlan baseline, Action<GreedyEdgeStage>? onStage)
     {
         StrategyPlan best = baseline;
         int provenLowerBound = Math.Max(1, _rootProvenLowerBound);
@@ -181,6 +182,9 @@ partial class StrategyBuilder
             _tighteningDeadlineUtc = DateTime.UtcNow.AddMilliseconds(remainingMs);
             _tighteningDeadlineHit = false;
             StrategyPlan? candidate;
+            // This probe's own wall time, captured even when the probe proves infeasible (returns null)
+            // so the no-solution stage still reports its elapsed.
+            var probeStopwatch = Stopwatch.StartNew();
             try
             {
                 candidate = ProbeFeasibleCompact(budget);
@@ -192,15 +196,25 @@ partial class StrategyBuilder
             finally
             {
                 _tighteningDeadlineUtc = null;
+                probeStopwatch.Stop();
             }
 
+            // The soft deadline aborted this probe before it could decide feasibility: stop without
+            // emitting a stage (an aborted probe is not a proven no-solution).
             if (_tighteningDeadlineHit)
                 break;
+
+            string stageName = $"compact\u2264{budget}";
             if (candidate is null)
-                break; // infeasible at this ceiling -> the previous best is the optimum within reach
+            {
+                // Proven infeasible at this ceiling -> the previous best is the optimum within reach.
+                // Surface it as a no-solution stage so the UI/CLI shows the search bottomed out here.
+                onStage?.Invoke(new GreedyEdgeStage(stageName, null, probeStopwatch.Elapsed));
+                break;
+            }
 
             best = candidate;
-            onImprovedPlan?.Invoke(candidate);
+            onStage?.Invoke(new GreedyEdgeStage(stageName, candidate, probeStopwatch.Elapsed));
             budget = best.MaxStep - 1; // realized max-step may already be below the attempted ceiling
         }
 

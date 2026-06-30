@@ -206,31 +206,33 @@ class Program
             // real step for free. Fast/interruptible, not proven optimal.
             StrategyPlan feasiblePlan = builder.BuildFeasiblePlan();
             ClearProgressLine();
-            Console.WriteLine($"==================== step ({FormatSqueeze(feasiblePlan)}) ====================");
+            Console.WriteLine($"==================== greedy ({FormatSqueeze(feasiblePlan)}) ====================");
             Console.WriteLine("(a valid strategy that achieves the upper bound; not proven optimal)");
             Console.Write(StrategyOverviewRenderer.RenderText(feasiblePlan));
             Console.WriteLine();
             Console.Write(StrategyTextRenderer.Render(feasiblePlan));
             Console.WriteLine();
 
-            // Anytime edge stage: the baseline compact pass and each successful downward tightening
-            // (smaller max-step) are printed as they are produced, so the CLI shows the full
-            // step -> edge -> edge(tightened) -> ... progression rather than only the final result.
-            StrategyPlan lastPrinted = feasiblePlan;
-            int edgeCount = 0;
-            void PrintEdgeStage(StrategyPlan plan)
+            // Anytime edge stage: the baseline compact pass ("compact") and each downward tightening
+            // ("compact≤N") are printed as they are produced, so the CLI shows the full
+            // greedy -> compact -> compact≤N progression. A proven-infeasible ceiling prints as a
+            // no-solution stage marking where the search bottomed out.
+            void PrintEdgeStage(GreedyEdgeStage stage)
             {
-                if (!plan.IsStrictRefinementOver(lastPrinted))
-                    return;
                 ClearProgressLine();
                 Console.WriteLine();
-                string header = edgeCount == 0 ? "edge" : "edge (tightened)";
-                Console.WriteLine($"==================== {header} ({FormatSqueeze(plan)}) ====================");
+                if (!stage.HasSolution)
+                {
+                    Console.WriteLine($"==================== {stage.Name} (no solution) ====================");
+                    Console.WriteLine($"(no better strategy exists at this step ceiling; elapsed={stage.Elapsed.TotalSeconds:F3} s)");
+                    return;
+                }
+
+                StrategyPlan plan = stage.Plan!;
+                Console.WriteLine($"==================== {stage.Name} ({FormatSqueeze(plan)}) ====================");
                 Console.Write(StrategyOverviewRenderer.RenderText(plan));
                 Console.WriteLine();
                 Console.Write(StrategyTextRenderer.Render(plan));
-                lastPrinted = plan;
-                edgeCount++;
             }
 
             builder.BuildFeasibleCompactPlan(PrintEdgeStage);
@@ -238,11 +240,11 @@ class Program
             return;
         }
 
-        // Exact mode: no feasible phase. The exact search (step) proves the optimum, then the
-        // compact phase (edge) trims displayed edges among equally optimal groups.
+        // Exact mode: no feasible phase. The exact search (exact) proves the optimum, then the
+        // compact phase (compact) trims displayed edges among equally optimal groups.
         StrategyPlan defaultPlan = builder.BuildDefaultPlan();
         ClearProgressLine();
-        Console.WriteLine($"==================== step ({FormatSqueeze(defaultPlan)}) ====================");
+        Console.WriteLine($"==================== exact ({FormatSqueeze(defaultPlan)}) ====================");
         Console.Write(StrategyOverviewRenderer.RenderText(defaultPlan));
         Console.WriteLine();
         Console.Write(StrategyTextRenderer.Render(defaultPlan));
@@ -255,7 +257,7 @@ class Program
 
         ClearProgressLine();
         Console.WriteLine();
-        Console.WriteLine("==================== edge ====================");
+        Console.WriteLine("==================== compact ====================");
         Console.Write(StrategyOverviewRenderer.RenderText(compactPlan));
         Console.WriteLine();
         Console.Write(StrategyTextRenderer.Render(compactPlan));

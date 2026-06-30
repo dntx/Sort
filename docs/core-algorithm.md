@@ -332,10 +332,13 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
 - **夹逼**：`L = GetMinWorstCaseLowerBound(root, k)`（解析下界，与精确搜索**无关**、极便宜；`25,5,5 → 6`），经
   `RecordRootProvenLowerBound` 写入；`U = ` 构造树的 `MaxStep`。于是 `L ≤ opt ≤ U`。若 `L == U` 则该可行解
   **恰好达到了已证明下界**，即**已证明最优**（显示 `opt = U (proven optimal)`）。
-- **两种模式、各两阶段**：编排层提供两条互斥的「step → edge」流水线，CLI 用 `--mode exact|greedy`、GUI 用下拉框切换：
-  - **exact 模式（默认）**：step = 精确求解 `BuildDefaultPlan`（已证明最优），edge = compact `BuildCompactPlan`。
-    **不跑可行 feasible**。
-  - **greedy 模式（快速）**：step = 构造式 feasible `BuildFeasiblePlan`（可行上界 `U`），edge = 有界 compact
+- **两种模式、各若干阶段**：编排层提供两条互斥的流水线，CLI 用 `--mode exact|greedy`、GUI 用下拉框切换。每个阶段都有一个
+  统一的**阶段名**（也是 CLI 标题、GUI 树根与进度面板共用的标签）：exact 模式为 `exact → compact`；greedy 模式为
+  `greedy → compact → compact≤N → …`（`compact≤N` 中的 `N` 是该次收紧的**目标步数上限**，并非已达到的步数）。
+  收紧到某个 `N` 被证明不可行时，单独呈现一个标 **`no solution`** 的终止阶段。
+  - **exact 模式（默认）**：`exact` = 精确求解 `BuildDefaultPlan`（已证明最优），`compact` = compact `BuildCompactPlan`。
+    **不跑可行 feasible**。exact 的首阶段已是步最优，故其 compact 永远无法再降低步数，**没有**向下收紧阶段。
+  - **greedy 模式（快速）**：`greedy` = 构造式 feasible `BuildFeasiblePlan`（可行上界 `U`），`compact` = 有界 compact
     `BuildFeasibleCompactPlan`（以 `U` 为步数上限收紧边数，可顺带「免费」拿到更小步数）。快速、可中断、非证明最优。
     edge 阶段的根预算优先取**step 阶段物化得到的 `U`**（同一个 builder 实例先跑 step、再跑 edge，编排层正是这样复用的）——
     这是最紧且可靠的预算：step 树本身就是一个 `U` 步解的见证，所以 compact 在该上限下绝不会需要超过 `U` 步，从而保证
@@ -363,13 +366,18 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     保留当前最优，后者照常向上传播。这样小/中形状几乎瞬间把 `U` 收到最优（如 `8,3,3: 6→5`、`14,5,5: 6→5`、
     `13,4,4: 7→6`），大形状（如 `25,10,10`）在预算内把 `U` 由 5 收到 4、边数 4685→3668；少数 `U−1` 可行但极慢的
     形状会触达时间预算并**保留基线**（无回退、无正确性风险）。`EnableFeasibleTightening = false` 可整体关闭。
-  - **Anytime 呈现**：`BuildFeasibleCompactPlan(onImprovedPlan)` 接受一个回调，在**每次**得到更优 edge 计划时**同步**触发
-    （先是基线，随后每次成功收紧各一次；每个都比上一个严格更优——要么步数更小、要么边数更少）。CLI 据此把
-    `step → edge → edge(tightened) → …` 逐棵打印；GUI 用 `Progress<StrategyPlan>` 把回调从工作线程 marshal 回 UI 线程，
-    每收到一个就**新增一棵树**（独立 scope `edge0/edge1/…`，导航键不冲突），用户可边算边看策略逐步变好。进度面板的
-    `progress`/`eta` 描述**当前阶段**（收紧期间不再静默，每个探测各自从 0→100% 上报），顶部的总 `elapsed` 始终累计。
+  - **Anytime 呈现**：`BuildFeasibleCompactPlan(onStage)` 接受一个回调，在**每次**产出一个阶段结果时**同步**触发——
+    回调参数是 `GreedyEdgeStage`（阶段名 + 该阶段**自身**耗时 + 可空的计划，计划为 `null` 表示 `no solution`）。
+    先是基线 `compact`，随后每次成功收紧各一个 `compact≤N`，最后可能是一个 `no solution` 终止阶段；每个成功阶段都比
+    上一个严格更优（要么步数更小、要么边数更少）。CLI 据此把 `greedy → compact → compact≤N → …` 逐棵打印；GUI 用
+    **同步 `Control.Invoke`**（而非 `Progress<T>`）把回调从工作线程 marshal 回 UI 线程——Invoke 会阻塞工作线程直到处理
+    完成，这正是「每阶段弹窗暂停」（默认关闭的 `pause each stage` 开关）得以真正暂停搜索的机制。每个阶段**新增一棵树**
+    （含 `no solution` 终止阶段），树根与 overview 用统一标签 `阶段名: elapsed=…, max steps=…, edges=…, output=…`
+    （`elapsed` 为该阶段自身耗时、秒、3 位小数；无解时标 `no solution`）。进度面板恒为四行：总 `elapsed` 秒数、
+    `阶段名: 本阶段秒数`、`progress: 本阶段百分数`、`eta: 本阶段剩余秒数`。GUI 的各开关 / 参数（n/m/k、模式、主题、
+    pause each stage）持久化到 `%APPDATA%/Sort/settings.json`，下次启动沿用上次设置。
 - `StrategyPlan.IsFeasibleUpperBound == true` 标记这棵树是「可行上界」而非「精确最优」，CLI / GUI 据此渲染相应的
-  step 区域。
+  首阶段（`greedy`）区域。
 
 ---
 
