@@ -41,6 +41,16 @@ partial class StrategyBuilder
     // ConstructiveRootUpperBound, which is sound but looser.
     private int _feasibleRootBudget = -1;
 
+    // Total distinct canonical search states the step phase visited, captured at the end of
+    // BuildFeasiblePlan and (like _feasibleRootBudget) deliberately NOT cleared by
+    // ResetPerBuildTransientState so it survives the step->edge boundary on the same builder. The edge
+    // phase's compact solve walks the same canonical SearchStateKey space, so this count is a sound
+    // denominator estimate for turning _compactStatesSolved into a live progress fraction (the edge
+    // phase otherwise has no pending/searched signal and would pin progress and eta). -1 until a step
+    // plan is built; the standalone edge phase (no prior step build) leaves it -1 and keeps the old
+    // behavior.
+    private int _feasibleCompactStateEstimate = -1;
+
     // Builds the greedy-mode feasible strategy (step tree): a valid, displayable strategy whose
     // worst-case step count is a feasible UPPER bound U on the optimum -- never a proof of optimality.
     // Combined with the analytic proven lower bound L (GetMinWorstCaseLowerBound on the root) this
@@ -86,6 +96,10 @@ partial class StrategyBuilder
         // combined run uses it as its step ceiling -- the tightest sound budget, guaranteeing the edge
         // plan is never worse than this step plan.
         _feasibleRootBudget = plan.MaxStep;
+
+        // Denominator estimate for the edge phase's live progress (see field doc): the distinct
+        // canonical states this step pass touched approximate the compact solve's total work.
+        _feasibleCompactStateEstimate = _visitedSearchStates.Count;
         return plan;
     }
 

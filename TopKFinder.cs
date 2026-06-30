@@ -742,6 +742,25 @@ partial class StrategyBuilder
 
     private (double Progress01, long RemainingMs) EstimateProgress(long elapsedMs)
     {
+        // Greedy-mode edge phase: the compact solve has no pending/searched signal (those counters are
+        // reset and never touched here), so drive progress off _compactStatesSolved against the step
+        // phase's visited-state count. Once the solve finishes (_phase1bSolved) the remaining phase-2
+        // materialization is effectively instant, so report a full local fraction. MapToReportedProgress
+        // bands this into the edge stage's 10%..100% slice and derives the remaining-time estimate.
+        if (_progressScope == ProgressScope.CompactFeasibleInCombinedRun)
+        {
+            if (_phase1bSolved)
+                return (1.0, -1);
+            if (_feasibleCompactStateEstimate <= 0)
+                return (0.0, -1);
+
+            // The denominator is an estimate (the two phases may visit slightly different canonical
+            // states), so never let the fraction reach 1.0 before the solve actually completes.
+            double denominator = Math.Max(_feasibleCompactStateEstimate, _compactStatesSolved + 1);
+            double fraction = Math.Clamp(_compactStatesSolved / denominator, 0.0, 0.999);
+            return (fraction, -1);
+        }
+
         if (_searchedStates <= 0)
             return (0.0, -1);
 
