@@ -103,6 +103,11 @@ class MainForm : Form
     private bool _feasibleMode;
     private Stopwatch? _runStopwatch;
     private CancellationTokenSource? _runCancellationSource;
+    // The builder of the in-flight run, polled (thread-safe) by the progress panel during compact<=N
+    // tightening so the fourth line can show the exact time left until the soft budget times out (the
+    // progress-based ETA is unreliable for those probes). Set on the UI thread before the run, cleared
+    // when it ends.
+    private volatile StrategyBuilder? _activeBuilder;
     private readonly Dictionary<string, TreeNode> _stateNodesByKey = new();
     private readonly Dictionary<TreeNode, string> _referenceTargets = new();
     private readonly Stack<TreeNode> _navigationHistory = new();
@@ -605,6 +610,7 @@ class MainForm : Form
             cancellationToken,
             snapshot => progress.Report(snapshot),
             reportCombinedRunProgress: true);
+        _activeBuilder = builder;
         try
         {
             if (feasibleMode)
@@ -700,6 +706,7 @@ class MainForm : Form
         }
         finally
         {
+            _activeBuilder = null;
             _activePhase = 0;
             _elapsedTimer.Stop();
             UpdateElapsedLabel();
@@ -1845,13 +1852,25 @@ class MainForm : Form
         double totalSeconds = totalMs / 1000.0;
         double stageSeconds = Math.Max(0, totalMs - _stageStartMs) / 1000.0;
 
-        double etaSeconds = EstimateLiveEtaSeconds(totalMs);
-        string etaLineValue = etaSeconds >= 0 ? $"{etaSeconds:F3} s" : "-";
-
-        // During a compact<=N tightening probe the remaining figure is the time left in that probe's
-        // fixed budget, so label it "time remaining"; elsewhere it is a progress-based estimate ("eta").
+        // During a compact<=N tightening probe the fourth line is the EXACT time left until the soft
+        // budget times out -- polled live from the engine deadline -- rather than the unreliable
+        // progress-based ETA. Outside tightening (no active deadline) fall back to the ETA estimate.
         bool isTightening = _currentStageName.StartsWith("compact\u2264", StringComparison.Ordinal);
-        string etaLabel = isTightening ? "time remaining" : "eta";
+        TimeSpan? budgetRemaining = isTightening ? _activeBuilder?.TighteningTimeRemaining : null;
+
+        string etaLabel;
+        string etaLineValue;
+        if (budgetRemaining is { } remaining)
+        {
+            etaLabel = "time remaining";
+            etaLineValue = $"{remaining.TotalSeconds:F3} s";
+        }
+        else
+        {
+            etaLabel = "eta";
+            double etaSeconds = EstimateLiveEtaSeconds(totalMs);
+            etaLineValue = etaSeconds >= 0 ? $"{etaSeconds:F3} s" : "-";
+        }
 
         string text =
             $"{totalSeconds:F3} s\n" +

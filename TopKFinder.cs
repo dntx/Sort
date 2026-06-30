@@ -180,6 +180,7 @@ partial class StrategyBuilder
                 break;
 
             _tighteningDeadlineUtc = DateTime.UtcNow.AddMilliseconds(remainingMs);
+            System.Threading.Volatile.Write(ref _tighteningDeadlineTicksUtc, _tighteningDeadlineUtc.Value.Ticks);
             _tighteningDeadlineHit = false;
             StrategyPlan? candidate;
             // This probe's own wall time, captured even when the probe proves infeasible (returns null)
@@ -196,6 +197,7 @@ partial class StrategyBuilder
             finally
             {
                 _tighteningDeadlineUtc = null;
+                System.Threading.Volatile.Write(ref _tighteningDeadlineTicksUtc, 0);
                 probeStopwatch.Stop();
             }
 

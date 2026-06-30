@@ -397,8 +397,11 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     `阶段名: elapsed=…, max steps=…, edges=…, output=…`
     （`elapsed` 为该阶段自身耗时、秒、3 位小数；不更优时标 `no improvement`，证明无解时标 `no solution`，超时时标 `timed out`）。
     树形区域的**总根节点** total elapsed 也用秒（3 位小数）。进度面板恒为四行：总 `elapsed` 秒数、
-    `阶段名: 本阶段秒数`、`progress: 本阶段百分数`、第四行剩余时间——在 `compact≤N` 收紧阶段标 **`time remaining`**
-    （此时剩余的是该探测固定预算内的余量），其它阶段标 `eta`。GUI 的各开关 / 参数（n/m/k、模式、主题、
+    `阶段名: 本阶段秒数`、`progress: 本阶段百分数`、第四行剩余时间——在 `compact≤N` 收紧阶段标 **`time remaining`**，
+    显示的是**距离软时间预算 timeout 还有多久**（由 UI 线程实时轮询引擎的 `StrategyBuilder.TighteningTimeRemaining`
+    得到，该属性读一个 `Volatile` 的截止时刻镜像 `_tighteningDeadlineTicksUtc` 并与 `DateTime.UtcNow` 相减）——这是个
+    **确定、准确**的倒计时，而非基于进度估算的 `eta`（收紧探测的进度估算不可靠）；其它阶段（无活动截止时刻）仍回退到
+    基于进度的 `eta`。GUI 的各开关 / 参数（n/m/k、模式、主题、
     pause each stage）持久化到 `%APPDATA%/Sort/settings.json`，下次启动沿用上次设置。
 - `StrategyPlan.IsFeasibleUpperBound == true` 标记这棵树是「可行上界」而非「精确最优」，CLI / GUI 据此渲染相应的
   首阶段（`greedy`）区域。

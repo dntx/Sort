@@ -54,6 +54,26 @@ partial class StrategyBuilder
     private DateTime? _tighteningDeadlineUtc;
     private bool _tighteningDeadlineHit;
 
+    // Volatile mirror of the active tightening deadline as UTC ticks (0 = no probe in flight), so a UI
+    // thread can poll the exact time left until the tightening budget times out for a live, accurate
+    // countdown (the progress-based ETA is unreliable during the compact probes). Each probe's deadline
+    // is "now + remaining whole-budget", so it doubles as the overall give-up instant.
+    private long _tighteningDeadlineTicksUtc;
+
+    // Live time remaining until the current tightening probe's soft deadline, or null when no probe is in
+    // flight. Thread-safe for polling from the UI thread.
+    public TimeSpan? TighteningTimeRemaining
+    {
+        get
+        {
+            long ticks = System.Threading.Volatile.Read(ref _tighteningDeadlineTicksUtc);
+            if (ticks == 0)
+                return null;
+            TimeSpan remaining = new DateTime(ticks, DateTimeKind.Utc) - DateTime.UtcNow;
+            return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
+        }
+    }
+
     // Root cost returned by the most recent compact phase-1b solve; int.MaxValue means the budget was
     // infeasible, so the tightening loop must stop rather than materialize an unsolved tree.
     private int _compactRootCost = int.MaxValue;
