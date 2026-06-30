@@ -4,16 +4,21 @@ using System.Linq;
 
 partial class StrategyBuilder
 {
-    // Opt-in principle-D rendering. When true, MergeOrbitsByProjection folds sibling orderings that
-    // become interchangeable only *after removing the items they all eliminate this step* (the doomed
-    // "drop" set) onto one displayed branch, instead of relying on the stricter parent-state
+    // Principle-D rendering (default ON). When true, MergeOrbitsByProjection folds sibling orderings
+    // that become interchangeable only *after removing the items they all eliminate this step* (the
+    // doomed "drop" set) onto one displayed branch, instead of relying on the stricter parent-state
     // automorphism alone. This covers both single orderings (rendered as a relabeling representative
     // plus a "drop {...}" legend) and multi-family components (rendered in the structural quotient
     // notation "A1 > {A2, #7} ; A = {...} ; drop tail(A2)"); any component the structural renderer
     // cannot express falls back to the singleton merge, so this is never worse than no merging.
-    // Default false preserves the current split. This only affects displayed branch lines and the
-    // compact edge-count proxy (CountDisplayBranches); it never changes the optimal MaxStep.
-    internal bool EnableProjectionOrbitMerging { get; set; }
+    // It is a strict display refinement of the search (CheckDisplaySearchParity holds), only ever
+    // folds orderings that share a canonical search successor, and never changes the optimal MaxStep;
+    // it affects displayed branch lines and the compact edge-count proxy (CountDisplayBranches).
+    // NOTE: the compact-selection objective (CountDisplayBranches) evaluates the merge with
+    // fixedTopMask=0, so on rare shapes the merged compact tree can render more edges than the
+    // merge-off compact tree (e.g. 10,3,4: 9 -> 11) -- a known inconsistency tracked as a follow-up
+    // (see /memories/repo). Set false to recover the older, finer split.
+    internal bool EnableProjectionOrbitMerging { get; set; } = true;
 
     private List<StrategyBranch> BuildBranches(ComparisonState state, ulong fixedTopMask, int remainingSlots, SelectedComparisonGroup chosenGroup, int nextStep)
     {
