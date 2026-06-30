@@ -259,7 +259,7 @@ class MainForm : Form
         _statesTextBox = CreateStatTextBox(
             "searched: 0\npending: 0 (peak 0)\noutput: 0\nlower-bound: 0\ntop-set: 0");
         _workTextBox = CreateStatTextBox(
-            "outcomes: 0\nduplicate skips: 0\nmerged collisions: 0\nprunes: 0\ncache: 0/0/0/0\n[edge] -");
+            "outcomes: 0\nduplicate skips: 0\nmerged collisions: 0\nprunes: 0\ncache: 0/0/0/0\n[compact] -");
         var inputsPanel = new FlowLayoutPanel
         {
             AutoSize = true,
@@ -780,11 +780,11 @@ class MainForm : Form
         if (compactPlan is null)
         {
             double seconds = feasiblePlan.Elapsed.TotalSeconds + defaultPlan.Elapsed.TotalSeconds;
-            return $"{head}, max steps={defaultPlan.MaxStep}, elapsed={seconds:F3} s (computing edge stage...)";
+            return $"{head}, max steps={defaultPlan.MaxStep}, elapsed={seconds:F3} s (computing compact stage...)";
         }
         double totalSeconds = feasiblePlan.Elapsed.TotalSeconds + defaultPlan.Elapsed.TotalSeconds + compactPlan.Elapsed.TotalSeconds;
         string stepNote = compactPlan.MaxStep < defaultPlan.MaxStep
-            ? $" (edge lowered from {defaultPlan.MaxStep})"
+            ? $" (compact lowered from {defaultPlan.MaxStep})"
             : string.Empty;
         return $"{head}, max steps={compactPlan.MaxStep}{stepNote}, total elapsed={totalSeconds:F3} s";
     }
@@ -1770,18 +1770,18 @@ class MainForm : Form
         {
             double ms = feasiblePlan.Elapsed.TotalMilliseconds + defaultPlan.Elapsed.TotalMilliseconds;
             _statusLabel.Text =
-                $"{head}, step max={defaultPlan.MaxStep}, elapsed={ms:F1} ms. Computing edge stage...";
+                $"{head}, step max={defaultPlan.MaxStep}, elapsed={ms:F1} ms. Computing compact stage...";
             return;
         }
 
         double totalElapsedMs = feasiblePlan.Elapsed.TotalMilliseconds + defaultPlan.Elapsed.TotalMilliseconds + compactPlan.Elapsed.TotalMilliseconds;
         string compactText;
         if (compactPlan.MaxStep < defaultPlan.MaxStep)
-            compactText = $"edge lowered max steps {defaultPlan.MaxStep} -> {compactPlan.MaxStep} (edges {defaultPlan.TotalBranchEdges} -> {compactPlan.TotalBranchEdges})";
+            compactText = $"compact lowered max steps {defaultPlan.MaxStep} -> {compactPlan.MaxStep} (edges {defaultPlan.TotalBranchEdges} -> {compactPlan.TotalBranchEdges})";
         else if (compactImproved)
-            compactText = $"edge reduced total edges {defaultPlan.TotalBranchEdges} -> {compactPlan.TotalBranchEdges}";
+            compactText = $"compact reduced total edges {defaultPlan.TotalBranchEdges} -> {compactPlan.TotalBranchEdges}";
         else
-            compactText = $"edge produced no better result (step total edges {defaultPlan.TotalBranchEdges}, edge {compactPlan.TotalBranchEdges})";
+            compactText = $"compact produced no better result (step total edges {defaultPlan.TotalBranchEdges}, compact {compactPlan.TotalBranchEdges})";
         _statusLabel.Text =
             $"{head}, total elapsed={totalElapsedMs:F1} ms, " +
             $"max steps={compactPlan.MaxStep}, {compactText}.";
@@ -1907,11 +1907,11 @@ class MainForm : Form
         if (Volatile.Read(ref _activePhase) == 2)
         {
             string solvedLine = p.CompactStateEstimate > 0
-                ? $"edge solved: {p.CompactStatesSolved} ({EdgeLocalFraction(p) * 100.0:F1}%)"
-                : $"edge solved: {p.CompactStatesSolved}";
+                ? $"compact solved: {p.CompactStatesSolved} ({EdgeLocalFraction(p) * 100.0:F1}%)"
+                : $"compact solved: {p.CompactStatesSolved}";
             SetStatText(_statesTextBox,
                 solvedLine + "\n" +
-                $"edge groups: {p.CompactGroupsEnumerated} ({p.CompactStepOptimalGroups} opt)\n" +
+                $"compact groups: {p.CompactGroupsEnumerated} ({p.CompactStepOptimalGroups} opt)\n" +
                 $"(step) output: {p.OutputStates}\n" +
                 $"(step) lower-bound: {p.LowerBoundStates}\n" +
                 $"(step) top-set: {p.FeasibleTopSetStates}");
@@ -1927,8 +1927,8 @@ class MainForm : Form
         }
 
         string edgeText = p.CompactStatesSolved > 0
-            ? $"[edge] {p.CompactStatesSolved} solved, {p.CompactGroupsEnumerated} groups ({p.CompactStepOptimalGroups} opt)"
-            : "[edge] -";
+            ? $"[compact] {p.CompactStatesSolved} solved, {p.CompactGroupsEnumerated} groups ({p.CompactStepOptimalGroups} opt)"
+            : "[compact] -";
         SetStatText(_workTextBox,
             $"outcomes: {p.OutcomesConstructed} (cand groups {p.CandidateGroupsEnumerated})\n" +
             $"duplicate skips: {p.DuplicateOutcomeSkips}\n" +
@@ -2024,7 +2024,7 @@ class MainForm : Form
         string defaultText = StrategyTextRenderer.Render(defaultPlan).TrimEnd();
         var lines = new List<string>
         {
-            "Step result (edge stage in progress)",
+            "Step result (compact stage in progress)",
             $"step elapsed: {defaultPlan.Elapsed.TotalMilliseconds:F1} ms",
             $"step total edges: {defaultPlan.TotalBranchEdges}",
             $"step output states: {defaultPlan.SearchStatistics.OutputStates}",
@@ -2047,12 +2047,12 @@ class MainForm : Form
             "Two-stage result",
             $"total elapsed: {totalElapsedMs:F1} ms",
             $"step total edges: {defaultPlan.TotalBranchEdges}",
-            $"edge total edges: {compactPlan.TotalBranchEdges}",
+            $"compact total edges: {compactPlan.TotalBranchEdges}",
             $"step output states: {defaultPlan.SearchStatistics.OutputStates}",
-            $"edge output states: {compactPlan.SearchStatistics.OutputStates}",
+            $"compact output states: {compactPlan.SearchStatistics.OutputStates}",
             compactImproved
-                ? "edge improvement: yes"
-                : "edge improvement: no",
+                ? "compact improvement: yes"
+                : "compact improvement: no",
             string.Empty,
             "----- step -----",
             defaultText,
@@ -2061,7 +2061,7 @@ class MainForm : Form
         if (compactImproved)
         {
             lines.Add(string.Empty);
-            lines.Add("----- edge -----");
+            lines.Add("----- compact -----");
             lines.Add(compactText);
         }
 
