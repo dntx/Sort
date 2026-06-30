@@ -702,6 +702,7 @@ partial class StrategyBuilder
             _compactStatesSolved,
             _compactGroupsEnumerated,
             _compactStepOptimalGroups,
+            _feasibleCompactStateEstimate,
             estimatedProgress01,
             estimatedRemainingMs,
             _rootProvenLowerBound));

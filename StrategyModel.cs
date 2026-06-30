@@ -164,6 +164,7 @@ readonly struct SearchProgressSnapshot
         int compactStatesSolved,
         int compactGroupsEnumerated,
         int compactStepOptimalGroups,
+        int compactStateEstimate,
         double estimatedProgress01,
         long estimatedRemainingMilliseconds,
         int rootProvenLowerBound)
@@ -189,6 +190,7 @@ readonly struct SearchProgressSnapshot
         CompactStatesSolved = compactStatesSolved;
         CompactGroupsEnumerated = compactGroupsEnumerated;
         CompactStepOptimalGroups = compactStepOptimalGroups;
+        CompactStateEstimate = compactStateEstimate;
         EstimatedProgress01 = estimatedProgress01;
         EstimatedRemainingMilliseconds = estimatedRemainingMilliseconds;
         RootProvenLowerBound = rootProvenLowerBound;
@@ -215,6 +217,11 @@ readonly struct SearchProgressSnapshot
     public int CompactStatesSolved { get; }
     public int CompactGroupsEnumerated { get; }
     public int CompactStepOptimalGroups { get; }
+
+    // Estimated total number of compact states the edge phase will solve, captured from the step
+    // phase's distinct-canonical-state count (-1 when unknown, e.g. exact mode or standalone edge).
+    // Lets the GUI show the live "solved / ~estimate" denominator during the edge phase.
+    public int CompactStateEstimate { get; }
     public double EstimatedProgress01 { get; }
     public long EstimatedRemainingMilliseconds { get; }
 
