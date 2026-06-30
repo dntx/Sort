@@ -1768,13 +1768,13 @@ class MainForm : Form
 
         if (compactPlan is null)
         {
-            double ms = feasiblePlan.Elapsed.TotalMilliseconds + defaultPlan.Elapsed.TotalMilliseconds;
+            double seconds = feasiblePlan.Elapsed.TotalSeconds + defaultPlan.Elapsed.TotalSeconds;
             _statusLabel.Text =
-                $"{head}, step max={defaultPlan.MaxStep}, elapsed={ms:F1} ms. Computing compact stage...";
+                $"{head}, step max={defaultPlan.MaxStep}, elapsed={seconds:F3} s. Computing compact stage...";
             return;
         }
 
-        double totalElapsedMs = feasiblePlan.Elapsed.TotalMilliseconds + defaultPlan.Elapsed.TotalMilliseconds + compactPlan.Elapsed.TotalMilliseconds;
+        double totalElapsedSeconds = feasiblePlan.Elapsed.TotalSeconds + defaultPlan.Elapsed.TotalSeconds + compactPlan.Elapsed.TotalSeconds;
         string compactText;
         if (compactPlan.MaxStep < defaultPlan.MaxStep)
             compactText = $"compact lowered max steps {defaultPlan.MaxStep} -> {compactPlan.MaxStep} (edges {defaultPlan.TotalBranchEdges} -> {compactPlan.TotalBranchEdges})";
@@ -1783,7 +1783,7 @@ class MainForm : Form
         else
             compactText = $"compact produced no better result (step total edges {defaultPlan.TotalBranchEdges}, compact {compactPlan.TotalBranchEdges})";
         _statusLabel.Text =
-            $"{head}, total elapsed={totalElapsedMs:F1} ms, " +
+            $"{head}, total elapsed={totalElapsedSeconds:F3} s, " +
             $"max steps={compactPlan.MaxStep}, {compactText}.";
     }
 
@@ -2007,7 +2007,7 @@ class MainForm : Form
         {
             "Step strategy (greedy upper bound; next stage in progress)",
             $"squeeze: {FormatPlanSqueeze(feasiblePlan)}  (not proven optimal)",
-            $"step elapsed: {feasiblePlan.Elapsed.TotalMilliseconds:F1} ms",
+            $"step elapsed: {feasiblePlan.Elapsed.TotalSeconds:F3} s",
             $"step total edges: {feasiblePlan.TotalBranchEdges}",
             $"step output states: {feasiblePlan.SearchStatistics.OutputStates}",
             $"max steps (upper bound): {feasiblePlan.MaxStep}",
@@ -2025,7 +2025,7 @@ class MainForm : Form
         var lines = new List<string>
         {
             "Step result (compact stage in progress)",
-            $"step elapsed: {defaultPlan.Elapsed.TotalMilliseconds:F1} ms",
+            $"step elapsed: {defaultPlan.Elapsed.TotalSeconds:F3} s",
             $"step total edges: {defaultPlan.TotalBranchEdges}",
             $"step output states: {defaultPlan.SearchStatistics.OutputStates}",
             $"max steps: {defaultPlan.MaxStep}",
@@ -2041,11 +2041,11 @@ class MainForm : Form
     {
         string defaultText = StrategyTextRenderer.Render(defaultPlan).TrimEnd();
         string compactText = StrategyTextRenderer.Render(compactPlan).TrimEnd();
-        double totalElapsedMs = defaultPlan.Elapsed.TotalMilliseconds + compactPlan.Elapsed.TotalMilliseconds;
+        double totalElapsedSeconds = defaultPlan.Elapsed.TotalSeconds + compactPlan.Elapsed.TotalSeconds;
         var lines = new List<string>
         {
             "Two-stage result",
-            $"total elapsed: {totalElapsedMs:F1} ms",
+            $"total elapsed: {totalElapsedSeconds:F3} s",
             $"step total edges: {defaultPlan.TotalBranchEdges}",
             $"compact total edges: {compactPlan.TotalBranchEdges}",
             $"step output states: {defaultPlan.SearchStatistics.OutputStates}",
