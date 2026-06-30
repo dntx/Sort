@@ -347,7 +347,8 @@ partial class StrategyBuilder
     private IEnumerable<List<int>> EnumerateDistinctGroups(
         ComparisonState state,
         IReadOnlyList<int> candidates,
-        int groupSize)
+        int groupSize,
+        int generationCap = int.MaxValue)
     {
         // Exploit the active poset's automorphisms to avoid enumerating all C(active, groupSize)
         // combinations. Active items are partitioned into "free symmetry classes" (items with
@@ -358,6 +359,12 @@ partial class StrategyBuilder
         // lexicographically smallest member of each orbit. This produces exactly one representative
         // per orbit - identical to scanning every combination - but builds far fewer candidates on
         // symmetric states (e.g. a single candidate at the fully symmetric root instead of C(n, m)).
+        //
+        // generationCap bounds how many raw representatives we generate before the (cap-bounded) orbit
+        // dedup and sort. The default int.MaxValue is the exact, complete enumeration used by the exact
+        // compact DP and the optimality-gap audit; the greedy edge phase passes a finite cap so a single
+        // large-m state cannot generate (and then FitChildren over) thousands of groups -- the
+        // materialized generation and McKay dedup over the full set is what makes that phase hang.
         List<List<int>> classes = state.GetFreeSymmetryClasses();
 
         var suffixCapacity = new int[classes.Count + 1];
@@ -366,7 +373,7 @@ partial class StrategyBuilder
 
         var collected = new List<List<int>>();
         var prefix = new List<int>(groupSize);
-        GenerateClassRepresentatives(state, classes, suffixCapacity, 0, groupSize, prefix, collected);
+        GenerateClassRepresentatives(state, classes, suffixCapacity, 0, groupSize, prefix, collected, generationCap);
 
         // Orbit de-duplication via a cheap pre-filter. The full group canonical key
         // (GetGroupPattern -> McKay) is the only sound way to merge two groups that lie in the same
@@ -432,8 +439,12 @@ partial class StrategyBuilder
         int classIndex,
         int remaining,
         List<int> prefix,
-        List<List<int>> collected)
+        List<List<int>> collected,
+        int generationCap = int.MaxValue)
     {
+        if (collected.Count >= generationCap)
+            return;
+
         if (remaining == 0)
         {
             ThrowIfCancellationRequested();
@@ -456,9 +467,12 @@ partial class StrategyBuilder
                 prefix.Add(cls[j]);
 
             GenerateClassRepresentatives(
-                state, classes, suffixCapacity, classIndex + 1, remaining - take, prefix, collected);
+                state, classes, suffixCapacity, classIndex + 1, remaining - take, prefix, collected, generationCap);
 
             prefix.RemoveRange(prefix.Count - take, take);
+
+            if (collected.Count >= generationCap)
+                return;
         }
     }
 
