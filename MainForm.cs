@@ -920,7 +920,7 @@ class MainForm : Form
         {
             string? marker = stage.HasSolution
                 ? (!improved ? "no improvement" : null)
-                : (stage.TimedOut ? "time out" : null);
+                : (stage.TimedOut ? "timed out" : null);
             ShowStageModal(FormatStageRootLabel(stage.Name, stage.Elapsed, stage.Plan, marker), stage.HasSolution);
         }
     }
@@ -964,7 +964,7 @@ class MainForm : Form
             ? CreatePlanTreeRoot(stage.Name, stage.Plan!, scope, stage.Elapsed)
             : stage.HasSolution
                 ? CreateNoImprovementTreeRoot(stage.Name, stage.Plan!, stage.Elapsed)
-                : CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, stage.TimedOut ? "time out" : null);
+                : CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, stage.TimedOut ? "timed out" : null);
 
     private TreeNode BuildStageOverviewNode(GreedyEdgeStage stage, string scope, bool improved)
         => improved
@@ -973,7 +973,7 @@ class MainForm : Form
                 stage.Name,
                 stage.Elapsed,
                 stage.Plan,
-                stage.HasSolution ? "no improvement" : (stage.TimedOut ? "time out" : null)));
+                stage.HasSolution ? "no improvement" : (stage.TimedOut ? "timed out" : null)));
 
     private void ShowStageModal(string message, bool hasSolution)
     {
@@ -1244,7 +1244,7 @@ class MainForm : Form
     // The single unified stage-root label used by BOTH the strategy tree plan roots and the overview
     // section roots: "<stage>: elapsed=<s>.3f s, max steps=<n>, edges=<n>, output=<n>", optionally
     // suffixed with a marker (e.g. "no improvement"). When there is no plan the body collapses to the
-    // marker note ("no solution" by default, or e.g. "time out"). elapsed is the stage's own wall time
+    // marker note ("no solution" by default, or e.g. "timed out"). elapsed is the stage's own wall time
     // in seconds.
     private static string FormatStageRootLabel(string stageName, TimeSpan elapsed, StrategyPlan? plan, string? marker = null)
     {
@@ -1269,7 +1269,7 @@ class MainForm : Form
     }
 
     // A terminal stage that found no better strategy: a single bold leaf carrying the unified label with
-    // the given marker ("no solution" when proven infeasible, "time out" when the probe was abandoned on
+    // the given marker ("no solution" when proven infeasible, "timed out" when the probe was abandoned on
     // the soft deadline) and no child strategy subtree.
     private TreeNode CreateNoSolutionTreeRoot(string stageName, TimeSpan elapsed, string? marker = null)
     {
@@ -1839,7 +1839,7 @@ class MainForm : Form
         //   <total> s
         //   <stage name>: <stage-own elapsed> s
         //   progress: <current stage %>
-        //   eta / remaining time: <current stage remaining>
+        //   eta / time remaining: <current stage remaining>
         // The stage clock counts from _stageStartMs (reset at every stage boundary), so it always
         // reports the running stage's own time rather than a cumulative figure.
         double totalSeconds = totalMs / 1000.0;
@@ -1849,9 +1849,9 @@ class MainForm : Form
         string etaLineValue = etaSeconds >= 0 ? $"{etaSeconds:F3} s" : "-";
 
         // During a compact<=N tightening probe the remaining figure is the time left in that probe's
-        // fixed budget, so label it "remaining time"; elsewhere it is a progress-based estimate ("eta").
+        // fixed budget, so label it "time remaining"; elsewhere it is a progress-based estimate ("eta").
         bool isTightening = _currentStageName.StartsWith("compact\u2264", StringComparison.Ordinal);
-        string etaLabel = isTightening ? "remaining time" : "eta";
+        string etaLabel = isTightening ? "time remaining" : "eta";
 
         string text =
             $"{totalSeconds:F3} s\n" +

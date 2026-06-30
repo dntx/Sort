@@ -227,7 +227,7 @@ class Program
                     if (stage.TimedOut)
                     {
                         // Abandoned probe: no proof either way, the incumbent simply stands.
-                        stageSummaries.Add($"{stage.Name}: time out");
+                        stageSummaries.Add($"{stage.Name}: timed out");
                     }
                     else
                     {
