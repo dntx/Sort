@@ -368,17 +368,23 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     形状会触达时间预算并**保留基线**（无回退、无正确性风险）。`EnableFeasibleTightening = false` 可整体关闭。
   - **Anytime 呈现**：`BuildFeasibleCompactPlan(onStage)` 接受一个回调，在**每次**产出一个阶段结果时**同步**触发——
     回调参数是 `GreedyEdgeStage`（阶段名 + 该阶段**自身**耗时 + 可空的计划，计划为 `null` 表示 `no solution`）。
-    先是基线 `compact`，随后每次成功收紧各一个 `compact≤N`，最后可能是一个 `no solution` 终止阶段；每个成功阶段都比
-    上一个严格更优（要么步数更小、要么边数更少）。**CLI 与 GUI 在此分道**：CLI 是批处理工具，逐棵打印中间树太啰嗦，
-    故只收集各阶段、打印一行 `progression: greedy(steps=, edges=) -> compact(...) -> compact≤N(...) -> compact≤M: no solution`
-    总结，随后**只打印最终（最优）那一棵树**；GUI 才用 anytime 增量呈现：用**同步 `Control.Invoke`**（而非
+    先是基线 `compact`，随后每次成功收紧各一个 `compact≤N`，最后可能是一个 `no solution` 终止阶段。**呈现以「是否
+    严格优于当前 incumbent」为准**（incumbent 初值为 `greedy` 可行解，按 `IsStrictRefinementOver`＝先比步数再比边数）：
+    只有严格更优的阶段才被画成完整的可浏览树并更新 incumbent；**有解但不更优**的阶段（例如 `compact` 基线步数与
+    `greedy` 相同、边数反而更多，见 `9,3,3`）记录下来、标 **`no improvement`**，但只渲染成一行注记、不画那棵更差的树；
+    收紧**仍照常继续**（下一个天花板由步数 `U` 而非边数决定）。**CLI 与 GUI 在此分道**：CLI 是批处理工具，逐棵打印中间树
+    太啰嗦，故只收集各阶段、打印一行
+    `progression: greedy(steps=, edges=) -> compact(...)[: no improvement] -> compact≤N(...) -> compact≤M: no solution`
+    总结，随后**只打印最终（最优=incumbent）那一棵树**（若没有任何阶段更优，最终树就是 `greedy` 本身）；GUI 才用 anytime
+    增量呈现：用**同步 `Control.Invoke`**（而非
     `Progress<T>`）把回调从工作线程 marshal 回 UI 线程——Invoke 会阻塞工作线程直到处理
     完成，这正是「每阶段弹窗暂停」（默认关闭的 `pause each stage` 开关）得以真正暂停搜索的机制。**弹窗期间一律停止计时**：
     GUI 端在 `MessageBox.Show` 前后 `_runStopwatch.Stop()/Start()`（续计、不重置），引擎端在 `TightenFeasibleCompact`
     的回调 `onStage.Invoke` 前后 `Stop()/Start()` 那条**软时间预算**秒表——于是用户停留在对话框里的时间既不计入总
-    `elapsed`、也不计入本阶段时钟，更不会偷偷吃掉收紧的时间预算（点 OK 后预算从暂停处继续）。每个阶段**新增一棵树**
-    （含 `no solution` 终止阶段），树根与 overview 用统一标签 `阶段名: elapsed=…, max steps=…, edges=…, output=…`
-    （`elapsed` 为该阶段自身耗时、秒、3 位小数；无解时标 `no solution`）。进度面板恒为四行：总 `elapsed` 秒数、
+    `elapsed`、也不计入本阶段时钟，更不会偷偷吃掉收紧的时间预算（点 OK 后预算从暂停处继续）。每个**更优**阶段**新增一棵树**
+    （`no improvement` / `no solution` 阶段只新增一行注记），树根与 overview 用统一标签
+    `阶段名: elapsed=…, max steps=…, edges=…, output=…`
+    （`elapsed` 为该阶段自身耗时、秒、3 位小数；不更优时标 `no improvement`，无解时标 `no solution`）。进度面板恒为四行：总 `elapsed` 秒数、
     `阶段名: 本阶段秒数`、`progress: 本阶段百分数`、`eta: 本阶段剩余秒数`。GUI 的各开关 / 参数（n/m/k、模式、主题、
     pause each stage）持久化到 `%APPDATA%/Sort/settings.json`，下次启动沿用上次设置。
 - `StrategyPlan.IsFeasibleUpperBound == true` 标记这棵树是「可行上界」而非「精确最优」，CLI / GUI 据此渲染相应的

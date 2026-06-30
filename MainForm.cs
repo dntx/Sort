@@ -863,37 +863,46 @@ class MainForm : Form
         int index = _greedyEdgeStages.Count - 1;
         string scope = $"edge{index}";
 
+        // A stage is "shown" as a full browsable tree only when it strictly improves the incumbent
+        // (the best plan so far: the greedy feasible plan, then any improving compact stage). A stage
+        // that has a solution but is no better (e.g. compact baseline = same steps, more edges than
+        // greedy) is recorded and marked "no improvement" but rendered only as a leaf note. Tightening
+        // continues regardless, since the next ceiling is driven by max-steps, not edges.
+        StrategyPlan incumbent = _compactPlan ?? _feasiblePlan;
+        bool improved = stage.HasSolution && stage.Plan!.IsStrictRefinementOver(incumbent);
+
         _treeView.BeginUpdate();
         TreeNode root = _treeView.Nodes[0];
-        root.Text = BuildRootLabel(_feasiblePlan, _feasiblePlan, stage.Plan ?? _compactPlan);
-        root.Tag = BuildGreedyProgressionDetails(_feasiblePlan, _greedyEdgeStages);
-
         if (isBaseline)
         {
             // Replace the trailing "compact: computing..." placeholder (everything after the step slot).
             while (root.Nodes.Count > 1)
                 root.Nodes.RemoveAt(root.Nodes.Count - 1);
-            root.Nodes.Add(BuildStageTreeNode(stage, scope));
         }
-        else
-        {
-            root.Nodes.Add(BuildStageTreeNode(stage, scope));
-        }
+        root.Nodes.Add(BuildStageTreeNode(stage, scope, improved));
+
+        if (improved)
+            _compactPlan = stage.Plan;
+
+        StrategyPlan shown = _compactPlan ?? _feasiblePlan;
+        root.Text = BuildRootLabel(_feasiblePlan, _feasiblePlan, shown);
+        root.Tag = BuildGreedyProgressionDetails(_feasiblePlan, _greedyEdgeStages);
         _treeView.EndUpdate();
 
         _overviewTree.BeginUpdate();
         if (isBaseline && _overviewTree.Nodes.Count > 0)
             _overviewTree.Nodes.RemoveAt(_overviewTree.Nodes.Count - 1);
-        _overviewTree.Nodes.Add(BuildStageOverviewNode(stage, scope));
+        _overviewTree.Nodes.Add(BuildStageOverviewNode(stage, scope, improved));
         _overviewTree.EndUpdate();
 
         if (stage.HasSolution)
         {
-            _compactPlan = stage.Plan;
             _latestProgress = CreateSnapshotFromPlan(stage.Plan!);
-            UpdateSummaryText(_feasiblePlan, defaultPlan: _feasiblePlan, compactPlan: stage.Plan, compactImproved: !isBaseline || index > 0);
-            // The next tightening probe targets one below the best max-step achieved so far. Reset the
-            // per-stage clock so the progress panel times the upcoming probe from zero.
+            if (improved)
+                UpdateSummaryText(_feasiblePlan, defaultPlan: _feasiblePlan, compactPlan: stage.Plan, compactImproved: true);
+            // The next tightening probe targets one below this stage's max-step. Reset the per-stage
+            // clock so the progress panel times the upcoming probe from zero. This happens whether or
+            // not the stage improved edges, because tightening continues either way.
             _currentStageName = stage.Plan!.MaxStep > 1 ? $"compact\u2264{stage.Plan.MaxStep - 1}" : "compact";
             _stageStartMs = _runStopwatch?.ElapsedMilliseconds ?? 0;
         }
@@ -903,20 +912,29 @@ class MainForm : Form
         // Optional pause-on-each-stage: a modal blocks this UI-thread handler (and therefore the worker
         // thread waiting in Invoke) until the user acknowledges the stage.
         if (_pauseEachStageCheckBox.Checked)
-            ShowStageModal(stage);
+        {
+            string? marker = stage.HasSolution && !improved ? "no improvement" : null;
+            ShowStageModal(FormatStageRootLabel(stage.Name, stage.Elapsed, stage.Plan, marker), stage.HasSolution);
+        }
     }
 
-    private TreeNode BuildStageTreeNode(GreedyEdgeStage stage, string scope)
-        => stage.HasSolution
+    private TreeNode BuildStageTreeNode(GreedyEdgeStage stage, string scope, bool improved)
+        => improved
             ? CreatePlanTreeRoot(stage.Name, stage.Plan!, scope, stage.Elapsed)
-            : CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed);
+            : stage.HasSolution
+                ? CreateNoImprovementTreeRoot(stage.Name, stage.Plan!, stage.Elapsed)
+                : CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed);
 
-    private TreeNode BuildStageOverviewNode(GreedyEdgeStage stage, string scope)
-        => stage.HasSolution
+    private TreeNode BuildStageOverviewNode(GreedyEdgeStage stage, string scope, bool improved)
+        => improved
             ? BuildOverviewSectionNode(stage.Plan!, scope, stage.Name, stage.Elapsed)
-            : BuildOverviewNoteNode(FormatStageRootLabel(stage.Name, stage.Elapsed, plan: null));
+            : BuildOverviewNoteNode(FormatStageRootLabel(
+                stage.Name,
+                stage.Elapsed,
+                stage.Plan,
+                stage.HasSolution ? "no improvement" : null));
 
-    private void ShowStageModal(GreedyEdgeStage stage)
+    private void ShowStageModal(string message, bool hasSolution)
     {
         // Pause the run clock while the modal is up: the time the user spends in the dialog must
         // count toward neither the total elapsed nor the current stage's clock. Stopwatch.Start()
@@ -930,10 +948,10 @@ class MainForm : Form
         {
             MessageBox.Show(
                 this,
-                FormatStageRootLabel(stage.Name, stage.Elapsed, stage.Plan),
+                message,
                 "Stage complete",
                 MessageBoxButtons.OK,
-                stage.HasSolution ? MessageBoxIcon.Information : MessageBoxIcon.None);
+                hasSolution ? MessageBoxIcon.Information : MessageBoxIcon.None);
         }
         finally
         {
@@ -949,15 +967,28 @@ class MainForm : Form
     {
         var lines = new List<string>
         {
-            "Greedy result (anytime: each stage strictly improves the previous)",
+            "Greedy result (anytime: improving stages are shown as trees)",
             $"greedy: max steps={stepPlan.MaxStep}, total edges={stepPlan.TotalBranchEdges}",
         };
+        StrategyPlan incumbent = stepPlan;
         foreach (GreedyEdgeStage stage in stages)
         {
             if (stage.Plan is { } p)
-                lines.Add($"{stage.Name}: {FormatPlanSqueeze(p)}, max steps={p.MaxStep}, total edges={p.TotalBranchEdges}");
+            {
+                if (p.IsStrictRefinementOver(incumbent))
+                {
+                    lines.Add($"{stage.Name}: {FormatPlanSqueeze(p)}, max steps={p.MaxStep}, total edges={p.TotalBranchEdges}");
+                    incumbent = p;
+                }
+                else
+                {
+                    lines.Add($"{stage.Name}: max steps={p.MaxStep}, total edges={p.TotalBranchEdges} (no improvement)");
+                }
+            }
             else
+            {
                 lines.Add($"{stage.Name}: no solution (no better strategy at this step ceiling)");
+            }
         }
         return string.Join(Environment.NewLine, lines);
     }
@@ -1166,15 +1197,16 @@ class MainForm : Form
     }
 
     // The single unified stage-root label used by BOTH the strategy tree plan roots and the overview
-    // section roots: "<stage>: elapsed=<s>.3f s, max steps=<n>, edges=<n>, output=<n>", or
-    // "<stage>: elapsed=<s>.3f s, no solution" when the stage found no better strategy. elapsed is the
-    // stage's own wall time in seconds (not cumulative).
-    private static string FormatStageRootLabel(string stageName, TimeSpan elapsed, StrategyPlan? plan)
+    // section roots: "<stage>: elapsed=<s>.3f s, max steps=<n>, edges=<n>, output=<n>", optionally
+    // suffixed with a marker (e.g. "no improvement"), or "<stage>: elapsed=<s>.3f s, no solution"
+    // when the stage found no strategy at all. elapsed is the stage's own wall time in seconds.
+    private static string FormatStageRootLabel(string stageName, TimeSpan elapsed, StrategyPlan? plan, string? marker = null)
     {
         string elapsedText = $"elapsed={elapsed.TotalSeconds:F3} s";
         if (plan is null)
             return $"{stageName}: {elapsedText}, no solution";
-        return $"{stageName}: {elapsedText}, max steps={plan.MaxStep}, edges={plan.TotalBranchEdges}, output={plan.SearchStatistics.OutputStates}";
+        string body = $"{stageName}: {elapsedText}, max steps={plan.MaxStep}, edges={plan.TotalBranchEdges}, output={plan.SearchStatistics.OutputStates}";
+        return marker is null ? body : $"{body}, {marker}";
     }
 
     private TreeNode CreatePlanTreeRoot(string stageName, StrategyPlan plan, string scope, TimeSpan elapsed)
@@ -1195,6 +1227,19 @@ class MainForm : Form
     private TreeNode CreateNoSolutionTreeRoot(string stageName, TimeSpan elapsed)
     {
         return new TreeNode(FormatStageRootLabel(stageName, elapsed, plan: null))
+        {
+            NodeFont = new Font(_treeView.Font, FontStyle.Bold),
+            ForeColor = _palette.MutedForeColor,
+        };
+    }
+
+    // A stage that produced a valid strategy that does NOT strictly improve on the incumbent (e.g. the
+    // compact baseline lands on the same max-step but more edges than greedy). It is recorded and marked
+    // "no improvement" but, like a no-solution stage, shown only as a single leaf note -- the worse tree
+    // is not drawn. Tightening still continues past it.
+    private TreeNode CreateNoImprovementTreeRoot(string stageName, StrategyPlan plan, TimeSpan elapsed)
+    {
+        return new TreeNode(FormatStageRootLabel(stageName, elapsed, plan, "no improvement"))
         {
             NodeFont = new Font(_treeView.Font, FontStyle.Bold),
             ForeColor = _palette.MutedForeColor,

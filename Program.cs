@@ -210,26 +210,39 @@ class Program
             // The anytime stages (baseline "compact", each "compact≤N" tightening, and a terminal
             // no-solution ceiling) are produced incrementally for the GUI. The CLI is a batch tool,
             // so printing every intermediate tree is just noise: collect the stages, then print a
-            // one-line progression summary followed by only the final (best) tree.
+            // one-line progression summary followed by only the final (best) tree. A stage that has a
+            // solution but does not strictly improve the incumbent (e.g. compact baseline = same steps,
+            // more edges than greedy) is flagged "no improvement" and never becomes the final tree.
             var stageSummaries = new System.Collections.Generic.List<string>
             {
                 FormatStageSummary("greedy", feasiblePlan),
             };
-            GreedyEdgeStage? bestStage = null;
+            StrategyPlan incumbentPlan = feasiblePlan;
+            string finalName = "greedy";
+            StrategyPlan finalPlan = feasiblePlan;
             void CollectEdgeStage(GreedyEdgeStage stage)
             {
-                stageSummaries.Add(stage.HasSolution
-                    ? FormatStageSummary(stage.Name, stage.Plan!)
-                    : $"{stage.Name}: no solution");
-                if (stage.HasSolution)
-                    bestStage = stage;
+                if (!stage.HasSolution)
+                {
+                    stageSummaries.Add($"{stage.Name}: no solution");
+                    return;
+                }
+
+                if (stage.Plan!.IsStrictRefinementOver(incumbentPlan))
+                {
+                    stageSummaries.Add(FormatStageSummary(stage.Name, stage.Plan));
+                    incumbentPlan = stage.Plan;
+                    finalName = stage.Name;
+                    finalPlan = stage.Plan;
+                }
+                else
+                {
+                    stageSummaries.Add($"{FormatStageSummary(stage.Name, stage.Plan)}: no improvement");
+                }
             }
 
             builder.BuildFeasibleCompactPlan(CollectEdgeStage);
             ClearProgressLine();
-
-            string finalName = bestStage?.Name ?? "greedy";
-            StrategyPlan finalPlan = bestStage?.Plan ?? feasiblePlan;
 
             Console.WriteLine($"progression: {string.Join(" -> ", stageSummaries)}");
             Console.WriteLine();
