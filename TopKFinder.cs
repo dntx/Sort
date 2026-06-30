@@ -138,12 +138,140 @@ partial class StrategyBuilder
     // bound U instead of the proven optimum, so the exact search is never run. The compact DP minimizes
     // displayed edges under U and reports the actual MaxStep realized (often below U via free pickup).
     // Fast and interruptible, not proven optimal.
-    public StrategyPlan BuildFeasibleCompactPlan()
+    // onStage, when supplied, is invoked synchronously on this thread each time an edge stage becomes
+    // available: first for the baseline compact pass ("compact"), then once per downward tightening
+    // attempt ("compact≤N", carrying the smaller plan), and finally once for the proven-infeasible
+    // ceiling (a no-solution stage whose plan is null). This drives an anytime UI/CLI that surfaces the
+    // full compact → compact≤N progression as it is found, rather than only the final result.
+    public StrategyPlan BuildFeasibleCompactPlan(Action<GreedyEdgeStage>? onStage = null)
     {
         _progressScope = _reportCombinedRunProgress
             ? ProgressScope.CompactFeasibleInCombinedRun
             : ProgressScope.DefaultStandalone;
-        return BuildPlan(useCompactSelection: true, useFeasibleBudget: true);
+
+        // Baseline compact pass at the threaded step ceiling U (always feasible: the step tree itself
+        // witnesses a U-step solution).
+        StrategyPlan baseline = BuildPlan(useCompactSelection: true, useFeasibleBudget: true);
+        onStage?.Invoke(new GreedyEdgeStage("compact", baseline, baseline.Elapsed));
+        return EnableFeasibleTightening ? TightenFeasibleCompact(baseline, onStage) : baseline;
+    }
+
+    // Opportunistically lowers the greedy edge plan's max-step by re-running the compact pass at
+    // progressively tighter ceilings (U-1, U-2, ...). Each accepted retry strictly decreases the realized
+    // max-step; the loop stops at the first infeasible ceiling (optimum reached), at the proven lower
+    // bound L, when the soft time budget is exhausted, or on user cancellation -- always returning the
+    // best (smallest max-step) plan found, never worse than the baseline.
+    private StrategyPlan TightenFeasibleCompact(StrategyPlan baseline, Action<GreedyEdgeStage>? onStage)
+    {
+        StrategyPlan best = baseline;
+        int provenLowerBound = Math.Max(1, _rootProvenLowerBound);
+        long baselineMs = (long)baseline.Elapsed.TotalMilliseconds;
+        long timeBudgetMs = Math.Max(
+            FeasibleTighteningMinTimeBudgetMs,
+            (long)(baselineMs * FeasibleTighteningTimeBudgetFactor));
+
+        var stopwatch = Stopwatch.StartNew();
+        int budget = best.MaxStep - 1;
+        while (budget >= provenLowerBound)
+        {
+            _cancellationToken.ThrowIfCancellationRequested();
+            long remainingMs = timeBudgetMs - stopwatch.ElapsedMilliseconds;
+            if (remainingMs <= 0)
+                break;
+
+            _tighteningDeadlineUtc = DateTime.UtcNow.AddMilliseconds(remainingMs);
+            System.Threading.Volatile.Write(ref _tighteningDeadlineTicksUtc, _tighteningDeadlineUtc.Value.Ticks);
+            _tighteningDeadlineHit = false;
+            StrategyPlan? candidate;
+            // This probe's own wall time, captured even when the probe proves infeasible (returns null)
+            // so the no-solution stage still reports its elapsed.
+            var probeStopwatch = Stopwatch.StartNew();
+            try
+            {
+                candidate = ProbeFeasibleCompact(budget);
+            }
+            catch (OperationCanceledException) when (_tighteningDeadlineHit && !_cancellationToken.IsCancellationRequested)
+            {
+                candidate = null; // soft deadline: abandon this retry and keep the best plan so far
+            }
+            finally
+            {
+                _tighteningDeadlineUtc = null;
+                System.Threading.Volatile.Write(ref _tighteningDeadlineTicksUtc, 0);
+                probeStopwatch.Stop();
+            }
+
+            string stageName = $"compact\u2264{budget}";
+
+            // The soft deadline aborted this probe before it could decide feasibility: surface it as a
+            // timed-out stage (no proof either way -- the best plan so far still stands) and stop.
+            if (_tighteningDeadlineHit)
+            {
+                stopwatch.Stop();
+                onStage?.Invoke(new GreedyEdgeStage(
+                    stageName, null, probeStopwatch.Elapsed, GreedyEdgeStageOutcome.TimedOut));
+                break;
+            }
+
+            if (candidate is null)
+            {
+                // Proven infeasible at this ceiling -> the previous best is the optimum within reach.
+                // Raise the proven lower bound to budget+1 (== best.MaxStep): the search has now proven
+                // opt >= best.MaxStep, and best achieves it, so the L <= opt <= U squeeze closes to a
+                // proven optimum. Surface it as a no-solution stage so the UI/CLI shows the search
+                // bottomed out here. Pause the budget clock across the callback: a synchronous consumer
+                // (e.g. the GUI's pause-each-stage modal) blocks the worker here, and that wait must not
+                // count against the tightening time budget.
+                RecordRootProvenLowerBound(budget + 1);
+                stopwatch.Stop();
+                onStage?.Invoke(new GreedyEdgeStage(
+                    stageName, null, probeStopwatch.Elapsed, GreedyEdgeStageOutcome.NoSolution));
+                break;
+            }
+
+            best = candidate;
+            stopwatch.Stop();
+            onStage?.Invoke(new GreedyEdgeStage(stageName, candidate, probeStopwatch.Elapsed));
+            stopwatch.Start();
+            budget = best.MaxStep - 1; // realized max-step may already be below the attempted ceiling
+        }
+
+        // Reflect any proven lower bound learned during tightening (a proven-infeasible ceiling closes
+        // the squeeze on this feasible plan to a proven optimum) on the returned plan as well, so direct
+        // callers of the return value see the same closed squeeze the staged consumers do.
+        return best.WithRootProvenLowerBound(_rootProvenLowerBound);
+    }
+
+    // Runs a single compact pass at a fixed root ceiling, returning the materialized plan or null if the
+    // ceiling is infeasible (root solve yields the unsolvable sentinel). Resets the per-budget compact
+    // caches first. Progress snapshots flow normally so the bar/ETA track the current tightening probe.
+    private StrategyPlan? ProbeFeasibleCompact(int rootBudget)
+    {
+        ResetPerBuildTransientState();
+        ResetCompactSelectionState();
+
+        var stopwatch = Stopwatch.StartNew();
+        _compactUsesFeasibleBudget = true;
+        _feasibleRootBudgetActive = rootBudget;
+        try
+        {
+            EnsureCompactSelectionSolved();
+            _phase1bMilliseconds = stopwatch.ElapsedMilliseconds;
+            if (_compactRootCost == int.MaxValue)
+                return null;
+
+            _useCompactSelection = true;
+            var root = BuildState(new ComparisonState(_n), 0, _k, 1);
+            _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1bMilliseconds;
+            stopwatch.Stop();
+            return new StrategyPlan(
+                _n, _m, _requestedK, _k, root, stopwatch.Elapsed, CreateSearchStatistics(),
+                isFeasibleUpperBound: true);
+        }
+        finally
+        {
+            _feasibleRootBudgetActive = -1;
+        }
     }
 
     private StrategyPlan BuildPlan(bool useCompactSelection, bool useFeasibleBudget = false)
@@ -990,6 +1118,15 @@ partial class StrategyBuilder
     private void ThrowIfCancellationRequested()
     {
         _cancellationToken.ThrowIfCancellationRequested();
+
+        // Soft deadline for a U-tightening retry: enforced via the same frequent checkpoints the search
+        // already calls, so a too-slow retry is abandoned without a dedicated timer thread. Recorded so
+        // the tightening loop can tell a deadline abort (keep the best plan) from a user cancellation.
+        if (_tighteningDeadlineUtc is { } deadline && DateTime.UtcNow >= deadline)
+        {
+            _tighteningDeadlineHit = true;
+            throw new OperationCanceledException();
+        }
     }
 
     private void EnsurePhase1Solved()
@@ -1022,9 +1159,11 @@ partial class StrategyBuilder
         // the materialized U threaded from the step phase when present (tightest, keeps the edge plan
         // no worse than step), else the sound-but-looser lean ConstructiveRootUpperBound.
         int rootBudget = _compactUsesFeasibleBudget
-            ? (_feasibleRootBudget >= 0 ? _feasibleRootBudget : ConstructiveRootUpperBound())
+            ? (_feasibleRootBudgetActive >= 0
+                ? _feasibleRootBudgetActive
+                : (_feasibleRootBudget >= 0 ? _feasibleRootBudget : ConstructiveRootUpperBound()))
             : int.MaxValue;
-        _ = SolveCompactSelection(new ComparisonState(_n), _k, rootBudget);
+        _compactRootCost = SolveCompactSelection(new ComparisonState(_n), _k, rootBudget);
         _phase1bSolved = true;
     }
 
