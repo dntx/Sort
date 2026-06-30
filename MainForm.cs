@@ -761,15 +761,17 @@ class MainForm : Form
     // Squeeze on the optimum for a plan: L is the proven analytic lower bound
     // (RootProvenLowerBound), U is the achieved upper bound (MaxStep). When L == U the strategy is
     // in fact optimal (a proven floor met by an achievable strategy), even if it came from greedy.
+    // Worded in "max steps" terms to match the rest of the UI, where the achieved/optimal quantity
+    // is always the max-step count.
     private static string FormatPlanSqueeze(StrategyPlan plan)
     {
         int lower = plan.SearchStatistics.RootProvenLowerBound;
         int upper = plan.MaxStep;
         if (lower > 0 && lower == upper)
-            return $"opt = {upper} (proven optimal)";
+            return $"max steps = {upper} (proven optimal)";
 
         string lowerText = lower > 0 ? lower.ToString() : "?";
-        return $"{lowerText} <= opt <= {upper}";
+        return $"max steps: {lowerText} <= ? <= {upper}";
     }
 
     private static string BuildRootLabel(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan)
@@ -785,8 +787,9 @@ class MainForm : Form
         double totalSeconds = feasiblePlan.Elapsed.TotalSeconds + defaultPlan.Elapsed.TotalSeconds + compactPlan.Elapsed.TotalSeconds;
         // Lead with the optimality squeeze on the best plan: once the final tightening proves the next
         // step ceiling infeasible (the no-solution terminal), the incumbent's lower bound is closed to
-        // its max-step and this reads "opt = N (proven optimal)" -- the headline signal that the search
-        // is done and the step count is provably best. While still tightening it reads "L <= opt <= U".
+        // its max-step and this reads "max steps = N (proven optimal)" -- the headline signal that the
+        // search is done and the step count is provably best. While still tightening it reads
+        // "max steps: L <= ? <= U".
         return $"{head}, {FormatPlanSqueeze(compactPlan)}, total elapsed={totalSeconds:F3} s";
     }
 
@@ -1017,7 +1020,7 @@ class MainForm : Form
         var lines = new List<string>
         {
             "Greedy result (anytime: improving stages are shown as trees)",
-            $"greedy: {FormatPlanSqueeze(stepPlan)}, max steps={stepPlan.MaxStep}, total edges={stepPlan.TotalBranchEdges}",
+            $"greedy: {FormatPlanSqueeze(stepPlan)}, total edges={stepPlan.TotalBranchEdges}",
         };
         StrategyPlan incumbent = stepPlan;
         foreach (GreedyEdgeStage stage in stages)
@@ -1026,7 +1029,7 @@ class MainForm : Form
             {
                 if (p.IsStrictRefinementOver(incumbent))
                 {
-                    lines.Add($"{stage.Name}: {FormatPlanSqueeze(p)}, max steps={p.MaxStep}, total edges={p.TotalBranchEdges}");
+                    lines.Add($"{stage.Name}: {FormatPlanSqueeze(p)}, total edges={p.TotalBranchEdges}");
                     incumbent = p;
                 }
                 else
@@ -1762,8 +1765,7 @@ class MainForm : Form
         if (defaultPlan is null)
         {
             _statusLabel.Text =
-                $"{head}, step {FormatPlanSqueeze(feasiblePlan)} " +
-                $"(max steps={feasiblePlan.MaxStep}, not proven optimal). Computing step...";
+                $"{head}, step {FormatPlanSqueeze(feasiblePlan)} (not proven optimal). Computing step...";
             return;
         }
 
@@ -2158,11 +2160,11 @@ class MainForm : Form
             _ => (int?)null,
         };
         if (lower > 0 && upper is int u && lower == u)
-            return $"step-opt = {lower} (proven)";
+            return $"max steps = {lower} (proven)";
 
         string lowerText = lower > 0 ? lower.ToString() : "?";
         string upperText = upper?.ToString() ?? "?";
-        return $"step-opt: {lowerText} <= opt <= {upperText}";
+        return $"max steps: {lowerText} <= ? <= {upperText}";
     }
 
     private static string BuildIdleDetailsText()

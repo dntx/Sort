@@ -296,16 +296,17 @@ class Program
 
     // Squeeze on the optimum for a feasible plan: L is the proven analytic lower bound
     // (RootProvenLowerBound), U is the achieved feasible upper bound (MaxStep). When L == U the
-    // greedy strategy is in fact optimal (a proven floor met by an achievable strategy).
+    // greedy strategy is in fact optimal (a proven floor met by an achievable strategy). Worded in
+    // "max steps" terms to match the rest of the output.
     private static string FormatSqueeze(StrategyPlan plan)
     {
         int lower = plan.SearchStatistics.RootProvenLowerBound;
         int upper = plan.MaxStep;
         if (lower > 0 && lower == upper)
-            return $"opt = {upper} (proven optimal)";
+            return $"max steps = {upper} (proven optimal)";
 
         string lowerText = lower > 0 ? lower.ToString() : "?";
-        return $"{lowerText} <= opt <= {upper}";
+        return $"max steps: {lowerText} <= ? <= {upper}";
     }
 
     public static bool TryParseAndValidate(
