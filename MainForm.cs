@@ -783,10 +783,11 @@ class MainForm : Form
             return $"{head}, max steps={defaultPlan.MaxStep}, elapsed={seconds:F3} s (computing compact stage...)";
         }
         double totalSeconds = feasiblePlan.Elapsed.TotalSeconds + defaultPlan.Elapsed.TotalSeconds + compactPlan.Elapsed.TotalSeconds;
-        string stepNote = compactPlan.MaxStep < defaultPlan.MaxStep
-            ? $" (compact lowered from {defaultPlan.MaxStep})"
-            : string.Empty;
-        return $"{head}, max steps={compactPlan.MaxStep}{stepNote}, total elapsed={totalSeconds:F3} s";
+        // Lead with the optimality squeeze on the best plan: once the final tightening proves the next
+        // step ceiling infeasible (the no-solution terminal), the incumbent's lower bound is closed to
+        // its max-step and this reads "opt = N (proven optimal)" -- the headline signal that the search
+        // is done and the step count is provably best. While still tightening it reads "L <= opt <= U".
+        return $"{head}, {FormatPlanSqueeze(compactPlan)}, total elapsed={totalSeconds:F3} s";
     }
 
     private static string BuildRootDetails(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool exactImproved, bool compactImproved)

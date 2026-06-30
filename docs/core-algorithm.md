@@ -396,7 +396,10 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     （`no improvement` / `no solution` / `timed out` 阶段只新增一行注记），树根与 overview 用统一标签
     `阶段名: elapsed=…, max steps=…, edges=…, output=…`
     （`elapsed` 为该阶段自身耗时、秒、3 位小数；不更优时标 `no improvement`，证明无解时标 `no solution`，超时时标 `timed out`）。
-    树形区域的**总根节点** total elapsed 也用秒（3 位小数）。进度面板恒为四行：总 `elapsed` 秒数、
+    树形区域的**总根节点**以最优挤压（`FormatPlanSqueeze`）打头——`n=…, m=…, k=…, <squeeze>, total elapsed=…`——
+    其中 `<squeeze>` 在最终 `no solution` 终止后闭合为 **`opt = U (proven optimal)`**（最显眼的「搜索完成、步数已证明最优」信号），
+    收紧途中则为 `L <= opt <= U`；旧的 `(compact lowered from N)` 注记已移除（用处不大）。total elapsed 也用秒（3 位小数）。
+    进度面板恒为四行：总 `elapsed` 秒数、
     `阶段名: 本阶段秒数`、`progress: 本阶段百分数`、第四行剩余时间——在 `compact≤N` 收紧阶段标 **`time remaining`**，
     显示的是**距离软时间预算 timeout 还有多久**（由 UI 线程实时轮询引擎的 `StrategyBuilder.TighteningTimeRemaining`
     得到，该属性读一个 `Volatile` 的截止时刻镜像 `_tighteningDeadlineTicksUtc` 并与 `DateTime.UtcNow` 相减）——这是个
