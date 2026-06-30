@@ -44,11 +44,11 @@ partial class StrategyBuilder
     // Total distinct canonical search states the step phase visited, captured at the end of
     // BuildFeasiblePlan and (like _feasibleRootBudget) deliberately NOT cleared by
     // ResetPerBuildTransientState so it survives the step->edge boundary on the same builder. The edge
-    // phase's compact solve walks the same canonical SearchStateKey space, so this count is a sound
-    // denominator estimate for turning _compactStatesSolved into a live progress fraction (the edge
-    // phase otherwise has no pending/searched signal and would pin progress and eta). -1 until a step
-    // plan is built; the standalone edge phase (no prior step build) leaves it -1 and keeps the old
-    // behavior.
+    // phase has no pending/searched signal, so this serves as the SCALE anchor for a self-correcting
+    // asymptote (see EstimateProgress) that turns _compactStatesSolved into a live progress fraction --
+    // it is only a rough scale (edge work can be many times larger or smaller than the step state
+    // count), not a hard denominator. -1 until a step plan is built; the standalone edge phase (no
+    // prior step build) leaves it -1 and keeps the pinned-progress behavior.
     private int _feasibleCompactStateEstimate = -1;
 
     // Builds the greedy-mode feasible strategy (step tree): a valid, displayable strategy whose

@@ -1544,8 +1544,7 @@ class MainForm : Form
         if (Volatile.Read(ref _activePhase) == 2)
         {
             string solvedLine = p.CompactStateEstimate > 0
-                ? $"edge solved: {p.CompactStatesSolved} / ~{p.CompactStateEstimate}" +
-                  $" ({EdgeLocalFraction(p) * 100.0:F1}%)"
+                ? $"edge solved: {p.CompactStatesSolved} ({EdgeLocalFraction(p) * 100.0:F1}%)"
                 : $"edge solved: {p.CompactStatesSolved}";
             SetStatText(_statesTextBox,
                 solvedLine + "\n" +
@@ -1576,15 +1575,17 @@ class MainForm : Form
             edgeText);
     }
 
-    // Local 0..1 fraction of the edge phase's compact solve, mirroring the engine's own estimate
-    // (solved against the step-phase state-count estimate). Clamped below 1.0 so it never reads as
-    // "done" before the panel switches away from the edge phase.
+    // Local 0..1 fraction of the edge phase's compact solve, mirroring the engine's own self-correcting
+    // asymptote (TopKFinder.EstimateProgress): solved / (solved + scale), where the scale is the step
+    // phase's state-count estimate. Strictly increasing, always below 1, and never stuck even when the
+    // scale badly under/over-shoots the true edge work.
     private static double EdgeLocalFraction(SearchProgressSnapshot p)
     {
         if (p.CompactStateEstimate <= 0)
             return 0.0;
-        double denominator = Math.Max(p.CompactStateEstimate, p.CompactStatesSolved + 1);
-        return Math.Clamp(p.CompactStatesSolved / denominator, 0.0, 0.999);
+        double scale = p.CompactStateEstimate;
+        double fraction = p.CompactStatesSolved / (p.CompactStatesSolved + scale);
+        return Math.Min(fraction, 0.999);
     }
     private static string FormatSearchStatsSummary(SearchProgressSnapshot snapshot, bool includeOutputStates)
     {

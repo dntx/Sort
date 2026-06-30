@@ -744,10 +744,10 @@ partial class StrategyBuilder
     private (double Progress01, long RemainingMs) EstimateProgress(long elapsedMs)
     {
         // Greedy-mode edge phase: the compact solve has no pending/searched signal (those counters are
-        // reset and never touched here), so drive progress off _compactStatesSolved against the step
-        // phase's visited-state count. Once the solve finishes (_phase1bSolved) the remaining phase-2
-        // materialization is effectively instant, so report a full local fraction. MapToReportedProgress
-        // bands this into the edge stage's 10%..100% slice and derives the remaining-time estimate.
+        // reset and never touched here), so drive progress off _compactStatesSolved. Once the solve
+        // finishes (_phase1bSolved) the remaining phase-2 materialization is effectively instant, so
+        // report a full local fraction. MapToReportedProgress bands this into the edge stage's
+        // 10%..100% slice and derives the remaining-time estimate.
         if (_progressScope == ProgressScope.CompactFeasibleInCombinedRun)
         {
             if (_phase1bSolved)
@@ -755,11 +755,18 @@ partial class StrategyBuilder
             if (_feasibleCompactStateEstimate <= 0)
                 return (0.0, -1);
 
-            // The denominator is an estimate (the two phases may visit slightly different canonical
-            // states), so never let the fraction reach 1.0 before the solve actually completes.
-            double denominator = Math.Max(_feasibleCompactStateEstimate, _compactStatesSolved + 1);
-            double fraction = Math.Clamp(_compactStatesSolved / denominator, 0.0, 0.999);
-            return (fraction, -1);
+            // The step-phase state count is only a rough SCALE for the edge phase's work -- measured
+            // ratios of edge-solved to step-states span ~0.3x..27x across shapes, mostly because the
+            // edge phase's iterative-deepening depth is not predictable up front. A hard denominator
+            // therefore either tops out early (under-estimate) or stalls at a clamp. Use a
+            // self-correcting asymptote instead: fraction = solved / (solved + scale). It rises strictly
+            // with every solved state, stays below 1 however badly the scale under/over-shoots, and
+            // never sticks -- under-estimates self-correct because the effective denominator grows with
+            // solved. The watched (slow) shapes have solved >> scale, so the bar climbs smoothly toward
+            // ~1 and only snaps to 100% when the solve actually completes above.
+            double scale = _feasibleCompactStateEstimate;
+            double fraction = _compactStatesSolved / (_compactStatesSolved + scale);
+            return (Math.Min(fraction, 0.999), -1);
         }
 
         if (_searchedStates <= 0)
