@@ -748,7 +748,10 @@ class MainForm : Form
             return $"{head}, max steps={defaultPlan.MaxStep}, elapsed={ms:F1} ms (computing edge stage...)";
         }
         double totalMs = feasiblePlan.Elapsed.TotalMilliseconds + defaultPlan.Elapsed.TotalMilliseconds + compactPlan.Elapsed.TotalMilliseconds;
-        return $"{head}, max steps={defaultPlan.MaxStep}, total elapsed={totalMs:F1} ms";
+        string stepNote = compactPlan.MaxStep < defaultPlan.MaxStep
+            ? $" (edge lowered from {defaultPlan.MaxStep})"
+            : string.Empty;
+        return $"{head}, max steps={compactPlan.MaxStep}{stepNote}, total elapsed={totalMs:F1} ms";
     }
 
     private static string BuildRootDetails(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool exactImproved, bool compactImproved)
@@ -1417,12 +1420,16 @@ class MainForm : Form
         }
 
         double totalElapsedMs = feasiblePlan.Elapsed.TotalMilliseconds + defaultPlan.Elapsed.TotalMilliseconds + compactPlan.Elapsed.TotalMilliseconds;
-        string compactText = compactImproved
-            ? $"edge reduced total edges {defaultPlan.TotalBranchEdges} -> {compactPlan.TotalBranchEdges}"
-            : $"edge produced no better result (step total edges {defaultPlan.TotalBranchEdges}, edge {compactPlan.TotalBranchEdges})";
+        string compactText;
+        if (compactPlan.MaxStep < defaultPlan.MaxStep)
+            compactText = $"edge lowered max steps {defaultPlan.MaxStep} -> {compactPlan.MaxStep} (edges {defaultPlan.TotalBranchEdges} -> {compactPlan.TotalBranchEdges})";
+        else if (compactImproved)
+            compactText = $"edge reduced total edges {defaultPlan.TotalBranchEdges} -> {compactPlan.TotalBranchEdges}";
+        else
+            compactText = $"edge produced no better result (step total edges {defaultPlan.TotalBranchEdges}, edge {compactPlan.TotalBranchEdges})";
         _statusLabel.Text =
             $"{head}, total elapsed={totalElapsedMs:F1} ms, " +
-            $"max steps={defaultPlan.MaxStep}, {compactText}.";
+            $"max steps={compactPlan.MaxStep}, {compactText}.";
     }
 
     private static string BuildCompressedFinalChoiceText(FinalChoiceSummary summary, int k)

@@ -28,6 +28,51 @@ partial class StrategyBuilder
     private readonly Dictionary<(SearchStateKey Key, int Budget), int> _compactCostMemo = new();
     private readonly Dictionary<SearchStateKey, int> _compactRealStepsMemo = new();
 
+    // Greedy edge-phase U tightening. The constructive step phase's worst-case step count U is a feasible
+    // upper bound that is typically opt+1, and the edge phase inherits it as its ceiling. After the
+    // baseline compact pass at U, this opportunistically re-runs the compact pass at U-1, U-2, ...: a
+    // tighter ceiling forces the greedy to pick shallower groups, and whenever the pass still yields a
+    // feasible tree we have lowered the reported max-step (usually down to the true optimum, which the
+    // measured gap shows is almost always exactly U-1). Each retry is a full compact pass; the loop is
+    // bounded below by the proven analytic lower bound L (it can never beat L), by a soft wall-clock
+    // budget, and by the run's cancellation token, so large shapes that would take too long simply keep
+    // the baseline plan. Default on.
+    internal bool EnableFeasibleTightening = true;
+
+    // Soft wall-clock budget for the tightening retries, as a multiple of the baseline compact pass time
+    // plus an absolute floor so trivially fast baselines still get a few attempts. A retry that would run
+    // past the remaining budget is cancelled mid-pass and the best plan so far is kept.
+    internal double FeasibleTighteningTimeBudgetFactor = 4.0;
+    internal int FeasibleTighteningMinTimeBudgetMs = 2000;
+
+    // Per-pass root budget override used only by the tightening loop (-1 = use the threaded step U).
+    private int _feasibleRootBudgetActive = -1;
+
+    // Soft deadline enforced cheaply via ThrowIfCancellationRequested during a tightening retry (null =
+    // none). Distinct from the user's cancellation token so a deadline abort stops tightening (keeping the
+    // best plan) without aborting the whole run.
+    private DateTime? _tighteningDeadlineUtc;
+    private bool _tighteningDeadlineHit;
+
+    // Root cost returned by the most recent compact phase-1b solve; int.MaxValue means the budget was
+    // infeasible, so the tightening loop must stop rather than materialize an unsolved tree.
+    private int _compactRootCost = int.MaxValue;
+
+    // Suppresses progress snapshots during tightening retries so the unified bar holds at the baseline's
+    // completion instead of cycling 0->100% on every retry (elapsed still advances via the UI timer).
+    private bool _suppressProgressReports;
+
+    // Clears the per-budget compact caches so a tightening retry re-solves from scratch at the new
+    // (tighter) ceiling. The cross-phase step budget/estimate fields are intentionally left untouched.
+    private void ResetCompactSelectionState()
+    {
+        _compactGroupPatternCache.Clear();
+        _compactCostMemo.Clear();
+        _compactRealStepsMemo.Clear();
+        _phase1bSolved = false;
+        _compactRootCost = int.MaxValue;
+    }
+
     // Returns the proxy subtree cost (number of displayed branch edges) under the
     // compact-optimal choice for this state, populating _compactGroupPatternCache. The step
     // ceiling is supplied by the caller: in exact+compact mode the per-state proven optimum

@@ -143,7 +143,96 @@ partial class StrategyBuilder
         _progressScope = _reportCombinedRunProgress
             ? ProgressScope.CompactFeasibleInCombinedRun
             : ProgressScope.DefaultStandalone;
-        return BuildPlan(useCompactSelection: true, useFeasibleBudget: true);
+
+        // Baseline compact pass at the threaded step ceiling U (always feasible: the step tree itself
+        // witnesses a U-step solution).
+        StrategyPlan baseline = BuildPlan(useCompactSelection: true, useFeasibleBudget: true);
+        return EnableFeasibleTightening ? TightenFeasibleCompact(baseline) : baseline;
+    }
+
+    // Opportunistically lowers the greedy edge plan's max-step by re-running the compact pass at
+    // progressively tighter ceilings (U-1, U-2, ...). Each accepted retry strictly decreases the realized
+    // max-step; the loop stops at the first infeasible ceiling (optimum reached), at the proven lower
+    // bound L, when the soft time budget is exhausted, or on user cancellation -- always returning the
+    // best (smallest max-step) plan found, never worse than the baseline.
+    private StrategyPlan TightenFeasibleCompact(StrategyPlan baseline)
+    {
+        StrategyPlan best = baseline;
+        int provenLowerBound = Math.Max(1, _rootProvenLowerBound);
+        long baselineMs = (long)baseline.Elapsed.TotalMilliseconds;
+        long timeBudgetMs = Math.Max(
+            FeasibleTighteningMinTimeBudgetMs,
+            (long)(baselineMs * FeasibleTighteningTimeBudgetFactor));
+
+        var stopwatch = Stopwatch.StartNew();
+        int budget = best.MaxStep - 1;
+        while (budget >= provenLowerBound)
+        {
+            _cancellationToken.ThrowIfCancellationRequested();
+            long remainingMs = timeBudgetMs - stopwatch.ElapsedMilliseconds;
+            if (remainingMs <= 0)
+                break;
+
+            _tighteningDeadlineUtc = DateTime.UtcNow.AddMilliseconds(remainingMs);
+            _tighteningDeadlineHit = false;
+            StrategyPlan? candidate;
+            try
+            {
+                candidate = ProbeFeasibleCompact(budget);
+            }
+            catch (OperationCanceledException) when (_tighteningDeadlineHit && !_cancellationToken.IsCancellationRequested)
+            {
+                candidate = null; // soft deadline: abandon this retry and keep the best plan so far
+            }
+            finally
+            {
+                _tighteningDeadlineUtc = null;
+            }
+
+            if (_tighteningDeadlineHit)
+                break;
+            if (candidate is null)
+                break; // infeasible at this ceiling -> the previous best is the optimum within reach
+
+            best = candidate;
+            budget = best.MaxStep - 1; // realized max-step may already be below the attempted ceiling
+        }
+
+        return best;
+    }
+
+    // Runs a single compact pass at a fixed root ceiling, returning the materialized plan or null if the
+    // ceiling is infeasible (root solve yields the unsolvable sentinel). Resets the per-budget compact
+    // caches first; suppresses progress snapshots so the unified bar holds steady during tightening.
+    private StrategyPlan? ProbeFeasibleCompact(int rootBudget)
+    {
+        ResetPerBuildTransientState();
+        ResetCompactSelectionState();
+
+        var stopwatch = Stopwatch.StartNew();
+        _compactUsesFeasibleBudget = true;
+        _feasibleRootBudgetActive = rootBudget;
+        _suppressProgressReports = true;
+        try
+        {
+            EnsureCompactSelectionSolved();
+            _phase1bMilliseconds = stopwatch.ElapsedMilliseconds;
+            if (_compactRootCost == int.MaxValue)
+                return null;
+
+            _useCompactSelection = true;
+            var root = BuildState(new ComparisonState(_n), 0, _k, 1);
+            _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1bMilliseconds;
+            stopwatch.Stop();
+            return new StrategyPlan(
+                _n, _m, _requestedK, _k, root, stopwatch.Elapsed, CreateSearchStatistics(),
+                isFeasibleUpperBound: true);
+        }
+        finally
+        {
+            _feasibleRootBudgetActive = -1;
+            _suppressProgressReports = false;
+        }
     }
 
     private StrategyPlan BuildPlan(bool useCompactSelection, bool useFeasibleBudget = false)
@@ -682,7 +771,7 @@ partial class StrategyBuilder
 
     private void ReportProgress(bool force = false)
     {
-        if (_progressCallback is null)
+        if (_progressCallback is null || _suppressProgressReports)
             return;
 
         _searchedStates = _visitedSearchStates.Count;
@@ -990,6 +1079,15 @@ partial class StrategyBuilder
     private void ThrowIfCancellationRequested()
     {
         _cancellationToken.ThrowIfCancellationRequested();
+
+        // Soft deadline for a U-tightening retry: enforced via the same frequent checkpoints the search
+        // already calls, so a too-slow retry is abandoned without a dedicated timer thread. Recorded so
+        // the tightening loop can tell a deadline abort (keep the best plan) from a user cancellation.
+        if (_tighteningDeadlineUtc is { } deadline && DateTime.UtcNow >= deadline)
+        {
+            _tighteningDeadlineHit = true;
+            throw new OperationCanceledException();
+        }
     }
 
     private void EnsurePhase1Solved()
@@ -1022,9 +1120,11 @@ partial class StrategyBuilder
         // the materialized U threaded from the step phase when present (tightest, keeps the edge plan
         // no worse than step), else the sound-but-looser lean ConstructiveRootUpperBound.
         int rootBudget = _compactUsesFeasibleBudget
-            ? (_feasibleRootBudget >= 0 ? _feasibleRootBudget : ConstructiveRootUpperBound())
+            ? (_feasibleRootBudgetActive >= 0
+                ? _feasibleRootBudgetActive
+                : (_feasibleRootBudget >= 0 ? _feasibleRootBudget : ConstructiveRootUpperBound()))
             : int.MaxValue;
-        _ = SolveCompactSelection(new ComparisonState(_n), _k, rootBudget);
+        _compactRootCost = SolveCompactSelection(new ComparisonState(_n), _k, rootBudget);
         _phase1bSolved = true;
     }
 

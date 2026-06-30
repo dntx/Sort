@@ -218,7 +218,7 @@ class Program
             if (feasibleCompact.IsStrictRefinementOver(feasiblePlan))
             {
                 Console.WriteLine();
-                Console.WriteLine("==================== edge ====================");
+                Console.WriteLine($"==================== edge ({FormatSqueeze(feasibleCompact)}) ====================");
                 Console.Write(StrategyOverviewRenderer.RenderText(feasibleCompact));
                 Console.WriteLine();
                 Console.Write(StrategyTextRenderer.Render(feasibleCompact));

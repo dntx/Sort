@@ -348,6 +348,21 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     分组数 `≤ cap` 的状态因此与穷举**逐字节相同**（小/中形状毫无变化），只有分组数超过 `cap` 的大 `m` 状态被截断——
     用一点边数紧凑度换取**有界、可中断**的运行时间（`25,10,10` 由「出不来」降到约 23 s）。`int.MaxValue` 恢复原先
     的完整穷举，精确（exact）模式与最优性审计仍走未截断路径。
+  - **向下预算收紧（默认开启、带时间预算、可中断）**：step 阶段给出的 `U` 系统性地偏大（实测几乎总是 `opt+1`），
+    而这个偏大的 `U` 又顺带把 edge 阶段的边数也撑大。于是 edge 阶段在以 `U` 为上限跑完一遍**基线 compact**
+    （`BuildFeasibleCompactPlan`）后，会自动尝试**收紧**：依次用 `U−1, U−2, …` 作为根预算重跑 compact
+    （`TightenFeasibleCompact → ProbeFeasibleCompact`），直到某个预算**不可行**（根处 `SolveCompactSelection`
+    返回 `int.MaxValue`，此时不物化、直接判负，避免 `BuildState` 抛错）或触达**已证明下界 `L`** 为止；每拿到一个更小
+    `U` 的可行解就采纳为新的最优。由于可行解永远不可能优于真实 `opt`，所以 `opt−1` 必然不可行——这保证收紧后的
+    `U` 仍满足 `U ≥ opt`、绝不会假性低于最优（见 `FeasibleCompactPlanTests`）。每次重跑前用
+    `ResetCompactSelectionState` 清掉 compact 专属缓存（`_compactGroupPatternCache` / `_compactCostMemo` /
+    `_compactRealStepsMemo` / `_phase1bSolved`），让搜索在新的天花板下重新求解；跨阶段的 `_rootProvenLowerBound`
+    则**刻意保留**，使收紧后的 edge 计划仍带着 `L`，从而在 `L == U` 时显示 `opt = U (proven optimal)`。
+    **软时间预算** = `max(2000ms, 基线耗时 × 4)`，通过把截止时刻塞进既有的 `ThrowIfCancellationRequested`
+    检查点实现（无需额外计时线程）；`_tighteningDeadlineHit` 把「预算到点」与「用户真正取消」区分开——前者停止收紧、
+    保留当前最优，后者照常向上传播。这样小/中形状几乎瞬间把 `U` 收到最优（如 `8,3,3: 6→5`、`14,5,5: 6→5`、
+    `13,4,4: 7→6`），大形状（如 `25,10,10`）在预算内把 `U` 由 5 收到 4、边数 4685→3668；少数 `U−1` 可行但极慢的
+    形状会触达时间预算并**保留基线**（无回退、无正确性风险）。`EnableFeasibleTightening = false` 可整体关闭。
 - `StrategyPlan.IsFeasibleUpperBound == true` 标记这棵树是「可行上界」而非「精确最优」，CLI / GUI 据此渲染相应的
   step 区域。
 
