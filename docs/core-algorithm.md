@@ -363,6 +363,11 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     保留当前最优，后者照常向上传播。这样小/中形状几乎瞬间把 `U` 收到最优（如 `8,3,3: 6→5`、`14,5,5: 6→5`、
     `13,4,4: 7→6`），大形状（如 `25,10,10`）在预算内把 `U` 由 5 收到 4、边数 4685→3668；少数 `U−1` 可行但极慢的
     形状会触达时间预算并**保留基线**（无回退、无正确性风险）。`EnableFeasibleTightening = false` 可整体关闭。
+  - **Anytime 呈现**：`BuildFeasibleCompactPlan(onImprovedPlan)` 接受一个回调，在**每次**得到更优 edge 计划时**同步**触发
+    （先是基线，随后每次成功收紧各一次；每个都比上一个严格更优——要么步数更小、要么边数更少）。CLI 据此把
+    `step → edge → edge(tightened) → …` 逐棵打印；GUI 用 `Progress<StrategyPlan>` 把回调从工作线程 marshal 回 UI 线程，
+    每收到一个就**新增一棵树**（独立 scope `edge0/edge1/…`，导航键不冲突），用户可边算边看策略逐步变好。进度面板的
+    `progress`/`eta` 描述**当前阶段**（收紧期间不再静默，每个探测各自从 0→100% 上报），顶部的总 `elapsed` 始终累计。
 - `StrategyPlan.IsFeasibleUpperBound == true` 标记这棵树是「可行上界」而非「精确最优」，CLI / GUI 据此渲染相应的
   step 区域。
 

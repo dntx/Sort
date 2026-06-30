@@ -213,16 +213,28 @@ class Program
             Console.Write(StrategyTextRenderer.Render(feasiblePlan));
             Console.WriteLine();
 
-            StrategyPlan feasibleCompact = builder.BuildFeasibleCompactPlan();
-            ClearProgressLine();
-            if (feasibleCompact.IsStrictRefinementOver(feasiblePlan))
+            // Anytime edge stage: the baseline compact pass and each successful downward tightening
+            // (smaller max-step) are printed as they are produced, so the CLI shows the full
+            // step -> edge -> edge(tightened) -> ... progression rather than only the final result.
+            StrategyPlan lastPrinted = feasiblePlan;
+            int edgeCount = 0;
+            void PrintEdgeStage(StrategyPlan plan)
             {
+                if (!plan.IsStrictRefinementOver(lastPrinted))
+                    return;
+                ClearProgressLine();
                 Console.WriteLine();
-                Console.WriteLine($"==================== edge ({FormatSqueeze(feasibleCompact)}) ====================");
-                Console.Write(StrategyOverviewRenderer.RenderText(feasibleCompact));
+                string header = edgeCount == 0 ? "edge" : "edge (tightened)";
+                Console.WriteLine($"==================== {header} ({FormatSqueeze(plan)}) ====================");
+                Console.Write(StrategyOverviewRenderer.RenderText(plan));
                 Console.WriteLine();
-                Console.Write(StrategyTextRenderer.Render(feasibleCompact));
+                Console.Write(StrategyTextRenderer.Render(plan));
+                lastPrinted = plan;
+                edgeCount++;
             }
+
+            builder.BuildFeasibleCompactPlan(PrintEdgeStage);
+            ClearProgressLine();
             return;
         }
 

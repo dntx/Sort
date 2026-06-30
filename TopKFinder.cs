@@ -138,7 +138,11 @@ partial class StrategyBuilder
     // bound U instead of the proven optimum, so the exact search is never run. The compact DP minimizes
     // displayed edges under U and reports the actual MaxStep realized (often below U via free pickup).
     // Fast and interruptible, not proven optimal.
-    public StrategyPlan BuildFeasibleCompactPlan()
+    // onImprovedPlan, when supplied, is invoked synchronously on this thread each time a better edge
+    // plan becomes available: first for the baseline pass, then once per accepted tightening step
+    // (each strictly smaller max-step than the last). This drives an anytime UI/CLI that surfaces every
+    // intermediate strategy as it is found, rather than only the final result.
+    public StrategyPlan BuildFeasibleCompactPlan(Action<StrategyPlan>? onImprovedPlan = null)
     {
         _progressScope = _reportCombinedRunProgress
             ? ProgressScope.CompactFeasibleInCombinedRun
@@ -147,7 +151,8 @@ partial class StrategyBuilder
         // Baseline compact pass at the threaded step ceiling U (always feasible: the step tree itself
         // witnesses a U-step solution).
         StrategyPlan baseline = BuildPlan(useCompactSelection: true, useFeasibleBudget: true);
-        return EnableFeasibleTightening ? TightenFeasibleCompact(baseline) : baseline;
+        onImprovedPlan?.Invoke(baseline);
+        return EnableFeasibleTightening ? TightenFeasibleCompact(baseline, onImprovedPlan) : baseline;
     }
 
     // Opportunistically lowers the greedy edge plan's max-step by re-running the compact pass at
@@ -155,7 +160,7 @@ partial class StrategyBuilder
     // max-step; the loop stops at the first infeasible ceiling (optimum reached), at the proven lower
     // bound L, when the soft time budget is exhausted, or on user cancellation -- always returning the
     // best (smallest max-step) plan found, never worse than the baseline.
-    private StrategyPlan TightenFeasibleCompact(StrategyPlan baseline)
+    private StrategyPlan TightenFeasibleCompact(StrategyPlan baseline, Action<StrategyPlan>? onImprovedPlan)
     {
         StrategyPlan best = baseline;
         int provenLowerBound = Math.Max(1, _rootProvenLowerBound);
@@ -195,6 +200,7 @@ partial class StrategyBuilder
                 break; // infeasible at this ceiling -> the previous best is the optimum within reach
 
             best = candidate;
+            onImprovedPlan?.Invoke(candidate);
             budget = best.MaxStep - 1; // realized max-step may already be below the attempted ceiling
         }
 
@@ -203,7 +209,7 @@ partial class StrategyBuilder
 
     // Runs a single compact pass at a fixed root ceiling, returning the materialized plan or null if the
     // ceiling is infeasible (root solve yields the unsolvable sentinel). Resets the per-budget compact
-    // caches first; suppresses progress snapshots so the unified bar holds steady during tightening.
+    // caches first. Progress snapshots flow normally so the bar/ETA track the current tightening probe.
     private StrategyPlan? ProbeFeasibleCompact(int rootBudget)
     {
         ResetPerBuildTransientState();
@@ -212,7 +218,6 @@ partial class StrategyBuilder
         var stopwatch = Stopwatch.StartNew();
         _compactUsesFeasibleBudget = true;
         _feasibleRootBudgetActive = rootBudget;
-        _suppressProgressReports = true;
         try
         {
             EnsureCompactSelectionSolved();
@@ -231,7 +236,6 @@ partial class StrategyBuilder
         finally
         {
             _feasibleRootBudgetActive = -1;
-            _suppressProgressReports = false;
         }
     }
 
@@ -771,7 +775,7 @@ partial class StrategyBuilder
 
     private void ReportProgress(bool force = false)
     {
-        if (_progressCallback is null || _suppressProgressReports)
+        if (_progressCallback is null)
             return;
 
         _searchedStates = _visitedSearchStates.Count;

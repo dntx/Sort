@@ -110,6 +110,10 @@ class MainForm : Form
     private int _activePhase;
     private long _feasibleElapsedMs = -1;
     private long _phase1ElapsedMs = -1;
+    // Anytime greedy edge state (UI thread only): every baseline/tightened edge plan as it arrives,
+    // and a label describing the edge sub-phase currently running for the progress panel.
+    private readonly List<StrategyPlan> _greedyEdgePlans = new();
+    private string _edgePhaseLabel = "edge";
 
     public MainForm()
     {
@@ -565,6 +569,8 @@ class MainForm : Form
         _exactImproved = false;
         _compactImproved = false;
         _activePhase = 0;
+        _greedyEdgePlans.Clear();
+        _edgePhaseLabel = "edge";
         Interlocked.Exchange(ref _feasibleElapsedMs, -1);
         Interlocked.Exchange(ref _phase1ElapsedMs, -1);
         ClearResultsView();
@@ -603,13 +609,19 @@ class MainForm : Form
                 SetRunUiState(RunUiState.CompactComputingInteractive);
 
                 Interlocked.Exchange(ref _activePhase, 2);
-                StrategyPlan feasibleCompactPlan = await Task.Run(() => builder.BuildFeasibleCompactPlan(), cancellationToken);
+                _greedyEdgePlans.Clear();
+                _edgePhaseLabel = "edge (baseline)";
+                // Each baseline/tightened edge plan is surfaced live: Progress<T> marshals the worker
+                // thread's callback back onto the UI thread, where OnGreedyEdgePlanProduced adds a tree.
+                IProgress<StrategyPlan> edgeProgress = new Progress<StrategyPlan>(OnGreedyEdgePlanProduced);
+                StrategyPlan feasibleCompactPlan = await Task.Run(
+                    () => builder.BuildFeasibleCompactPlan(plan => edgeProgress.Report(plan)),
+                    cancellationToken);
                 _runStopwatch?.Stop();
 
                 _compactPlan = feasibleCompactPlan;
                 _compactImproved = feasibleCompactPlan.IsStrictRefinementOver(feasiblePlan);
                 _latestProgress = CreateSnapshotFromPlan(feasibleCompactPlan);
-                FinalizeCompactInTree(feasiblePlan, feasibleCompactPlan, _compactImproved);
                 _completedCompactStats = feasibleCompactPlan.SearchStatistics;
                 UpdateSummaryText(feasiblePlan, defaultPlan: feasiblePlan, compactPlan: feasibleCompactPlan, compactImproved: _compactImproved);
                 UpdateStatsPanels();
@@ -797,6 +809,92 @@ class MainForm : Form
         _treeView.EndUpdate();
 
         FinalizeCompactInOverview(compactPlan, compactImproved);
+    }
+
+    // Anytime greedy edge handler: invoked on the UI thread once per edge plan as the worker thread
+    // produces it (baseline first, then each successful downward tightening). The first plan fills the
+    // "edge" slot in place (like FinalizeCompactInTree); every subsequent, strictly-better plan is
+    // appended as a new "edge (tightened)" tree + overview section, so the user watches the strategy
+    // improve step by step. Each tree gets a unique scope ("edge0", "edge1", ...) so their per-state
+    // navigation keys never collide.
+    private void OnGreedyEdgePlanProduced(StrategyPlan plan)
+    {
+        if (_feasiblePlan is null || _treeView.Nodes.Count == 0)
+            return;
+
+        bool isBaseline = _greedyEdgePlans.Count == 0;
+        StrategyPlan previous = isBaseline ? _feasiblePlan : _greedyEdgePlans[^1];
+        bool improved = plan.IsStrictRefinementOver(previous);
+
+        // A tightening plan that does not strictly refine the last shown one adds no information.
+        if (!isBaseline && !improved)
+            return;
+
+        _greedyEdgePlans.Add(plan);
+        _compactPlan = plan;
+        int index = _greedyEdgePlans.Count - 1;
+        string scope = $"edge{index}";
+
+        _treeView.BeginUpdate();
+        TreeNode root = _treeView.Nodes[0];
+        root.Text = BuildRootLabel(_feasiblePlan, _feasiblePlan, plan);
+        root.Tag = BuildGreedyProgressionDetails(_feasiblePlan, _greedyEdgePlans);
+
+        if (isBaseline)
+        {
+            // Replace the trailing "edge: computing..." placeholder (everything after the step slot).
+            while (root.Nodes.Count > 1)
+                root.Nodes.RemoveAt(root.Nodes.Count - 1);
+            if (improved)
+                root.Nodes.Add(CreatePlanTreeRoot("edge", plan, scope));
+            else
+                root.Nodes.Add(new TreeNode("edge: no better result (total edges unchanged or worse)") { ForeColor = _palette.MutedForeColor });
+        }
+        else
+        {
+            root.Nodes.Add(CreatePlanTreeRoot($"edge (tightened, max steps={plan.MaxStep})", plan, scope));
+        }
+        _treeView.EndUpdate();
+
+        _overviewTree.BeginUpdate();
+        if (isBaseline)
+        {
+            if (_overviewTree.Nodes.Count > 0)
+                _overviewTree.Nodes.RemoveAt(_overviewTree.Nodes.Count - 1);
+            if (improved)
+                _overviewTree.Nodes.Add(BuildOverviewSectionNode(plan, scope, "edge overview"));
+            else
+                _overviewTree.Nodes.Add(BuildOverviewNoteNode("edge overview: no better result (total edges unchanged or worse)"));
+        }
+        else
+        {
+            _overviewTree.Nodes.Add(BuildOverviewSectionNode(plan, scope, $"edge overview (tightened, max steps={plan.MaxStep})"));
+        }
+        _overviewTree.EndUpdate();
+
+        // The next tightening probe targets one below the best max-step achieved so far.
+        _edgePhaseLabel = plan.MaxStep > 1 ? $"edge (tightening -> <= {plan.MaxStep - 1})" : "edge";
+        _latestProgress = CreateSnapshotFromPlan(plan);
+        UpdateSummaryText(_feasiblePlan, defaultPlan: _feasiblePlan, compactPlan: plan, compactImproved: improved || index > 0);
+        UpdateStatsPanels();
+    }
+
+    // Root-node detail text for greedy mode: the step plan followed by the full edge progression
+    // (baseline -> each tightening), so the detail pane mirrors the stacked trees.
+    private static string BuildGreedyProgressionDetails(StrategyPlan stepPlan, List<StrategyPlan> edgePlans)
+    {
+        var lines = new List<string>
+        {
+            "Greedy result (anytime: each stage strictly improves the previous)",
+            $"step: max steps={stepPlan.MaxStep}, total edges={stepPlan.TotalBranchEdges}",
+        };
+        for (int i = 0; i < edgePlans.Count; i++)
+        {
+            StrategyPlan p = edgePlans[i];
+            string label = i == 0 ? "edge (baseline)" : "edge (tightened)";
+            lines.Add($"{label}: {FormatPlanSqueeze(p)}, max steps={p.MaxStep}, total edges={p.TotalBranchEdges}");
+        }
+        return string.Join(Environment.NewLine, lines);
     }
 
     // Wraps a tree in a panel with a small top toolbar holding that tree's own buttons (Expand /
@@ -1509,7 +1607,11 @@ class MainForm : Form
 
         long edgeBaseMs = _feasibleMode ? feasibleMs : phase1Ms;
         string edgeLine;
-        if (_completedCompactStats is { } compactStats)
+        if (_feasibleMode && _completedCompactStats is not null && _runStopwatch is not null && edgeBaseMs >= 0)
+            // Greedy edge stage spans the baseline plus every tightening probe; the final plan's stats
+            // only cover the last probe, so report the cumulative wall time (total minus the step stage).
+            edgeLine = $"edge: {Math.Max(0, totalMs - edgeBaseMs) / 1000.0:F3} s";
+        else if (_completedCompactStats is { } compactStats)
             edgeLine = $"edge: {(compactStats.Phase1bMilliseconds + compactStats.Phase2Milliseconds) / 1000.0:F3} s";
         else if (_runStopwatch is not null && phase >= 2 && edgeBaseMs >= 0)
             edgeLine = $"edge: {Math.Max(0, totalMs - edgeBaseMs) / 1000.0:F3} s";
@@ -1518,9 +1620,11 @@ class MainForm : Form
 
         double etaSeconds = EstimateLiveEtaSeconds(totalMs);
         string etaLineValue = etaSeconds >= 0 ? $"{etaSeconds:F3} s" : "-";
+        // Progress and ETA describe the stage currently running; total elapsed (top) is cumulative.
+        string phaseLine = $"phase: {GetPhaseLabel()}";
         string progressLine = $"progress: {_latestProgress.EstimatedProgress01 * 100.0:F1}%";
         string etaLine = $"eta: {etaLineValue}";
-        string text = $"{totalMs / 1000.0:F3} s\n{stepLine}\n{edgeLine}\n{progressLine}\n{etaLine}";
+        string text = $"{totalMs / 1000.0:F3} s\n{phaseLine}\n{stepLine}\n{edgeLine}\n{progressLine}\n{etaLine}";
         SetStatText(_progressTextBox, text);
     }
 
@@ -1641,7 +1745,7 @@ class MainForm : Form
             return _activePhase switch
             {
                 0 => "1/2 step (greedy)",
-                2 => "2/2 edge",
+                2 => $"2/2 {_edgePhaseLabel}",
                 _ => "-",
             };
         return _activePhase switch

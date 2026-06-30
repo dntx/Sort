@@ -58,10 +58,6 @@ partial class StrategyBuilder
     // infeasible, so the tightening loop must stop rather than materialize an unsolved tree.
     private int _compactRootCost = int.MaxValue;
 
-    // Suppresses progress snapshots during tightening retries so the unified bar holds at the baseline's
-    // completion instead of cycling 0->100% on every retry (elapsed still advances via the UI timer).
-    private bool _suppressProgressReports;
-
     // Clears the per-budget compact caches so a tightening retry re-solves from scratch at the new
     // (tighter) ceiling. The cross-phase step budget/estimate fields are intentionally left untouched.
     private void ResetCompactSelectionState()
