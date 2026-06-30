@@ -369,8 +369,10 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
   - **Anytime 呈现**：`BuildFeasibleCompactPlan(onStage)` 接受一个回调，在**每次**产出一个阶段结果时**同步**触发——
     回调参数是 `GreedyEdgeStage`（阶段名 + 该阶段**自身**耗时 + 可空的计划，计划为 `null` 表示 `no solution`）。
     先是基线 `compact`，随后每次成功收紧各一个 `compact≤N`，最后可能是一个 `no solution` 终止阶段；每个成功阶段都比
-    上一个严格更优（要么步数更小、要么边数更少）。CLI 据此把 `greedy → compact → compact≤N → …` 逐棵打印；GUI 用
-    **同步 `Control.Invoke`**（而非 `Progress<T>`）把回调从工作线程 marshal 回 UI 线程——Invoke 会阻塞工作线程直到处理
+    上一个严格更优（要么步数更小、要么边数更少）。**CLI 与 GUI 在此分道**：CLI 是批处理工具，逐棵打印中间树太啰嗦，
+    故只收集各阶段、打印一行 `progression: greedy(steps=, edges=) -> compact(...) -> compact≤N(...) -> compact≤M: no solution`
+    总结，随后**只打印最终（最优）那一棵树**；GUI 才用 anytime 增量呈现：用**同步 `Control.Invoke`**（而非
+    `Progress<T>`）把回调从工作线程 marshal 回 UI 线程——Invoke 会阻塞工作线程直到处理
     完成，这正是「每阶段弹窗暂停」（默认关闭的 `pause each stage` 开关）得以真正暂停搜索的机制。每个阶段**新增一棵树**
     （含 `no solution` 终止阶段），树根与 overview 用统一标签 `阶段名: elapsed=…, max steps=…, edges=…, output=…`
     （`elapsed` 为该阶段自身耗时、秒、3 位小数；无解时标 `no solution`）。进度面板恒为四行：总 `elapsed` 秒数、

@@ -201,42 +201,43 @@ class Program
 
         if (feasibleMode)
         {
-            // Greedy mode: a fast greedy feasible plan (step) gives a valid bound, then the edge
-            // stage uses U as its step ceiling, minimizes edges under U, and may pick up a smaller
-            // real step for free. Fast/interruptible, not proven optimal.
+            // Greedy mode: a fast greedy feasible plan gives a valid bound, then the compact stage
+            // uses U as its step ceiling, minimizes edges under U, and may pick up a smaller real
+            // step for free. Fast/interruptible, not proven optimal.
             StrategyPlan feasiblePlan = builder.BuildFeasiblePlan();
             ClearProgressLine();
-            Console.WriteLine($"==================== greedy ({FormatSqueeze(feasiblePlan)}) ====================");
-            Console.WriteLine("(a valid strategy that achieves the upper bound; not proven optimal)");
-            Console.Write(StrategyOverviewRenderer.RenderText(feasiblePlan));
-            Console.WriteLine();
-            Console.Write(StrategyTextRenderer.Render(feasiblePlan));
-            Console.WriteLine();
 
-            // Anytime edge stage: the baseline compact pass ("compact") and each downward tightening
-            // ("compact≤N") are printed as they are produced, so the CLI shows the full
-            // greedy -> compact -> compact≤N progression. A proven-infeasible ceiling prints as a
-            // no-solution stage marking where the search bottomed out.
-            void PrintEdgeStage(GreedyEdgeStage stage)
+            // The anytime stages (baseline "compact", each "compact≤N" tightening, and a terminal
+            // no-solution ceiling) are produced incrementally for the GUI. The CLI is a batch tool,
+            // so printing every intermediate tree is just noise: collect the stages, then print a
+            // one-line progression summary followed by only the final (best) tree.
+            var stageSummaries = new System.Collections.Generic.List<string>
             {
-                ClearProgressLine();
-                Console.WriteLine();
-                if (!stage.HasSolution)
-                {
-                    Console.WriteLine($"==================== {stage.Name} (no solution) ====================");
-                    Console.WriteLine($"(no better strategy exists at this step ceiling; elapsed={stage.Elapsed.TotalSeconds:F3} s)");
-                    return;
-                }
-
-                StrategyPlan plan = stage.Plan!;
-                Console.WriteLine($"==================== {stage.Name} ({FormatSqueeze(plan)}) ====================");
-                Console.Write(StrategyOverviewRenderer.RenderText(plan));
-                Console.WriteLine();
-                Console.Write(StrategyTextRenderer.Render(plan));
+                FormatStageSummary("greedy", feasiblePlan),
+            };
+            GreedyEdgeStage? bestStage = null;
+            void CollectEdgeStage(GreedyEdgeStage stage)
+            {
+                stageSummaries.Add(stage.HasSolution
+                    ? FormatStageSummary(stage.Name, stage.Plan!)
+                    : $"{stage.Name}: no solution");
+                if (stage.HasSolution)
+                    bestStage = stage;
             }
 
-            builder.BuildFeasibleCompactPlan(PrintEdgeStage);
+            builder.BuildFeasibleCompactPlan(CollectEdgeStage);
             ClearProgressLine();
+
+            string finalName = bestStage?.Name ?? "greedy";
+            StrategyPlan finalPlan = bestStage?.Plan ?? feasiblePlan;
+
+            Console.WriteLine($"progression: {string.Join(" -> ", stageSummaries)}");
+            Console.WriteLine();
+            Console.WriteLine($"==================== {finalName} ({FormatSqueeze(finalPlan)}) ====================");
+            Console.WriteLine("(a valid strategy that achieves the upper bound; not proven optimal)");
+            Console.Write(StrategyOverviewRenderer.RenderText(finalPlan));
+            Console.WriteLine();
+            Console.Write(StrategyTextRenderer.Render(finalPlan));
             return;
         }
 
@@ -262,6 +263,11 @@ class Program
         Console.WriteLine();
         Console.Write(StrategyTextRenderer.Render(compactPlan));
     }
+
+    // One-line descriptor for a single greedy stage in the progression summary: stage name plus its
+    // worst-case steps and displayed edge count, e.g. "compact≤5(steps=5, edges=44)".
+    private static string FormatStageSummary(string name, StrategyPlan plan)
+        => $"{name}(steps={plan.MaxStep}, edges={plan.TotalBranchEdges})";
 
     // Squeeze on the optimum for a feasible plan: L is the proven analytic lower bound
     // (RootProvenLowerBound), U is the achieved feasible upper bound (MaxStep). When L == U the
