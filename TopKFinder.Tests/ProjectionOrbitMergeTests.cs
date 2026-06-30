@@ -28,30 +28,18 @@ public sealed class ProjectionOrbitMergeTests
         return (plan, StrategyTextRenderer.Render(plan));
     }
 
-    private static (StrategyPlan Plan, string Text) BuildAllOrbits(int n, int m, int k, bool allOrbitMerging)
-    {
-        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k}) allOrbitMerging={allOrbitMerging}",
-            Timeout,
-            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken)
-            {
-                EnableProjectionOrbitMergingAllOrbits = allOrbitMerging,
-            }.BuildDefaultPlan());
-        return (plan, StrategyTextRenderer.Render(plan));
-    }
-
     [Fact]
     public void N7M3K2_MultiFamilyMergeRendersStructuralQuotient()
     {
-        (StrategyPlan off, string offText) = BuildAllOrbits(7, 3, 2, allOrbitMerging: false);
-        (StrategyPlan on, string onText) = BuildAllOrbits(7, 3, 2, allOrbitMerging: true);
+        (StrategyPlan off, string offText) = Build(7, 3, 2, projectionMerging: false);
+        (StrategyPlan on, string onText) = Build(7, 3, 2, projectionMerging: true);
 
         // Folding the {block > #7} and {block-split-by-#7} families onto one quotient line saves a
         // displayed edge without changing the optimal depth.
         Assert.Equal(off.MaxStep, on.MaxStep);
         Assert.True(
             on.TotalBranchEdges < off.TotalBranchEdges,
-            $"expected all-orbit merging to reduce branch edges; off={off.TotalBranchEdges} on={on.TotalBranchEdges}");
+            $"expected projection merging to reduce branch edges; off={off.TotalBranchEdges} on={on.TotalBranchEdges}");
 
         // The merged multi-family component renders in the structural quotient notation: the block A
         // carries its tail chains, {A2, #7} is the post-projection brace, and the drop is the

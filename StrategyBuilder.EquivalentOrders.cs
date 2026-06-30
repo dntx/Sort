@@ -572,7 +572,7 @@ partial class StrategyBuilder
         List<MergedFamilyOutcome> line,
         MergedFamilyOutcome representative)
     {
-        ulong commonDrop = ProjectionMergingActive ? CommonEliminatedMask(state, line) : 0;
+        ulong commonDrop = EnableProjectionOrbitMerging ? CommonEliminatedMask(state, line) : 0;
         IReadOnlyList<int> repOrder = representative.Family.RepresentativeOrderItems;
         IReadOnlyList<int> repProjected = RestrictOrder(repOrder, commonDrop);
 

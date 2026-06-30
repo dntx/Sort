@@ -4,12 +4,15 @@ using System.Linq;
 
 partial class StrategyBuilder
 {
-    // Opt-in principle-D rendering. When true, MergeSingletonOrbitsByProjection folds sibling
-    // single orderings that are mirror images of one another *after removing the items both
-    // eliminate this step* (the doomed "drop" set) onto one displayed branch, instead of relying on
-    // the stricter parent-state automorphism alone. Default false preserves the current split. This
-    // only affects displayed branch lines and the compact edge-count proxy (CountDisplayBranches);
-    // it never changes the optimal MaxStep.
+    // Opt-in principle-D rendering. When true, MergeOrbitsByProjection folds sibling orderings that
+    // become interchangeable only *after removing the items they all eliminate this step* (the doomed
+    // "drop" set) onto one displayed branch, instead of relying on the stricter parent-state
+    // automorphism alone. This covers both single orderings (rendered as a relabeling representative
+    // plus a "drop {...}" legend) and multi-family components (rendered in the structural quotient
+    // notation "A1 > {A2, #7} ; A = {...} ; drop tail(A2)"); any component the structural renderer
+    // cannot express falls back to the singleton merge, so this is never worse than no merging.
+    // Default false preserves the current split. This only affects displayed branch lines and the
+    // compact edge-count proxy (CountDisplayBranches); it never changes the optimal MaxStep.
     internal bool EnableProjectionOrbitMerging { get; set; }
 
     private List<StrategyBranch> BuildBranches(ComparisonState state, ulong fixedTopMask, int remainingSlots, SelectedComparisonGroup chosenGroup, int nextStep)
@@ -174,11 +177,9 @@ partial class StrategyBuilder
         List<List<MergedFamilyOutcome>> parentOrbits = PartitionFamiliesIntoOrbits(state, families);
 
         List<(List<MergedFamilyOutcome> Members, bool ProjectionMerged)> orbits =
-            EnableProjectionOrbitMergingAllOrbits
+            EnableProjectionOrbitMerging
                 ? MergeOrbitsByProjection(state, parentOrbits)
-                : EnableProjectionOrbitMerging
-                    ? MergeSingletonOrbitsByProjection(state, parentOrbits)
-                    : parentOrbits.Select(orbit => (orbit, false)).ToList();
+                : parentOrbits.Select(orbit => (orbit, false)).ToList();
 
         foreach ((List<MergedFamilyOutcome> orbit, bool projectionMerged) in orbits)
         {

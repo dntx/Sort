@@ -3,29 +3,23 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 
-// Principle-D projection-orbit merging, generalized to multi-family components (opt-in via
-// EnableProjectionOrbitMergingAllOrbits). The existing EnableProjectionOrbitMerging only folds
-// SINGLETON parent orbits (single orderings) that mirror one another after their commonly-doomed
-// items are dropped. This file lifts that restriction: it unions ALL parent orbits related by a
-// projection automorphism -- including count>=2 symmetric families -- and renders the resulting
-// component honestly in the STRUCTURAL QUOTIENT notation
+// Principle-D projection-orbit merging, generalized to multi-family components. This is the engine
+// behind EnableProjectionOrbitMerging (Transitions.cs). It unions ALL parent orbits related by a
+// projection automorphism -- including count>=2 symmetric families, not just single orderings -- and
+// renders the resulting component honestly in the STRUCTURAL QUOTIENT notation
 //
 //     A1 > {A2, #7} ; A = {#1 > #2, #4 > #5} ; drop tail(A2)
 //
 // where block A is the parent-automorphism orbit of chain heads (each shown WITH its active tail
 // chain), {A2, #7} is the post-projection brace (A's loser and the partner leaf become
 // interchangeable once A2's tail is dropped), and "drop tail(A2)" is the structural, covariant drop
-// (A2 = #4 drops #5; A2 = #1 drops #2). A component is folded only when (a) the global-drop honesty
-// guard ComponentIsSingleGlobalDropOrbit holds AND (b) the structural renderer can express it; any
-// component that fails either test is un-merged back into its parent orbits so the display stays
-// honest. The default plan (both toggles off) is unaffected.
+// (A2 = #4 drops #5; A2 = #1 drops #2). A multi-family component is folded only when (a) the
+// global-drop honesty guard ComponentIsSingleGlobalDropOrbit holds AND (b) the structural renderer
+// can express it; any component that fails either test falls back to the legacy singleton merge, so
+// this pass is never worse than the singleton-only merge and never worse than no merging at all. The
+// default plan (toggle off) is unaffected.
 partial class StrategyBuilder
 {
-    internal bool EnableProjectionOrbitMergingAllOrbits { get; set; }
-
-    private bool ProjectionMergingActive =>
-        EnableProjectionOrbitMerging || EnableProjectionOrbitMergingAllOrbits;
-
     // All-orbit projection merge. Unions every pair of parent orbits whose representatives are
     // related by a projection automorphism, then keeps a multi-orbit component folded only when it
     // is an honest single global-drop orbit and (for multi-family components) the structural quotient
@@ -113,8 +107,12 @@ partial class StrategyBuilder
             }
             else
             {
-                foreach (int orbitIndex in component)
-                    result.Add((orbits[orbitIndex], false));
+                // Unsupported multi-family shape: don't claim the quotient. Fall back to the legacy
+                // singleton merge over this component's parent orbits so any singleton-vs-singleton
+                // saving is still taken -- the all-orbit pass is therefore never worse than the
+                // singleton-only pass, only ever better.
+                var componentOrbits = component.Select(orbitIndex => orbits[orbitIndex]).ToList();
+                result.AddRange(MergeSingletonOrbitsByProjection(state, componentOrbits));
             }
         }
 
