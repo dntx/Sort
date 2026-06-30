@@ -1053,7 +1053,11 @@ class MainForm : Form
 
         foreach (var branch in node.Branches)
         {
-            var branchNode = new TreeNode(branch.OrderText)
+            string branchHeader = branch.OrderText;
+            if (branch.EquivalentOrders is not null)
+                branchHeader += $"  (×{branch.EquivalentOrders.Count})";
+
+            var branchNode = new TreeNode(branchHeader)
             {
                 ForeColor = _palette.BranchColor,
                 Tag = BuildBranchDetails(branch),
