@@ -199,21 +199,31 @@ partial class StrategyBuilder
                 probeStopwatch.Stop();
             }
 
-            // The soft deadline aborted this probe before it could decide feasibility: stop without
-            // emitting a stage (an aborted probe is not a proven no-solution).
-            if (_tighteningDeadlineHit)
-                break;
-
             string stageName = $"compact\u2264{budget}";
+
+            // The soft deadline aborted this probe before it could decide feasibility: surface it as a
+            // timed-out stage (no proof either way -- the best plan so far still stands) and stop.
+            if (_tighteningDeadlineHit)
+            {
+                stopwatch.Stop();
+                onStage?.Invoke(new GreedyEdgeStage(
+                    stageName, null, probeStopwatch.Elapsed, GreedyEdgeStageOutcome.TimedOut));
+                break;
+            }
+
             if (candidate is null)
             {
                 // Proven infeasible at this ceiling -> the previous best is the optimum within reach.
-                // Surface it as a no-solution stage so the UI/CLI shows the search bottomed out here.
-                // Pause the budget clock across the callback: a synchronous consumer (e.g. the GUI's
-                // pause-each-stage modal) blocks the worker here, and that wait must not count against
-                // the tightening time budget.
+                // Raise the proven lower bound to budget+1 (== best.MaxStep): the search has now proven
+                // opt >= best.MaxStep, and best achieves it, so the L <= opt <= U squeeze closes to a
+                // proven optimum. Surface it as a no-solution stage so the UI/CLI shows the search
+                // bottomed out here. Pause the budget clock across the callback: a synchronous consumer
+                // (e.g. the GUI's pause-each-stage modal) blocks the worker here, and that wait must not
+                // count against the tightening time budget.
+                RecordRootProvenLowerBound(budget + 1);
                 stopwatch.Stop();
-                onStage?.Invoke(new GreedyEdgeStage(stageName, null, probeStopwatch.Elapsed));
+                onStage?.Invoke(new GreedyEdgeStage(
+                    stageName, null, probeStopwatch.Elapsed, GreedyEdgeStageOutcome.NoSolution));
                 break;
             }
 
@@ -224,7 +234,10 @@ partial class StrategyBuilder
             budget = best.MaxStep - 1; // realized max-step may already be below the attempted ceiling
         }
 
-        return best;
+        // Reflect any proven lower bound learned during tightening (a proven-infeasible ceiling closes
+        // the squeeze on this feasible plan to a proven optimum) on the returned plan as well, so direct
+        // callers of the return value see the same closed squeeze the staged consumers do.
+        return best.WithRootProvenLowerBound(_rootProvenLowerBound);
     }
 
     // Runs a single compact pass at a fixed root ceiling, returning the materialized plan or null if the

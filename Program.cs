@@ -224,7 +224,19 @@ class Program
             {
                 if (!stage.HasSolution)
                 {
-                    stageSummaries.Add($"{stage.Name}: no solution");
+                    if (stage.TimedOut)
+                    {
+                        // Abandoned probe: no proof either way, the incumbent simply stands.
+                        stageSummaries.Add($"{stage.Name}: time out");
+                    }
+                    else
+                    {
+                        // Proven infeasible at this ceiling => the incumbent is optimal (opt =
+                        // incumbent.MaxStep). Close its squeeze so the final tree reports proven optimal.
+                        stageSummaries.Add($"{stage.Name}: no solution");
+                        finalPlan = finalPlan.WithRootProvenLowerBound(finalPlan.MaxStep);
+                        incumbentPlan = finalPlan;
+                    }
                     return;
                 }
 

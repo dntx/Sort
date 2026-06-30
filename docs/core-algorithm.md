@@ -335,7 +335,8 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
 - **两种模式、各若干阶段**：编排层提供两条互斥的流水线，CLI 用 `--mode exact|greedy`、GUI 用下拉框切换。每个阶段都有一个
   统一的**阶段名**（也是 CLI 标题、GUI 树根与进度面板共用的标签）：exact 模式为 `exact → compact`；greedy 模式为
   `greedy → compact → compact≤N → …`（`compact≤N` 中的 `N` 是该次收紧的**目标步数上限**，并非已达到的步数）。
-  收紧到某个 `N` 被证明不可行时，单独呈现一个标 **`no solution`** 的终止阶段。
+  收紧到某个 `N` 被证明不可行时，单独呈现一个标 **`no solution`** 的终止阶段；若收紧探测因软时间预算到点被中止，则呈现一个
+  标 **`time out`** 的终止阶段。
   - **exact 模式（默认）**：`exact` = 精确求解 `BuildDefaultPlan`（已证明最优），`compact` = compact `BuildCompactPlan`。
     **不跑可行 feasible**。exact 的首阶段已是步最优，故其 compact 永远无法再降低步数，**没有**向下收紧阶段。
   - **greedy 模式（快速）**：`greedy` = 构造式 feasible `BuildFeasiblePlan`（可行上界 `U`），`compact` = 有界 compact
@@ -360,21 +361,31 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     `U` 仍满足 `U ≥ opt`、绝不会假性低于最优（见 `FeasibleCompactPlanTests`）。每次重跑前用
     `ResetCompactSelectionState` 清掉 compact 专属缓存（`_compactGroupPatternCache` / `_compactCostMemo` /
     `_compactRealStepsMemo` / `_phase1bSolved`），让搜索在新的天花板下重新求解；跨阶段的 `_rootProvenLowerBound`
-    则**刻意保留**，使收紧后的 edge 计划仍带着 `L`，从而在 `L == U` 时显示 `opt = U (proven optimal)`。
+    则**刻意保留**，使收紧后的 edge 计划仍带着 `L`。**当某个预算 `N` 被证明不可行时**，把 `_rootProvenLowerBound`
+    提升到 `N+1`（`RecordRootProvenLowerBound(budget + 1)`，恰等于 incumbent 的 `MaxStep`）——搜索此时已证明
+    `opt ≥ incumbent.MaxStep`，而 incumbent 又达到了它，于是 `L == U` 的挤压收敛为 `opt = U (proven optimal)`。
+    `TightenFeasibleCompact` 返回前用 `WithRootProvenLowerBound` 把这个提升后的 `L` 也写回返回的计划；编排层
+    （CLI / GUI）则在收到「证明不可行」终止阶段时，用同一手段把当前 incumbent 计划的挤压闭合（见下「Anytime 呈现」）。
     **软时间预算** = `max(2000ms, 基线耗时 × 4)`，通过把截止时刻塞进既有的 `ThrowIfCancellationRequested`
-    检查点实现（无需额外计时线程）；`_tighteningDeadlineHit` 把「预算到点」与「用户真正取消」区分开——前者停止收紧、
-    保留当前最优，后者照常向上传播。这样小/中形状几乎瞬间把 `U` 收到最优（如 `8,3,3: 6→5`、`14,5,5: 6→5`、
-    `13,4,4: 7→6`），大形状（如 `25,10,10`）在预算内把 `U` 由 5 收到 4、边数 4685→3668；少数 `U−1` 可行但极慢的
-    形状会触达时间预算并**保留基线**（无回退、无正确性风险）。`EnableFeasibleTightening = false` 可整体关闭。
+    检查点实现（无需额外计时线程）；`_tighteningDeadlineHit` 把「预算到点」与「用户真正取消」区分开——前者**停止收紧、
+    保留当前最优，并单独呈现一个标 `time out` 的终止阶段**（与 `no solution` 文案一致，只是「无解」换成「超时」；超时是
+    探测被中止、两边都未证明，故**不**提升 `L`），后者照常向上传播。这样小/中形状几乎瞬间把 `U` 收到最优（如 `8,3,3: 6→5`、
+    `14,5,5: 6→5`、`13,4,4: 7→6`），大形状（如 `25,10,10`）在预算内把 `U` 由 5 收到 4、边数 4685→3668；少数 `U−1`
+    可行但极慢的形状会触达时间预算并**保留基线**（无回退、无正确性风险）。`EnableFeasibleTightening = false` 可整体关闭。
   - **Anytime 呈现**：`BuildFeasibleCompactPlan(onStage)` 接受一个回调，在**每次**产出一个阶段结果时**同步**触发——
-    回调参数是 `GreedyEdgeStage`（阶段名 + 该阶段**自身**耗时 + 可空的计划，计划为 `null` 表示 `no solution`）。
-    先是基线 `compact`，随后每次成功收紧各一个 `compact≤N`，最后可能是一个 `no solution` 终止阶段。**呈现以「是否
+    回调参数是 `GreedyEdgeStage`（阶段名 + 该阶段**自身**耗时 + 可空的计划 + `Outcome` 枚举）。`Outcome` 区分三种结局：
+    `Solution`（计划非空）、`NoSolution`（探测跑完、证明该天花板无解 ⇒ incumbent 即最优）、`TimedOut`（探测在软预算到点前
+    未决，被中止）；后两者计划均为 `null`，靠 `Outcome` / `TimedOut` 区分文案。先是基线 `compact`，随后每次成功收紧各一个
+    `compact≤N`，最后可能是一个 `no solution` 或 `time out` 终止阶段。**呈现以「是否
     严格优于当前 incumbent」为准**（incumbent 初值为 `greedy` 可行解，按 `IsStrictRefinementOver`＝先比步数再比边数）：
     只有严格更优的阶段才被画成完整的可浏览树并更新 incumbent；**有解但不更优**的阶段（例如 `compact` 基线步数与
     `greedy` 相同、边数反而更多，见 `9,3,3`）记录下来、标 **`no improvement`**，但只渲染成一行注记、不画那棵更差的树；
-    收紧**仍照常继续**（下一个天花板由步数 `U` 而非边数决定）。**CLI 与 GUI 在此分道**：CLI 是批处理工具，逐棵打印中间树
+    收紧**仍照常继续**（下一个天花板由步数 `U` 而非边数决定）。收到 **`no solution`（证明不可行）** 终止时，编排层把当前
+    incumbent 计划用 `WithRootProvenLowerBound(incumbent.MaxStep)` 闭合挤压（CLI 改写 `finalPlan`；GUI 走
+    `MarkGreedyIncumbentProvenOptimal`，同时改写 `_compactPlan`/`_feasiblePlan` 与 `_greedyEdgeStages` 里对应那一项），
+    于是详情面板显示 `opt = U (proven optimal)`；**`time out`** 终止则只标注、不闭合。**CLI 与 GUI 在此分道**：CLI 是批处理工具，逐棵打印中间树
     太啰嗦，故只收集各阶段、打印一行
-    `progression: greedy(steps=, edges=) -> compact(...)[: no improvement] -> compact≤N(...) -> compact≤M: no solution`
+    `progression: greedy(steps=, edges=) -> compact(...)[: no improvement] -> compact≤N(...) -> compact≤M: no solution|time out`
     总结，随后**只打印最终（最优=incumbent）那一棵树**（若没有任何阶段更优，最终树就是 `greedy` 本身）；GUI 才用 anytime
     增量呈现：用**同步 `Control.Invoke`**（而非
     `Progress<T>`）把回调从工作线程 marshal 回 UI 线程——Invoke 会阻塞工作线程直到处理
@@ -382,10 +393,12 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     GUI 端在 `MessageBox.Show` 前后 `_runStopwatch.Stop()/Start()`（续计、不重置），引擎端在 `TightenFeasibleCompact`
     的回调 `onStage.Invoke` 前后 `Stop()/Start()` 那条**软时间预算**秒表——于是用户停留在对话框里的时间既不计入总
     `elapsed`、也不计入本阶段时钟，更不会偷偷吃掉收紧的时间预算（点 OK 后预算从暂停处继续）。每个**更优**阶段**新增一棵树**
-    （`no improvement` / `no solution` 阶段只新增一行注记），树根与 overview 用统一标签
+    （`no improvement` / `no solution` / `time out` 阶段只新增一行注记），树根与 overview 用统一标签
     `阶段名: elapsed=…, max steps=…, edges=…, output=…`
-    （`elapsed` 为该阶段自身耗时、秒、3 位小数；不更优时标 `no improvement`，无解时标 `no solution`）。进度面板恒为四行：总 `elapsed` 秒数、
-    `阶段名: 本阶段秒数`、`progress: 本阶段百分数`、`eta: 本阶段剩余秒数`。GUI 的各开关 / 参数（n/m/k、模式、主题、
+    （`elapsed` 为该阶段自身耗时、秒、3 位小数；不更优时标 `no improvement`，证明无解时标 `no solution`，超时时标 `time out`）。
+    树形区域的**总根节点** total elapsed 也用秒（3 位小数）。进度面板恒为四行：总 `elapsed` 秒数、
+    `阶段名: 本阶段秒数`、`progress: 本阶段百分数`、第四行剩余时间——在 `compact≤N` 收紧阶段标 **`remaining time`**
+    （此时剩余的是该探测固定预算内的余量），其它阶段标 `eta`。GUI 的各开关 / 参数（n/m/k、模式、主题、
     pause each stage）持久化到 `%APPDATA%/Sort/settings.json`，下次启动沿用上次设置。
 - `StrategyPlan.IsFeasibleUpperBound == true` 标记这棵树是「可行上界」而非「精确最优」，CLI / GUI 据此渲染相应的
   首阶段（`greedy`）区域。

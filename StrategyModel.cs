@@ -54,6 +54,19 @@ sealed class StrategyPlan
         return TotalBranchEdges < incumbent.TotalBranchEdges;
     }
 
+    // Returns a copy of this plan whose SearchStatistics carries a (higher) proven lower bound on the
+    // optimum. Used when a later proof closes the L <= opt <= U squeeze after this plan was already
+    // materialized -- e.g. a compact tightening pass proves the next ceiling infeasible, so this
+    // (feasible) plan's MaxStep is in fact optimal. Never lowers an existing bound; returns the same
+    // instance when there is nothing to raise.
+    public StrategyPlan WithRootProvenLowerBound(int rootProvenLowerBound)
+    {
+        if (rootProvenLowerBound <= SearchStatistics.RootProvenLowerBound)
+            return this;
+        return new StrategyPlan(N, M, RequestedK, K, Root, Elapsed,
+            SearchStatistics.WithRootProvenLowerBound(rootProvenLowerBound), IsFeasibleUpperBound);
+    }
+
     private static int GetMaxStep(StrategyNode node)
     {
         int selfStep = node.Step ?? 0;
@@ -76,24 +89,39 @@ sealed class StrategyPlan
     }
 }
 
+// How a greedy edge progression stage ended. Solution: a strategy was materialized (Plan is set).
+// NoSolution: a tightening probe ran to completion and proved no strategy exists at that step ceiling
+// (the previous best is therefore optimal). TimedOut: a tightening probe was abandoned when the soft
+// time budget ran out before it could decide feasibility (no proof either way).
+enum GreedyEdgeStageOutcome
+{
+    Solution,
+    NoSolution,
+    TimedOut,
+}
+
 // One stage of the greedy edge progression as it is produced by BuildFeasibleCompactPlan: the
-// baseline compact pass, each successful downward tightening, or the final proven-infeasible ceiling.
-// Name is the stage label (e.g. "compact", "compact<=4"); Plan is the materialized strategy, or null
-// when the stage proved no better solution exists (no-solution). Elapsed is the stage's own wall time,
+// baseline compact pass, each successful downward tightening, a proven-infeasible ceiling, or a
+// timed-out probe. Name is the stage label (e.g. "compact", "compact<=4"); Plan is the materialized
+// strategy, or null for the NoSolution/TimedOut outcomes. Elapsed is the stage's own wall time,
 // not a cumulative total.
 readonly struct GreedyEdgeStage
 {
-    public GreedyEdgeStage(string name, StrategyPlan? plan, TimeSpan elapsed)
+    public GreedyEdgeStage(string name, StrategyPlan? plan, TimeSpan elapsed,
+        GreedyEdgeStageOutcome outcome = GreedyEdgeStageOutcome.Solution)
     {
         Name = name;
         Plan = plan;
         Elapsed = elapsed;
+        Outcome = outcome;
     }
 
     public string Name { get; }
     public StrategyPlan? Plan { get; }
     public TimeSpan Elapsed { get; }
+    public GreedyEdgeStageOutcome Outcome { get; }
     public bool HasSolution => Plan is not null;
+    public bool TimedOut => Outcome == GreedyEdgeStageOutcome.TimedOut;
 }
 
 sealed class SearchMilestone
@@ -329,6 +357,28 @@ sealed class SearchStatistics
     // Best PROVEN lower bound on the root optimum (opt >= this). The L side of the L <= opt <= U
     // squeeze report; for a fully resolved build it equals MaxStep. See SearchProgressSnapshot.
     public int RootProvenLowerBound { get; }
+
+    // Returns a copy with a (higher) proven lower bound, leaving every other counter untouched. Used to
+    // close the squeeze on an already-materialized plan once a later pass proves a tighter bound.
+    public SearchStatistics WithRootProvenLowerBound(int rootProvenLowerBound)
+        => new SearchStatistics(
+            SearchedStates,
+            PendingStates,
+            PeakPendingStates,
+            OutputStates,
+            ExpandedOutputStates,
+            LowerBoundStates,
+            FeasibleTopSetStates,
+            Diagnostics,
+            Phase1Milliseconds,
+            Phase1bMilliseconds,
+            Phase2Milliseconds,
+            OutcomesConstructed,
+            CandidateGroupsEnumerated,
+            CompactStatesSolved,
+            CompactGroupsEnumerated,
+            CompactStepOptimalGroups,
+            rootProvenLowerBound);
 }
 
 sealed class StrategyNode
