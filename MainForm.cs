@@ -1537,12 +1537,31 @@ class MainForm : Form
     {
         SearchProgressSnapshot p = _latestProgress;
 
-        SetStatText(_statesTextBox,
-            $"searched: {p.SearchedStates}\n" +
-            $"pending: {p.PendingStates} (peak {p.PeakPendingStates})\n" +
-            $"output: {p.OutputStates}\n" +
-            $"lower-bound: {p.LowerBoundStates}\n" +
-            $"top-set: {p.FeasibleTopSetStates}");
+        // During the edge phase the step counters (searched/pending/output/...) are frozen at 0, so
+        // repurpose the States panel to surface the compact solve's live progress instead of a dead
+        // all-zero block. The "solved / ~estimate (pct%)" denominator comes from the step phase's
+        // distinct-state count (CompactStateEstimate); when unknown (-1) we just show the raw count.
+        if (Volatile.Read(ref _activePhase) == 2)
+        {
+            string solvedLine = p.CompactStateEstimate > 0
+                ? $"edge solved: {p.CompactStatesSolved} ({EdgeLocalFraction(p) * 100.0:F1}%)"
+                : $"edge solved: {p.CompactStatesSolved}";
+            SetStatText(_statesTextBox,
+                solvedLine + "\n" +
+                $"edge groups: {p.CompactGroupsEnumerated} ({p.CompactStepOptimalGroups} opt)\n" +
+                $"(step) output: {p.OutputStates}\n" +
+                $"(step) lower-bound: {p.LowerBoundStates}\n" +
+                $"(step) top-set: {p.FeasibleTopSetStates}");
+        }
+        else
+        {
+            SetStatText(_statesTextBox,
+                $"searched: {p.SearchedStates}\n" +
+                $"pending: {p.PendingStates} (peak {p.PeakPendingStates})\n" +
+                $"output: {p.OutputStates}\n" +
+                $"lower-bound: {p.LowerBoundStates}\n" +
+                $"top-set: {p.FeasibleTopSetStates}");
+        }
 
         string edgeText = p.CompactStatesSolved > 0
             ? $"[edge] {p.CompactStatesSolved} solved, {p.CompactGroupsEnumerated} groups ({p.CompactStepOptimalGroups} opt)"
@@ -1555,6 +1574,19 @@ class MainForm : Form
             $"cache: {p.ExactCacheHits}/{p.LowerBoundCacheHits}/{p.FeasibleTopSetCacheHits}/{p.BestGroupPatternCacheHits}\n" +
             edgeText);
     }
+
+    // Local 0..1 fraction of the edge phase's compact solve, mirroring the engine's own self-correcting
+    // asymptote (TopKFinder.EstimateProgress): solved / (solved + scale), where the scale is the step
+    // phase's state-count estimate. Strictly increasing, always below 1, and never stuck even when the
+    // scale badly under/over-shoots the true edge work.
+    private static double EdgeLocalFraction(SearchProgressSnapshot p)
+    {
+        if (p.CompactStateEstimate <= 0)
+            return 0.0;
+        double scale = p.CompactStateEstimate;
+        double fraction = p.CompactStatesSolved / (p.CompactStatesSolved + scale);
+        return Math.Min(fraction, 0.999);
+    }
     private static string FormatSearchStatsSummary(SearchProgressSnapshot snapshot, bool includeOutputStates)
     {
         string outputText = includeOutputStates ? $", output={snapshot.OutputStates}" : string.Empty;
@@ -1563,7 +1595,7 @@ class MainForm : Form
 
     private static SearchProgressSnapshot CreateInitialProgressSnapshot()
     {
-        return new SearchProgressSnapshot(0, 0, 0, 0, 0, null, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0.0, -1, 0);
+        return new SearchProgressSnapshot(0, 0, 0, 0, 0, null, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1, 0.0, -1, 0);
     }
 
     private static SearchProgressSnapshot CreateSnapshotFromPlan(StrategyPlan plan)
@@ -1590,6 +1622,7 @@ class MainForm : Form
             plan.SearchStatistics.CompactStatesSolved,
             plan.SearchStatistics.CompactGroupsEnumerated,
             plan.SearchStatistics.CompactStepOptimalGroups,
+            plan.SearchStatistics.CompactStatesSolved,
             1.0,
             0,
             plan.SearchStatistics.RootProvenLowerBound);
