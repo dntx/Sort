@@ -533,6 +533,92 @@ partial class StrategyBuilder
         return residual;
     }
 
+    // Verifies the display/search parity invariant for every materialized decision node: the displayed
+    // branches faithfully mirror what the search actually expanded. For a node's chosen group both the
+    // display and search enumerators (StrategyBuilder.Transitions.cs) run over the SAME parent state.
+    // The check asserts, for each node:
+    //   1. the set of distinct successor SEARCH states reachable via the display enumerator equals the
+    //      set the search enumerator expands (excluding the no-progress self-loop). This proves the
+    //      tree never lands on a state the search did not process (no fabrication) and never drops a
+    //      genuinely distinct outcome (no hiding) -- equivalent orderings are folded with a visible
+    //      count, never discarded; and
+    //   2. the number of rendered branches is at least the number of distinct searched successors, so
+    //      the display is a refinement: it may SPLIT a folded family into multiple orbit rows, but it
+    //      can never collapse two genuinely distinct searched successors into one row.
+    // Relies on _expandedStates / _stateIds still populated from the last build on this builder.
+    internal List<string> CheckDisplaySearchParity(StrategyPlan plan)
+    {
+        var residual = new List<string>();
+        if (plan?.Root is null)
+            return residual;
+
+        var idToSnapshot = new Dictionary<int, ExpandedStateSnapshot>();
+        foreach (KeyValuePair<IntSequenceKey, ExpandedStateSnapshot> kv in _expandedStates)
+            idToSnapshot[GetStateId(kv.Key)] = kv.Value;
+
+        var visited = new HashSet<int>();
+        foreach (StrategyNode node in EnumerateUniqueDecisionNodes(plan.Root, visited))
+        {
+            if (!idToSnapshot.TryGetValue(node.StateId, out ExpandedStateSnapshot snapshot))
+                continue;
+
+            ComparisonState state = snapshot.State;
+            ulong fixedTopMask = snapshot.FixedTopMask;
+            int remainingSlots = _k - BitOperations.PopCount(fixedTopMask);
+            IReadOnlyList<int> group = node.Group;
+
+            // The self-loop (an ordering that normalizes back to the parent) is skipped by both paths
+            // in VisitComparisonOutcomes as non-progressing; exclude it on both sides here too.
+            SearchStateKey currentKey = GetSearchStateKey(state, remainingSlots);
+
+            // What the search actually expanded: distinct progressing successor search keys.
+            var searchSuccessors = new HashSet<SearchStateKey>();
+            foreach (ComparisonOutcome outcome in EnumerateSearchOutcomes(state, remainingSlots, group))
+            {
+                if (outcome.NextSearchKey.Equals(currentKey))
+                    continue;
+                searchSuccessors.Add(outcome.NextSearchKey);
+            }
+
+            // What the display path reaches: the distinct search states the rendered branches land on.
+            var displaySuccessors = new HashSet<SearchStateKey>();
+            foreach (ComparisonOutcome outcome in EnumerateDisplayOutcomes(state, remainingSlots, group))
+            {
+                if (outcome.NextSearchKey.Equals(currentKey))
+                    continue;
+                displaySuccessors.Add(outcome.NextSearchKey);
+            }
+
+            if (!displaySuccessors.SetEquals(searchSuccessors))
+                residual.Add(
+                    $"S{node.StateId}: display successors ({displaySuccessors.Count}) != search successors " +
+                    $"({searchSuccessors.Count}); display-only={displaySuccessors.Except(searchSuccessors).Count()}, " +
+                    $"search-only={searchSuccessors.Except(displaySuccessors).Count()}");
+
+            if (node.Branches.Count < searchSuccessors.Count)
+                residual.Add(
+                    $"S{node.StateId}: {node.Branches.Count} rendered branches < {searchSuccessors.Count} distinct searched successors (a successor was hidden)");
+        }
+
+        return residual;
+    }
+
+    // Yields each distinct (by canonical StateId) materialized decision node once, pruning re-entry
+    // into an already-visited subtree so reference-heavy plans stay linear.
+    private static IEnumerable<StrategyNode> EnumerateUniqueDecisionNodes(StrategyNode node, HashSet<int> visited)
+    {
+        bool isDecision = node.Kind == StrategyNodeKind.Decision && node.FinalChoice is null && node.Branches.Count > 0;
+        if (isDecision && !visited.Add(node.StateId))
+            yield break;
+
+        if (isDecision)
+            yield return node;
+
+        foreach (StrategyBranch branch in node.Branches)
+            foreach (StrategyNode inner in EnumerateUniqueDecisionNodes(branch.Next, visited))
+                yield return inner;
+    }
+
     private static IEnumerable<(StrategyNode Node, StrategyBranch A, StrategyBranch B)> EnumerateSplitsToSameChild(StrategyNode node)
     {
         if (node.Kind == StrategyNodeKind.Decision && node.FinalChoice is null)
