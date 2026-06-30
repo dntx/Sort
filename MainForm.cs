@@ -771,14 +771,14 @@ class MainForm : Form
             return $"max steps = {upper} (proven optimal)";
 
         string lowerText = lower > 0 ? lower.ToString() : "?";
-        return $"max steps: {lowerText} <= ? <= {upper}";
+        return $"{lowerText} <= max steps <= {upper}";
     }
 
     private static string BuildRootLabel(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan)
     {
         string head = $"n={feasiblePlan.N}, m={feasiblePlan.M}, k={feasiblePlan.K}";
         if (defaultPlan is null)
-            return $"{head}, step {FormatPlanSqueeze(feasiblePlan)} (computing step...)";
+            return $"{head}, {FormatPlanSqueeze(feasiblePlan)} (computing step...)";
         if (compactPlan is null)
         {
             double seconds = feasiblePlan.Elapsed.TotalSeconds + defaultPlan.Elapsed.TotalSeconds;
@@ -789,7 +789,7 @@ class MainForm : Form
         // step ceiling infeasible (the no-solution terminal), the incumbent's lower bound is closed to
         // its max-step and this reads "max steps = N (proven optimal)" -- the headline signal that the
         // search is done and the step count is provably best. While still tightening it reads
-        // "max steps: L <= ? <= U".
+        // "L <= max steps <= U".
         return $"{head}, {FormatPlanSqueeze(compactPlan)}, total elapsed={totalSeconds:F3} s";
     }
 
@@ -1765,7 +1765,7 @@ class MainForm : Form
         if (defaultPlan is null)
         {
             _statusLabel.Text =
-                $"{head}, step {FormatPlanSqueeze(feasiblePlan)} (not proven optimal). Computing step...";
+                $"{head}, {FormatPlanSqueeze(feasiblePlan)} (not proven optimal). Computing step...";
             return;
         }
 
@@ -2164,7 +2164,7 @@ class MainForm : Form
 
         string lowerText = lower > 0 ? lower.ToString() : "?";
         string upperText = upper?.ToString() ?? "?";
-        return $"max steps: {lowerText} <= ? <= {upperText}";
+        return $"{lowerText} <= max steps <= {upperText}";
     }
 
     private static string BuildIdleDetailsText()

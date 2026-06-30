@@ -301,7 +301,7 @@ while (true)
 > **一次性 phase-1 求解的产物**，其生命周期由 `_phase1Solved`（**不**按 build 重置）界定。因此它们**不**在
 > `ResetPerBuildTransientState` 里清零——否则随后的 compact build 会把已解出的 `L` 重置为 0，而 compact
 > 阶段复用缓存、**不会重跑** IDA* driver 去重新记录，导致夹逼显示从「`max steps = N (proven)`」回退成
-> 「`max steps: ? <= ? <= ?`」。其余按 build 重新统计的计数器（`searched` / `output` / cache 命中等）仍照常重置，
+> 「`? <= max steps <= ?`」。其余按 build 重新统计的计数器（`searched` / `output` / cache 命中等）仍照常重置，
 > 因为 compact 阶段会通过 `ObserveSearchState` / `VisitComparisonOutcomes` 重新填充它们。
 
 ### 4.6 构造式可行解（greedy 模式的 step 阶段）
@@ -398,7 +398,7 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     （`elapsed` 为该阶段自身耗时、秒、3 位小数；不更优时标 `no improvement`，证明无解时标 `no solution`，超时时标 `timed out`）。
     树形区域的**总根节点**以最优挤压（`FormatPlanSqueeze`）打头——`n=…, m=…, k=…, <squeeze>, total elapsed=…`——
     其中 `<squeeze>` 在最终 `no solution` 终止后闭合为 **`max steps = U (proven optimal)`**（最显眼的「搜索完成、步数已证明最优」信号），
-    收紧途中则为 `max steps: L <= ? <= U`；旧的 `(compact lowered from N)` 注记已移除（用处不大）。total elapsed 也用秒（3 位小数）。
+    收紧途中则为 `L <= max steps <= U`；旧的 `(compact lowered from N)` 注记已移除（用处不大）。total elapsed 也用秒（3 位小数）。
     进度面板恒为四行：总 `elapsed` 秒数、
     `阶段名: 本阶段秒数`、`progress: 本阶段百分数`、第四行剩余时间——在 `compact≤N` 收紧阶段标 **`time remaining`**，
     显示的是**距离软时间预算 timeout 还有多久**（由 UI 线程实时轮询引擎的 `StrategyBuilder.TighteningTimeRemaining`

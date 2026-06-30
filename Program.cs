@@ -306,7 +306,7 @@ class Program
             return $"max steps = {upper} (proven optimal)";
 
         string lowerText = lower > 0 ? lower.ToString() : "?";
-        return $"max steps: {lowerText} <= ? <= {upper}";
+        return $"{lowerText} <= max steps <= {upper}";
     }
 
     public static bool TryParseAndValidate(
