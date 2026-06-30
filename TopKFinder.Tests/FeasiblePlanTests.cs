@@ -35,6 +35,19 @@ public class FeasiblePlanTests
             $"greedy feasible plan for 25,5,5 took {elapsed.TotalSeconds:F1}s; expected near-instant");
     }
 
+    // Regression: large shapes (here 26,10,10) produce a feasible-top-set count that exceeds the
+    // per-step outcome ceiling (m! = 10! = 3.6M), so the information-theoretic lower-bound loop
+    // multiplies its accumulator past int.MaxValue on the second iteration. The accumulator must be
+    // wide enough (long) not to throw OverflowException mid-build.
+    [Fact]
+    public void FeasiblePlan_LargeShape_DoesNotOverflowLowerBound()
+    {
+        StrategyPlan plan = new StrategyBuilder(26, 10, 10).BuildFeasiblePlan();
+
+        Assert.True(plan.IsFeasibleUpperBound);
+        Assert.True(plan.MaxStep > 0, "feasible plan should take at least one comparison");
+    }
+
     // The plan exposes a proven lower bound (the L side of the squeeze) that never exceeds the
     // feasible upper bound U it achieves. L <= opt <= U must hold.
     [Theory]
