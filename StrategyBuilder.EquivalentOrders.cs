@@ -562,24 +562,61 @@ partial class StrategyBuilder
     // engine cannot express such a cross-relabeling as a disjunction-free template, so without this
     // it would emit a misleading "(... | ...)" disjunction; here the equivalence is honest because
     // PartitionFamiliesIntoOrbits only unions families connected by a real active-poset automorphism.
-    private static EquivalentOrderSummary BuildRelabelingOrbitSummary(
+    //
+    // Under EnableProjectionOrbitMerging the line may also carry a principle-D projection orbit:
+    // single orderings that mirror one another only after the items both eliminate this step are
+    // removed. For those the relabeling is computed on the projected poset and the doomed "drop" set
+    // is appended to the legend as "drop {...}" so the displayed symmetry stays honest.
+    private EquivalentOrderSummary BuildRelabelingOrbitSummary(
         ComparisonState state,
         List<MergedFamilyOutcome> line,
         MergedFamilyOutcome representative)
     {
+        ulong commonDrop = ProjectionMergingActive ? CommonEliminatedMask(state, line) : 0;
         IReadOnlyList<int> repOrder = representative.Family.RepresentativeOrderItems;
+        IReadOnlyList<int> repProjected = RestrictOrder(repOrder, commonDrop);
+
+        ComparisonState? projected = null;
         var legends = new List<string>();
+        bool usedProjection = false;
+
         foreach (MergedFamilyOutcome member in line)
         {
             if (ReferenceEquals(member, representative))
                 continue;
-            if (state.TryFindOrderAutomorphism(0, repOrder, member.Family.RepresentativeOrderItems, out Dictionary<int, int>? map)
+
+            IReadOnlyList<int> memberOrder = member.Family.RepresentativeOrderItems;
+
+            // Prefer the genuine full-poset automorphism, so a parent-automorphism orbit renders
+            // exactly as before. Only when no such automorphism exists do we fall back to the
+            // principle-D projection (removing the commonly-doomed items), which requires the legend
+            // to disclose the drop set.
+            if (state.TryFindOrderAutomorphism(0, repOrder, memberOrder, out Dictionary<int, int>? map)
                 && map is not null)
             {
-                string legend = FormatRelabelingMap(map);
-                if (!string.IsNullOrEmpty(legend) && !legends.Contains(legend))
-                    legends.Add(legend);
+                AddRelabelLegend(legends, map);
+                continue;
             }
+
+            if (commonDrop == 0)
+                continue;
+
+            projected ??= CloneDeactivated(state, commonDrop);
+            IReadOnlyList<int> memberProjected = RestrictOrder(memberOrder, commonDrop);
+            if (repProjected.Count == memberProjected.Count
+                && projected.TryFindOrderAutomorphism(0, repProjected, memberProjected, out Dictionary<int, int>? projMap)
+                && projMap is not null)
+            {
+                usedProjection = true;
+                AddRelabelLegend(legends, projMap);
+            }
+        }
+
+        if (usedProjection && commonDrop != 0)
+        {
+            string dropNote = "drop {" + string.Join(", ",
+                ComparisonState.MaskToOrderedList(commonDrop).Select(item => $"#{item + 1}")) + "}";
+            legends.Add(dropNote);
         }
 
         string? combinedLegend = legends.Count > 0
@@ -590,6 +627,28 @@ partial class StrategyBuilder
             representative.Family.RepresentativeOrder,
             line.Count.ToString(),
             combinedLegend);
+    }
+
+    private static void AddRelabelLegend(List<string> legends, Dictionary<int, int> map)
+    {
+        string legend = FormatRelabelingMap(map);
+        if (!string.IsNullOrEmpty(legend) && !legends.Contains(legend))
+            legends.Add(legend);
+    }
+
+    private static ComparisonState CloneDeactivated(ComparisonState state, ulong dropMask)
+    {
+        ComparisonState projected = state.Clone();
+        projected.Deactivate(dropMask);
+        return projected;
+    }
+
+    private static ulong CommonEliminatedMask(ComparisonState state, List<MergedFamilyOutcome> line)
+    {
+        ulong common = ~0UL;
+        foreach (MergedFamilyOutcome member in line)
+            common &= EliminatedMask(state, member);
+        return common;
     }
 
     // Collapses an item->item automorphism into a compact relabeling note. An involution (the common

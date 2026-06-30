@@ -1,0 +1,195 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+// Measurement-only probe (opt-in via EnableProjectionPairingProbe). It NEVER changes rendering or
+// the plan; it only accumulates per-bucket statistics during display materialization.
+//
+// For each merged display bucket it compares two honest pairings of the bucket's orderings:
+//   * parentOrbitLines  -- the parent-automorphism orbits, i.e. the pairing the current display
+//                          uses (each orbit is one symbolic line); and
+//   * projectionLines   -- those orbits further merged whenever a projection automorphism (an
+//                          automorphism of the parent poset with the two orderings' commonly-doomed
+//                          items removed) relates two orbit representatives. This is the proposed
+//                          "projection pairing", rendered in the parent-automorphism quotient
+//                          (e.g. "A1 > {A2, #7}").
+//
+// The gap parentOrbitLines - projectionLines is how many symbolic lines the projection pairing would
+// save. A component that folds together a NON-singleton orbit (a count>=2 family) is the genuinely
+// new case the current opt-in (singleton-only) merge does not reach; those are counted separately and
+// sampled, because they are honest only in the quotient form and must be reviewed before adoption.
+partial class StrategyBuilder
+{
+    internal bool EnableProjectionPairingProbe { get; set; }
+
+    private int _probeBuckets;
+    private int _probeParentOrbitLines;
+    private int _probeProjectionLines;
+    private int _probeMultiOrbitComponents;   // merged components spanning >=2 parent orbits
+    private int _probeMultiFamilyComponents;  // such components that fold a count>=2 family
+    private int _probeMaxComponentOrbits;
+    private int _probeComponentsGe3;          // merged components spanning >=3 parent orbits
+    private int _probeComponentsLeak;         // components that are NOT one global-drop orbit
+    private readonly List<string> _probeWinSamples = new();
+    private readonly List<string> _probeLeakSamples = new();
+    private readonly List<string> _probeGe3Samples = new();
+
+    internal int ProbeBuckets => _probeBuckets;
+    internal int ProbeParentOrbitLines => _probeParentOrbitLines;
+    internal int ProbeProjectionLines => _probeProjectionLines;
+    internal int ProbeLineSavings => _probeParentOrbitLines - _probeProjectionLines;
+    internal int ProbeMultiOrbitComponents => _probeMultiOrbitComponents;
+    internal int ProbeMultiFamilyComponents => _probeMultiFamilyComponents;
+    internal int ProbeMaxComponentOrbits => _probeMaxComponentOrbits;
+    internal int ProbeComponentsGe3 => _probeComponentsGe3;
+    internal int ProbeComponentsLeak => _probeComponentsLeak;
+    internal IReadOnlyList<string> ProbeWinSamples => _probeWinSamples;
+    internal IReadOnlyList<string> ProbeLeakSamples => _probeLeakSamples;
+    internal IReadOnlyList<string> ProbeGe3Samples => _probeGe3Samples;
+
+    private void RecordProjectionPairingBucket(ComparisonState state, List<MergedFamilyOutcome> bucket)
+    {
+        _probeBuckets++;
+
+        if (bucket.Count < 2)
+        {
+            _probeParentOrbitLines += 1;
+            _probeProjectionLines += 1;
+            return;
+        }
+
+        List<List<MergedFamilyOutcome>> orbits = PartitionFamiliesIntoOrbits(state, bucket);
+        _probeParentOrbitLines += orbits.Count;
+
+        int n = orbits.Count;
+        var parent = Enumerable.Range(0, n).ToArray();
+        int Find(int x)
+        {
+            while (parent[x] != x)
+            {
+                parent[x] = parent[parent[x]];
+                x = parent[x];
+            }
+            return x;
+        }
+
+        for (int i = 0; i < n; i++)
+        {
+            for (int j = i + 1; j < n; j++)
+            {
+                if (Find(i) == Find(j))
+                    continue;
+                if (TryProjectionAutomorphism(state, orbits[i][0], orbits[j][0]))
+                    parent[Find(i)] = Find(j);
+            }
+        }
+
+        var componentsByRoot = new Dictionary<int, List<int>>();
+        for (int i = 0; i < n; i++)
+        {
+            int root = Find(i);
+            if (!componentsByRoot.TryGetValue(root, out List<int>? members))
+            {
+                members = new List<int>();
+                componentsByRoot[root] = members;
+            }
+            members.Add(i);
+        }
+
+        _probeProjectionLines += componentsByRoot.Count;
+
+        foreach (List<int> component in componentsByRoot.Values)
+        {
+            int orbitCount = component.Count;
+            if (orbitCount < 2)
+                continue;
+
+            _probeMultiOrbitComponents++;
+            _probeMaxComponentOrbits = Math.Max(_probeMaxComponentOrbits, orbitCount);
+
+            // Flatten the component's orbits into the family list the renderer would receive.
+            var flattened = new List<MergedFamilyOutcome>();
+            foreach (int orbitIndex in component)
+                flattened.AddRange(orbits[orbitIndex]);
+
+            int maxFamily = flattened.Max(outcome => outcome.Family.Count);
+            if (maxFamily >= 2)
+                _probeMultiFamilyComponents++;
+
+            bool honest = ComponentIsSingleGlobalDropOrbit(state, flattened, out ulong globalDrop);
+            if (!honest)
+            {
+                _probeComponentsLeak++;
+                if (_probeLeakSamples.Count < 40)
+                    _probeLeakSamples.Add(DescribeComponent(orbits, component, globalDrop, maxFamily));
+            }
+
+            if (orbitCount >= 3)
+            {
+                _probeComponentsGe3++;
+                if (_probeGe3Samples.Count < 40)
+                    _probeGe3Samples.Add(
+                        (honest ? "OK   " : "LEAK ") + DescribeComponent(orbits, component, globalDrop, maxFamily));
+            }
+        }
+
+        if (componentsByRoot.Count < orbits.Count && _probeWinSamples.Count < 40)
+        {
+            string reps = string.Join(" | ", orbits.Select(orbit => orbit[0].Family.RepresentativeOrder));
+            _probeWinSamples.Add($"({_n},{_m},{_requestedK}) orbits {orbits.Count}->{componentsByRoot.Count}  [{reps}]");
+        }
+    }
+
+    // Mirrors BuildRelabelingOrbitSummary's honesty contract: a merged line is honest iff, after
+    // dropping the GLOBAL common doomed set, every family maps onto the representative via a
+    // full-poset automorphism or (failing that) a projected automorphism. If any family cannot be
+    // mapped, the rendered line would silently omit its relabeling -- a transitivity leak.
+    private bool ComponentIsSingleGlobalDropOrbit(
+        ComparisonState state, List<MergedFamilyOutcome> line, out ulong globalDrop)
+    {
+        ulong common = ~0UL;
+        foreach (MergedFamilyOutcome member in line)
+            common &= EliminatedMask(state, member);
+        globalDrop = common;
+
+        MergedFamilyOutcome representative = line[0];
+        IReadOnlyList<int> repOrder = representative.Family.RepresentativeOrderItems;
+        List<int> repProjected = RestrictOrder(repOrder, common);
+
+        ComparisonState? projected = null;
+        for (int i = 1; i < line.Count; i++)
+        {
+            IReadOnlyList<int> memberOrder = line[i].Family.RepresentativeOrderItems;
+            if (state.TryMapOrderByAutomorphism(0, repOrder, memberOrder))
+                continue;
+
+            if (common == 0)
+                return false;
+
+            projected ??= CloneDeactivatedState(state, common);
+            List<int> memberProjected = RestrictOrder(memberOrder, common);
+            if (repProjected.Count != memberProjected.Count
+                || !projected.TryMapOrderByAutomorphism(0, repProjected, memberProjected))
+                return false;
+        }
+
+        return true;
+    }
+
+    private static ComparisonState CloneDeactivatedState(ComparisonState state, ulong dropMask)
+    {
+        ComparisonState clone = state.Clone();
+        clone.Deactivate(dropMask);
+        return clone;
+    }
+
+    private string DescribeComponent(
+        List<List<MergedFamilyOutcome>> orbits, List<int> component, ulong globalDrop, int maxFamily)
+    {
+        string reps = string.Join(" | ", component.Select(idx => orbits[idx][0].Family.RepresentativeOrder));
+        string drop = globalDrop == 0
+            ? "{}"
+            : "{" + string.Join(", ", ComparisonState.MaskToOrderedList(globalDrop).Select(item => $"#{item + 1}")) + "}";
+        return $"({_n},{_m},{_requestedK}) size={component.Count} maxFamily={maxFamily} drop={drop}  [{reps}]";
+    }
+}
