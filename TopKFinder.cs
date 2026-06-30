@@ -209,12 +209,18 @@ partial class StrategyBuilder
             {
                 // Proven infeasible at this ceiling -> the previous best is the optimum within reach.
                 // Surface it as a no-solution stage so the UI/CLI shows the search bottomed out here.
+                // Pause the budget clock across the callback: a synchronous consumer (e.g. the GUI's
+                // pause-each-stage modal) blocks the worker here, and that wait must not count against
+                // the tightening time budget.
+                stopwatch.Stop();
                 onStage?.Invoke(new GreedyEdgeStage(stageName, null, probeStopwatch.Elapsed));
                 break;
             }
 
             best = candidate;
+            stopwatch.Stop();
             onStage?.Invoke(new GreedyEdgeStage(stageName, candidate, probeStopwatch.Elapsed));
+            stopwatch.Start();
             budget = best.MaxStep - 1; // realized max-step may already be below the attempted ceiling
         }
 

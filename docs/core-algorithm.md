@@ -373,7 +373,10 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     故只收集各阶段、打印一行 `progression: greedy(steps=, edges=) -> compact(...) -> compact≤N(...) -> compact≤M: no solution`
     总结，随后**只打印最终（最优）那一棵树**；GUI 才用 anytime 增量呈现：用**同步 `Control.Invoke`**（而非
     `Progress<T>`）把回调从工作线程 marshal 回 UI 线程——Invoke 会阻塞工作线程直到处理
-    完成，这正是「每阶段弹窗暂停」（默认关闭的 `pause each stage` 开关）得以真正暂停搜索的机制。每个阶段**新增一棵树**
+    完成，这正是「每阶段弹窗暂停」（默认关闭的 `pause each stage` 开关）得以真正暂停搜索的机制。**弹窗期间一律停止计时**：
+    GUI 端在 `MessageBox.Show` 前后 `_runStopwatch.Stop()/Start()`（续计、不重置），引擎端在 `TightenFeasibleCompact`
+    的回调 `onStage.Invoke` 前后 `Stop()/Start()` 那条**软时间预算**秒表——于是用户停留在对话框里的时间既不计入总
+    `elapsed`、也不计入本阶段时钟，更不会偷偷吃掉收紧的时间预算（点 OK 后预算从暂停处继续）。每个阶段**新增一棵树**
     （含 `no solution` 终止阶段），树根与 overview 用统一标签 `阶段名: elapsed=…, max steps=…, edges=…, output=…`
     （`elapsed` 为该阶段自身耗时、秒、3 位小数；无解时标 `no solution`）。进度面板恒为四行：总 `elapsed` 秒数、
     `阶段名: 本阶段秒数`、`progress: 本阶段百分数`、`eta: 本阶段剩余秒数`。GUI 的各开关 / 参数（n/m/k、模式、主题、

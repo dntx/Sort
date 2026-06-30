@@ -918,12 +918,28 @@ class MainForm : Form
 
     private void ShowStageModal(GreedyEdgeStage stage)
     {
-        MessageBox.Show(
-            this,
-            FormatStageRootLabel(stage.Name, stage.Elapsed, stage.Plan),
-            "Stage complete",
-            MessageBoxButtons.OK,
-            stage.HasSolution ? MessageBoxIcon.Information : MessageBoxIcon.None);
+        // Pause the run clock while the modal is up: the time the user spends in the dialog must
+        // count toward neither the total elapsed nor the current stage's clock. Stopwatch.Start()
+        // resumes (does not reset), so accumulated time is preserved and the next stage still times
+        // from zero. The 100ms elapsed-timer keeps ticking inside the modal's message loop, but with
+        // the stopwatch stopped it simply renders a frozen value.
+        bool wasRunning = _runStopwatch?.IsRunning ?? false;
+        if (wasRunning)
+            _runStopwatch!.Stop();
+        try
+        {
+            MessageBox.Show(
+                this,
+                FormatStageRootLabel(stage.Name, stage.Elapsed, stage.Plan),
+                "Stage complete",
+                MessageBoxButtons.OK,
+                stage.HasSolution ? MessageBoxIcon.Information : MessageBoxIcon.None);
+        }
+        finally
+        {
+            if (wasRunning)
+                _runStopwatch!.Start();
+        }
     }
 
     // Root-node detail text for greedy mode: the step plan followed by the full edge progression
