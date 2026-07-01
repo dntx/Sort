@@ -106,7 +106,7 @@ TryBuildDoomedTailSpecs(...)  // 轨道 A：尾部已出局 → 折叠成 {...}
 引擎内部先用一种可解析的中间形式 `<alias>=permute{...}, ...; <body>`，最后才翻译成展示用的
 `{...}` / `A = {...}` 记号。
 
-#### 轨道 B 的同构折叠：跨链 relabel 等价
+#### 4.1 轨道 B 的同构折叠：跨链 relabel 等价（父态自同构）
 
 通用引擎只看排序、看不到父状态 P，所以遇到「两条排序互为父状态自同构的镜像」时，它无法用一个
 无析取的模板表达，只能退化成 `(... | ...)`。但这类镜像**确实**是真等价：在把一个分桶切成展示行时，
@@ -332,6 +332,11 @@ doomed-tail 边的计数被分解为**对称因子 × 尾部因子**：
   - `N12M4K3_CompactForcedTailHeadPeelsIntoLeadingChain`：pin §7 的 peel 结果，并断言一个「类被拆开」的
     兄弟边仍保留 `{...}` + 图例。
   - 多个 `..._RenderedTextMatchesSnapshot` 快照对小算例的整段文本做逐字节比对。
+- `TopKFinder.Tests/ProjectionOrbitMergeTests.cs`：钉 §4.2 投影合并的两种形态——单序合并的
+  `drop {...}` 披露（9,4,4 / 8,3,3）与多族结构商（7,3,2：`A1 > {A2, #7} ; ... ; drop tail(A2)`），
+  并断言 `MaxStep` 不变、边数下降、且干净对称 brace（`{#1, #5} > #2`）不被误改。
+- `TopKFinder.Tests/ProjectionPairingProbeTests.cs`：测量型探针（`EnableProjectionPairingProbe`，不影响渲染），
+  扫描小算例量化合并节省并断言 0 诚实性泄漏。
 - `TopKFinder.PerfTests/OrderedBlockHonestyTests.cs`：跨小算例断言 residual 不出现「假分裂」，保证
   折叠后的 pattern 仍诚实地覆盖每一个真实排序。
 
@@ -348,12 +353,14 @@ doomed-tail 边的计数被分解为**对称因子 × 尾部因子**：
 | 文本渲染 | `StrategyTextRenderer.cs` → `FormatEquivalentFormsSummary`、`FormatEquivalentPatternLine`、`FormatSet`（`#i ~ #j` 缩写） |
 | 轨道选择 | `StrategyBuilder.Transitions.cs` → `BuildBranchSpecs`、`SplitMergedBucketIntoBranchLines`、`PartitionFamiliesIntoOrbits`；`StrategyBuilder.Compact.cs`（compact 版） |
 | relabel 同构折叠 | `StrategyBuilder.Transitions.cs` → `BuildBranchSpecForLine`、`SelectOrbitRepresentative`；`StrategyBuilder.EquivalentOrders.cs` → `BuildRelabelingOrbitSummary`、`FormatRelabelingMap`；`ComparisonState.cs` → `TryFindOrderAutomorphism` |
+| 投影轨道合并（principle-D） | `StrategyBuilder.Transitions.cs` → `SplitMergedBucketIntoBranchLines`（开关 `EnableProjectionOrbitMerging`，默认 true）；`StrategyBuilder.ProjectionQuotient.cs` → `MergeOrbitsByProjection`、`BuildProjectionQuotientSummary`、`FormatActiveChain`；`MergeSingletonOrbitsByProjection`、`TryProjectionAutomorphism`（回退） |
+| 投影诚实性闸 / 探针 | `StrategyBuilder.ProjectionPairingProbe.cs` → `ComponentIsSingleGlobalDropOrbit`、`EnableProjectionPairingProbe`（测量只读） |
 | 通用 pattern 引擎 | `StrategyBuilder.EquivalentOrders.cs` → `BuildEquivalentOrderSummary`、`BuildEquivalentPatternSummary`、`TryBuild*Summary` 系列 |
 | 归一化 / 图例 | `StrategyBuilder.EquivalentOrders.cs` → `SplitPlaceholderLegend`、`NormalizeEquivalentPattern`、`FormatBraceSet` |
 | 对称类信息 | `StrategyBuilder.EquivalentOrders.cs` → `BuildGroupSymmetryInfo`；`GroupSymmetryInfo` / `GroupSymmetryClass` |
 | doomed-tail 检测/分桶/轨道 | `StrategyBuilder.DoomedTailEdges.cs` → `TryBuildDoomedTailSpecs`、`ComputeDoomedPrefixLength`、`BuildDoomedPrefixKey`、`PartitionDoomedBucketsIntoOrbits` |
 | doomed-tail 渲染 | `StrategyBuilder.DoomedTailEdges.cs` → `BuildDoomedTailSummary`、`BuildTailResidualConstraints`、`BuildTailFactorFormula`、peel forced-first head（~L285–349） |
-| 回归 / 诚实性测试 | `TopKFinder.Tests/StrategyRegressionTests.cs`、`TopKFinder.PerfTests/OrderedBlockHonestyTests.cs`、`TopKFinder.PerfTests/RelabelingOrbitFoldingTests.cs` |
+| 回归 / 诚实性测试 | `TopKFinder.Tests/StrategyRegressionTests.cs`、`TopKFinder.Tests/ProjectionOrbitMergeTests.cs`、`TopKFinder.Tests/ProjectionPairingProbeTests.cs`、`TopKFinder.PerfTests/OrderedBlockHonestyTests.cs`、`TopKFinder.PerfTests/RelabelingOrbitFoldingTests.cs` |
 
 > 搜索 / 剪枝 / 最优性相关内容见 [`core-algorithm.md`](./core-algorithm.md)。本文只覆盖它未涉及的
 > **分支等价 pattern 渲染（可读性）** 部分。
