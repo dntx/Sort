@@ -9,6 +9,11 @@
 因此对本文涉及的代码做的任何改动都应是「渲染层改动」：物化树的结构、`MaxStep`、边数都不变，变的只是
 `pattern:` 那一行文字。
 
+> **默认开启的 principle-D 投影合并**：本文 §4.2 描述的「投影轨道合并」（`EnableProjectionOrbitMerging`）
+> 现已**默认开启**，对 exact 与 greedy 两种模式都生效。它仍是纯渲染层改动——折叠后的树是搜索的
+> **严格细化**（`CheckDisplaySearchParity` 处处无残差）、`MaxStep` 不变、搜索统计不变，只有**显示的边数**
+> 会下降。该开关连同其下的 merge-OFF 旧分支会在功能完全落定后整体移除。
+
 ---
 
 ## 1. 为什么需要「pattern」
@@ -61,8 +66,13 @@ pattern: {PatternText} ; {Legend}                  // FormatEquivalentPatternLin
 | `A1, A2, ...` | 同一个**对称类** `A` 的占位成员（它们可互换，落在 pattern 的不同位置） |
 | `A = {...}` | 图例：定义对称类 `A` 的成员集合 |
 | `x > y`（接在 ` ; ` 之后） | **residual 约束**：折叠成 `{...}` 的尾部里仍然成立的已知顺序（Hasse 覆盖边） |
+| `(#a) ↔ (#b)` | **relabel 镜像**：`#a` 与 `#b` 互为父状态自同构（或投影后自同构）的镜像，可整体互换 |
+| `drop {...}` | **投影合并披露**：这条折叠边的代表与其镜像「共同注定出局」的元素集——丢掉它们后两者才等价（§4.2） |
+| `A1 > {A2, #7}` | **结构商记号**：投影后对称类成员 `A2` 与单叶 `#7` 落入同一 brace（多族投影合并的代表形状） |
+| `drop tail(A2)` | 结构商里的**协变 drop**：每个折叠成员各自丢掉其 `A2` 子块的 doomed 尾部后才互换 |
 | `N!` / `c!` | 阶乘形式的计数因子（一条长 `c` 的链有 `c!` 种线性扩展） |
 | `... sym x ... tail` | doomed-tail 计数 = 对称因子 × 尾部因子 |
+| `p! x q`（投影商计数） | 投影商计数 = 块内排列 `p!` × 投影镜像数 `q`（如 `4 = 2! x 2`） |
 
 一个核心约定：**`{...}` 永远只表示「任意顺序」**。无论它来自全排列、对称类，还是 doomed 尾部，
 读者看到花括号就知道「这些元素之间顺序无所谓」。
@@ -96,7 +106,7 @@ TryBuildDoomedTailSpecs(...)  // 轨道 A：尾部已出局 → 折叠成 {...}
 引擎内部先用一种可解析的中间形式 `<alias>=permute{...}, ...; <body>`，最后才翻译成展示用的
 `{...}` / `A = {...}` 记号。
 
-#### 轨道 B 的同构折叠：跨链 relabel 等价
+#### 4.1 轨道 B 的同构折叠：跨链 relabel 等价（父态自同构）
 
 通用引擎只看排序、看不到父状态 P，所以遇到「两条排序互为父状态自同构的镜像」时，它无法用一个
 无析取的模板表达，只能退化成 `(... | ...)`。但这类镜像**确实**是真等价：在把一个分桶切成展示行时，
@@ -122,6 +132,55 @@ pattern: #1 > #11 > ... > #5 ; (#1 ~ #10) ↔ (#11 ~ #20)
 > 不会被 `TryFindOrderAutomorphism` 接受、也就不会并轨道，仍各自成行。回归网由
 > `TopKFinder.PerfTests/RelabelingOrbitFoldingTests.cs` 用计数断言守护（20,10,10 可行解的
 > `CheckPlanFalseSplits` 必须为 0）。
+
+#### 4.2 投影轨道合并（principle-D，默认开启）
+
+上面 §4.1 的 relabel 折叠只认**父状态本身**的自同构。但有一类更弱的等价它抓不到：两条兄弟排序
+在父态下**并非**镜像，可一旦把它们**这一步共同淘汰掉的元素**（doomed「drop」集）从偏序里抠掉，
+剩下的「投影」偏序就互为自同构了。把它们各画一行同样是误导——丢掉的元素本来就出局，谁先谁后无所谓。
+
+`SplitMergedBucketIntoBranchLines`（`StrategyBuilder.Transitions.cs`）在 §4.1 的父态轨道划分之后，
+再跑一遍 `MergeOrbitsByProjection`（`StrategyBuilder.ProjectionQuotient.cs`）：用并查集把**所有**父态
+轨道按「投影自同构」(`TryProjectionAutomorphism`——抠掉公共淘汰集后存在父态自同构) 并成连通分量。
+每个分量按形状走一条渲染轨道：
+
+- **单序分量**（成员都是单例排序）：选字典序最小的当代表，交给 §4.1 的 `BuildRelabelingOrbitSummary`，
+  并把公共淘汰集 `CommonEliminatedMask` 作为 `drop {...}` 披露补在行尾，例如 9,4,4 的 S3：
+
+  ```
+  pattern: #1 > #6 > #9 > #2 ; (#1) ↔ (#9) ; drop {#2, #3, #4, #8}
+  ```
+
+  > 若两条排序在父态下**本来就**互为镜像（无需投影），则不带 drop，仍是干净的 `{#1, #9} > #2 > #6`。
+
+- **多族分量**（某成员自带内部排列，`Family.Count > 1`）：父态/投影都无法用一个无析取模板表达，
+  交给 `BuildProjectionQuotientSummary` 渲染成**结构商**记号，例如 7,3,2 的 S3：
+
+  ```
+  equivalent forms: 4 = 2! x 2
+  pattern: A1 > {A2, #7} ; A = {#1 > #2, #4 > #5} ; drop tail(A2)
+  ```
+
+  其中块 `A` 携带各自的尾链，`{A2, #7}` 是投影后落进同一 brace 的成员，`drop tail(A2)` 是协变的
+  结构性 drop（不是写死的元素集）。通用 pattern 引擎无法直接吐出 `{A2, #7}`：投影前 `#7` 是自由叶、
+  `#4` 是链头，分属不同对称类，所以必须用这个专用结构渲染器。
+
+**诚实性（两道闸）**：
+1. 全局-drop 闸 `ComponentIsSingleGlobalDropOrbit`（`StrategyBuilder.ProjectionPairingProbe.cs`）证明分量内
+   每个族都映到代表上（确为单一全局 drop 轨道，杜绝传递性泄漏）；
+2. 结构渲染器 `BuildProjectionQuotientSummary` **只接受它能忠实描述的标准形状**，否则返回 null。
+
+任一闸不过的多族分量**回退到单序合并**（`MergeSingletonOrbitsByProjection`），所以投影合并
+**绝不差于**仅单序合并、也绝不差于不合并——folded 边数 ≤ 不 fold 的边数。
+
+**与搜索的关系**：投影合并只折叠「本就收敛到同一规范搜索后继」的排序，所以它是搜索的**严格细化**——
+`CheckDisplaySearchParity`（`StrategyBuilder.OptimalityGap.cs`）处处无残差。
+
+> **已知 compact 不一致（待修，TODO）**：compact 选择的目标函数 `CountDisplayBranches`
+> （`StrategyBuilder.Compact.cs`）用 `fixedTopMask: 0` 估算合并边数，而合并行为依赖真实的 fixed/doomed
+> 上下文，于是 compact 的 DP 目标 ≠ 最终渲染边数，个别形状下 compact 树会渲染出比 merge-OFF 更多的边
+> （如 10,3,4：9 → 11）。修复方向是把真实 `fixedTopMask` 传进目标函数，使 DP 目标 = 渲染边数，再收紧
+> 相关基线。default/exact 渲染层不受此影响。
 
 
 ### 轨道 A：doomed-tail 边（`StrategyBuilder.DoomedTailEdges.cs`）
@@ -273,6 +332,11 @@ doomed-tail 边的计数被分解为**对称因子 × 尾部因子**：
   - `N12M4K3_CompactForcedTailHeadPeelsIntoLeadingChain`：pin §7 的 peel 结果，并断言一个「类被拆开」的
     兄弟边仍保留 `{...}` + 图例。
   - 多个 `..._RenderedTextMatchesSnapshot` 快照对小算例的整段文本做逐字节比对。
+- `TopKFinder.Tests/ProjectionOrbitMergeTests.cs`：钉 §4.2 投影合并的两种形态——单序合并的
+  `drop {...}` 披露（9,4,4 / 8,3,3）与多族结构商（7,3,2：`A1 > {A2, #7} ; ... ; drop tail(A2)`），
+  并断言 `MaxStep` 不变、边数下降、且干净对称 brace（`{#1, #5} > #2`）不被误改。
+- `TopKFinder.Tests/ProjectionPairingProbeTests.cs`：测量型探针（`EnableProjectionPairingProbe`，不影响渲染），
+  扫描小算例量化合并节省并断言 0 诚实性泄漏。
 - `TopKFinder.PerfTests/OrderedBlockHonestyTests.cs`：跨小算例断言 residual 不出现「假分裂」，保证
   折叠后的 pattern 仍诚实地覆盖每一个真实排序。
 
@@ -289,12 +353,14 @@ doomed-tail 边的计数被分解为**对称因子 × 尾部因子**：
 | 文本渲染 | `StrategyTextRenderer.cs` → `FormatEquivalentFormsSummary`、`FormatEquivalentPatternLine`、`FormatSet`（`#i ~ #j` 缩写） |
 | 轨道选择 | `StrategyBuilder.Transitions.cs` → `BuildBranchSpecs`、`SplitMergedBucketIntoBranchLines`、`PartitionFamiliesIntoOrbits`；`StrategyBuilder.Compact.cs`（compact 版） |
 | relabel 同构折叠 | `StrategyBuilder.Transitions.cs` → `BuildBranchSpecForLine`、`SelectOrbitRepresentative`；`StrategyBuilder.EquivalentOrders.cs` → `BuildRelabelingOrbitSummary`、`FormatRelabelingMap`；`ComparisonState.cs` → `TryFindOrderAutomorphism` |
+| 投影轨道合并（principle-D） | `StrategyBuilder.Transitions.cs` → `SplitMergedBucketIntoBranchLines`（开关 `EnableProjectionOrbitMerging`，默认 true）；`StrategyBuilder.ProjectionQuotient.cs` → `MergeOrbitsByProjection`、`BuildProjectionQuotientSummary`、`FormatActiveChain`；`MergeSingletonOrbitsByProjection`、`TryProjectionAutomorphism`（回退） |
+| 投影诚实性闸 / 探针 | `StrategyBuilder.ProjectionPairingProbe.cs` → `ComponentIsSingleGlobalDropOrbit`、`EnableProjectionPairingProbe`（测量只读） |
 | 通用 pattern 引擎 | `StrategyBuilder.EquivalentOrders.cs` → `BuildEquivalentOrderSummary`、`BuildEquivalentPatternSummary`、`TryBuild*Summary` 系列 |
 | 归一化 / 图例 | `StrategyBuilder.EquivalentOrders.cs` → `SplitPlaceholderLegend`、`NormalizeEquivalentPattern`、`FormatBraceSet` |
 | 对称类信息 | `StrategyBuilder.EquivalentOrders.cs` → `BuildGroupSymmetryInfo`；`GroupSymmetryInfo` / `GroupSymmetryClass` |
 | doomed-tail 检测/分桶/轨道 | `StrategyBuilder.DoomedTailEdges.cs` → `TryBuildDoomedTailSpecs`、`ComputeDoomedPrefixLength`、`BuildDoomedPrefixKey`、`PartitionDoomedBucketsIntoOrbits` |
 | doomed-tail 渲染 | `StrategyBuilder.DoomedTailEdges.cs` → `BuildDoomedTailSummary`、`BuildTailResidualConstraints`、`BuildTailFactorFormula`、peel forced-first head（~L285–349） |
-| 回归 / 诚实性测试 | `TopKFinder.Tests/StrategyRegressionTests.cs`、`TopKFinder.PerfTests/OrderedBlockHonestyTests.cs`、`TopKFinder.PerfTests/RelabelingOrbitFoldingTests.cs` |
+| 回归 / 诚实性测试 | `TopKFinder.Tests/StrategyRegressionTests.cs`、`TopKFinder.Tests/ProjectionOrbitMergeTests.cs`、`TopKFinder.Tests/ProjectionPairingProbeTests.cs`、`TopKFinder.PerfTests/OrderedBlockHonestyTests.cs`、`TopKFinder.PerfTests/RelabelingOrbitFoldingTests.cs` |
 
 > 搜索 / 剪枝 / 最优性相关内容见 [`core-algorithm.md`](./core-algorithm.md)。本文只覆盖它未涉及的
 > **分支等价 pattern 渲染（可读性）** 部分。
