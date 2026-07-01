@@ -24,6 +24,19 @@ partial class StrategyBuilder
     internal int CompactGreedyCandidateCap = 128;
     private int _compactGroupsEnumerated;
     private int _compactStepOptimalGroups;
+
+    // Set true whenever the greedy candidate cap (a finite generationCap) actually truncated a state's
+    // group enumeration during the current probe -- i.e. more representatives existed than the cap
+    // allowed us to generate. Reset per feasible-compact probe. When a probe concludes infeasible, this
+    // flag distinguishes a real proof (complete enumeration, cap never bit) from a merely-incomplete
+    // search (cap truncated some state, so an untried group might have fit): the latter must not be
+    // reported as proven optimal.
+    private bool _compactEnumerationCapped;
+
+    // Snapshot of _compactEnumerationCapped taken at the moment a feasible-compact probe concluded
+    // infeasible (root cost == sentinel), so TightenFeasibleCompact can tell a proven-infeasible ceiling
+    // (complete search) from a merely-incomplete one (cap truncated some state's enumeration).
+    private bool _lastProbeEnumerationCapped;
     private readonly Dictionary<SearchStateKey, BestGroupPattern> _compactGroupPatternCache = new();
     private readonly Dictionary<(SearchStateKey Key, int Budget), int> _compactCostMemo = new();
     private readonly Dictionary<SearchStateKey, int> _compactRealStepsMemo = new();

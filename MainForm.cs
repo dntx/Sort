@@ -931,7 +931,7 @@ class MainForm : Form
         {
             string? marker = stage.HasSolution
                 ? (!improved ? "no improvement" : null)
-                : (stage.TimedOut ? "timed out" : null);
+                : NoSolutionMarker(stage);
             ShowStageModal(FormatStageRootLabel(stage.Name, stage.Elapsed, stage.Plan, marker), stage.HasSolution);
         }
     }
@@ -975,7 +975,7 @@ class MainForm : Form
             ? CreatePlanTreeRoot(stage.Name, stage.Plan!, scope, stage.Elapsed)
             : stage.HasSolution
                 ? CreateNoImprovementTreeRoot(stage.Name, stage.Plan!, stage.Elapsed)
-                : CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, stage.TimedOut ? "timed out" : null);
+                : CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, NoSolutionMarker(stage));
 
     private TreeNode BuildStageOverviewNode(GreedyEdgeStage stage, string scope, bool improved)
         => improved
@@ -984,7 +984,15 @@ class MainForm : Form
                 stage.Name,
                 stage.Elapsed,
                 stage.Plan,
-                stage.HasSolution ? "no improvement" : (stage.TimedOut ? "timed out" : null)));
+                stage.HasSolution ? "no improvement" : NoSolutionMarker(stage)));
+
+    // Leaf note for a solution-less stage: null means "no solution" (a proven-infeasible ceiling),
+    // otherwise the reason the incumbent merely stands -- "timed out" (clock) or "search incomplete
+    // (candidate cap reached)" (the greedy cap truncated the enumeration, so infeasibility is unproven).
+    private static string? NoSolutionMarker(GreedyEdgeStage stage)
+        => stage.TimedOut ? "timed out"
+            : stage.Incomplete ? "search incomplete (candidate cap reached)"
+            : null;
 
     private void ShowStageModal(string message, bool hasSolution)
     {
@@ -1040,6 +1048,10 @@ class MainForm : Form
             else if (stage.TimedOut)
             {
                 lines.Add($"{stage.Name}: time out (probe abandoned on the time budget; best plan kept)");
+            }
+            else if (stage.Incomplete)
+            {
+                lines.Add($"{stage.Name}: search incomplete (candidate cap reached; infeasibility unproven, best plan kept)");
             }
             else
             {
