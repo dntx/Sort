@@ -1329,7 +1329,7 @@ class MainForm : Form
         string elapsedText = $"elapsed={elapsed.TotalSeconds:F3} s";
         if (plan is null)
             return $"{stageName}: {elapsedText}, {marker ?? "no solution"}";
-        string body = $"{stageName}: {elapsedText}, max steps={plan.MaxStep}, edges={plan.TotalBranchEdges}, output={plan.SearchStatistics.OutputStates}";
+        string body = $"{stageName}: {elapsedText}, max steps={plan.MaxStep}, edges={plan.TotalBranchEdges}, states={plan.SearchStatistics.OutputStates}";
         return marker is null ? body : $"{body}, {marker}";
     }
 
@@ -1442,7 +1442,7 @@ class MainForm : Form
     {
         string branchHeader = branch.OrderText;
         if (branch.EquivalentOrders is not null)
-            branchHeader += $"  (×{branch.EquivalentOrders.Count})";
+            branchHeader += $"  (×{branch.EquivalentOrders.Count} = {branch.EquivalentOrders.CountFormula})";
 
         var branchNode = new TreeNode(branchHeader)
         {
@@ -1452,16 +1452,10 @@ class MainForm : Form
 
         if (branch.EquivalentOrders is not null)
         {
-            string equivalentText = StrategyTextRenderer.FormatEquivalentFormsSummary(branch.EquivalentOrders);
-            string patternText = StrategyTextRenderer.FormatEquivalentPatternLine(branch.EquivalentOrders);
-
-            branchNode.Nodes.Add(new TreeNode(equivalentText)
-            {
-                ForeColor = _palette.MutedForeColor,
-                Tag = StrategyTextRenderer.FormatEquivalentDetails(branch.EquivalentOrders),
-            });
-
-            branchNode.Nodes.Add(new TreeNode(patternText)
+            // The count and its formula now live in the branch header (×N = formula), so only the
+            // pattern/legend needs its own line here. The hover Tag still carries the full two-line
+            // detail via FormatEquivalentDetails.
+            branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatEquivalentPatternLine(branch.EquivalentOrders))
             {
                 ForeColor = _palette.MutedForeColor,
                 Tag = StrategyTextRenderer.FormatEquivalentDetails(branch.EquivalentOrders),
