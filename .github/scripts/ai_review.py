@@ -109,6 +109,63 @@ def parse_verdict(review: str) -> str:
     return verdict
 
 
+BOT_LOGIN = "github-actions[bot]"
+
+
+def dismiss_stale_change_requests(repo: str, pr_number: str) -> None:
+    """Dismiss this bot's previous CHANGES_REQUESTED reviews.
+
+    When an earlier run blocked the PR and a later push resolved the issues,
+    the stale REQUEST_CHANGES review would otherwise keep blocking the merge.
+    """
+    proc = subprocess.run(
+        ["gh", "api", f"repos/{repo}/pulls/{pr_number}/reviews", "--paginate"],
+        text=True,
+        capture_output=True,
+    )
+    if proc.returncode != 0:
+        print(f"Could not list reviews to dismiss stale change-requests: {proc.stderr.strip()}")
+        return
+
+    try:
+        reviews = json.loads(proc.stdout)
+    except json.JSONDecodeError:
+        # --paginate can concatenate multiple JSON arrays; merge them.
+        reviews = []
+        for chunk in proc.stdout.replace("][", "]\n[").splitlines():
+            chunk = chunk.strip()
+            if chunk:
+                reviews.extend(json.loads(chunk))
+
+    for review in reviews:
+        user = (review.get("user") or {}).get("login")
+        if user == BOT_LOGIN and review.get("state") == "CHANGES_REQUESTED":
+            review_id = review["id"]
+            dismiss = subprocess.run(
+                [
+                    "gh",
+                    "api",
+                    f"repos/{repo}/pulls/{pr_number}/reviews/{review_id}/dismissals",
+                    "--method",
+                    "PUT",
+                    "--input",
+                    "-",
+                ],
+                input=json.dumps(
+                    {
+                        "message": "Resolved in a newer revision — dismissed by automated review.",
+                        "event": "DISMISS",
+                    }
+                ),
+                text=True,
+                capture_output=True,
+            )
+            if dismiss.returncode == 0:
+                print(f"Dismissed stale CHANGES_REQUESTED review {review_id}.")
+            else:
+                print(f"Failed to dismiss review {review_id}: {dismiss.stderr.strip()}")
+
+
 def post_review(review_body: str, verdict: str) -> None:
     repo = os.environ["GITHUB_REPOSITORY"]
     pr_number = os.environ["PR_NUMBER"]
@@ -157,6 +214,13 @@ def post_review(review_body: str, verdict: str) -> None:
             text=True,
             check=True,
         )
+
+    if verdict != "BLOCK":
+        try:
+            dismiss_stale_change_requests(repo, pr_number)
+        except Exception as err:  # noqa: BLE001
+            # Dismissal is best-effort and must never fail an otherwise-passing run.
+            print(f"Skipping stale-review dismissal due to error: {err}")
 
 
 def main() -> int:
