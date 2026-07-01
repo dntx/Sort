@@ -216,7 +216,11 @@ def post_review(review_body: str, verdict: str) -> None:
         )
 
     if verdict != "BLOCK":
-        dismiss_stale_change_requests(repo, pr_number)
+        try:
+            dismiss_stale_change_requests(repo, pr_number)
+        except Exception as err:  # noqa: BLE001
+            # Dismissal is best-effort and must never fail an otherwise-passing run.
+            print(f"Skipping stale-review dismissal due to error: {err}")
 
 
 def main() -> int:
