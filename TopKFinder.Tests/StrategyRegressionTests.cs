@@ -449,7 +449,7 @@ public sealed class StrategyRegressionTests
             ==================== summary ====================
             n=5, m=3, k=2
             worst-case steps = 3
-            total edges = 4
+            total edges = 3
             elapsed = <elapsed>
             phases: <phases>
 
@@ -491,11 +491,8 @@ public sealed class StrategyRegressionTests
                     S3 [step 3/3] sort(#2, #4)
                       fixed (#1); choose 1 of (#2, #4) into top 2
                   #4 > #1 > #5: [+ (#1, #4), - (#2, #5), fixed (#1, #4)] S4: top 2 = (#1, #4)
-                    equivalent forms: 2 = 2!
-                    pattern: A1 > #1 > A2 ; A = {#4, #5}
-                  #4 > #5 > #1: [+ (#4, #5), - (#1, #2), fixed (#4, #5)] S4: top 2 = (#4, #5)
-                    equivalent forms: 2 = 2!
-                    pattern: {#4, #5} > #1
+                    equivalent forms: 4 = 2! x 2
+                    pattern: A1 > {A2, #1} ; A = {#4, #5} ; drop tail(#1)
             """;
 
         Assert.Equal(StrategyTestHelpers.NormalizeRenderedSnapshot(expected), rendered);
@@ -1183,7 +1180,7 @@ public sealed class StrategyRegressionTests
     [InlineData(9, 3, 3, 800)]
     [InlineData(11, 3, 3, 1743)]
     [InlineData(12, 4, 4, 5538)]
-    [InlineData(10, 3, 4, 5203)]
+    [InlineData(10, 3, 4, 5207)]
     [InlineData(12, 4, 3, 2501)]
     [InlineData(12, 3, 3, 622)]
     // Ties/anomalies (see Compact_SearchedStateCountStaysWithinBaseline): now measure the genuine
