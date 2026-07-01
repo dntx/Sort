@@ -340,7 +340,7 @@ partial class StrategyBuilder
 
         foreach (var (group, children) in fits)
         {
-            int branchCostSum = 0;
+            int maxChildSteps = 0;
             bool solvable = true;
             foreach (var (childState, childRemaining) in children)
             {
@@ -350,19 +350,17 @@ partial class StrategyBuilder
                     solvable = false;
                     break;
                 }
-                branchCostSum += childCost;
+                // Extract the actual steps from the child (not the edge count)
+                int childRealSteps = GetCompactRealSteps(childState, childRemaining);
+                maxChildSteps = Math.Max(maxChildSteps, childRealSteps);
             }
             if (!solvable)
                 continue;
 
             _compactGroupPatternCache[key] = MakeGroupPattern(state, group);
-            int cost = CountDisplayBranches(state, remainingSlots, group) + branchCostSum;
+            int cost = 1 + maxChildSteps;  // Return actual steps, not edge count
             _compactCostMemo[memoKey] = cost;
-
-            int realSteps = 0;
-            foreach (var (childState, childRemaining) in children)
-                realSteps = Math.Max(realSteps, GetCompactRealSteps(childState, childRemaining));
-            _compactRealStepsMemo[key] = 1 + realSteps;
+            _compactRealStepsMemo[key] = cost;
             return cost;
         }
 

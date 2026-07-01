@@ -52,6 +52,20 @@ class Program
                 return;
             }
 
+            // Stage 1 experiment: min-step greedy with tightening
+            if (args.Length > 0 && args[0] == "--test-stage1")
+            {
+                TestStage1MinStepGreedy.RunStage1Test();
+                return;
+            }
+
+            // Compare Stage 1 with original
+            if (args.Length > 0 && args[0] == "--compare-stage1")
+            {
+                CompareStage1WithOriginal.RunComparison();
+                return;
+            }
+
             if (!TryParseCliArgs(args, out string? nText, out string? mText, out string? kText, out bool feasibleMode, out string? argError))
             {
                 Console.WriteLine(argError);
