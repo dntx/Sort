@@ -47,45 +47,13 @@ partial class StrategyBuilder
     // tighter ceiling forces the greedy to pick shallower groups, and whenever the pass still yields a
     // feasible tree we have lowered the reported max-step (usually down to the true optimum, which the
     // measured gap shows is almost always exactly U-1). Each retry is a full compact pass; the loop is
-    // bounded below by the proven analytic lower bound L (it can never beat L), by a soft wall-clock
-    // budget, and by the run's cancellation token, so large shapes that would take too long simply keep
-    // the baseline plan. Default on.
+    // bounded below by the proven analytic lower bound L (it can never beat L) and by the run's
+    // cancellation token. There is no wall-clock budget: tightening runs to completion, and a user who no
+    // longer wants to wait cancels (GUI Stop / CLI Ctrl+C), keeping the best plan found so far. Default on.
     internal bool EnableFeasibleTightening = true;
-
-    // Soft wall-clock budget for the tightening retries, as a multiple of the baseline compact pass time
-    // plus an absolute floor so trivially fast baselines still get a few attempts. A retry that would run
-    // past the remaining budget is cancelled mid-pass and the best plan so far is kept.
-    internal double FeasibleTighteningTimeBudgetFactor = 4.0;
-    internal int FeasibleTighteningMinTimeBudgetMs = 2000;
 
     // Per-pass root budget override used only by the tightening loop (-1 = use the threaded step U).
     private int _feasibleRootBudgetActive = -1;
-
-    // Soft deadline enforced cheaply via ThrowIfCancellationRequested during a tightening retry (null =
-    // none). Distinct from the user's cancellation token so a deadline abort stops tightening (keeping the
-    // best plan) without aborting the whole run.
-    private DateTime? _tighteningDeadlineUtc;
-    private bool _tighteningDeadlineHit;
-
-    // Volatile mirror of the active tightening deadline as UTC ticks (0 = no probe in flight), so a UI
-    // thread can poll the exact time left until the tightening budget times out for a live, accurate
-    // countdown (the progress-based ETA is unreliable during the compact probes). Each probe's deadline
-    // is "now + remaining whole-budget", so it doubles as the overall give-up instant.
-    private long _tighteningDeadlineTicksUtc;
-
-    // Live time remaining until the current tightening probe's soft deadline, or null when no probe is in
-    // flight. Thread-safe for polling from the UI thread.
-    public TimeSpan? TighteningTimeRemaining
-    {
-        get
-        {
-            long ticks = System.Threading.Volatile.Read(ref _tighteningDeadlineTicksUtc);
-            if (ticks == 0)
-                return null;
-            TimeSpan remaining = new DateTime(ticks, DateTimeKind.Utc) - DateTime.UtcNow;
-            return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
-        }
-    }
 
     // Root cost returned by the most recent compact phase-1b solve; int.MaxValue means the budget was
     // infeasible, so the tightening loop must stop rather than materialize an unsolved tree.

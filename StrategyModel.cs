@@ -91,23 +91,21 @@ sealed class StrategyPlan
 
 // How a greedy edge progression stage ended. Solution: a strategy was materialized (Plan is set).
 // NoSolution: a tightening probe ran to completion over the COMPLETE candidate enumeration and proved
-// no strategy exists at that step ceiling (the previous best is therefore optimal). TimedOut: a
-// tightening probe was abandoned when the soft time budget ran out before it could decide feasibility
-// (no proof either way). Incomplete: a probe finished and found no feasible strategy, but the greedy
-// candidate cap truncated the group enumeration on some state, so "no group fit" is NOT a proof that
-// none exists -- like a timeout, it leaves the squeeze open (no proven-optimal claim).
+// no strategy exists at that step ceiling (the previous best is therefore optimal). Incomplete: a probe
+// finished and found no feasible strategy, but the greedy candidate cap truncated the group enumeration
+// on some state, so "no group fit" is NOT a proof that none exists -- it leaves the squeeze open (no
+// proven-optimal claim).
 enum GreedyEdgeStageOutcome
 {
     Solution,
     NoSolution,
-    TimedOut,
     Incomplete,
 }
 
 // One stage of the greedy edge progression as it is produced by BuildFeasibleCompactPlan: the
-// baseline compact pass, each successful downward tightening, a proven-infeasible ceiling, or a
-// timed-out probe. Name is the stage label (e.g. "compact", "compact<=4"); Plan is the materialized
-// strategy, or null for the NoSolution/TimedOut outcomes. Elapsed is the stage's own wall time,
+// baseline compact pass, each successful downward tightening, or a terminal ceiling that yielded no
+// solution. Name is the stage label (e.g. "compact", "compact<=4"); Plan is the materialized
+// strategy, or null for the NoSolution/Incomplete outcomes. Elapsed is the stage's own wall time,
 // not a cumulative total.
 readonly struct GreedyEdgeStage
 {
@@ -125,11 +123,10 @@ readonly struct GreedyEdgeStage
     public TimeSpan Elapsed { get; }
     public GreedyEdgeStageOutcome Outcome { get; }
     public bool HasSolution => Plan is not null;
-    public bool TimedOut => Outcome == GreedyEdgeStageOutcome.TimedOut;
 
     // A completed probe whose infeasibility verdict is not a proof because the greedy candidate cap
-    // truncated the group enumeration: like a timeout it leaves the incumbent standing without closing
-    // the squeeze to a proven optimum.
+    // truncated the group enumeration: it leaves the incumbent standing without closing the squeeze to a
+    // proven optimum.
     public bool Incomplete => Outcome == GreedyEdgeStageOutcome.Incomplete;
 
     // True only for a completed, complete-enumeration probe that proved the ceiling infeasible: the one

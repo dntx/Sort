@@ -103,11 +103,6 @@ class MainForm : Form
     private bool _feasibleMode;
     private Stopwatch? _runStopwatch;
     private CancellationTokenSource? _runCancellationSource;
-    // The builder of the in-flight run, polled (thread-safe) by the progress panel during compact<=N
-    // tightening so the fourth line can show the exact time left until the soft budget times out (the
-    // progress-based ETA is unreliable for those probes). Set on the UI thread before the run, cleared
-    // when it ends.
-    private volatile StrategyBuilder? _activeBuilder;
     private readonly Dictionary<string, TreeNode> _stateNodesByKey = new();
     private readonly Dictionary<TreeNode, string> _referenceTargets = new();
     private readonly Stack<TreeNode> _navigationHistory = new();
@@ -610,7 +605,6 @@ class MainForm : Form
             cancellationToken,
             snapshot => progress.Report(snapshot),
             reportCombinedRunProgress: true);
-        _activeBuilder = builder;
         try
         {
             if (feasibleMode)
@@ -696,6 +690,7 @@ class MainForm : Form
                     : string.Empty;
             _statusLabel.Text = $"Stopped after {GetElapsedSeconds():F1} s.{shownDefault} {FormatSearchStatsSummary(_latestProgress, includeOutputStates: true)}. {FormatLiveDiagnosticsSummary(_latestProgress)}.";
             _detailsTextBox.Text = BuildLiveDiagnosticsText(_latestProgress);
+            MarkResultsStopped();
         }
         catch (Exception ex)
         {
@@ -706,7 +701,6 @@ class MainForm : Form
         }
         finally
         {
-            _activeBuilder = null;
             _activePhase = 0;
             _elapsedTimer.Stop();
             UpdateElapsedLabel();
@@ -715,6 +709,51 @@ class MainForm : Form
             _runCancellationSource = null;
         }
     }
+
+    private const string CompactComputingLabel = "compact: computing...";
+    private const string CompactStoppedLabel = "compact: stopped (not computed)";
+
+    // On a user Stop, an interrupted stage leaves transient "computing.../in progress" placeholders on
+    // screen (tree root suffix, the trailing compact slot, and the root details). Rewrite them to a
+    // "stopped" wording so nothing still implies a computation is running. If the compact/edge stage had
+    // already produced output, the placeholders were replaced during the run and there is nothing to fix.
+    private void MarkResultsStopped()
+    {
+        if (_treeView.Nodes.Count == 0)
+            return;
+
+        TreeNode root = _treeView.Nodes[0];
+        bool hasResidue = root.Nodes.Count > 0
+            && root.Nodes[root.Nodes.Count - 1].Text == CompactComputingLabel;
+        if (!hasResidue)
+            return;
+
+        _treeView.BeginUpdate();
+        root.Text = MarkLabelStopped(root.Text);
+        root.Nodes[root.Nodes.Count - 1].Text = CompactStoppedLabel;
+        if (root.Tag is string tag)
+            root.Tag = MarkDetailsStopped(tag);
+        _treeView.EndUpdate();
+
+        if (_overviewTree.Nodes.Count > 0
+            && _overviewTree.Nodes[_overviewTree.Nodes.Count - 1].Text == CompactComputingLabel)
+        {
+            _overviewTree.BeginUpdate();
+            _overviewTree.Nodes[_overviewTree.Nodes.Count - 1].Text = CompactStoppedLabel;
+            _overviewTree.EndUpdate();
+        }
+    }
+
+    private static string MarkLabelStopped(string label)
+    {
+        int open = label.LastIndexOf(" (computing ", StringComparison.Ordinal);
+        return open >= 0 ? label[..open] + " (stopped)" : label;
+    }
+
+    private static string MarkDetailsStopped(string details)
+        => details
+            .Replace("next stage in progress", "next stage not run (stopped)")
+            .Replace("compact stage in progress", "compact stage not run (stopped)");
 
     private void PopulateTree(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool exactImproved, bool compactImproved)
     {
@@ -743,7 +782,7 @@ class MainForm : Form
 
         // Slot 1: "compact" -- minimizes displayed edges at the fixed step ceiling (placeholder until done).
         if (compactPlan is null)
-            root.Nodes.Add(new TreeNode("compact: computing...") { ForeColor = _palette.MutedForeColor });
+            root.Nodes.Add(new TreeNode(CompactComputingLabel) { ForeColor = _palette.MutedForeColor });
         else if (compactImproved)
             root.Nodes.Add(CreatePlanTreeRoot("compact", compactPlan, "compact", compactPlan.Elapsed));
         else
@@ -987,11 +1026,10 @@ class MainForm : Form
                 stage.HasSolution ? "no improvement" : NoSolutionMarker(stage)));
 
     // Leaf note for a solution-less stage: null means "no solution" (a proven-infeasible ceiling),
-    // otherwise the reason the incumbent merely stands -- "timed out" (clock) or "search incomplete
-    // (candidate cap reached)" (the greedy cap truncated the enumeration, so infeasibility is unproven).
+    // otherwise the reason the incumbent merely stands -- "search incomplete (candidate cap reached)"
+    // (the greedy cap truncated the enumeration, so infeasibility is unproven).
     private static string? NoSolutionMarker(GreedyEdgeStage stage)
-        => stage.TimedOut ? "timed out"
-            : stage.Incomplete ? "search incomplete (candidate cap reached)"
+        => stage.Incomplete ? "search incomplete (candidate cap reached)"
             : null;
 
     private void ShowStageModal(string message, bool hasSolution)
@@ -1044,10 +1082,6 @@ class MainForm : Form
                 {
                     lines.Add($"{stage.Name}: max steps={p.MaxStep}, total edges={p.TotalBranchEdges} (no improvement)");
                 }
-            }
-            else if (stage.TimedOut)
-            {
-                lines.Add($"{stage.Name}: time out (probe abandoned on the time budget; best plan kept)");
             }
             else if (stage.Incomplete)
             {
@@ -1117,7 +1151,7 @@ class MainForm : Form
         _overviewTree.Nodes.Add(BuildOverviewSectionNode(stepPlan, "default", stepStageName, stepPlan.Elapsed));
 
         if (compactPlan is null)
-            _overviewTree.Nodes.Add(BuildOverviewNoteNode("compact: computing..."));
+            _overviewTree.Nodes.Add(BuildOverviewNoteNode(CompactComputingLabel));
         else if (compactImproved)
             _overviewTree.Nodes.Add(BuildOverviewSectionNode(compactPlan, "compact", "compact", compactPlan.Elapsed));
         else
@@ -1267,8 +1301,8 @@ class MainForm : Form
     // The single unified stage-root label used by BOTH the strategy tree plan roots and the overview
     // section roots: "<stage>: elapsed=<s>.3f s, max steps=<n>, edges=<n>, output=<n>", optionally
     // suffixed with a marker (e.g. "no improvement"). When there is no plan the body collapses to the
-    // marker note ("no solution" by default, or e.g. "timed out"). elapsed is the stage's own wall time
-    // in seconds.
+    // marker note ("no solution" by default, or e.g. "search incomplete (candidate cap reached)").
+    // elapsed is the stage's own wall time in seconds.
     private static string FormatStageRootLabel(string stageName, TimeSpan elapsed, StrategyPlan? plan, string? marker = null)
     {
         string elapsedText = $"elapsed={elapsed.TotalSeconds:F3} s";
@@ -1292,8 +1326,8 @@ class MainForm : Form
     }
 
     // A terminal stage that found no better strategy: a single bold leaf carrying the unified label with
-    // the given marker ("no solution" when proven infeasible, "timed out" when the probe was abandoned on
-    // the soft deadline) and no child strategy subtree.
+    // the given marker ("no solution" when proven infeasible, "search incomplete (candidate cap reached)"
+    // when the greedy cap truncated the enumeration) and no child strategy subtree.
     private TreeNode CreateNoSolutionTreeRoot(string stageName, TimeSpan elapsed, string? marker = null)
     {
         return new TreeNode(FormatStageRootLabel(stageName, elapsed, plan: null, marker))
@@ -1861,37 +1895,20 @@ class MainForm : Form
         //   <total> s
         //   <stage name>: <stage-own elapsed> s
         //   progress: <current stage %>
-        //   eta / time remaining: <current stage remaining>
+        //   eta: <current stage remaining>
         // The stage clock counts from _stageStartMs (reset at every stage boundary), so it always
         // reports the running stage's own time rather than a cumulative figure.
         double totalSeconds = totalMs / 1000.0;
         double stageSeconds = Math.Max(0, totalMs - _stageStartMs) / 1000.0;
 
-        // During a compact<=N tightening probe the fourth line is the EXACT time left until the soft
-        // budget times out -- polled live from the engine deadline -- rather than the unreliable
-        // progress-based ETA. Outside tightening (no active deadline) fall back to the ETA estimate.
-        bool isTightening = _currentStageName.StartsWith("compact\u2264", StringComparison.Ordinal);
-        TimeSpan? budgetRemaining = isTightening ? _activeBuilder?.TighteningTimeRemaining : null;
-
-        string etaLabel;
-        string etaLineValue;
-        if (budgetRemaining is { } remaining)
-        {
-            etaLabel = "time remaining";
-            etaLineValue = $"{remaining.TotalSeconds:F3} s";
-        }
-        else
-        {
-            etaLabel = "eta";
-            double etaSeconds = EstimateLiveEtaSeconds(totalMs);
-            etaLineValue = etaSeconds >= 0 ? $"{etaSeconds:F3} s" : "-";
-        }
+        double etaSeconds = EstimateLiveEtaSeconds(totalMs);
+        string etaLineValue = etaSeconds >= 0 ? $"{etaSeconds:F3} s" : "-";
 
         string text =
             $"{totalSeconds:F3} s\n" +
             $"{_currentStageName}: {stageSeconds:F3} s\n" +
             $"progress: {_latestProgress.EstimatedProgress01 * 100.0:F1}%\n" +
-            $"{etaLabel}: {etaLineValue}";
+            $"eta: {etaLineValue}";
         SetStatText(_progressTextBox, text);
     }
 
