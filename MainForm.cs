@@ -690,6 +690,7 @@ class MainForm : Form
                     : string.Empty;
             _statusLabel.Text = $"Stopped after {GetElapsedSeconds():F1} s.{shownDefault} {FormatSearchStatsSummary(_latestProgress, includeOutputStates: true)}. {FormatLiveDiagnosticsSummary(_latestProgress)}.";
             _detailsTextBox.Text = BuildLiveDiagnosticsText(_latestProgress);
+            MarkResultsStopped();
         }
         catch (Exception ex)
         {
@@ -708,6 +709,51 @@ class MainForm : Form
             _runCancellationSource = null;
         }
     }
+
+    private const string CompactComputingLabel = "compact: computing...";
+    private const string CompactStoppedLabel = "compact: stopped (not computed)";
+
+    // On a user Stop, an interrupted stage leaves transient "computing.../in progress" placeholders on
+    // screen (tree root suffix, the trailing compact slot, and the root details). Rewrite them to a
+    // "stopped" wording so nothing still implies a computation is running. If the compact/edge stage had
+    // already produced output, the placeholders were replaced during the run and there is nothing to fix.
+    private void MarkResultsStopped()
+    {
+        if (_treeView.Nodes.Count == 0)
+            return;
+
+        TreeNode root = _treeView.Nodes[0];
+        bool hasResidue = root.Nodes.Count > 0
+            && root.Nodes[root.Nodes.Count - 1].Text == CompactComputingLabel;
+        if (!hasResidue)
+            return;
+
+        _treeView.BeginUpdate();
+        root.Text = MarkLabelStopped(root.Text);
+        root.Nodes[root.Nodes.Count - 1].Text = CompactStoppedLabel;
+        if (root.Tag is string tag)
+            root.Tag = MarkDetailsStopped(tag);
+        _treeView.EndUpdate();
+
+        if (_overviewTree.Nodes.Count > 0
+            && _overviewTree.Nodes[_overviewTree.Nodes.Count - 1].Text == CompactComputingLabel)
+        {
+            _overviewTree.BeginUpdate();
+            _overviewTree.Nodes[_overviewTree.Nodes.Count - 1].Text = CompactStoppedLabel;
+            _overviewTree.EndUpdate();
+        }
+    }
+
+    private static string MarkLabelStopped(string label)
+    {
+        int open = label.LastIndexOf(" (computing ", StringComparison.Ordinal);
+        return open >= 0 ? label[..open] + " (stopped)" : label;
+    }
+
+    private static string MarkDetailsStopped(string details)
+        => details
+            .Replace("next stage in progress", "next stage not run (stopped)")
+            .Replace("compact stage in progress", "compact stage not run (stopped)");
 
     private void PopulateTree(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool exactImproved, bool compactImproved)
     {
@@ -736,7 +782,7 @@ class MainForm : Form
 
         // Slot 1: "compact" -- minimizes displayed edges at the fixed step ceiling (placeholder until done).
         if (compactPlan is null)
-            root.Nodes.Add(new TreeNode("compact: computing...") { ForeColor = _palette.MutedForeColor });
+            root.Nodes.Add(new TreeNode(CompactComputingLabel) { ForeColor = _palette.MutedForeColor });
         else if (compactImproved)
             root.Nodes.Add(CreatePlanTreeRoot("compact", compactPlan, "compact", compactPlan.Elapsed));
         else
@@ -1105,7 +1151,7 @@ class MainForm : Form
         _overviewTree.Nodes.Add(BuildOverviewSectionNode(stepPlan, "default", stepStageName, stepPlan.Elapsed));
 
         if (compactPlan is null)
-            _overviewTree.Nodes.Add(BuildOverviewNoteNode("compact: computing..."));
+            _overviewTree.Nodes.Add(BuildOverviewNoteNode(CompactComputingLabel));
         else if (compactImproved)
             _overviewTree.Nodes.Add(BuildOverviewSectionNode(compactPlan, "compact", "compact", compactPlan.Elapsed));
         else
