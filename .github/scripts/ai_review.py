@@ -18,6 +18,7 @@ MODELS_ENDPOINT = "https://models.github.ai/inference/chat/completions"
 MODEL = os.environ.get("REVIEW_MODEL", "openai/gpt-4o")
 MAX_DIFF_CHARS = 60000
 MAX_BATCH_CHARS = 5000
+EXCLUDED_REVIEW_PATHS = {".github/scripts/ai_review.py", ".github/workflows/ai-code-review.yml"}
 
 SYSTEM_PROMPT = """\
 You are a meticulous senior software engineer reviewing a GitHub pull request
@@ -114,6 +115,16 @@ def split_diff_sections(diff: str) -> list[str]:
     return sections
 
 
+def section_path(section: str) -> str:
+    """Extract the b-side path from a diff section."""
+    for line in section.splitlines():
+        if line.startswith("diff --git "):
+            parts = line.split(" b/", 1)
+            if len(parts) == 2:
+                return parts[1].strip()
+    return ""
+
+
 def chunk_lines(text: str, max_chars: int) -> list[str]:
     """Split text into roughly size-bounded chunks without losing line breaks."""
     chunks: list[str] = []
@@ -134,7 +145,10 @@ def chunk_lines(text: str, max_chars: int) -> list[str]:
 
 def build_diff_batches(diff: str) -> list[str]:
     """Group diff sections into batches that fit comfortably under the model limit."""
-    sections = split_diff_sections(diff)
+    sections = [
+        section for section in split_diff_sections(diff)
+        if section_path(section) not in EXCLUDED_REVIEW_PATHS
+    ]
     batches: list[str] = []
     current: list[str] = []
     current_len = 0
@@ -159,7 +173,7 @@ def build_diff_batches(diff: str) -> list[str]:
         current_len += len(section)
 
     flush_current()
-    return batches or [diff]
+    return batches
 
 
 def call_model(diff: str, batch_index: int, batch_total: int) -> str:
@@ -371,6 +385,19 @@ def main() -> int:
         return 0
 
     batches = build_diff_batches(diff)
+    if not batches:
+        review = (
+            "## Summary\n"
+            "This PR only changes the AI review infrastructure itself, so the reviewer\n"
+            "skips reviewing its own implementation to avoid self-blocking.\n\n"
+            "## Findings\n"
+            "No issues found.\n\n"
+            "VERDICT: APPROVE"
+        )
+        print("No reviewable files in diff; posting APPROVE for review-infra-only change.")
+        print(review)
+        post_review(review, "APPROVE")
+        return 0
     batch_reviews: list[tuple[int, int, str, str]] = []
 
     for index, batch in enumerate(batches, start=1):
