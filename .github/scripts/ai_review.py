@@ -267,58 +267,66 @@ def combine_batch_reviews(batch_reviews: list[tuple[int, int, str, str]]) -> str
 BOT_LOGIN = "github-actions[bot]"
 
 
-def dismiss_stale_change_requests(repo: str, pr_number: str) -> None:
-    """Dismiss this bot's previous CHANGES_REQUESTED reviews.
-
-    When an earlier run blocked the PR and a later push resolved the issues,
-    the stale REQUEST_CHANGES review would otherwise keep blocking the merge.
-    """
+def load_bot_reviews(repo: str, pr_number: str) -> list[dict]:
     proc = subprocess.run(
         ["gh", "api", f"repos/{repo}/pulls/{pr_number}/reviews", "--paginate"],
         text=True,
         capture_output=True,
     )
     if proc.returncode != 0:
-        print(f"Could not list reviews to dismiss stale change-requests: {proc.stderr.strip()}")
-        return
+        print(f"Could not list reviews for dismissal: {proc.stderr.strip()}")
+        return []
+
+    raw = proc.stdout.strip()
+    if not raw:
+        return []
 
     try:
-        reviews = json.loads(proc.stdout)
+        reviews = json.loads(raw)
+        return reviews if isinstance(reviews, list) else []
     except json.JSONDecodeError:
-        # --paginate can concatenate multiple JSON arrays; merge them.
-        reviews = []
-        for chunk in proc.stdout.replace("][", "]\n[").splitlines():
+        reviews: list[dict] = []
+        for chunk in raw.replace("][", "]\n[").splitlines():
             chunk = chunk.strip()
             if chunk:
                 reviews.extend(json.loads(chunk))
+        return reviews
 
-    for review in reviews:
-        user = (review.get("user") or {}).get("login")
-        if user == BOT_LOGIN and review.get("state") == "CHANGES_REQUESTED":
-            review_id = review["id"]
-            dismiss = subprocess.run(
-                [
-                    "gh",
-                    "api",
-                    f"repos/{repo}/pulls/{pr_number}/reviews/{review_id}/dismissals",
-                    "--method",
-                    "PUT",
-                    "--input",
-                    "-",
-                ],
-                input=json.dumps(
-                    {
-                        "message": "Resolved in a newer revision — dismissed by automated review.",
-                        "event": "DISMISS",
-                    }
-                ),
-                text=True,
-                capture_output=True,
-            )
-            if dismiss.returncode == 0:
-                print(f"Dismissed stale CHANGES_REQUESTED review {review_id}.")
-            else:
-                print(f"Failed to dismiss review {review_id}: {dismiss.stderr.strip()}")
+
+def dismiss_previous_bot_reviews(repo: str, pr_number: str, keep_review_id: int | None = None) -> None:
+    """Dismiss prior bot reviews so only the latest review remains active."""
+    for review in load_bot_reviews(repo, pr_number):
+        review_id = review.get("id")
+        if review_id == keep_review_id:
+            continue
+        if review.get("user", {}).get("login") != BOT_LOGIN:
+            continue
+        if review.get("state") == "DISMISSED":
+            continue
+
+        dismiss = subprocess.run(
+            [
+                "gh",
+                "api",
+                f"repos/{repo}/pulls/{pr_number}/reviews/{review_id}/dismissals",
+                "--method",
+                "PUT",
+                "--input",
+                "-",
+            ],
+            input=json.dumps(
+                {
+                    "message": "Replaced by a newer automated review.",
+                    "event": "DISMISS",
+                }
+            ),
+            text=True,
+            capture_output=True,
+        )
+        if dismiss.returncode == 0:
+            print(f"Dismissed prior bot review {review_id}.")
+        else:
+            print(f"Failed to dismiss review {review_id}: {dismiss.stderr.strip()}")
 
 
 def post_review(review_body: str, verdict: str) -> None:
@@ -346,12 +354,21 @@ def post_review(review_body: str, verdict: str) -> None:
             "POST",
             "--input",
             "-",
+            "--jq",
+            ".id",
         ],
         input=json.dumps(payload),
         text=True,
         capture_output=True,
     )
-    if proc.returncode != 0:
+
+    keep_review_id: int | None = None
+    if proc.returncode == 0:
+        try:
+            keep_review_id = int(proc.stdout.strip())
+        except ValueError:
+            keep_review_id = None
+    else:
         # Fall back to a plain issue comment if a formal review can't be posted
         # (e.g. the PR author cannot request changes on their own PR).
         print(f"Could not post review ({proc.stderr.strip()}); posting comment instead.")
@@ -370,13 +387,14 @@ def post_review(review_body: str, verdict: str) -> None:
             check=True,
         )
 
-    if verdict != "BLOCK":
+    # Keep only the newest bot review; if the current post failed and the verdict
+    # is BLOCK, preserve the old blocking review instead of accidentally unblocking.
+    if keep_review_id is not None or verdict != "BLOCK":
         try:
-            dismiss_stale_change_requests(repo, pr_number)
+            dismiss_previous_bot_reviews(repo, pr_number, keep_review_id=keep_review_id)
         except Exception as err:  # noqa: BLE001
             # Dismissal is best-effort and must never fail an otherwise-passing run.
             print(f"Skipping stale-review dismissal due to error: {err}")
-
 
 def main() -> int:
     diff = read_diff()
