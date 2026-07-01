@@ -169,3 +169,11 @@ compact 是一个跑在 phase 1 之上的**二级 DP**（`StrategyBuilder.Compac
 - 同步更新 `docs/core-algorithm.md`；
 - 若改动影响工作量计数，**在同一 PR 内**更新相应的计数器上限（ratchet）并量出新基线；
 - 若新增了核心算法区域的能力，考虑是否需要在本文档补充对应的护栏说明。
+
+## 9. 已证明最优值速查表
+
+`docs/known-optimal-max-steps.md` 汇总了一批 `(n, m, k)` 在 exact 模式下**已证明的最优
+max steps**，来源于 `StrategyRegressionTests.cs` 的 `InlineData` 基线与 `--mode exact` 实测。
+调研 greedy 上界紧度、验证算法改动、或需要“标准答案”时，可直接查表，避免重复跑耗时的 exact
+搜索。新增行请只填 exact 已证明（`proven optimal`）的值并注明来源。
+

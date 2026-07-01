@@ -75,6 +75,10 @@ public sealed class StrategyRegressionTests
     // rank) shapes. Pins the worst-case step count, the root group size, and the output-state
     // counts. Searched-state caps live in Default_SearchedStateCountStaysWithinBaseline; the
     // dominant outcome-construction cost lives in Default_OutcomesConstructedStaysWithinBaseline.
+    //
+    // The proven-optimal MaxStep values pinned here (and in the ID baseline theory below) are also
+    // catalogued in docs/known-optimal-max-steps.md as a quick reference for research/verification,
+    // so future work can look up the optimum without re-running exact.
     [Theory]
     [InlineData(9, 3, 3, 6, 3, 7, 5)]
     [InlineData(12, 3, 3, 7, 3, 15, 8)]
