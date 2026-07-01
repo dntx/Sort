@@ -357,7 +357,12 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     （`BuildFeasibleCompactPlan`）后，会自动尝试**收紧**：依次用 `U−1, U−2, …` 作为根预算重跑 compact
     （`TightenFeasibleCompact → ProbeFeasibleCompact`），直到某个预算**不可行**（根处 `SolveCompactSelection`
     返回 `int.MaxValue`，此时不物化、直接判负，避免 `BuildState` 抛错）或触达**已证明下界 `L`** 为止；每拿到一个更小
-    `U` 的可行解就采纳为新的最优。由于可行解永远不可能优于真实 `opt`，所以 `opt−1` 必然不可行——这保证收紧后的
+    `U` 的可行解就采纳为新的最优。**注意 compact 组选择是 budget-无关的启发式**（`_compactGroupPatternCache` 只按状态键
+    缓存，同一状态在不同预算下求解会「最后写入者获胜」），个别形状下一次 probe 物化出的树可能**并未真正满足它的天花板**
+    （如 `20,5,10` 的基线 compact 在 `U=10` 下反而物化出 12 步）；因此收紧循环以**物化 `MaxStep` 为地面真值**设了守卫：
+    只接受 `MaxStep` **严格更小**的候选，任何未变优的结果一律停止收紧、绝不据此把天花板抬回 `MaxStep−1`（否则会在
+    `U−1 → 更大` 之间反复震荡直到耗尽时间预算）。同理，若**基线 compact 本身就 `> U`**（启发式连 `U` 都没达到），
+    直接跳过收紧、让编排层保留 greedy 计划。由于真正被采纳的可行解永远不可能优于真实 `opt`，所以 `opt−1` 必然不可行——这保证收紧后的
     `U` 仍满足 `U ≥ opt`、绝不会假性低于最优（见 `FeasibleCompactPlanTests`）。每次重跑前用
     `ResetCompactSelectionState` 清掉 compact 专属缓存（`_compactGroupPatternCache` / `_compactCostMemo` /
     `_compactRealStepsMemo` / `_phase1bSolved`），让搜索在新的天花板下重新求解；跨阶段的 `_rootProvenLowerBound`
