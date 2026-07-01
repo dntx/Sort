@@ -224,18 +224,26 @@ class Program
             {
                 if (!stage.HasSolution)
                 {
-                    if (stage.TimedOut)
+                    if (stage.Outcome == GreedyEdgeStageOutcome.NoSolution)
                     {
-                        // Abandoned probe: no proof either way, the incumbent simply stands.
-                        stageSummaries.Add($"{stage.Name}: timed out");
-                    }
-                    else
-                    {
-                        // Proven infeasible at this ceiling => the incumbent is optimal (opt =
-                        // incumbent.MaxStep). Close its squeeze so the final tree reports proven optimal.
+                        // Proven infeasible at this ceiling (complete enumeration) => the incumbent is
+                        // optimal (opt = incumbent.MaxStep). Close its squeeze so the final tree reports
+                        // proven optimal.
                         stageSummaries.Add($"{stage.Name}: no solution");
                         finalPlan = finalPlan.WithRootProvenLowerBound(finalPlan.MaxStep);
                         incumbentPlan = finalPlan;
+                    }
+                    else if (stage.Incomplete)
+                    {
+                        // Probe finished but the greedy candidate cap truncated the group enumeration, so
+                        // "no group fit" is not a proof. Leave the squeeze open (no proven-optimal claim);
+                        // the incumbent simply stands.
+                        stageSummaries.Add($"{stage.Name}: search incomplete (candidate cap reached)");
+                    }
+                    else
+                    {
+                        // Abandoned probe on the time budget: no proof either way, the incumbent stands.
+                        stageSummaries.Add($"{stage.Name}: timed out");
                     }
                     return;
                 }

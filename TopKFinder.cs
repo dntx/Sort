@@ -224,15 +224,25 @@ partial class StrategyBuilder
 
             if (candidate is null)
             {
-                // Proven infeasible at this ceiling -> the previous best is the optimum within reach.
-                // Raise the proven lower bound to budget+1 (== best.MaxStep): the search has now proven
-                // opt >= best.MaxStep, and best achieves it, so the L <= opt <= U squeeze closes to a
-                // proven optimum. Surface it as a no-solution stage so the UI/CLI shows the search
-                // bottomed out here. Pause the budget clock across the callback: a synchronous consumer
-                // (e.g. the GUI's pause-each-stage modal) blocks the worker here, and that wait must not
-                // count against the tightening time budget.
-                RecordRootProvenLowerBound(budget + 1);
                 stopwatch.Stop();
+
+                // The probe ran out of feasible groups, but if the greedy candidate cap truncated any
+                // state's enumeration the "no solution" is not a proof -- an untried group might have fit.
+                // Surface it as an incomplete stage (like a timeout: the best plan stands, the squeeze
+                // stays open) and stop tightening rather than claiming a false proven-optimal.
+                if (_lastProbeEnumerationCapped)
+                {
+                    onStage?.Invoke(new GreedyEdgeStage(
+                        stageName, null, probeStopwatch.Elapsed, GreedyEdgeStageOutcome.Incomplete));
+                    break;
+                }
+
+                // Proven infeasible at this ceiling (complete enumeration) -> the previous best is the
+                // optimum within reach. Raise the proven lower bound to budget+1 (== best.MaxStep): the
+                // search has now proven opt >= best.MaxStep, and best achieves it, so the L <= opt <= U
+                // squeeze closes to a proven optimum. Surface it as a no-solution stage so the UI/CLI
+                // shows the search bottomed out here.
+                RecordRootProvenLowerBound(budget + 1);
                 onStage?.Invoke(new GreedyEdgeStage(
                     stageName, null, probeStopwatch.Elapsed, GreedyEdgeStageOutcome.NoSolution));
                 break;
@@ -271,6 +281,8 @@ partial class StrategyBuilder
     {
         ResetPerBuildTransientState();
         ResetCompactSelectionState();
+        _compactEnumerationCapped = false;
+        _lastProbeEnumerationCapped = false;
 
         var stopwatch = Stopwatch.StartNew();
         _compactUsesFeasibleBudget = true;
@@ -280,7 +292,13 @@ partial class StrategyBuilder
             EnsureCompactSelectionSolved();
             _phase1bMilliseconds = stopwatch.ElapsedMilliseconds;
             if (_compactRootCost == int.MaxValue)
+            {
+                // Record whether the cap truncated any state's enumeration during this probe. When set,
+                // "no group fit within budget" is not a proof of infeasibility (an untried group might
+                // have fit), so the caller must not close the squeeze / claim proven optimality.
+                _lastProbeEnumerationCapped = _compactEnumerationCapped;
                 return null;
+            }
 
             _useCompactSelection = true;
             var root = BuildState(new ComparisonState(_n), 0, _k, 1);
@@ -622,7 +640,14 @@ partial class StrategyBuilder
             prefix.RemoveRange(prefix.Count - take, take);
 
             if (collected.Count >= generationCap)
+            {
+                // Stopped short of trying the remaining (larger-`take`) siblings at this level because
+                // the cap filled up: the enumeration is genuinely truncated. Flag it so a probe that
+                // concludes infeasible under a finite cap is reported as incomplete, not a proof.
+                if (generationCap != int.MaxValue)
+                    _compactEnumerationCapped = true;
                 return;
+            }
         }
     }
 

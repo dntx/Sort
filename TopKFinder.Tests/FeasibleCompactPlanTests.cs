@@ -61,6 +61,44 @@ public class FeasibleCompactPlanTests
             $"feasible compact step {edgeStep} was below the true optimum {optimum}");
     }
 
+    // Soundness guard for the greedy compact tightening: when the candidate cap (CompactGreedyCandidateCap)
+    // truncates a state's group enumeration, a probe that finds no feasible group has NOT proven the ceiling
+    // infeasible -- an untried group might have fit. Such a terminal stage must be reported as Incomplete
+    // (not NoSolution) and must leave the squeeze open (no proven-optimal claim). 12,4,4 exercises this: at
+    // the default cap the compact<=4 probe truncates, so it is Incomplete; raising the cap enough to enumerate
+    // completely flips the same probe to a genuine NoSolution proof that closes the squeeze.
+    [Fact]
+    public void FeasibleCompactPlan_CappedInfeasibility_IsIncomplete_NotProvenOptimal()
+    {
+        GreedyEdgeStageOutcome cappedTerminal = TerminalOutcome(new StrategyBuilder(12, 4, 4), out StrategyPlan cappedPlan);
+        Assert.Equal(GreedyEdgeStageOutcome.Incomplete, cappedTerminal);
+        Assert.True(
+            cappedPlan.SearchStatistics.RootProvenLowerBound < cappedPlan.MaxStep,
+            "a cap-truncated (incomplete) probe must not close the squeeze to a proven optimum");
+    }
+
+    [Fact]
+    public void FeasibleCompactPlan_CompleteInfeasibility_IsProvenOptimal()
+    {
+        var builder = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 2_000_000 };
+        GreedyEdgeStageOutcome terminal = TerminalOutcome(builder, out StrategyPlan plan);
+        Assert.Equal(GreedyEdgeStageOutcome.NoSolution, terminal);
+        Assert.Equal(plan.MaxStep, plan.SearchStatistics.RootProvenLowerBound);
+    }
+
+    // Runs the greedy edge progression and returns the outcome of its final solution-less stage (the terminal
+    // NoSolution / Incomplete / TimedOut), or Solution if the progression never bottomed out.
+    private static GreedyEdgeStageOutcome TerminalOutcome(StrategyBuilder builder, out StrategyPlan plan)
+    {
+        var terminal = GreedyEdgeStageOutcome.Solution;
+        plan = builder.BuildFeasibleCompactPlan(stage =>
+        {
+            if (!stage.HasSolution)
+                terminal = stage.Outcome;
+        });
+        return terminal;
+    }
+
     private static void AssertEveryDecisionHasGroup(StrategyNode node)
     {
         if (node.Branches.Count > 0)
