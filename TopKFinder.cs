@@ -164,6 +164,15 @@ partial class StrategyBuilder
     private StrategyPlan TightenFeasibleCompact(StrategyPlan baseline, Action<GreedyEdgeStage>? onStage)
     {
         StrategyPlan best = baseline;
+
+        // If the compact baseline already failed to honor the feasible step budget U (the greedy
+        // plan's MaxStep, threaded in via _feasibleRootBudget), its materialized tree is deeper than U.
+        // The compact group selection is a budget-agnostic heuristic, so probing ever-tighter ceilings
+        // cannot beat a baseline that could not even meet U -- skip tightening and let the greedy plan
+        // remain the incumbent downstream.
+        if (_feasibleRootBudget >= 0 && baseline.MaxStep > _feasibleRootBudget)
+            return baseline;
+
         int provenLowerBound = Math.Max(1, _rootProvenLowerBound);
         long baselineMs = (long)baseline.Elapsed.TotalMilliseconds;
         long timeBudgetMs = Math.Max(
@@ -226,6 +235,19 @@ partial class StrategyBuilder
                 stopwatch.Stop();
                 onStage?.Invoke(new GreedyEdgeStage(
                     stageName, null, probeStopwatch.Elapsed, GreedyEdgeStageOutcome.NoSolution));
+                break;
+            }
+
+            // Ground-truth guard: trust the materialized MaxStep, not the budget-agnostic compact
+            // group cache that produced it. A probe can return a tree that fails to honor the ceiling
+            // it was given (the cache keys group choices by state only, so a group picked under a looser
+            // budget can leak into a tighter path and deepen the subtree). Such a result never beats the
+            // incumbent, and accepting it would re-derive budget = MaxStep - 1 above the current ceiling
+            // and oscillate until the time budget runs out. Stop at the first probe that does not
+            // strictly improve the best plan so far.
+            if (candidate.MaxStep >= best.MaxStep)
+            {
+                stopwatch.Stop();
                 break;
             }
 
