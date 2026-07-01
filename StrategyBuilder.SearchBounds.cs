@@ -363,16 +363,18 @@ partial class StrategyBuilder
 
         FeasibleTopSetInfo info = GetFeasibleTopSetInfo(state, remainingSlots);
         int maxOutcomesPerStep = GetMaxOutcomesPerStep(state);
-        int distinguishable = 1;
+        // Information-theoretic floor: each step distinguishes at most maxOutcomesPerStep outcomes, so
+        // telling info.Count feasible top-sets apart needs at least ceil(log_maxOutcomes(info.Count))
+        // steps. Accumulate in a long: info.Count can approach int.MaxValue and maxOutcomesPerStep is
+        // m! (e.g. 10! = 3.6M), so the int accumulator overflowed on the second multiply for large
+        // shapes (e.g. 26,10,10). A long comfortably holds info.Count * maxOutcomesPerStep.
+        long distinguishable = 1;
         int steps = 0;
         while (distinguishable < info.Count)
         {
             ThrowIfCancellationRequested();
             steps++;
-            checked
-            {
-                distinguishable *= maxOutcomesPerStep;
-            }
+            distinguishable *= maxOutcomesPerStep;
         }
 
         steps = Math.Max(steps, GetAntichainLowerBound(state));

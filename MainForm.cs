@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -74,6 +76,7 @@ class MainForm : Form
     private readonly TextBox _kTextBox;
     private readonly ComboBox _themeComboBox;
     private readonly ComboBox _modeComboBox;
+    private readonly CheckBox _pauseEachStageCheckBox;
     private readonly Button _runButton;
     private readonly Button _stopButton;
     private readonly Button _treeExpandButton;
@@ -100,6 +103,11 @@ class MainForm : Form
     private bool _feasibleMode;
     private Stopwatch? _runStopwatch;
     private CancellationTokenSource? _runCancellationSource;
+    // The builder of the in-flight run, polled (thread-safe) by the progress panel during compact<=N
+    // tightening so the fourth line can show the exact time left until the soft budget times out (the
+    // progress-based ETA is unreliable for those probes). Set on the UI thread before the run, cleared
+    // when it ends.
+    private volatile StrategyBuilder? _activeBuilder;
     private readonly Dictionary<string, TreeNode> _stateNodesByKey = new();
     private readonly Dictionary<TreeNode, string> _referenceTargets = new();
     private readonly Stack<TreeNode> _navigationHistory = new();
@@ -108,8 +116,12 @@ class MainForm : Form
     private SearchStatistics? _completedCompactStats;
     private SearchStatistics? _completedFeasibleStats;
     private int _activePhase;
-    private long _feasibleElapsedMs = -1;
-    private long _phase1ElapsedMs = -1;
+    // Anytime greedy edge state (UI thread only): every edge stage as it arrives (baseline compact,
+    // each tightening, plus a terminal no-solution stage). The current-stage name and the run-clock ms
+    // at which the current stage began drive the per-stage timing/labels in the progress panel.
+    private readonly List<GreedyEdgeStage> _greedyEdgeStages = new();
+    private string _currentStageName = "-";
+    private long _stageStartMs;
 
     public MainForm()
     {
@@ -163,6 +175,15 @@ class MainForm : Form
         };
         _modeComboBox.Items.AddRange(new object[] { "exact (proven)", "greedy (fast)" });
         _modeComboBox.SelectedIndex = 0;
+
+        // When checked, the run pauses after each new stage tree appears (a modal shows that stage's
+        // summary and the search blocks until OK). Default off so runs are uninterrupted.
+        _pauseEachStageCheckBox = new CheckBox
+        {
+            Text = "pause each stage",
+            AutoSize = true,
+            Margin = new Padding(0, 8, 0, 0),
+        };
 
         _runButton = new Button
         {
@@ -233,12 +254,12 @@ class MainForm : Form
         };
 
         _progressTextBox = CreateStatTextBox(
-            "0.000 s\nstep: -\nedge: -\nprogress: 0.0%\neta: -",
+            "0.000 s\n-: 0.000 s\nprogress: 0.0%\neta: -",
             new Font(Font.FontFamily, 11, FontStyle.Bold));
         _statesTextBox = CreateStatTextBox(
             "searched: 0\npending: 0 (peak 0)\noutput: 0\nlower-bound: 0\ntop-set: 0");
         _workTextBox = CreateStatTextBox(
-            "outcomes: 0\nduplicate skips: 0\nmerged collisions: 0\nprunes: 0\ncache: 0/0/0/0\n[edge] -");
+            "outcomes: 0\nduplicate skips: 0\nmerged collisions: 0\nprunes: 0\ncache: 0/0/0/0\n[compact] -");
         var inputsPanel = new FlowLayoutPanel
         {
             AutoSize = true,
@@ -251,6 +272,7 @@ class MainForm : Form
         inputsPanel.Controls.Add(CreateLabeledInput("k", _kTextBox));
         inputsPanel.Controls.Add(CreateLabeledInput("mode", _modeComboBox));
         inputsPanel.Controls.Add(CreateLabeledInput("theme", _themeComboBox));
+        inputsPanel.Controls.Add(_pauseEachStageCheckBox);
 
         var actionsPanel = new FlowLayoutPanel
         {
@@ -413,7 +435,9 @@ class MainForm : Form
         _elapsedTimer = new System.Windows.Forms.Timer { Interval = 100 };
         _elapsedTimer.Tick += (_, _) => UpdateElapsedLabel();
         _detailsTextBox.Text = BuildIdleDetailsText();
-        ApplyTheme(ColorTheme.Dark);
+        LoadSettings();
+        ApplyTheme(ParseSelectedTheme());
+        FormClosing += (_, _) => SaveSettings();
     }
 
     private const int StatsRowHeight = 150;
@@ -565,8 +589,9 @@ class MainForm : Form
         _exactImproved = false;
         _compactImproved = false;
         _activePhase = 0;
-        Interlocked.Exchange(ref _feasibleElapsedMs, -1);
-        Interlocked.Exchange(ref _phase1ElapsedMs, -1);
+        _greedyEdgeStages.Clear();
+        _currentStageName = feasibleMode ? "greedy" : "exact";
+        _stageStartMs = 0;
         ClearResultsView();
         _runStopwatch = Stopwatch.StartNew();
         UpdateElapsedLabel();
@@ -585,15 +610,15 @@ class MainForm : Form
             cancellationToken,
             snapshot => progress.Report(snapshot),
             reportCombinedRunProgress: true);
+        _activeBuilder = builder;
         try
         {
             if (feasibleMode)
             {
-                // Greedy mode: a fast greedy feasible plan (step) gives an instant browsable strategy
+                // Greedy mode: a fast greedy feasible plan (greedy) gives an instant browsable strategy
                 // even on shapes exact never resolves (e.g. 25,5,5), then a budget-bounded compact
-                // pass (edge) trims displayed edges under the feasible ceiling U.
+                // pass trims displayed edges under the feasible ceiling U.
                 StrategyPlan feasiblePlan = await Task.Run(() => builder.BuildFeasiblePlan(), cancellationToken);
-                Interlocked.Exchange(ref _feasibleElapsedMs, _runStopwatch?.ElapsedMilliseconds ?? 0);
                 _feasiblePlan = feasiblePlan;
                 _latestProgress = CreateSnapshotFromPlan(feasiblePlan);
                 PopulateTree(feasiblePlan, defaultPlan: null, compactPlan: null, exactImproved: false, compactImproved: false);
@@ -603,26 +628,32 @@ class MainForm : Form
                 SetRunUiState(RunUiState.CompactComputingInteractive);
 
                 Interlocked.Exchange(ref _activePhase, 2);
-                StrategyPlan feasibleCompactPlan = await Task.Run(() => builder.BuildFeasibleCompactPlan(), cancellationToken);
+                _greedyEdgeStages.Clear();
+                _currentStageName = "compact";
+                _stageStartMs = _runStopwatch?.ElapsedMilliseconds ?? 0;
+                // Each edge stage is surfaced live. The callback runs on the worker thread; a synchronous
+                // Invoke marshals it onto the UI thread AND blocks the worker until the handler returns,
+                // which is what lets the optional per-stage modal pause the search until the user clicks OK.
+                StrategyPlan feasibleCompactPlan = await Task.Run(
+                    () => builder.BuildFeasibleCompactPlan(MarshalEdgeStage),
+                    cancellationToken);
                 _runStopwatch?.Stop();
 
                 _compactPlan = feasibleCompactPlan;
                 _compactImproved = feasibleCompactPlan.IsStrictRefinementOver(feasiblePlan);
                 _latestProgress = CreateSnapshotFromPlan(feasibleCompactPlan);
-                FinalizeCompactInTree(feasiblePlan, feasibleCompactPlan, _compactImproved);
                 _completedCompactStats = feasibleCompactPlan.SearchStatistics;
                 UpdateSummaryText(feasiblePlan, defaultPlan: feasiblePlan, compactPlan: feasibleCompactPlan, compactImproved: _compactImproved);
                 UpdateStatsPanels();
                 return;
             }
 
-            // Exact mode: no feasible phase. Phase 1 is the proven-optimal exact plan (step), used as
-            // both the incumbent and the displayed step strategy; phase 2 is the compact refinement
-            // (edge). The exact plan is MaxStep-optimal, so compact only trims edges among equally
+            // Exact mode: no feasible phase. Phase 1 is the proven-optimal exact plan (exact), used as
+            // both the incumbent and the displayed strategy; phase 2 is the compact refinement
+            // (compact). The exact plan is MaxStep-optimal, so compact only trims edges among equally
             // optimal groups.
             Interlocked.Exchange(ref _activePhase, 1);
             StrategyPlan defaultPlan = await Task.Run(() => builder.BuildDefaultPlan(), cancellationToken);
-            Interlocked.Exchange(ref _phase1ElapsedMs, _runStopwatch?.ElapsedMilliseconds ?? 0);
 
             _defaultPlan = defaultPlan;
             _feasiblePlan = defaultPlan;
@@ -636,11 +667,13 @@ class MainForm : Form
 
             // The exact plan is on screen; the compact pass runs on a background thread, so the UI
             // thread is free: drop the wait cursor and keep tree navigation enabled for the rest of
-            // the run (the user can browse the step strategy while compact search continues).
+            // the run (the user can browse the strategy while compact search continues).
             SetRunUiState(RunUiState.CompactComputingInteractive);
 
             // Phase 2: compact refinement.
             Interlocked.Exchange(ref _activePhase, 2);
+            _currentStageName = "compact";
+            _stageStartMs = _runStopwatch?.ElapsedMilliseconds ?? 0;
             StrategyPlan compactPlan = await Task.Run(() => builder.BuildCompactPlan(), cancellationToken);
             _runStopwatch?.Stop();
 
@@ -673,6 +706,7 @@ class MainForm : Form
         }
         finally
         {
+            _activeBuilder = null;
             _activePhase = 0;
             _elapsedTimer.Stop();
             UpdateElapsedLabel();
@@ -701,18 +735,19 @@ class MainForm : Form
             ForeColor = _palette.ForeColor,
         };
 
-        // Slot 0: "step" -- the worst-case step strategy. While the exact pass runs it shows the
-        // greedy bound; once exact finishes it is replaced in place. Greedy mode keeps the greedy tree.
+        // Slot 0: the step strategy, named by mode -- "exact" once the exact pass finishes (it replaces
+        // the placeholder in place), or "greedy" for the constructive feasible plan in greedy mode.
         StrategyPlan stepPlan = defaultPlan ?? feasiblePlan;
-        root.Nodes.Add(CreatePlanTreeRoot("step", stepPlan, "default"));
+        string stepStageName = defaultPlan is null ? "greedy" : "exact";
+        root.Nodes.Add(CreatePlanTreeRoot(stepStageName, stepPlan, "default", stepPlan.Elapsed));
 
-        // Slot 1: "edge" -- minimizes displayed edges at the fixed step count (placeholder until done).
+        // Slot 1: "compact" -- minimizes displayed edges at the fixed step ceiling (placeholder until done).
         if (compactPlan is null)
-            root.Nodes.Add(new TreeNode("edge: computing...") { ForeColor = _palette.MutedForeColor });
+            root.Nodes.Add(new TreeNode("compact: computing...") { ForeColor = _palette.MutedForeColor });
         else if (compactImproved)
-            root.Nodes.Add(CreatePlanTreeRoot("edge", compactPlan, "compact"));
+            root.Nodes.Add(CreatePlanTreeRoot("compact", compactPlan, "compact", compactPlan.Elapsed));
         else
-            root.Nodes.Add(new TreeNode("edge: no better result (total edges unchanged or worse)") { ForeColor = _palette.MutedForeColor });
+            root.Nodes.Add(CreateNoSolutionTreeRoot("compact", compactPlan.Elapsed));
 
         _treeView.Nodes.Add(root);
         root.Expand();
@@ -726,29 +761,36 @@ class MainForm : Form
     // Squeeze on the optimum for a plan: L is the proven analytic lower bound
     // (RootProvenLowerBound), U is the achieved upper bound (MaxStep). When L == U the strategy is
     // in fact optimal (a proven floor met by an achievable strategy), even if it came from greedy.
+    // Worded in "max steps" terms to match the rest of the UI, where the achieved/optimal quantity
+    // is always the max-step count.
     private static string FormatPlanSqueeze(StrategyPlan plan)
     {
         int lower = plan.SearchStatistics.RootProvenLowerBound;
         int upper = plan.MaxStep;
         if (lower > 0 && lower == upper)
-            return $"opt = {upper} (proven optimal)";
+            return $"max steps = {upper} (proven optimal)";
 
         string lowerText = lower > 0 ? lower.ToString() : "?";
-        return $"{lowerText} <= opt <= {upper}";
+        return $"{lowerText} <= max steps <= {upper}";
     }
 
     private static string BuildRootLabel(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan)
     {
         string head = $"n={feasiblePlan.N}, m={feasiblePlan.M}, k={feasiblePlan.K}";
         if (defaultPlan is null)
-            return $"{head}, step {FormatPlanSqueeze(feasiblePlan)} (computing step...)";
+            return $"{head}, {FormatPlanSqueeze(feasiblePlan)} (computing step...)";
         if (compactPlan is null)
         {
-            double ms = feasiblePlan.Elapsed.TotalMilliseconds + defaultPlan.Elapsed.TotalMilliseconds;
-            return $"{head}, max steps={defaultPlan.MaxStep}, elapsed={ms:F1} ms (computing edge stage...)";
+            double seconds = feasiblePlan.Elapsed.TotalSeconds + defaultPlan.Elapsed.TotalSeconds;
+            return $"{head}, max steps={defaultPlan.MaxStep}, elapsed={seconds:F3} s (computing compact stage...)";
         }
-        double totalMs = feasiblePlan.Elapsed.TotalMilliseconds + defaultPlan.Elapsed.TotalMilliseconds + compactPlan.Elapsed.TotalMilliseconds;
-        return $"{head}, max steps={defaultPlan.MaxStep}, total elapsed={totalMs:F1} ms";
+        double totalSeconds = feasiblePlan.Elapsed.TotalSeconds + defaultPlan.Elapsed.TotalSeconds + compactPlan.Elapsed.TotalSeconds;
+        // Lead with the optimality squeeze on the best plan: once the final tightening proves the next
+        // step ceiling infeasible (the no-solution terminal), the incumbent's lower bound is closed to
+        // its max-step and this reads "max steps = N (proven optimal)" -- the headline signal that the
+        // search is done and the step count is provably best. While still tightening it reads
+        // "L <= max steps <= U".
+        return $"{head}, {FormatPlanSqueeze(compactPlan)}, total elapsed={totalSeconds:F3} s";
     }
 
     private static string BuildRootDetails(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool exactImproved, bool compactImproved)
@@ -760,12 +802,12 @@ class MainForm : Form
         return BuildTwoPhaseDetails(defaultPlan, compactPlan, compactImproved);
     }
 
-    // Incrementally folds the finished edge result into the already-rendered tree instead of
+    // Incrementally folds the finished compact result into the already-rendered tree instead of
     // rebuilding from scratch. The step subtree (root.Nodes[0]) -- along with its navigation map
     // entries -- is left untouched, so a user mid-browse keeps their expand/scroll/selection state.
-    // Only the transient "edge: computing..." placeholder (root.Nodes[1]) is replaced -- either with
-    // the edge subtree (a sibling scoped "compact" so its state keys never collide) when it improved,
-    // or with a "no better result" note when it did not.
+    // Only the transient "compact: computing..." placeholder (root.Nodes[1]) is replaced -- either with
+    // the compact subtree (a sibling scoped "compact" so its state keys never collide) when it improved,
+    // or with a "no solution" note when it did not.
     private void FinalizeCompactInTree(StrategyPlan defaultPlan, StrategyPlan compactPlan, bool compactImproved)
     {
         // Defensive fallback: if the tree was cleared/rebuilt out from under us (e.g. a theme switch
@@ -783,17 +825,228 @@ class MainForm : Form
         root.Text = BuildRootLabel(_feasiblePlan, defaultPlan, compactPlan);
         root.Tag = BuildTwoPhaseDetails(defaultPlan, compactPlan, compactImproved);
 
-        // Replace only the trailing edge slot (everything after the single step slot).
+        // Replace only the trailing compact slot (everything after the single step slot).
         while (root.Nodes.Count > 1)
             root.Nodes.RemoveAt(root.Nodes.Count - 1);
         if (compactImproved)
-            root.Nodes.Add(CreatePlanTreeRoot("edge", compactPlan, "compact"));
+            root.Nodes.Add(CreatePlanTreeRoot("compact", compactPlan, "compact", compactPlan.Elapsed));
         else
-            root.Nodes.Add(new TreeNode("edge: no better result (total edges unchanged or worse)") { ForeColor = _palette.MutedForeColor });
+            root.Nodes.Add(CreateNoSolutionTreeRoot("compact", compactPlan.Elapsed));
 
         _treeView.EndUpdate();
 
         FinalizeCompactInOverview(compactPlan, compactImproved);
+    }
+
+    // Synchronous marshaling shim: BuildFeasibleCompactPlan invokes this on the worker thread once per
+    // edge stage. Control.Invoke hops to the UI thread AND blocks the worker until OnGreedyEdgeStage
+    // returns, so when the per-stage modal is enabled the search genuinely pauses until the user clicks OK.
+    private void MarshalEdgeStage(GreedyEdgeStage stage)
+    {
+        if (!IsHandleCreated || IsDisposed)
+            return;
+        try
+        {
+            Invoke(() => OnGreedyEdgeStage(stage));
+        }
+        catch (ObjectDisposedException)
+        {
+            // Form closed mid-run; nothing to update.
+        }
+        catch (InvalidOperationException)
+        {
+            // Handle destroyed during shutdown.
+        }
+    }
+
+    // Anytime greedy edge handler: invoked on the UI thread once per edge stage as the worker thread
+    // produces it (baseline "compact" first, then each "compact<=N" tightening, finally a no-solution
+    // terminal stage). The baseline fills the "compact" slot in place; every later stage is appended as
+    // a new tree + overview section, so the user watches the strategy improve stage by stage. Each tree
+    // gets a unique scope ("edge0", "edge1", ...) so their per-state navigation keys never collide.
+    private void OnGreedyEdgeStage(GreedyEdgeStage stage)
+    {
+        if (_feasiblePlan is null || _treeView.Nodes.Count == 0)
+            return;
+
+        bool isBaseline = _greedyEdgeStages.Count == 0;
+        _greedyEdgeStages.Add(stage);
+        int index = _greedyEdgeStages.Count - 1;
+        string scope = $"edge{index}";
+
+        // A stage is "shown" as a full browsable tree only when it strictly improves the incumbent
+        // (the best plan so far: the greedy feasible plan, then any improving compact stage). A stage
+        // that has a solution but is no better (e.g. compact baseline = same steps, more edges than
+        // greedy) is recorded and marked "no improvement" but rendered only as a leaf note. Tightening
+        // continues regardless, since the next ceiling is driven by max-steps, not edges.
+        StrategyPlan incumbent = _compactPlan ?? _feasiblePlan;
+        bool improved = stage.HasSolution && stage.Plan!.IsStrictRefinementOver(incumbent);
+
+        _treeView.BeginUpdate();
+        TreeNode root = _treeView.Nodes[0];
+        if (isBaseline)
+        {
+            // Replace the trailing "compact: computing..." placeholder (everything after the step slot).
+            while (root.Nodes.Count > 1)
+                root.Nodes.RemoveAt(root.Nodes.Count - 1);
+        }
+        root.Nodes.Add(BuildStageTreeNode(stage, scope, improved));
+
+        if (improved)
+            _compactPlan = stage.Plan;
+
+        // A proven-infeasible terminal (NoSolution, not a timeout) proves the incumbent is optimal:
+        // close its squeeze (opt = incumbent.MaxStep) so the progression detail reports proven optimal.
+        if (stage.Outcome == GreedyEdgeStageOutcome.NoSolution)
+            MarkGreedyIncumbentProvenOptimal();
+
+        StrategyPlan shown = _compactPlan ?? _feasiblePlan;
+        root.Text = BuildRootLabel(_feasiblePlan, _feasiblePlan, shown);
+        root.Tag = BuildGreedyProgressionDetails(_feasiblePlan, _greedyEdgeStages);
+        _treeView.EndUpdate();
+
+        _overviewTree.BeginUpdate();
+        if (isBaseline && _overviewTree.Nodes.Count > 0)
+            _overviewTree.Nodes.RemoveAt(_overviewTree.Nodes.Count - 1);
+        _overviewTree.Nodes.Add(BuildStageOverviewNode(stage, scope, improved));
+        _overviewTree.EndUpdate();
+
+        if (stage.HasSolution)
+        {
+            _latestProgress = CreateSnapshotFromPlan(stage.Plan!);
+            if (improved)
+                UpdateSummaryText(_feasiblePlan, defaultPlan: _feasiblePlan, compactPlan: stage.Plan, compactImproved: true);
+            // The next tightening probe targets one below this stage's max-step. Reset the per-stage
+            // clock so the progress panel times the upcoming probe from zero. This happens whether or
+            // not the stage improved edges, because tightening continues either way.
+            _currentStageName = stage.Plan!.MaxStep > 1 ? $"compact\u2264{stage.Plan.MaxStep - 1}" : "compact";
+            _stageStartMs = _runStopwatch?.ElapsedMilliseconds ?? 0;
+        }
+        UpdateStatsPanels();
+        UpdateElapsedLabel();
+
+        // Optional pause-on-each-stage: a modal blocks this UI-thread handler (and therefore the worker
+        // thread waiting in Invoke) until the user acknowledges the stage.
+        if (_pauseEachStageCheckBox.Checked)
+        {
+            string? marker = stage.HasSolution
+                ? (!improved ? "no improvement" : null)
+                : (stage.TimedOut ? "timed out" : null);
+            ShowStageModal(FormatStageRootLabel(stage.Name, stage.Elapsed, stage.Plan, marker), stage.HasSolution);
+        }
+    }
+
+    // Closes the squeeze on the greedy incumbent (the best plan so far) to a proven optimum after a
+    // tightening probe proved the next ceiling infeasible: opt = incumbent.MaxStep. Rewrites the
+    // incumbent plan reference (_compactPlan, or _feasiblePlan when no edge stage improved) and the
+    // matching entry in _greedyEdgeStages so the rebuilt progression detail reports "proven optimal".
+    private void MarkGreedyIncumbentProvenOptimal()
+    {
+        if (_feasiblePlan is null)
+            return;
+
+        StrategyPlan incumbent = _compactPlan ?? _feasiblePlan;
+        int provenLower = incumbent.MaxStep;
+        if (incumbent.SearchStatistics.RootProvenLowerBound >= provenLower)
+            return;
+
+        StrategyPlan proven = incumbent.WithRootProvenLowerBound(provenLower);
+        if (_compactPlan is not null)
+        {
+            for (int i = 0; i < _greedyEdgeStages.Count; i++)
+            {
+                if (ReferenceEquals(_greedyEdgeStages[i].Plan, incumbent))
+                {
+                    GreedyEdgeStage s = _greedyEdgeStages[i];
+                    _greedyEdgeStages[i] = new GreedyEdgeStage(s.Name, proven, s.Elapsed, s.Outcome);
+                    break;
+                }
+            }
+            _compactPlan = proven;
+        }
+        else
+        {
+            _feasiblePlan = proven;
+        }
+    }
+
+    private TreeNode BuildStageTreeNode(GreedyEdgeStage stage, string scope, bool improved)
+        => improved
+            ? CreatePlanTreeRoot(stage.Name, stage.Plan!, scope, stage.Elapsed)
+            : stage.HasSolution
+                ? CreateNoImprovementTreeRoot(stage.Name, stage.Plan!, stage.Elapsed)
+                : CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, stage.TimedOut ? "timed out" : null);
+
+    private TreeNode BuildStageOverviewNode(GreedyEdgeStage stage, string scope, bool improved)
+        => improved
+            ? BuildOverviewSectionNode(stage.Plan!, scope, stage.Name, stage.Elapsed)
+            : BuildOverviewNoteNode(FormatStageRootLabel(
+                stage.Name,
+                stage.Elapsed,
+                stage.Plan,
+                stage.HasSolution ? "no improvement" : (stage.TimedOut ? "timed out" : null)));
+
+    private void ShowStageModal(string message, bool hasSolution)
+    {
+        // Pause the run clock while the modal is up: the time the user spends in the dialog must
+        // count toward neither the total elapsed nor the current stage's clock. Stopwatch.Start()
+        // resumes (does not reset), so accumulated time is preserved and the next stage still times
+        // from zero. The 100ms elapsed-timer keeps ticking inside the modal's message loop, but with
+        // the stopwatch stopped it simply renders a frozen value.
+        bool wasRunning = _runStopwatch?.IsRunning ?? false;
+        if (wasRunning)
+            _runStopwatch!.Stop();
+        try
+        {
+            MessageBox.Show(
+                this,
+                message,
+                "Stage complete",
+                MessageBoxButtons.OK,
+                hasSolution ? MessageBoxIcon.Information : MessageBoxIcon.None);
+        }
+        finally
+        {
+            if (wasRunning)
+                _runStopwatch!.Start();
+        }
+    }
+
+    // Root-node detail text for greedy mode: the step plan followed by the full edge progression
+    // (compact baseline -> each tightening -> any no-solution stage), so the detail pane mirrors the
+    // stacked trees.
+    private static string BuildGreedyProgressionDetails(StrategyPlan stepPlan, List<GreedyEdgeStage> stages)
+    {
+        var lines = new List<string>
+        {
+            "Greedy result (anytime: improving stages are shown as trees)",
+            $"greedy: {FormatPlanSqueeze(stepPlan)}, total edges={stepPlan.TotalBranchEdges}",
+        };
+        StrategyPlan incumbent = stepPlan;
+        foreach (GreedyEdgeStage stage in stages)
+        {
+            if (stage.Plan is { } p)
+            {
+                if (p.IsStrictRefinementOver(incumbent))
+                {
+                    lines.Add($"{stage.Name}: {FormatPlanSqueeze(p)}, total edges={p.TotalBranchEdges}");
+                    incumbent = p;
+                }
+                else
+                {
+                    lines.Add($"{stage.Name}: max steps={p.MaxStep}, total edges={p.TotalBranchEdges} (no improvement)");
+                }
+            }
+            else if (stage.TimedOut)
+            {
+                lines.Add($"{stage.Name}: time out (probe abandoned on the time budget; best plan kept)");
+            }
+            else
+            {
+                lines.Add($"{stage.Name}: no solution (no better strategy at this step ceiling)");
+            }
+        }
+        return string.Join(Environment.NewLine, lines);
     }
 
     // Wraps a tree in a panel with a small top toolbar holding that tree's own buttons (Expand /
@@ -838,51 +1091,51 @@ class MainForm : Form
         _backButton.Enabled = false;
     }
 
-    // Renders the overview panel so it mirrors the tree one-to-one: a "step" section (worst-case
-    // step strategy -- greedy bound until the exact pass replaces it) and an "edge" section
-    // ("computing..." placeholder until the edge stage finishes). Each section is an independent
-    // root, so the strategies' overviews can be browsed and collapsed separately. This is the
-    // full-rebuild path used for the initial render and theme switches.
+    // Renders the overview panel so it mirrors the tree one-to-one: a step section (named by mode --
+    // "exact"/"greedy") and a "compact" section ("computing..." placeholder until the compact stage
+    // finishes). Each section is an independent root, so the strategies' overviews can be browsed and
+    // collapsed separately. This is the full-rebuild path used for the initial render and theme switches.
     private void RebuildOverview(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool exactImproved, bool compactImproved)
     {
         _overviewTree.BeginUpdate();
         _overviewTree.Nodes.Clear();
 
         StrategyPlan stepPlan = defaultPlan ?? feasiblePlan;
-        _overviewTree.Nodes.Add(BuildOverviewSectionNode(stepPlan, "default", "step overview"));
+        string stepStageName = defaultPlan is null ? "greedy" : "exact";
+        _overviewTree.Nodes.Add(BuildOverviewSectionNode(stepPlan, "default", stepStageName, stepPlan.Elapsed));
 
         if (compactPlan is null)
-            _overviewTree.Nodes.Add(BuildOverviewNoteNode("edge overview: computing..."));
+            _overviewTree.Nodes.Add(BuildOverviewNoteNode("compact: computing..."));
         else if (compactImproved)
-            _overviewTree.Nodes.Add(BuildOverviewSectionNode(compactPlan, "compact", "edge overview"));
+            _overviewTree.Nodes.Add(BuildOverviewSectionNode(compactPlan, "compact", "compact", compactPlan.Elapsed));
         else
-            _overviewTree.Nodes.Add(BuildOverviewNoteNode("edge overview: no better result (total edges unchanged or worse)"));
+            _overviewTree.Nodes.Add(BuildOverviewNoteNode(FormatStageRootLabel("compact", compactPlan.Elapsed, plan: null)));
 
         _overviewTree.EndUpdate();
     }
 
     // Incrementally folds the finished compact result into the overview, mirroring the tree update:
     // the step section (0) -- and the user's expand/scroll state over it -- is left untouched, and
-    // only the trailing edge placeholder root (1) is replaced.
+    // only the trailing compact placeholder root (1) is replaced.
     private void FinalizeCompactInOverview(StrategyPlan compactPlan, bool compactImproved)
     {
         _overviewTree.BeginUpdate();
 
-        // Drop the trailing edge "computing..." placeholder root.
+        // Drop the trailing compact "computing..." placeholder root.
         if (_overviewTree.Nodes.Count > 0)
             _overviewTree.Nodes.RemoveAt(_overviewTree.Nodes.Count - 1);
 
         if (compactImproved)
-            _overviewTree.Nodes.Add(BuildOverviewSectionNode(compactPlan, "compact", "edge overview"));
+            _overviewTree.Nodes.Add(BuildOverviewSectionNode(compactPlan, "compact", "compact", compactPlan.Elapsed));
         else
-            _overviewTree.Nodes.Add(BuildOverviewNoteNode("edge overview: no better result (total edges unchanged or worse)"));
+            _overviewTree.Nodes.Add(BuildOverviewNoteNode(FormatStageRootLabel("compact", compactPlan.Elapsed, plan: null)));
 
         _overviewTree.EndUpdate();
     }
 
-    private TreeNode BuildOverviewSectionNode(StrategyPlan plan, string scope, string title)
+    private TreeNode BuildOverviewSectionNode(StrategyPlan plan, string scope, string stageName, TimeSpan elapsed)
     {
-        var sectionNode = new TreeNode(title)
+        var sectionNode = new TreeNode(FormatStageRootLabel(stageName, elapsed, plan))
         {
             NodeFont = new Font(_overviewTree.Font, FontStyle.Bold),
             ForeColor = _palette.ForeColor,
@@ -999,11 +1252,24 @@ class MainForm : Form
             AppendOverviewNodeText(builder, child, depth + 1);
     }
 
-    private TreeNode CreatePlanTreeRoot(string label, StrategyPlan plan, string scope)
+    // The single unified stage-root label used by BOTH the strategy tree plan roots and the overview
+    // section roots: "<stage>: elapsed=<s>.3f s, max steps=<n>, edges=<n>, output=<n>", optionally
+    // suffixed with a marker (e.g. "no improvement"). When there is no plan the body collapses to the
+    // marker note ("no solution" by default, or e.g. "timed out"). elapsed is the stage's own wall time
+    // in seconds.
+    private static string FormatStageRootLabel(string stageName, TimeSpan elapsed, StrategyPlan? plan, string? marker = null)
+    {
+        string elapsedText = $"elapsed={elapsed.TotalSeconds:F3} s";
+        if (plan is null)
+            return $"{stageName}: {elapsedText}, {marker ?? "no solution"}";
+        string body = $"{stageName}: {elapsedText}, max steps={plan.MaxStep}, edges={plan.TotalBranchEdges}, output={plan.SearchStatistics.OutputStates}";
+        return marker is null ? body : $"{body}, {marker}";
+    }
+
+    private TreeNode CreatePlanTreeRoot(string stageName, StrategyPlan plan, string scope, TimeSpan elapsed)
     {
         StrategyDepthIndex depthIndex = StrategyDepthIndex.Build(plan.Root);
-        var planNode = new TreeNode(
-            $"{label}: elapsed={plan.Elapsed.TotalMilliseconds:F1} ms, max steps={plan.MaxStep}, edges={plan.TotalBranchEdges}, output={plan.SearchStatistics.OutputStates}")
+        var planNode = new TreeNode(FormatStageRootLabel(stageName, elapsed, plan))
         {
             Tag = BuildPlanDetails(plan),
             NodeFont = new Font(_treeView.Font, FontStyle.Bold),
@@ -1011,6 +1277,31 @@ class MainForm : Form
         };
         planNode.Nodes.Add(CreateStateNode(plan.Root, plan.K, scope, depthIndex));
         return planNode;
+    }
+
+    // A terminal stage that found no better strategy: a single bold leaf carrying the unified label with
+    // the given marker ("no solution" when proven infeasible, "timed out" when the probe was abandoned on
+    // the soft deadline) and no child strategy subtree.
+    private TreeNode CreateNoSolutionTreeRoot(string stageName, TimeSpan elapsed, string? marker = null)
+    {
+        return new TreeNode(FormatStageRootLabel(stageName, elapsed, plan: null, marker))
+        {
+            NodeFont = new Font(_treeView.Font, FontStyle.Bold),
+            ForeColor = _palette.MutedForeColor,
+        };
+    }
+
+    // A stage that produced a valid strategy that does NOT strictly improve on the incumbent (e.g. the
+    // compact baseline lands on the same max-step but more edges than greedy). It is recorded and marked
+    // "no improvement" but, like a no-solution stage, shown only as a single leaf note -- the worse tree
+    // is not drawn. Tightening still continues past it.
+    private TreeNode CreateNoImprovementTreeRoot(string stageName, StrategyPlan plan, TimeSpan elapsed)
+    {
+        return new TreeNode(FormatStageRootLabel(stageName, elapsed, plan, "no improvement"))
+        {
+            NodeFont = new Font(_treeView.Font, FontStyle.Bold),
+            ForeColor = _palette.MutedForeColor,
+        };
     }
 
     private TreeNode CreateStateNode(StrategyNode node, int k, string scope, StrategyDepthIndex depthIndex)
@@ -1315,6 +1606,77 @@ class MainForm : Form
             : ColorTheme.Dark;
     }
 
+    // Persisted GUI settings: the inputs (n/m/k), mode + theme selections, and the per-stage pause
+    // toggle, stored as JSON under %APPDATA%/Sort/settings.json so the form reopens exactly as the
+    // user last left it.
+    private sealed class GuiSettings
+    {
+        public string N { get; set; } = "25";
+        public string M { get; set; } = "5";
+        public string K { get; set; } = "5";
+        public int ModeIndex { get; set; }
+        public string Theme { get; set; } = nameof(ColorTheme.Dark);
+        public bool PauseEachStage { get; set; }
+    }
+
+    private static string SettingsFilePath =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Sort", "settings.json");
+
+    // Applies any previously-saved settings to the controls. Best-effort: a missing or corrupt file
+    // leaves the built-in defaults in place.
+    private void LoadSettings()
+    {
+        try
+        {
+            string path = SettingsFilePath;
+            if (!File.Exists(path))
+                return;
+
+            GuiSettings? settings = JsonSerializer.Deserialize<GuiSettings>(File.ReadAllText(path));
+            if (settings is null)
+                return;
+
+            _nTextBox.Text = settings.N;
+            _mTextBox.Text = settings.M;
+            _kTextBox.Text = settings.K;
+            if (settings.ModeIndex >= 0 && settings.ModeIndex < _modeComboBox.Items.Count)
+                _modeComboBox.SelectedIndex = settings.ModeIndex;
+            if (_themeComboBox.Items.Contains(settings.Theme))
+                _themeComboBox.SelectedItem = settings.Theme;
+            _pauseEachStageCheckBox.Checked = settings.PauseEachStage;
+        }
+        catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
+        {
+            // Ignore unreadable/corrupt settings and fall back to defaults.
+        }
+    }
+
+    // Writes the current control state back to disk. Best-effort: failures (e.g. a read-only profile)
+    // are swallowed so closing the form never throws.
+    private void SaveSettings()
+    {
+        try
+        {
+            var settings = new GuiSettings
+            {
+                N = _nTextBox.Text,
+                M = _mTextBox.Text,
+                K = _kTextBox.Text,
+                ModeIndex = _modeComboBox.SelectedIndex,
+                Theme = ParseSelectedTheme().ToString(),
+                PauseEachStage = _pauseEachStageCheckBox.Checked,
+            };
+
+            string path = SettingsFilePath;
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true }));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Ignore failures to persist settings.
+        }
+    }
+
     private void ApplyTheme(ColorTheme theme)
     {
         _palette = theme == ColorTheme.Dark ? DarkPalette : LightPalette;
@@ -1403,26 +1765,29 @@ class MainForm : Form
         if (defaultPlan is null)
         {
             _statusLabel.Text =
-                $"{head}, step {FormatPlanSqueeze(feasiblePlan)} " +
-                $"(max steps={feasiblePlan.MaxStep}, not proven optimal). Computing step...";
+                $"{head}, {FormatPlanSqueeze(feasiblePlan)} (not proven optimal). Computing step...";
             return;
         }
 
         if (compactPlan is null)
         {
-            double ms = feasiblePlan.Elapsed.TotalMilliseconds + defaultPlan.Elapsed.TotalMilliseconds;
+            double seconds = feasiblePlan.Elapsed.TotalSeconds + defaultPlan.Elapsed.TotalSeconds;
             _statusLabel.Text =
-                $"{head}, step max={defaultPlan.MaxStep}, elapsed={ms:F1} ms. Computing edge stage...";
+                $"{head}, step max={defaultPlan.MaxStep}, elapsed={seconds:F3} s. Computing compact stage...";
             return;
         }
 
-        double totalElapsedMs = feasiblePlan.Elapsed.TotalMilliseconds + defaultPlan.Elapsed.TotalMilliseconds + compactPlan.Elapsed.TotalMilliseconds;
-        string compactText = compactImproved
-            ? $"edge reduced total edges {defaultPlan.TotalBranchEdges} -> {compactPlan.TotalBranchEdges}"
-            : $"edge produced no better result (step total edges {defaultPlan.TotalBranchEdges}, edge {compactPlan.TotalBranchEdges})";
+        double totalElapsedSeconds = feasiblePlan.Elapsed.TotalSeconds + defaultPlan.Elapsed.TotalSeconds + compactPlan.Elapsed.TotalSeconds;
+        string compactText;
+        if (compactPlan.MaxStep < defaultPlan.MaxStep)
+            compactText = $"compact lowered max steps {defaultPlan.MaxStep} -> {compactPlan.MaxStep} (edges {defaultPlan.TotalBranchEdges} -> {compactPlan.TotalBranchEdges})";
+        else if (compactImproved)
+            compactText = $"compact reduced total edges {defaultPlan.TotalBranchEdges} -> {compactPlan.TotalBranchEdges}";
+        else
+            compactText = $"compact produced no better result (step total edges {defaultPlan.TotalBranchEdges}, compact {compactPlan.TotalBranchEdges})";
         _statusLabel.Text =
-            $"{head}, total elapsed={totalElapsedMs:F1} ms, " +
-            $"max steps={defaultPlan.MaxStep}, {compactText}.";
+            $"{head}, total elapsed={totalElapsedSeconds:F3} s, " +
+            $"max steps={compactPlan.MaxStep}, {compactText}.";
     }
 
     private static string BuildCompressedFinalChoiceText(FinalChoiceSummary summary, int k)
@@ -1478,42 +1843,43 @@ class MainForm : Form
 
     private void UpdateElapsedLabel()
     {
-        int phase = Volatile.Read(ref _activePhase);
-        long feasibleMs = Interlocked.Read(ref _feasibleElapsedMs);
-        long phase1Ms = Interlocked.Read(ref _phase1ElapsedMs);
         long totalMs = (long)((_runStopwatch?.Elapsed.TotalMilliseconds) ?? 0);
 
-        // Two-stage clock: the "step" stage finds the worst-case step count (greedy bound in greedy
-        // mode, exact solve in exact mode), then the "edge" stage minimizes displayed edges (compact).
-        // Each stage counts from zero. The step pass folds into step, so step ends at the phase-1 boundary.
-        long stepDoneMs = -1;
-        if (_feasibleMode && _completedFeasibleStats is { } fStats)
-            stepDoneMs = fStats.Phase1Milliseconds + fStats.Phase2Milliseconds;
-        else if (!_feasibleMode && _completedDefaultStats is { } dStats)
-            stepDoneMs = dStats.Phase1Milliseconds + dStats.Phase2Milliseconds;
+        // Four-line panel, all per the current stage except the first line (cumulative total):
+        //   <total> s
+        //   <stage name>: <stage-own elapsed> s
+        //   progress: <current stage %>
+        //   eta / time remaining: <current stage remaining>
+        // The stage clock counts from _stageStartMs (reset at every stage boundary), so it always
+        // reports the running stage's own time rather than a cumulative figure.
+        double totalSeconds = totalMs / 1000.0;
+        double stageSeconds = Math.Max(0, totalMs - _stageStartMs) / 1000.0;
 
-        string stepLine;
-        if (stepDoneMs >= 0)
-            stepLine = $"step: {stepDoneMs / 1000.0:F3} s";
-        else if (_runStopwatch is not null && phase < 2)
-            stepLine = $"step: {totalMs / 1000.0:F3} s";
+        // During a compact<=N tightening probe the fourth line is the EXACT time left until the soft
+        // budget times out -- polled live from the engine deadline -- rather than the unreliable
+        // progress-based ETA. Outside tightening (no active deadline) fall back to the ETA estimate.
+        bool isTightening = _currentStageName.StartsWith("compact\u2264", StringComparison.Ordinal);
+        TimeSpan? budgetRemaining = isTightening ? _activeBuilder?.TighteningTimeRemaining : null;
+
+        string etaLabel;
+        string etaLineValue;
+        if (budgetRemaining is { } remaining)
+        {
+            etaLabel = "time remaining";
+            etaLineValue = $"{remaining.TotalSeconds:F3} s";
+        }
         else
-            stepLine = "step: -";
+        {
+            etaLabel = "eta";
+            double etaSeconds = EstimateLiveEtaSeconds(totalMs);
+            etaLineValue = etaSeconds >= 0 ? $"{etaSeconds:F3} s" : "-";
+        }
 
-        long edgeBaseMs = _feasibleMode ? feasibleMs : phase1Ms;
-        string edgeLine;
-        if (_completedCompactStats is { } compactStats)
-            edgeLine = $"edge: {(compactStats.Phase1bMilliseconds + compactStats.Phase2Milliseconds) / 1000.0:F3} s";
-        else if (_runStopwatch is not null && phase >= 2 && edgeBaseMs >= 0)
-            edgeLine = $"edge: {Math.Max(0, totalMs - edgeBaseMs) / 1000.0:F3} s";
-        else
-            edgeLine = "edge: -";
-
-        double etaSeconds = EstimateLiveEtaSeconds(totalMs);
-        string etaLineValue = etaSeconds >= 0 ? $"{etaSeconds:F3} s" : "-";
-        string progressLine = $"progress: {_latestProgress.EstimatedProgress01 * 100.0:F1}%";
-        string etaLine = $"eta: {etaLineValue}";
-        string text = $"{totalMs / 1000.0:F3} s\n{stepLine}\n{edgeLine}\n{progressLine}\n{etaLine}";
+        string text =
+            $"{totalSeconds:F3} s\n" +
+            $"{_currentStageName}: {stageSeconds:F3} s\n" +
+            $"progress: {_latestProgress.EstimatedProgress01 * 100.0:F1}%\n" +
+            $"{etaLabel}: {etaLineValue}";
         SetStatText(_progressTextBox, text);
     }
 
@@ -1544,11 +1910,11 @@ class MainForm : Form
         if (Volatile.Read(ref _activePhase) == 2)
         {
             string solvedLine = p.CompactStateEstimate > 0
-                ? $"edge solved: {p.CompactStatesSolved} ({EdgeLocalFraction(p) * 100.0:F1}%)"
-                : $"edge solved: {p.CompactStatesSolved}";
+                ? $"compact solved: {p.CompactStatesSolved} ({EdgeLocalFraction(p) * 100.0:F1}%)"
+                : $"compact solved: {p.CompactStatesSolved}";
             SetStatText(_statesTextBox,
                 solvedLine + "\n" +
-                $"edge groups: {p.CompactGroupsEnumerated} ({p.CompactStepOptimalGroups} opt)\n" +
+                $"compact groups: {p.CompactGroupsEnumerated} ({p.CompactStepOptimalGroups} opt)\n" +
                 $"(step) output: {p.OutputStates}\n" +
                 $"(step) lower-bound: {p.LowerBoundStates}\n" +
                 $"(step) top-set: {p.FeasibleTopSetStates}");
@@ -1564,8 +1930,8 @@ class MainForm : Form
         }
 
         string edgeText = p.CompactStatesSolved > 0
-            ? $"[edge] {p.CompactStatesSolved} solved, {p.CompactGroupsEnumerated} groups ({p.CompactStepOptimalGroups} opt)"
-            : "[edge] -";
+            ? $"[compact] {p.CompactStatesSolved} solved, {p.CompactGroupsEnumerated} groups ({p.CompactStepOptimalGroups} opt)"
+            : "[compact] -";
         SetStatText(_workTextBox,
             $"outcomes: {p.OutcomesConstructed} (cand groups {p.CandidateGroupsEnumerated})\n" +
             $"duplicate skips: {p.DuplicateOutcomeSkips}\n" +
@@ -1628,21 +1994,13 @@ class MainForm : Form
             plan.SearchStatistics.RootProvenLowerBound);
     }
 
+    // The label shown in the status bar's "Running (phase ...)" text: the current stage name, with a
+    // 1/2 or 2/2 prefix so the user sees overall progress through the two-phase run.
     private string GetPhaseLabel()
     {
-        if (_feasibleMode)
-            return _activePhase switch
-            {
-                0 => "1/2 step (greedy)",
-                2 => "2/2 edge",
-                _ => "-",
-            };
-        return _activePhase switch
-        {
-            1 => "step: exact solve+build",
-            2 => "edge",
-            _ => "-",
-        };
+        int phase = Volatile.Read(ref _activePhase);
+        string prefix = phase >= 2 ? "2/2" : "1/2";
+        return $"{prefix} {_currentStageName}";
     }
 
     private static string BuildFeasibleOnlyDetails(StrategyPlan feasiblePlan)
@@ -1652,7 +2010,7 @@ class MainForm : Form
         {
             "Step strategy (greedy upper bound; next stage in progress)",
             $"squeeze: {FormatPlanSqueeze(feasiblePlan)}  (not proven optimal)",
-            $"step elapsed: {feasiblePlan.Elapsed.TotalMilliseconds:F1} ms",
+            $"step elapsed: {feasiblePlan.Elapsed.TotalSeconds:F3} s",
             $"step total edges: {feasiblePlan.TotalBranchEdges}",
             $"step output states: {feasiblePlan.SearchStatistics.OutputStates}",
             $"max steps (upper bound): {feasiblePlan.MaxStep}",
@@ -1669,8 +2027,8 @@ class MainForm : Form
         string defaultText = StrategyTextRenderer.Render(defaultPlan).TrimEnd();
         var lines = new List<string>
         {
-            "Step result (edge stage in progress)",
-            $"step elapsed: {defaultPlan.Elapsed.TotalMilliseconds:F1} ms",
+            "Step result (compact stage in progress)",
+            $"step elapsed: {defaultPlan.Elapsed.TotalSeconds:F3} s",
             $"step total edges: {defaultPlan.TotalBranchEdges}",
             $"step output states: {defaultPlan.SearchStatistics.OutputStates}",
             $"max steps: {defaultPlan.MaxStep}",
@@ -1686,18 +2044,18 @@ class MainForm : Form
     {
         string defaultText = StrategyTextRenderer.Render(defaultPlan).TrimEnd();
         string compactText = StrategyTextRenderer.Render(compactPlan).TrimEnd();
-        double totalElapsedMs = defaultPlan.Elapsed.TotalMilliseconds + compactPlan.Elapsed.TotalMilliseconds;
+        double totalElapsedSeconds = defaultPlan.Elapsed.TotalSeconds + compactPlan.Elapsed.TotalSeconds;
         var lines = new List<string>
         {
             "Two-stage result",
-            $"total elapsed: {totalElapsedMs:F1} ms",
+            $"total elapsed: {totalElapsedSeconds:F3} s",
             $"step total edges: {defaultPlan.TotalBranchEdges}",
-            $"edge total edges: {compactPlan.TotalBranchEdges}",
+            $"compact total edges: {compactPlan.TotalBranchEdges}",
             $"step output states: {defaultPlan.SearchStatistics.OutputStates}",
-            $"edge output states: {compactPlan.SearchStatistics.OutputStates}",
+            $"compact output states: {compactPlan.SearchStatistics.OutputStates}",
             compactImproved
-                ? "edge improvement: yes"
-                : "edge improvement: no",
+                ? "compact improvement: yes"
+                : "compact improvement: no",
             string.Empty,
             "----- step -----",
             defaultText,
@@ -1706,7 +2064,7 @@ class MainForm : Form
         if (compactImproved)
         {
             lines.Add(string.Empty);
-            lines.Add("----- edge -----");
+            lines.Add("----- compact -----");
             lines.Add(compactText);
         }
 
@@ -1802,11 +2160,11 @@ class MainForm : Form
             _ => (int?)null,
         };
         if (lower > 0 && upper is int u && lower == u)
-            return $"step-opt = {lower} (proven)";
+            return $"max steps = {lower} (proven)";
 
         string lowerText = lower > 0 ? lower.ToString() : "?";
         string upperText = upper?.ToString() ?? "?";
-        return $"step-opt: {lowerText} <= opt <= {upperText}";
+        return $"{lowerText} <= max steps <= {upperText}";
     }
 
     private static string BuildIdleDetailsText()
