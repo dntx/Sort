@@ -205,6 +205,17 @@ partial class StrategyBuilder
         if (!state.TryMapOrderByAutomorphism(0, new[] { b1 }, new[] { b2 }))
             return null;
 
+        // The printed quotient describes A1, A2 and the partner as three DISJOINT members, each with
+        // its own active down-chain. If any two of their active down-sets overlapped, the
+        // "A = {chain1, chain2}" / "{A2, #p}" structure would list a shared item twice, so the printed
+        // shape would no longer faithfully describe the component -- refuse to fold (fall back to split).
+        ulong ChainMask(int head) => (state.GetDescendantMask(head) & active) | (1UL << head);
+        ulong maskB1 = ChainMask(b1);
+        ulong maskB2 = ChainMask(b2);
+        ulong maskPartner = ChainMask(partner);
+        if ((maskB1 & maskB2) != 0 || (maskB1 & maskPartner) != 0 || (maskB2 & maskPartner) != 0)
+            return null;
+
         // The doomed tail (block loser's for the canonical shape, partner's for shape A) must be a
         // single total chain so the "tail(...)" notation is unambiguous.
         string legend;
