@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """AI-powered pull request reviewer backed by GitHub Models.
 
-Reads a unified diff plus the full current content of each changed file, asks a
-GitHub Models chat model to review it, posts the review back onto the pull
-request, and exits non-zero when the model reports a blocking (serious) issue so
-the required status check fails. Blocking findings are held to a high bar to keep
-false positives low.
+Reads a unified diff, asks a GitHub Models chat model to review it, posts the
+review back onto the pull request, and exits non-zero when the model reports a
+blocking (serious) issue so the required status check fails. Blocking findings
+are held to a high bar to keep false positives low.
 """
 
 import json
@@ -18,14 +17,12 @@ import urllib.request
 MODELS_ENDPOINT = "https://models.github.ai/inference/chat/completions"
 MODEL = os.environ.get("REVIEW_MODEL", "openai/gpt-4o")
 MAX_DIFF_CHARS = 60000
-MAX_CONTEXT_CHARS = 120000
-MAX_FILE_CHARS = 40000
 
 SYSTEM_PROMPT = """\
 You are a meticulous senior software engineer reviewing a GitHub pull request
-for a C#/.NET 8 (WinForms) project. You are given the unified diff AND the full
-current content of each changed file, so you can verify claims against real
-context instead of guessing.
+for a C#/.NET 8 (WinForms) project. You are given the unified diff plus the PR
+title and description. Review only what is shown and do not guess about code
+you cannot see.
 
 ## Your prime directive: precision over recall
 A false BLOCK is far more costly than a missed nit. Only raise a BLOCK when you
@@ -101,83 +98,16 @@ def read_diff() -> str:
     return diff
 
 
-TEXT_EXTENSIONS = {
-    ".cs", ".csproj", ".py", ".yml", ".yaml", ".md", ".json", ".txt",
-    ".config", ".xml", ".sln", ".editorconfig", ".sh", ".ps1",
-}
-
-
-def changed_files_from_diff(diff: str) -> list[str]:
-    """Extract the post-image path of each changed file from a unified diff."""
-    files: list[str] = []
-    for line in diff.splitlines():
-        if line.startswith("diff --git "):
-            # Format: diff --git a/<path> b/<path>
-            parts = line.split(" b/", 1)
-            if len(parts) == 2:
-                path = parts[1].strip()
-                if path and path not in files:
-                    files.append(path)
-    return files
-
-
-def build_file_context(diff: str) -> str:
-    """Return the full current content of each changed text file, budget-limited.
-
-    Giving the model the real file content (not just the diff) lets it verify
-    field initialization, types, disposal, and data structures instead of
-    guessing — the main source of false-positive BLOCK findings.
-    """
-    sections: list[str] = []
-    used = 0
-    for path in changed_files_from_diff(diff):
-        _, ext = os.path.splitext(path)
-        if ext.lower() not in TEXT_EXTENSIONS:
-            continue
-        if not os.path.isfile(path):  # deleted or renamed-away file
-            continue
-        try:
-            with open(path, "r", encoding="utf-8", errors="replace") as fh:
-                content = fh.read()
-        except OSError:
-            continue
-
-        note = ""
-        if len(content) > MAX_FILE_CHARS:
-            content = content[:MAX_FILE_CHARS]
-            note = "\n[file truncated]"
-
-        block = f"### File: {path}\n```\n{content}{note}\n```\n"
-        if used + len(block) > MAX_CONTEXT_CHARS:
-            sections.append(
-                f"### File: {path}\n[omitted — context budget exhausted]\n"
-            )
-            continue
-        sections.append(block)
-        used += len(block)
-
-    if not sections:
-        return ""
-    return (
-        "Full current content of the changed files (use this to VERIFY claims "
-        "before flagging anything):\n\n" + "\n".join(sections)
-    )
-
-
 def call_model(diff: str) -> str:
     token = os.environ["GITHUB_TOKEN"]
     pr_title = os.environ.get("PR_TITLE", "")
     pr_body = os.environ.get("PR_BODY", "")
 
-    file_context = build_file_context(diff)
-
     user_content = (
         f"Pull request title: {pr_title}\n\n"
         f"Pull request description:\n{pr_body or '(none)'}\n\n"
-        f"Here is the unified diff to review:\n\n```diff\n{diff}\n```\n"
+        f"Here is the unified diff to review:\n\n```diff\n{diff}\n```"
     )
-    if file_context:
-        user_content += "\n\n" + file_context
 
     payload = json.dumps(
         {
@@ -343,10 +273,10 @@ def main() -> int:
         review = call_model(diff)
     except urllib.error.HTTPError as err:
         print(f"GitHub Models request failed: {err.code} {err.read().decode('utf-8', 'replace')}")
-        return 0  # Don't hard-fail the PR on a transient inference error.
+        return 1
     except Exception as err:  # noqa: BLE001
         print(f"Review generation failed: {err}")
-        return 0
+        return 1
 
     verdict = parse_verdict(review)
     print(f"Verdict: {verdict}")
