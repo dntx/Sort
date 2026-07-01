@@ -103,14 +103,25 @@ class MainForm : Form
     private bool _feasibleMode;
     private Stopwatch? _runStopwatch;
     private CancellationTokenSource? _runCancellationSource;
-    // The builder of the in-flight run, polled (thread-safe) by the progress panel during compact<=N
-    // tightening so the fourth line can show the exact time left until the soft budget times out (the
-    // progress-based ETA is unreliable for those probes). Set on the UI thread before the run, cleared
-    // when it ends.
-    private volatile StrategyBuilder? _activeBuilder;
     private readonly Dictionary<string, TreeNode> _stateNodesByKey = new();
     private readonly Dictionary<TreeNode, string> _referenceTargets = new();
     private readonly Stack<TreeNode> _navigationHistory = new();
+
+    // Lazy tree materialization. A decision node's branch subtree is expensive to build (thousands of
+    // formatted TreeNodes for large shapes), so it is deferred: each expandable decision node gets a
+    // single empty placeholder child and an entry here recording how to build its real children. The
+    // children are materialized on demand -- when the node is expanded, when a jump/copy needs it, or
+    // when the user requests "expand all". Membership in this dictionary (not any placeholder text) is
+    // the source of truth for "not yet materialized".
+    private readonly Dictionary<TreeNode, LazyDecision> _lazyDecisions = new();
+
+    // Per (scope:stateId) branch-index path from a plan's root state node to that state's node, so a jump
+    // target that has not been materialized yet can be reached by walking and materializing the path.
+    private readonly Dictionary<string, JumpTarget> _jumpTargets = new();
+
+    private readonly record struct LazyDecision(StrategyNode Node, int K, string Scope, StrategyDepthIndex DepthIndex);
+
+    private readonly record struct JumpTarget(TreeNode ScopeRoot, int[] BranchPath);
     private SearchProgressSnapshot _latestProgress;
     private SearchStatistics? _completedDefaultStats;
     private SearchStatistics? _completedCompactStats;
@@ -341,11 +352,12 @@ class MainForm : Form
             Font = new Font(FontFamily.GenericSansSerif, 10),
         };
         _treeView.AfterSelect += (_, e) => ShowNodeDetails(e.Node);
+        _treeView.BeforeExpand += (_, e) => { if (e.Node is { } n) MaterializeDecision(n); };
         _treeView.NodeMouseDoubleClick += (_, e) => TryJumpToReferenceTarget(e.Node);
         _treeView.MouseDown += TreeView_MouseDown;
         _treeView.KeyDown += TreeView_KeyDown;
         _treeView.ContextMenuStrip = CreateTreeContextMenu();
-        _treeExpandButton.Click += (_, _) => _treeView.ExpandAll();
+        _treeExpandButton.Click += (_, _) => ExpandEntireTree();
         _treeCollapseButton.Click += (_, _) => _treeView.CollapseAll();
         _backButton.Click += (_, _) => NavigateBack();
 
@@ -610,7 +622,6 @@ class MainForm : Form
             cancellationToken,
             snapshot => progress.Report(snapshot),
             reportCombinedRunProgress: true);
-        _activeBuilder = builder;
         try
         {
             if (feasibleMode)
@@ -696,6 +707,7 @@ class MainForm : Form
                     : string.Empty;
             _statusLabel.Text = $"Stopped after {GetElapsedSeconds():F1} s.{shownDefault} {FormatSearchStatsSummary(_latestProgress, includeOutputStates: true)}. {FormatLiveDiagnosticsSummary(_latestProgress)}.";
             _detailsTextBox.Text = BuildLiveDiagnosticsText(_latestProgress);
+            MarkResultsStopped();
         }
         catch (Exception ex)
         {
@@ -706,7 +718,6 @@ class MainForm : Form
         }
         finally
         {
-            _activeBuilder = null;
             _activePhase = 0;
             _elapsedTimer.Stop();
             UpdateElapsedLabel();
@@ -716,12 +727,59 @@ class MainForm : Form
         }
     }
 
+    private const string CompactComputingLabel = "compact: computing...";
+    private const string CompactStoppedLabel = "compact: stopped (not computed)";
+
+    // On a user Stop, an interrupted stage leaves transient "computing.../in progress" placeholders on
+    // screen (tree root suffix, the trailing compact slot, and the root details). Rewrite them to a
+    // "stopped" wording so nothing still implies a computation is running. If the compact/edge stage had
+    // already produced output, the placeholders were replaced during the run and there is nothing to fix.
+    private void MarkResultsStopped()
+    {
+        if (_treeView.Nodes.Count == 0)
+            return;
+
+        TreeNode root = _treeView.Nodes[0];
+        bool hasResidue = root.Nodes.Count > 0
+            && root.Nodes[root.Nodes.Count - 1].Text == CompactComputingLabel;
+        if (!hasResidue)
+            return;
+
+        _treeView.BeginUpdate();
+        root.Text = MarkLabelStopped(root.Text);
+        root.Nodes[root.Nodes.Count - 1].Text = CompactStoppedLabel;
+        if (root.Tag is string tag)
+            root.Tag = MarkDetailsStopped(tag);
+        _treeView.EndUpdate();
+
+        if (_overviewTree.Nodes.Count > 0
+            && _overviewTree.Nodes[_overviewTree.Nodes.Count - 1].Text == CompactComputingLabel)
+        {
+            _overviewTree.BeginUpdate();
+            _overviewTree.Nodes[_overviewTree.Nodes.Count - 1].Text = CompactStoppedLabel;
+            _overviewTree.EndUpdate();
+        }
+    }
+
+    private static string MarkLabelStopped(string label)
+    {
+        int open = label.LastIndexOf(" (computing ", StringComparison.Ordinal);
+        return open >= 0 ? label[..open] + " (stopped)" : label;
+    }
+
+    private static string MarkDetailsStopped(string details)
+        => details
+            .Replace("next stage in progress", "next stage not run (stopped)")
+            .Replace("compact stage in progress", "compact stage not run (stopped)");
+
     private void PopulateTree(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool exactImproved, bool compactImproved)
     {
         _treeView.BeginUpdate();
         _treeView.Nodes.Clear();
         _stateNodesByKey.Clear();
         _referenceTargets.Clear();
+        _lazyDecisions.Clear();
+        _jumpTargets.Clear();
         _navigationHistory.Clear();
         _backButton.Enabled = false;
 
@@ -743,7 +801,7 @@ class MainForm : Form
 
         // Slot 1: "compact" -- minimizes displayed edges at the fixed step ceiling (placeholder until done).
         if (compactPlan is null)
-            root.Nodes.Add(new TreeNode("compact: computing...") { ForeColor = _palette.MutedForeColor });
+            root.Nodes.Add(new TreeNode(CompactComputingLabel) { ForeColor = _palette.MutedForeColor });
         else if (compactImproved)
             root.Nodes.Add(CreatePlanTreeRoot("compact", compactPlan, "compact", compactPlan.Elapsed));
         else
@@ -931,7 +989,7 @@ class MainForm : Form
         {
             string? marker = stage.HasSolution
                 ? (!improved ? "no improvement" : null)
-                : (stage.TimedOut ? "timed out" : null);
+                : NoSolutionMarker(stage);
             ShowStageModal(FormatStageRootLabel(stage.Name, stage.Elapsed, stage.Plan, marker), stage.HasSolution);
         }
     }
@@ -975,7 +1033,7 @@ class MainForm : Form
             ? CreatePlanTreeRoot(stage.Name, stage.Plan!, scope, stage.Elapsed)
             : stage.HasSolution
                 ? CreateNoImprovementTreeRoot(stage.Name, stage.Plan!, stage.Elapsed)
-                : CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, stage.TimedOut ? "timed out" : null);
+                : CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, NoSolutionMarker(stage));
 
     private TreeNode BuildStageOverviewNode(GreedyEdgeStage stage, string scope, bool improved)
         => improved
@@ -984,7 +1042,14 @@ class MainForm : Form
                 stage.Name,
                 stage.Elapsed,
                 stage.Plan,
-                stage.HasSolution ? "no improvement" : (stage.TimedOut ? "timed out" : null)));
+                stage.HasSolution ? "no improvement" : NoSolutionMarker(stage)));
+
+    // Leaf note for a solution-less stage: null means "no solution" (a proven-infeasible ceiling),
+    // otherwise the reason the incumbent merely stands -- "search incomplete (candidate cap reached)"
+    // (the greedy cap truncated the enumeration, so infeasibility is unproven).
+    private static string? NoSolutionMarker(GreedyEdgeStage stage)
+        => stage.Incomplete ? "search incomplete (candidate cap reached)"
+            : null;
 
     private void ShowStageModal(string message, bool hasSolution)
     {
@@ -1037,9 +1102,9 @@ class MainForm : Form
                     lines.Add($"{stage.Name}: max steps={p.MaxStep}, total edges={p.TotalBranchEdges} (no improvement)");
                 }
             }
-            else if (stage.TimedOut)
+            else if (stage.Incomplete)
             {
-                lines.Add($"{stage.Name}: time out (probe abandoned on the time budget; best plan kept)");
+                lines.Add($"{stage.Name}: search incomplete (candidate cap reached; infeasibility unproven, best plan kept)");
             }
             else
             {
@@ -1087,6 +1152,8 @@ class MainForm : Form
 
         _stateNodesByKey.Clear();
         _referenceTargets.Clear();
+        _lazyDecisions.Clear();
+        _jumpTargets.Clear();
         _navigationHistory.Clear();
         _backButton.Enabled = false;
     }
@@ -1105,7 +1172,7 @@ class MainForm : Form
         _overviewTree.Nodes.Add(BuildOverviewSectionNode(stepPlan, "default", stepStageName, stepPlan.Elapsed));
 
         if (compactPlan is null)
-            _overviewTree.Nodes.Add(BuildOverviewNoteNode("compact: computing..."));
+            _overviewTree.Nodes.Add(BuildOverviewNoteNode(CompactComputingLabel));
         else if (compactImproved)
             _overviewTree.Nodes.Add(BuildOverviewSectionNode(compactPlan, "compact", "compact", compactPlan.Elapsed));
         else
@@ -1177,7 +1244,7 @@ class MainForm : Form
         if (_overviewTree.SelectedNode?.Tag is not string targetStateKey)
             return;
 
-        if (!_stateNodesByKey.TryGetValue(targetStateKey, out TreeNode? targetNode))
+        if (ResolveStateNode(targetStateKey) is not TreeNode targetNode)
             return;
 
         targetNode.EnsureVisible();
@@ -1255,14 +1322,14 @@ class MainForm : Form
     // The single unified stage-root label used by BOTH the strategy tree plan roots and the overview
     // section roots: "<stage>: elapsed=<s>.3f s, max steps=<n>, edges=<n>, output=<n>", optionally
     // suffixed with a marker (e.g. "no improvement"). When there is no plan the body collapses to the
-    // marker note ("no solution" by default, or e.g. "timed out"). elapsed is the stage's own wall time
-    // in seconds.
+    // marker note ("no solution" by default, or e.g. "search incomplete (candidate cap reached)").
+    // elapsed is the stage's own wall time in seconds.
     private static string FormatStageRootLabel(string stageName, TimeSpan elapsed, StrategyPlan? plan, string? marker = null)
     {
         string elapsedText = $"elapsed={elapsed.TotalSeconds:F3} s";
         if (plan is null)
             return $"{stageName}: {elapsedText}, {marker ?? "no solution"}";
-        string body = $"{stageName}: {elapsedText}, max steps={plan.MaxStep}, edges={plan.TotalBranchEdges}, output={plan.SearchStatistics.OutputStates}";
+        string body = $"{stageName}: {elapsedText}, max steps={plan.MaxStep}, edges={plan.TotalBranchEdges}, states={plan.SearchStatistics.OutputStates}";
         return marker is null ? body : $"{body}, {marker}";
     }
 
@@ -1275,13 +1342,15 @@ class MainForm : Form
             NodeFont = new Font(_treeView.Font, FontStyle.Bold),
             ForeColor = _palette.ForeColor,
         };
-        planNode.Nodes.Add(CreateStateNode(plan.Root, plan.K, scope, depthIndex));
+        TreeNode stateRoot = CreateStateNode(plan.Root, plan.K, scope, depthIndex);
+        IndexJumpTargets(plan.Root, scope, stateRoot, new List<int>());
+        planNode.Nodes.Add(stateRoot);
         return planNode;
     }
 
     // A terminal stage that found no better strategy: a single bold leaf carrying the unified label with
-    // the given marker ("no solution" when proven infeasible, "timed out" when the probe was abandoned on
-    // the soft deadline) and no child strategy subtree.
+    // the given marker ("no solution" when proven infeasible, "search incomplete (candidate cap reached)"
+    // when the greedy cap truncated the enumeration) and no child strategy subtree.
     private TreeNode CreateNoSolutionTreeRoot(string stageName, TimeSpan elapsed, string? marker = null)
     {
         return new TreeNode(FormatStageRootLabel(stageName, elapsed, plan: null, marker))
@@ -1342,77 +1411,96 @@ class MainForm : Form
             return treeNode;
         }
 
-        foreach (var branch in node.Branches)
+        if (node.Branches.Count > 0)
         {
-            string branchHeader = branch.OrderText;
-            if (branch.EquivalentOrders is not null)
-                branchHeader += $"  (×{branch.EquivalentOrders.Count})";
-
-            var branchNode = new TreeNode(branchHeader)
-            {
-                ForeColor = _palette.BranchColor,
-                Tag = BuildBranchDetails(branch),
-            };
-
-            if (branch.EquivalentOrders is not null)
-            {
-                string equivalentText = StrategyTextRenderer.FormatEquivalentFormsSummary(branch.EquivalentOrders);
-                string patternText = StrategyTextRenderer.FormatEquivalentPatternLine(branch.EquivalentOrders);
-
-                branchNode.Nodes.Add(new TreeNode(equivalentText)
-                {
-                    ForeColor = _palette.MutedForeColor,
-                    Tag = StrategyTextRenderer.FormatEquivalentDetails(branch.EquivalentOrders),
-                });
-
-                branchNode.Nodes.Add(new TreeNode(patternText)
-                {
-                    ForeColor = _palette.MutedForeColor,
-                    Tag = StrategyTextRenderer.FormatEquivalentDetails(branch.EquivalentOrders),
-                });
-            }
-
-            if (branch.Effect.NewlyGuaranteedTop.Count > 0)
-            {
-                branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatInEntry(branch.Effect.NewlyGuaranteedTop))
-                {
-                    ForeColor = _palette.InColor,
-                    Tag = $"Newly confirmed in top-k: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.NewlyGuaranteedTop)}",
-                });
-            }
-
-            if (branch.Effect.NewlyExcluded.Count > 0)
-            {
-                branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatOutEntry(branch.Effect.NewlyExcluded))
-                {
-                    ForeColor = _palette.OutColor,
-                    Tag = $"Newly excluded from top-k: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.NewlyExcluded)}",
-                });
-            }
-
-            if (branch.Effect.FixedCandidates.Count > 0)
-            {
-                branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatFixedEntry(branch.Effect.FixedCandidates))
-                {
-                    ForeColor = _palette.FixedColor,
-                    Tag = $"Current fixed top-k candidates: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.FixedCandidates)}",
-                });
-            }
-
-            if (branch.Effect.PossibleCandidates.Count > 0)
-            {
-                branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatPossibleEntry(branch.Effect.PossibleCandidates))
-                {
-                    ForeColor = _palette.PossibleColor,
-                    Tag = $"Current possible top-k candidates: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.PossibleCandidates)}",
-                });
-            }
-
-            branchNode.Nodes.Add(CreateStateNode(branch.Next, k, scope, depthIndex));
-            treeNode.Nodes.Add(branchNode);
+            // Defer the (potentially large) branch subtree: an empty placeholder gives the node its
+            // expander, and MaterializeDecision builds the real branch children on demand.
+            treeNode.Nodes.Add(new TreeNode());
+            _lazyDecisions[treeNode] = new LazyDecision(node, k, scope, depthIndex);
         }
 
         return treeNode;
+    }
+
+    // Builds the immediate branch children of a lazily-deferred decision node. Idempotent and a no-op for
+    // any node that is not a pending lazy decision (leaves, already-materialized nodes), so it is safe to
+    // call from BeforeExpand, jump/copy path walks, and "expand all".
+    private void MaterializeDecision(TreeNode treeNode)
+    {
+        if (!_lazyDecisions.TryGetValue(treeNode, out LazyDecision info))
+            return;
+
+        _lazyDecisions.Remove(treeNode);
+        _treeView.BeginUpdate();
+        treeNode.Nodes.Clear(); // drop the placeholder
+        foreach (StrategyBranch branch in info.Node.Branches)
+            treeNode.Nodes.Add(CreateBranchNode(branch, info.K, info.Scope, info.DepthIndex));
+        _treeView.EndUpdate();
+    }
+
+    private TreeNode CreateBranchNode(StrategyBranch branch, int k, string scope, StrategyDepthIndex depthIndex)
+    {
+        string branchHeader = branch.OrderText;
+        if (branch.EquivalentOrders is not null)
+            branchHeader += $"  (×{branch.EquivalentOrders.Count} = {branch.EquivalentOrders.CountFormula})";
+
+        var branchNode = new TreeNode(branchHeader)
+        {
+            ForeColor = _palette.BranchColor,
+            Tag = BuildBranchDetails(branch),
+        };
+
+        if (branch.EquivalentOrders is not null)
+        {
+            // The count and its formula now live in the branch header (×N = formula), so only the
+            // pattern/legend needs its own line here. The hover Tag still carries the full two-line
+            // detail via FormatEquivalentDetails.
+            branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatEquivalentPatternLine(branch.EquivalentOrders))
+            {
+                ForeColor = _palette.MutedForeColor,
+                Tag = StrategyTextRenderer.FormatEquivalentDetails(branch.EquivalentOrders),
+            });
+        }
+
+        if (branch.Effect.NewlyGuaranteedTop.Count > 0)
+        {
+            branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatInEntry(branch.Effect.NewlyGuaranteedTop))
+            {
+                ForeColor = _palette.InColor,
+                Tag = $"Newly confirmed in top-k: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.NewlyGuaranteedTop)}",
+            });
+        }
+
+        if (branch.Effect.NewlyExcluded.Count > 0)
+        {
+            branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatOutEntry(branch.Effect.NewlyExcluded))
+            {
+                ForeColor = _palette.OutColor,
+                Tag = $"Newly excluded from top-k: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.NewlyExcluded)}",
+            });
+        }
+
+        if (branch.Effect.FixedCandidates.Count > 0)
+        {
+            branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatFixedEntry(branch.Effect.FixedCandidates))
+            {
+                ForeColor = _palette.FixedColor,
+                Tag = $"Current fixed top-k candidates: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.FixedCandidates)}",
+            });
+        }
+
+        if (branch.Effect.PossibleCandidates.Count > 0)
+        {
+            branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatPossibleEntry(branch.Effect.PossibleCandidates))
+            {
+                ForeColor = _palette.PossibleColor,
+                Tag = $"Current possible top-k candidates: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.PossibleCandidates)}",
+            });
+        }
+
+        // The next state node is always added LAST; the jump/copy path walks rely on that position.
+        branchNode.Nodes.Add(CreateStateNode(branch.Next, k, scope, depthIndex));
+        return branchNode;
     }
 
     private TreeNode CreateTerminalNode(StrategyNode node, int k, string scope)
@@ -1456,7 +1544,7 @@ class MainForm : Form
         if (!_referenceTargets.TryGetValue(node, out string? targetStateKey))
             return;
 
-        if (!_stateNodesByKey.TryGetValue(targetStateKey, out TreeNode? targetNode))
+        if (ResolveStateNode(targetStateKey) is not TreeNode targetNode)
             return;
 
         _navigationHistory.Push(node);
@@ -1465,6 +1553,87 @@ class MainForm : Form
         targetNode.EnsureVisible();
         _treeView.SelectedNode = targetNode;
         _treeView.Focus();
+    }
+
+    // Resolves a "scope:stateId" key to its tree node, materializing the path to it if the target's
+    // subtree has not been expanded yet. Direct hits (already materialized, e.g. an ancestor was
+    // expanded) return immediately; otherwise the recorded branch path from the plan's root state node
+    // is walked, materializing each decision node along the way so the target node comes into existence.
+    private TreeNode? ResolveStateNode(string key)
+    {
+        if (_stateNodesByKey.TryGetValue(key, out TreeNode? existing))
+            return existing;
+
+        if (!_jumpTargets.TryGetValue(key, out JumpTarget target))
+            return null;
+
+        _treeView.BeginUpdate();
+        TreeNode current = target.ScopeRoot;
+        foreach (int branchIndex in target.BranchPath)
+        {
+            MaterializeDecision(current);
+            if (branchIndex >= current.Nodes.Count)
+            {
+                _treeView.EndUpdate();
+                return null;
+            }
+
+            TreeNode branchNode = current.Nodes[branchIndex];
+            if (branchNode.Nodes.Count == 0)
+            {
+                _treeView.EndUpdate();
+                return null;
+            }
+
+            // The next state node is always the branch node's last child (effect leaves precede it).
+            current = branchNode.Nodes[branchNode.Nodes.Count - 1];
+        }
+
+        _treeView.EndUpdate();
+        return current;
+    }
+
+    // Records, for every jumpable state (decision/terminal) in a plan, the branch-index path from the
+    // plan's root state node down to it. Cheap: walks the StrategyNode tree only, allocating no tree
+    // nodes. Mirrors the true-tree DFS order so the first-occurrence semantics match _stateNodesByKey.
+    private void IndexJumpTargets(StrategyNode node, string scope, TreeNode scopeRoot, List<int> path)
+    {
+        if (node.Kind is StrategyNodeKind.Decision or StrategyNodeKind.Terminal)
+            _jumpTargets.TryAdd($"{scope}:{node.StateId}", new JumpTarget(scopeRoot, path.ToArray()));
+
+        if (node.Kind == StrategyNodeKind.Decision && node.FinalChoice is null)
+        {
+            for (int i = 0; i < node.Branches.Count; i++)
+            {
+                path.Add(i);
+                IndexJumpTargets(node.Branches[i].Next, scope, scopeRoot, path);
+                path.RemoveAt(path.Count - 1);
+            }
+        }
+    }
+
+    // Fully materializes every deferred decision node, then expands the whole tree. Used by the "expand
+    // all" button, where the user has explicitly asked to see everything.
+    private void ExpandEntireTree()
+    {
+        _treeView.BeginUpdate();
+        while (_lazyDecisions.Count > 0)
+        {
+            foreach (TreeNode node in _lazyDecisions.Keys.ToList())
+                MaterializeDecision(node);
+        }
+
+        _treeView.ExpandAll();
+        _treeView.EndUpdate();
+    }
+
+    // Recursively materializes all deferred decision nodes under (and including) the given node, so a
+    // subtree copy captures the full strategy rather than an unexpanded placeholder.
+    private void MaterializeSubtree(TreeNode node)
+    {
+        MaterializeDecision(node);
+        foreach (TreeNode child in node.Nodes)
+            MaterializeSubtree(child);
     }
 
     private void NavigateBack()
@@ -1536,6 +1705,7 @@ class MainForm : Form
         if (_treeView.SelectedNode is not { } node)
             return;
 
+        MaterializeSubtree(node);
         var builder = new System.Text.StringBuilder();
         AppendNodeSubtree(node, 0, builder);
         SetClipboardText(builder.ToString().TrimEnd());
@@ -1849,37 +2019,20 @@ class MainForm : Form
         //   <total> s
         //   <stage name>: <stage-own elapsed> s
         //   progress: <current stage %>
-        //   eta / time remaining: <current stage remaining>
+        //   eta: <current stage remaining>
         // The stage clock counts from _stageStartMs (reset at every stage boundary), so it always
         // reports the running stage's own time rather than a cumulative figure.
         double totalSeconds = totalMs / 1000.0;
         double stageSeconds = Math.Max(0, totalMs - _stageStartMs) / 1000.0;
 
-        // During a compact<=N tightening probe the fourth line is the EXACT time left until the soft
-        // budget times out -- polled live from the engine deadline -- rather than the unreliable
-        // progress-based ETA. Outside tightening (no active deadline) fall back to the ETA estimate.
-        bool isTightening = _currentStageName.StartsWith("compact\u2264", StringComparison.Ordinal);
-        TimeSpan? budgetRemaining = isTightening ? _activeBuilder?.TighteningTimeRemaining : null;
-
-        string etaLabel;
-        string etaLineValue;
-        if (budgetRemaining is { } remaining)
-        {
-            etaLabel = "time remaining";
-            etaLineValue = $"{remaining.TotalSeconds:F3} s";
-        }
-        else
-        {
-            etaLabel = "eta";
-            double etaSeconds = EstimateLiveEtaSeconds(totalMs);
-            etaLineValue = etaSeconds >= 0 ? $"{etaSeconds:F3} s" : "-";
-        }
+        double etaSeconds = EstimateLiveEtaSeconds(totalMs);
+        string etaLineValue = etaSeconds >= 0 ? $"{etaSeconds:F3} s" : "-";
 
         string text =
             $"{totalSeconds:F3} s\n" +
             $"{_currentStageName}: {stageSeconds:F3} s\n" +
             $"progress: {_latestProgress.EstimatedProgress01 * 100.0:F1}%\n" +
-            $"{etaLabel}: {etaLineValue}";
+            $"eta: {etaLineValue}";
         SetStatText(_progressTextBox, text);
     }
 

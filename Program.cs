@@ -17,7 +17,7 @@ class Program
         "Options:\n" +
         "  -h, --help      Show this help and exit.\n" +
         "  --mode <mode>   Search mode. exact (default) = exact + compact (proven optimal).\n" +
-        "                  greedy = feasible + compact (fast, interruptible, not proven optimal).\n" +
+        "                  greedy = feasible + compact (interruptible with Ctrl+C, not proven optimal).\n" +
         "\n" +
         "Arguments:\n" +
         "  n   total number of elements   (1 <= n <= 64)\n" +
@@ -191,13 +191,51 @@ class Program
                 Console.Error.Write("\r" + new string(' ', lastLineLength) + "\r");
         }
 
+        using var cancellation = new System.Threading.CancellationTokenSource();
+        // Ctrl+C requests a graceful stop instead of killing the process: the greedy path catches the
+        // cancellation and still prints the best-so-far progression and tree. e.Cancel = true keeps the
+        // process alive so that output can be flushed. A second Ctrl+C (after the source is already
+        // cancelling) is left to the default handler for a hard exit.
+        ConsoleCancelEventHandler? cancelHandler = null;
+        cancelHandler = (_, e) =>
+        {
+            if (cancellation.IsCancellationRequested)
+                return;
+            e.Cancel = true;
+            cancellation.Cancel();
+            if (showProgress)
+                Console.Error.WriteLine("\ncancelling... (finishing the current step, then printing best-so-far)");
+        };
+        Console.CancelKeyPress += cancelHandler;
+
         var builder = new StrategyBuilder(
             n,
             m,
             k,
-            System.Threading.CancellationToken.None,
+            cancellation.Token,
             ReportProgress,
             reportCombinedRunProgress: true);
+
+        try
+        {
+            RunHeadlessCore(builder, feasibleMode, ClearProgressLine);
+        }
+        catch (OperationCanceledException)
+        {
+            // Safety net for a cancellation raised outside the per-phase handlers (e.g. during the fast
+            // initial greedy plan): nothing meaningful to show, so just note the interruption.
+            ClearProgressLine();
+            Console.WriteLine("interrupted (no result).");
+        }
+        finally
+        {
+            Console.CancelKeyPress -= cancelHandler;
+        }
+    }
+
+    private static void RunHeadlessCore(StrategyBuilder builder, bool feasibleMode, Action clearProgressLine)
+    {
+        void ClearProgressLine() => clearProgressLine();
 
         if (feasibleMode)
         {
@@ -224,20 +262,23 @@ class Program
             {
                 if (!stage.HasSolution)
                 {
-                    if (stage.TimedOut)
-                    {
-                        // Abandoned probe: no proof either way, the incumbent simply stands.
-                        stageSummaries.Add($"{stage.Name}: timed out");
-                    }
-                    else
-                    {
-                        // Proven infeasible at this ceiling => the incumbent is optimal (opt =
-                        // incumbent.MaxStep). Close its squeeze so the final tree reports proven optimal.
-                        stageSummaries.Add($"{stage.Name}: no solution");
-                        finalPlan = finalPlan.WithRootProvenLowerBound(finalPlan.MaxStep);
-                        incumbentPlan = finalPlan;
-                    }
-                    return;
+                    if (stage.Outcome == GreedyEdgeStageOutcome.NoSolution)
+                        {
+                            // Proven infeasible at this ceiling (complete enumeration) => the incumbent is
+                            // optimal (opt = incumbent.MaxStep). Close its squeeze so the final tree reports
+                            // proven optimal.
+                            stageSummaries.Add($"{stage.Name}: no solution");
+                            finalPlan = finalPlan.WithRootProvenLowerBound(finalPlan.MaxStep);
+                            incumbentPlan = finalPlan;
+                        }
+                        else
+                        {
+                            // Probe finished but the greedy candidate cap truncated the group enumeration, so
+                            // "no group fit" is not a proof. Leave the squeeze open (no proven-optimal claim);
+                            // the incumbent simply stands.
+                            stageSummaries.Add($"{stage.Name}: search incomplete (candidate cap reached)");
+                        }
+                        return;
                 }
 
                 if (stage.Plan!.IsStrictRefinementOver(incumbentPlan))
@@ -253,13 +294,30 @@ class Program
                 }
             }
 
-            builder.BuildFeasibleCompactPlan(CollectEdgeStage);
+            bool interrupted = false;
+            try
+            {
+                builder.BuildFeasibleCompactPlan(CollectEdgeStage);
+            }
+            catch (OperationCanceledException)
+            {
+                // User pressed Ctrl+C mid-tightening. The stages collected so far are still valid and the
+                // best plan found so far is the current finalPlan, so print that instead of losing all
+                // output. The squeeze stays open (nothing was proven), so no proven-optimal claim.
+                interrupted = true;
+            }
             ClearProgressLine();
+
+            if (interrupted)
+                stageSummaries.Add("interrupted");
 
             Console.WriteLine($"progression: {string.Join(" -> ", stageSummaries)}");
             Console.WriteLine();
-            Console.WriteLine($"==================== {finalName} ({FormatSqueeze(finalPlan)}) ====================");
-            Console.WriteLine("(a valid strategy that achieves the upper bound; not proven optimal)");
+            string header = interrupted ? $"{finalName} ({FormatSqueeze(finalPlan)}) [interrupted]" : $"{finalName} ({FormatSqueeze(finalPlan)})";
+            Console.WriteLine($"==================== {header} ====================");
+            Console.WriteLine(interrupted
+                ? "(best strategy found before interruption; not proven optimal)"
+                : "(a valid strategy that achieves the upper bound; not proven optimal)");
             Console.Write(StrategyOverviewRenderer.RenderText(finalPlan));
             Console.WriteLine();
             Console.Write(StrategyTextRenderer.Render(finalPlan));
@@ -267,8 +325,19 @@ class Program
         }
 
         // Exact mode: no feasible phase. The exact search (exact) proves the optimum, then the
-        // compact phase (compact) trims displayed edges among equally optimal groups.
-        StrategyPlan defaultPlan = builder.BuildDefaultPlan();
+        // compact phase (compact) trims displayed edges among equally optimal groups. A Ctrl+C here has
+        // no partial tree to show (the exact search is all-or-nothing), so report the interruption.
+        StrategyPlan defaultPlan;
+        try
+        {
+            defaultPlan = builder.BuildDefaultPlan();
+        }
+        catch (OperationCanceledException)
+        {
+            ClearProgressLine();
+            Console.WriteLine("interrupted before the exact search proved an optimum (no result).");
+            return;
+        }
         ClearProgressLine();
         Console.WriteLine($"==================== exact ({FormatSqueeze(defaultPlan)}) ====================");
         Console.Write(StrategyOverviewRenderer.RenderText(defaultPlan));
@@ -276,7 +345,16 @@ class Program
         Console.Write(StrategyTextRenderer.Render(defaultPlan));
 
         StrategyPlan incumbent = defaultPlan;
-        StrategyPlan compactPlan = builder.BuildCompactPlan();
+        StrategyPlan compactPlan;
+        try
+        {
+            compactPlan = builder.BuildCompactPlan();
+        }
+        catch (OperationCanceledException)
+        {
+            // Interrupted while trimming edges; the proven-optimal exact tree above already printed.
+            return;
+        }
         bool compactImproved = compactPlan.IsStrictRefinementOver(incumbent);
         if (!compactImproved)
             return;
