@@ -334,7 +334,7 @@ def post_review(review_body: str, verdict: str) -> None:
 
     body = header + review_body + "\n\n*🤖 Automated review via GitHub Models.*"
 
-    event = "REQUEST_CHANGES" if verdict == "BLOCK" else "COMMENT"
+    event = "REQUEST_CHANGES" if verdict == "BLOCK" else "APPROVE" if verdict == "APPROVE" else "COMMENT"
 
     payload = {"body": body, "event": event}
     proc = subprocess.run(
