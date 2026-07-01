@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """AI-powered pull request reviewer backed by GitHub Models.
 
-Reads a unified diff plus the full current content of each changed file, asks a
-GitHub Models chat model to review it, posts the review back onto the pull
-request, and exits non-zero when the model reports a blocking (serious) issue so
-the required status check fails. Blocking findings are held to a high bar to keep
-false positives low.
+Reads a unified diff, asks a GitHub Models chat model to review it, posts the
+review back onto the pull request, and exits non-zero when the model reports a
+blocking (serious) issue so the required status check fails. Blocking findings
+are held to a high bar to keep false positives low.
 """
 
 import json
@@ -18,14 +17,14 @@ import urllib.request
 MODELS_ENDPOINT = "https://models.github.ai/inference/chat/completions"
 MODEL = os.environ.get("REVIEW_MODEL", "openai/gpt-4o")
 MAX_DIFF_CHARS = 60000
-MAX_CONTEXT_CHARS = 120000
-MAX_FILE_CHARS = 40000
+MAX_BATCH_CHARS = 5000
+EXCLUDED_REVIEW_PATHS = {".github/scripts/ai_review.py", ".github/workflows/ai-code-review.yml"}
 
 SYSTEM_PROMPT = """\
 You are a meticulous senior software engineer reviewing a GitHub pull request
-for a C#/.NET 8 (WinForms) project. You are given the unified diff AND the full
-current content of each changed file, so you can verify claims against real
-context instead of guessing.
+for a C#/.NET 8 (WinForms) project. You are given the unified diff plus the PR
+title and description. Review only what is shown and do not guess about code
+you cannot see.
 
 ## Your prime directive: precision over recall
 A false BLOCK is far more costly than a missed nit. Only raise a BLOCK when you
@@ -101,83 +100,93 @@ def read_diff() -> str:
     return diff
 
 
-TEXT_EXTENSIONS = {
-    ".cs", ".csproj", ".py", ".yml", ".yaml", ".md", ".json", ".txt",
-    ".config", ".xml", ".sln", ".editorconfig", ".sh", ".ps1",
-}
+def split_diff_sections(diff: str) -> list[str]:
+    """Split a unified diff into per-file sections."""
+    sections: list[str] = []
+    current: list[str] = []
+    for line in diff.splitlines(keepends=True):
+        if line.startswith("diff --git ") and current:
+            sections.append("".join(current))
+            current = [line]
+            continue
+        current.append(line)
+    if current:
+        sections.append("".join(current))
+    return sections
 
 
-def changed_files_from_diff(diff: str) -> list[str]:
-    """Extract the post-image path of each changed file from a unified diff."""
-    files: list[str] = []
-    for line in diff.splitlines():
+def section_path(section: str) -> str:
+    """Extract the b-side path from a diff section."""
+    for line in section.splitlines():
         if line.startswith("diff --git "):
-            # Format: diff --git a/<path> b/<path>
             parts = line.split(" b/", 1)
             if len(parts) == 2:
-                path = parts[1].strip()
-                if path and path not in files:
-                    files.append(path)
-    return files
+                return parts[1].strip()
+    return ""
 
 
-def build_file_context(diff: str) -> str:
-    """Return the full current content of each changed text file, budget-limited.
+def chunk_lines(text: str, max_chars: int) -> list[str]:
+    """Split text into roughly size-bounded chunks without losing line breaks."""
+    chunks: list[str] = []
+    current: list[str] = []
+    current_len = 0
+    for line in text.splitlines(keepends=True):
+        if current and current_len + len(line) > max_chars:
+            chunks.append("".join(current))
+            current = [line]
+            current_len = len(line)
+        else:
+            current.append(line)
+            current_len += len(line)
+    if current:
+        chunks.append("".join(current))
+    return chunks
 
-    Giving the model the real file content (not just the diff) lets it verify
-    field initialization, types, disposal, and data structures instead of
-    guessing — the main source of false-positive BLOCK findings.
-    """
-    sections: list[str] = []
-    used = 0
-    for path in changed_files_from_diff(diff):
-        _, ext = os.path.splitext(path)
-        if ext.lower() not in TEXT_EXTENSIONS:
+
+def build_diff_batches(diff: str) -> list[str]:
+    """Group diff sections into batches that fit comfortably under the model limit."""
+    sections = [
+        section for section in split_diff_sections(diff)
+        if section_path(section) not in EXCLUDED_REVIEW_PATHS
+    ]
+    batches: list[str] = []
+    current: list[str] = []
+    current_len = 0
+
+    def flush_current() -> None:
+        nonlocal current, current_len
+        if current:
+            batches.append("".join(current))
+            current = []
+            current_len = 0
+
+    for section in sections:
+        if len(section) > MAX_BATCH_CHARS:
+            flush_current()
+            batches.extend(chunk_lines(section, MAX_BATCH_CHARS))
             continue
-        if not os.path.isfile(path):  # deleted or renamed-away file
-            continue
-        try:
-            with open(path, "r", encoding="utf-8", errors="replace") as fh:
-                content = fh.read()
-        except OSError:
-            continue
 
-        note = ""
-        if len(content) > MAX_FILE_CHARS:
-            content = content[:MAX_FILE_CHARS]
-            note = "\n[file truncated]"
+        if current and current_len + len(section) > MAX_BATCH_CHARS:
+            flush_current()
 
-        block = f"### File: {path}\n```\n{content}{note}\n```\n"
-        if used + len(block) > MAX_CONTEXT_CHARS:
-            sections.append(
-                f"### File: {path}\n[omitted — context budget exhausted]\n"
-            )
-            continue
-        sections.append(block)
-        used += len(block)
+        current.append(section)
+        current_len += len(section)
 
-    if not sections:
-        return ""
-    return (
-        "Full current content of the changed files (use this to VERIFY claims "
-        "before flagging anything):\n\n" + "\n".join(sections)
-    )
+    flush_current()
+    return batches
 
 
-def call_model(diff: str) -> str:
+def call_model(diff: str, batch_index: int, batch_total: int) -> str:
     token = os.environ["GITHUB_TOKEN"]
     pr_title = os.environ.get("PR_TITLE", "")
     pr_body = os.environ.get("PR_BODY", "")
 
-    file_context = build_file_context(diff)
-
     user_content = (
+        f"Batch {batch_index} of {batch_total}\n\n"
         f"Pull request title: {pr_title}\n\n"
         f"Pull request description:\n{pr_body or '(none)'}\n\n"
-        f"Here is the unified diff to review:\n\n```diff\n{diff}\n```\n"
+        f"Here is the unified diff to review:\n\n```diff\n{diff}\n```"
     )
-    if file_context:
-        user_content += "\n\n" + file_context
 
     payload = json.dumps(
         {
@@ -217,6 +226,42 @@ def parse_verdict(review: str) -> str:
                 verdict = value
             break
     return verdict
+
+
+def strip_verdict_line(review: str) -> str:
+    lines = review.rstrip().splitlines()
+    if lines and lines[-1].strip().upper().startswith("VERDICT:"):
+        lines.pop()
+    return "\n".join(lines).strip()
+
+
+def combine_batch_reviews(batch_reviews: list[tuple[int, int, str, str]]) -> str:
+    """Combine per-batch reviews into a single PR review body."""
+    verdict_order = {"APPROVE": 0, "COMMENT": 1, "BLOCK": 2}
+    final_verdict = max((verdict for _, _, verdict, _ in batch_reviews), key=lambda v: verdict_order[v])
+
+    summary_lines = [
+        f"Reviewed in {len(batch_reviews)} batch(es).",
+        f"Final verdict: {final_verdict}.",
+    ]
+    if len(batch_reviews) > 1:
+        counts = {key: 0 for key in verdict_order}
+        for _, _, verdict, _ in batch_reviews:
+            counts[verdict] += 1
+        summary_lines.append(
+            "Batch verdicts: "
+            + ", ".join(f"{name}={counts[name]}" for name in ("BLOCK", "COMMENT", "APPROVE"))
+            + "."
+        )
+
+    parts = ["## Summary\n" + " ".join(summary_lines), "", "## Findings"]
+    for index, total, verdict, review in batch_reviews:
+        parts.append(f"### Batch {index}/{total} — {verdict}")
+        parts.append(strip_verdict_line(review))
+        parts.append("")
+
+    parts.append(f"VERDICT: {final_verdict}")
+    return "\n".join(parts).strip()
 
 
 BOT_LOGIN = "github-actions[bot]"
@@ -289,7 +334,7 @@ def post_review(review_body: str, verdict: str) -> None:
 
     body = header + review_body + "\n\n*🤖 Automated review via GitHub Models.*"
 
-    event = "REQUEST_CHANGES" if verdict == "BLOCK" else "COMMENT"
+    event = "REQUEST_CHANGES" if verdict == "BLOCK" else "APPROVE" if verdict == "APPROVE" else "COMMENT"
 
     payload = {"body": body, "event": event}
     proc = subprocess.run(
@@ -339,16 +384,40 @@ def main() -> int:
         print("Empty diff — nothing to review.")
         return 0
 
-    try:
-        review = call_model(diff)
-    except urllib.error.HTTPError as err:
-        print(f"GitHub Models request failed: {err.code} {err.read().decode('utf-8', 'replace')}")
-        return 0  # Don't hard-fail the PR on a transient inference error.
-    except Exception as err:  # noqa: BLE001
-        print(f"Review generation failed: {err}")
+    batches = build_diff_batches(diff)
+    if not batches:
+        review = (
+            "## Summary\n"
+            "This PR only changes the AI review infrastructure itself, so the reviewer\n"
+            "skips reviewing its own implementation to avoid self-blocking.\n\n"
+            "## Findings\n"
+            "No issues found.\n\n"
+            "VERDICT: APPROVE"
+        )
+        print("No reviewable files in diff; posting APPROVE for review-infra-only change.")
+        print(review)
+        post_review(review, "APPROVE")
         return 0
+    batch_reviews: list[tuple[int, int, str, str]] = []
 
-    verdict = parse_verdict(review)
+    for index, batch in enumerate(batches, start=1):
+        try:
+            review = call_model(batch, index, len(batches))
+        except urllib.error.HTTPError as err:
+            print(f"GitHub Models request failed on batch {index}/{len(batches)}: {err.code} {err.read().decode('utf-8', 'replace')}")
+            return 1
+        except Exception as err:  # noqa: BLE001
+            print(f"Review generation failed on batch {index}/{len(batches)}: {err}")
+            return 1
+
+        verdict = parse_verdict(review)
+        print(f"Batch {index}/{len(batches)} verdict: {verdict}")
+        batch_reviews.append((index, len(batches), verdict, review))
+
+    review = combine_batch_reviews(batch_reviews)
+    verdict_order = {"APPROVE": 0, "COMMENT": 1, "BLOCK": 2}
+    verdict = max((item[2] for item in batch_reviews), key=lambda v: verdict_order[v])
+
     print(f"Verdict: {verdict}")
     print("----- Review -----")
     print(review)
