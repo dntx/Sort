@@ -123,10 +123,11 @@ class MainForm : Form
 
     private readonly record struct JumpTarget(TreeNode ScopeRoot, int[] BranchPath);
 
-    // Per branch node, the 1-based item labels in its order text that this outcome eliminates from the
-    // top-k (Effect.NewlyExcluded, restricted to labels actually shown in the order). Those "#n" tokens
-    // are owner-drawn in the exclusion color so the doomed tail of "a > b > c > d > e" stands out.
-    private readonly Dictionary<TreeNode, HashSet<int>> _doomedTokens = new();
+    // Per branch node, the 1-based item labels in its order text that this outcome resolves, mapped to
+    // whether the item is doomed (true -> excluded from top-k, drawn in the exclusion color) or secured
+    // (false -> guaranteed into top-k, drawn in the inclusion color). Only labels that actually appear in
+    // the order text are recorded, so the colored head/tail of "a > b > c > d > e" stands out.
+    private readonly Dictionary<TreeNode, Dictionary<int, bool>> _coloredTokens = new();
     private SearchProgressSnapshot _latestProgress;
     private SearchStatistics? _completedDefaultStats;
     private SearchStatistics? _completedCompactStats;
@@ -787,7 +788,7 @@ class MainForm : Form
         _referenceTargets.Clear();
         _lazyDecisions.Clear();
         _jumpTargets.Clear();
-        _doomedTokens.Clear();
+        _coloredTokens.Clear();
         _navigationHistory.Clear();
         _backButton.Enabled = false;
 
@@ -1162,7 +1163,7 @@ class MainForm : Form
         _referenceTargets.Clear();
         _lazyDecisions.Clear();
         _jumpTargets.Clear();
-        _doomedTokens.Clear();
+        _coloredTokens.Clear();
         _navigationHistory.Clear();
         _backButton.Enabled = false;
     }
@@ -1459,22 +1460,27 @@ class MainForm : Form
             Tag = BuildBranchDetails(branch),
         };
 
-        // Record which order-text tokens this outcome dooms (newly excluded from top-k) so DrawNode can
-        // paint just those "#n" tokens in the exclusion color. Restrict to labels that actually appear in
-        // the order text -- excluded items outside this branch's shown order have nothing to highlight.
-        if (branch.Effect.NewlyExcluded.Count > 0)
+        // Record which order-text tokens this outcome resolves so DrawNode can tint those "#n" tokens:
+        // doomed items (newly excluded) in the exclusion color and secured items (newly guaranteed into
+        // top-k) in the inclusion color. Restrict to labels that actually appear in the order text --
+        // items resolved outside this branch's shown order have nothing to highlight.
+        var colored = new Dictionary<int, bool>();
+        foreach (int item in branch.Effect.NewlyGuaranteedTop)
         {
-            var doomed = new HashSet<int>();
-            foreach (int item in branch.Effect.NewlyExcluded)
-            {
-                int label = item + 1;
-                if (OrderTextContainsToken(branch.OrderText, label))
-                    doomed.Add(label);
-            }
-
-            if (doomed.Count > 0)
-                _doomedTokens[branchNode] = doomed;
+            int label = item + 1;
+            if (OrderTextContainsToken(branch.OrderText, label))
+                colored[label] = false;
         }
+
+        foreach (int item in branch.Effect.NewlyExcluded)
+        {
+            int label = item + 1;
+            if (OrderTextContainsToken(branch.OrderText, label))
+                colored[label] = true;
+        }
+
+        if (colored.Count > 0)
+            _coloredTokens[branchNode] = colored;
 
         if (branch.EquivalentOrders is not null)
         {
@@ -1546,11 +1552,12 @@ class MainForm : Form
         return false;
     }
 
-    // Owner-drawn text so a branch header's doomed "#n" tokens (this outcome's newly-excluded items) can
-    // be tinted with the exclusion color while the rest keeps the branch color. Every node is drawn here
-    // (not just doomed ones): the system's default text draw in OwnerDrawText mode clips to a too-narrow
-    // bounds and truncates the tail of long labels, so we render all text ourselves into a wide rectangle
-    // and paint the row background to match, which avoids that truncation.
+    // Owner-drawn text so a branch header's resolved "#n" tokens can be tinted: doomed items (newly
+    // excluded) in the exclusion color and secured items (newly guaranteed into top-k) in the inclusion
+    // color, while the rest keeps the branch color. Every node is drawn here (not just colored ones): the
+    // system's default text draw in OwnerDrawText mode clips to a too-narrow bounds and truncates the tail
+    // of long labels, so we render all text ourselves into a wide rectangle and paint the row background to
+    // match, which avoids that truncation.
     private void TreeView_DrawNode(object? sender, DrawTreeNodeEventArgs e)
     {
         if (e.Node is not { } node || string.IsNullOrEmpty(node.Text) || e.Bounds.Height <= 0)
@@ -1559,7 +1566,7 @@ class MainForm : Form
             return;
         }
 
-        _doomedTokens.TryGetValue(node, out HashSet<int>? doomed);
+        _coloredTokens.TryGetValue(node, out Dictionary<int, bool>? colored);
 
         // Fill the row from the label's left edge to the control's right edge (the +/- glyphs and lines
         // drawn by the system sit to the left of e.Bounds.Left, so they are preserved). Painting the full
@@ -1574,30 +1581,35 @@ class MainForm : Form
         Color baseColor = selected
             ? SystemColors.HighlightText
             : (node.ForeColor.IsEmpty ? _treeView.ForeColor : node.ForeColor);
-        Color doomedColor = _palette.OutColor;
 
         const TextFormatFlags flags = TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding
             | TextFormatFlags.SingleLine | TextFormatFlags.VerticalCenter;
 
-        IEnumerable<(string Text, bool Doomed)> segments = doomed is null
-            ? new[] { (node.Text, false) }
-            : SplitDoomedSegments(node.Text, doomed);
+        IEnumerable<(string Text, bool? Doomed)> segments = colored is null
+            ? new[] { (node.Text, (bool?)null) }
+            : SplitColoredSegments(node.Text, colored);
 
         int x = e.Bounds.Left;
-        foreach ((string text, bool doomedSegment) in segments)
+        foreach ((string text, bool? doomed) in segments)
         {
-            Color color = doomedSegment ? doomedColor : baseColor;
+            Color color = doomed switch
+            {
+                true => _palette.OutColor,
+                false => _palette.InColor,
+                null => baseColor,
+            };
             var origin = new Rectangle(x, e.Bounds.Top, int.MaxValue, e.Bounds.Height);
             TextRenderer.DrawText(e.Graphics, text, font, origin, color, flags);
             x += TextRenderer.MeasureText(e.Graphics, text, font, Size.Empty, flags).Width;
         }
     }
 
-    // Splits header text into runs, flagging each "#n" token whose label is in doomedLabels so it can be
-    // drawn in the exclusion color. Non-token text (and non-doomed tokens) accumulate into plain runs.
-    private static IEnumerable<(string Text, bool Doomed)> SplitDoomedSegments(string text, HashSet<int> doomedLabels)
+    // Splits header text into runs, flagging each "#n" token whose label is in coloredLabels with its role
+    // (true -> doomed/exclusion color, false -> secured/inclusion color). Non-token text and unresolved
+    // tokens accumulate into plain runs (null role).
+    private static IEnumerable<(string Text, bool? Doomed)> SplitColoredSegments(string text, Dictionary<int, bool> coloredLabels)
     {
-        var segments = new List<(string, bool)>();
+        var segments = new List<(string, bool?)>();
         var plain = new System.Text.StringBuilder();
         int i = 0;
         while (i < text.Length)
@@ -1608,15 +1620,15 @@ class MainForm : Form
                 while (j < text.Length && char.IsDigit(text[j]))
                     j++;
 
-                if (int.TryParse(text.AsSpan(i + 1, j - i - 1), out int label) && doomedLabels.Contains(label))
+                if (int.TryParse(text.AsSpan(i + 1, j - i - 1), out int label) && coloredLabels.TryGetValue(label, out bool doomed))
                 {
                     if (plain.Length > 0)
                     {
-                        segments.Add((plain.ToString(), false));
+                        segments.Add((plain.ToString(), (bool?)null));
                         plain.Clear();
                     }
 
-                    segments.Add((text.Substring(i, j - i), true));
+                    segments.Add((text.Substring(i, j - i), doomed));
                     i = j;
                     continue;
                 }
@@ -1627,7 +1639,7 @@ class MainForm : Form
         }
 
         if (plain.Length > 0)
-            segments.Add((plain.ToString(), false));
+            segments.Add((plain.ToString(), (bool?)null));
 
         return segments;
     }
