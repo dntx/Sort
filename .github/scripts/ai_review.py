@@ -17,6 +17,7 @@ import urllib.request
 MODELS_ENDPOINT = "https://models.github.ai/inference/chat/completions"
 MODEL = os.environ.get("REVIEW_MODEL", "openai/gpt-4o")
 MAX_DIFF_CHARS = 60000
+MAX_BATCH_CHARS = 5000
 
 SYSTEM_PROMPT = """\
 You are a meticulous senior software engineer reviewing a GitHub pull request
@@ -98,12 +99,76 @@ def read_diff() -> str:
     return diff
 
 
-def call_model(diff: str) -> str:
+def split_diff_sections(diff: str) -> list[str]:
+    """Split a unified diff into per-file sections."""
+    sections: list[str] = []
+    current: list[str] = []
+    for line in diff.splitlines(keepends=True):
+        if line.startswith("diff --git ") and current:
+            sections.append("".join(current))
+            current = [line]
+            continue
+        current.append(line)
+    if current:
+        sections.append("".join(current))
+    return sections
+
+
+def chunk_lines(text: str, max_chars: int) -> list[str]:
+    """Split text into roughly size-bounded chunks without losing line breaks."""
+    chunks: list[str] = []
+    current: list[str] = []
+    current_len = 0
+    for line in text.splitlines(keepends=True):
+        if current and current_len + len(line) > max_chars:
+            chunks.append("".join(current))
+            current = [line]
+            current_len = len(line)
+        else:
+            current.append(line)
+            current_len += len(line)
+    if current:
+        chunks.append("".join(current))
+    return chunks
+
+
+def build_diff_batches(diff: str) -> list[str]:
+    """Group diff sections into batches that fit comfortably under the model limit."""
+    sections = split_diff_sections(diff)
+    batches: list[str] = []
+    current: list[str] = []
+    current_len = 0
+
+    def flush_current() -> None:
+        nonlocal current, current_len
+        if current:
+            batches.append("".join(current))
+            current = []
+            current_len = 0
+
+    for section in sections:
+        if len(section) > MAX_BATCH_CHARS:
+            flush_current()
+            batches.extend(chunk_lines(section, MAX_BATCH_CHARS))
+            continue
+
+        if current and current_len + len(section) > MAX_BATCH_CHARS:
+            flush_current()
+
+        current.append(section)
+        current_len += len(section)
+
+    flush_current()
+    return batches or [diff]
+
+
+def call_model(diff: str, batch_index: int, batch_total: int) -> str:
     token = os.environ["GITHUB_TOKEN"]
     pr_title = os.environ.get("PR_TITLE", "")
     pr_body = os.environ.get("PR_BODY", "")
 
     user_content = (
+        f"Batch {batch_index} of {batch_total}\n\n"
         f"Pull request title: {pr_title}\n\n"
         f"Pull request description:\n{pr_body or '(none)'}\n\n"
         f"Here is the unified diff to review:\n\n```diff\n{diff}\n```"
@@ -147,6 +212,42 @@ def parse_verdict(review: str) -> str:
                 verdict = value
             break
     return verdict
+
+
+def strip_verdict_line(review: str) -> str:
+    lines = review.rstrip().splitlines()
+    if lines and lines[-1].strip().upper().startswith("VERDICT:"):
+        lines.pop()
+    return "\n".join(lines).strip()
+
+
+def combine_batch_reviews(batch_reviews: list[tuple[int, int, str, str]]) -> str:
+    """Combine per-batch reviews into a single PR review body."""
+    verdict_order = {"APPROVE": 0, "COMMENT": 1, "BLOCK": 2}
+    final_verdict = max((verdict for _, _, verdict, _ in batch_reviews), key=lambda v: verdict_order[v])
+
+    summary_lines = [
+        f"Reviewed in {len(batch_reviews)} batch(es).",
+        f"Final verdict: {final_verdict}.",
+    ]
+    if len(batch_reviews) > 1:
+        counts = {key: 0 for key in verdict_order}
+        for _, _, verdict, _ in batch_reviews:
+            counts[verdict] += 1
+        summary_lines.append(
+            "Batch verdicts: "
+            + ", ".join(f"{name}={counts[name]}" for name in ("BLOCK", "COMMENT", "APPROVE"))
+            + "."
+        )
+
+    parts = ["## Summary\n" + " ".join(summary_lines), "", "## Findings"]
+    for index, total, verdict, review in batch_reviews:
+        parts.append(f"### Batch {index}/{total} — {verdict}")
+        parts.append(strip_verdict_line(review))
+        parts.append("")
+
+    parts.append(f"VERDICT: {final_verdict}")
+    return "\n".join(parts).strip()
 
 
 BOT_LOGIN = "github-actions[bot]"
@@ -269,16 +370,27 @@ def main() -> int:
         print("Empty diff — nothing to review.")
         return 0
 
-    try:
-        review = call_model(diff)
-    except urllib.error.HTTPError as err:
-        print(f"GitHub Models request failed: {err.code} {err.read().decode('utf-8', 'replace')}")
-        return 1
-    except Exception as err:  # noqa: BLE001
-        print(f"Review generation failed: {err}")
-        return 1
+    batches = build_diff_batches(diff)
+    batch_reviews: list[tuple[int, int, str, str]] = []
 
-    verdict = parse_verdict(review)
+    for index, batch in enumerate(batches, start=1):
+        try:
+            review = call_model(batch, index, len(batches))
+        except urllib.error.HTTPError as err:
+            print(f"GitHub Models request failed on batch {index}/{len(batches)}: {err.code} {err.read().decode('utf-8', 'replace')}")
+            return 1
+        except Exception as err:  # noqa: BLE001
+            print(f"Review generation failed on batch {index}/{len(batches)}: {err}")
+            return 1
+
+        verdict = parse_verdict(review)
+        print(f"Batch {index}/{len(batches)} verdict: {verdict}")
+        batch_reviews.append((index, len(batches), verdict, review))
+
+    review = combine_batch_reviews(batch_reviews)
+    verdict_order = {"APPROVE": 0, "COMMENT": 1, "BLOCK": 2}
+    verdict = max((item[2] for item in batch_reviews), key=lambda v: verdict_order[v])
+
     print(f"Verdict: {verdict}")
     print("----- Review -----")
     print(review)
