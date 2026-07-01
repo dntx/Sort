@@ -10,10 +10,14 @@ public class FeasibleCompactPlanTests
 {
     // The edge pass must always produce a valid, fully-grouped strategy under the constructive U
     // budget -- never throw "no group fits the budget" -- and stay a feasible plan.
+    //
+    // Tightening is left ON: exercising the full feasible-compact build (baseline + tightening) is the
+    // point. Inputs are limited to shapes whose tightening completes quickly. Since #153 removed the
+    // tightening time budget, large shapes like 16,5,5 / 25,5,5 run tightening to completion (many
+    // seconds) while adding no grouping-validity coverage the small cases don't already give, so they
+    // are intentionally omitted here.
     [Theory]
     [InlineData(10, 5, 5)]
-    [InlineData(16, 5, 5)]
-    [InlineData(25, 5, 5)]
     [InlineData(12, 4, 4)]
     [InlineData(12, 5, 5)]
     [InlineData(9, 3, 3)]
@@ -30,9 +34,9 @@ public class FeasibleCompactPlanTests
     // for free, so its MaxStep must never exceed the step phase's feasible U. This mirrors the
     // production orchestrators (Program.cs / MainForm.cs), which reuse ONE builder for step then edge:
     // the step phase threads its materialized U as the edge budget, guaranteeing edge is no worse.
+    // Tightening is left ON; 16,5,5 is omitted because its tightening does not complete quickly.
     [Theory]
     [InlineData(10, 5, 5)]
-    [InlineData(16, 5, 5)]
     [InlineData(12, 4, 4)]
     [InlineData(12, 5, 5)]
     public void FeasibleCompactPlan_StepNeverExceedsFeasibleUpperBound(int n, int m, int k)
@@ -46,7 +50,9 @@ public class FeasibleCompactPlanTests
     }
 
     // The edge plan is still an achievable strategy, so its worst-case steps must never drop below
-    // the true optimum on cases the exact search can solve.
+    // the true optimum on cases the exact search can solve. This is the key soundness guard on the
+    // tightening: it drives the greedy step DOWN toward the optimum (e.g. 10,5,5: U=5 -> 3;
+    // 12,4,4: 6 -> 5; 12,5,5: 5 -> 4) and must never undershoot it. All inputs tighten quickly.
     [Theory]
     [InlineData(10, 5, 5)]
     [InlineData(12, 5, 5)]

@@ -219,8 +219,12 @@ pattern: #1 > #11 > ... > #5 ; (#1 ~ #10) ↔ (#11 ~ #20)
 
 ## 6. `BuildDoomedTailSummary`：把尾部折成花括号
 
-`BuildDoomedTailSummary`（~L244）把一个 doomed-tail 桶渲染成 `EquivalentOrderSummary`。流程：
+`BuildDoomedTailSummary`（~L244）把一个 doomed-tail 桶渲染成 `EquivalentOrderSummary?`。流程：
 
+0. **平凡桶短路**：桶总数 `Count <= 1`（尾部只有一个线性扩展，例如尾部虽 ≥ 2 项但被全序约束定死）
+   时直接返回 `null` —— 单一排序不构成等价类，无可折叠。这与轨道 B `BuildEquivalentOrderSummary`
+   的 `totalCount <= 1 → null` 契约一致，共同维持不变量 **`EquivalentOrders` 非空 ⇒ `Count >= 2`**，
+   从而抑制掉冗余的 `equivalent forms: 1` / `pattern` 两行（渲染层遇 `null` 本就跳过）。
 1. **给对称类分配字母**：成员数 > 1 的类按类序拿到 `A, B, C...`（~L252–258）。单成员项不分字母，
    直接用 `#id`。
 2. **前缀 token**：逐个把前缀元素渲染成 `A1`（属于多成员类）或 `#id`（单例）。下标

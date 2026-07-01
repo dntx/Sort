@@ -95,6 +95,10 @@ class MainForm : Form
     private readonly RichTextBox _detailsTextBox;
     private readonly System.Windows.Forms.Timer _elapsedTimer;
     private ThemePalette _palette = DarkPalette;
+
+    // Cached brush for the tree row background, recreated whenever the theme changes so DrawNode does not
+    // allocate a brush per paint. Selected rows use the shared SystemBrushes.Highlight instead.
+    private SolidBrush _treeRowBackBrush = new(DarkPalette.SurfaceBackColor);
     private StrategyPlan? _feasiblePlan;
     private StrategyPlan? _defaultPlan;
     private StrategyPlan? _compactPlan;
@@ -122,6 +126,20 @@ class MainForm : Form
     private readonly record struct LazyDecision(StrategyNode Node, int K, string Scope, StrategyDepthIndex DepthIndex);
 
     private readonly record struct JumpTarget(TreeNode ScopeRoot, int[] BranchPath);
+
+    // A branch header node that carries which of its order-text "#n" labels this outcome resolves, mapped
+    // to whether the item is doomed (true -> excluded from top-k, drawn in the exclusion color) or secured
+    // (false -> guaranteed into top-k, drawn in the inclusion color). Storing this on the node itself lets
+    // DrawNode tint the colored head/tail of "a > b > c > d > e"; the map is collected with the node when
+    // the tree is repopulated, so there is no side table keyed by TreeNode to keep in sync.
+    private sealed class BranchTreeNode : TreeNode
+    {
+        public BranchTreeNode(string text) : base(text)
+        {
+        }
+
+        public IReadOnlyDictionary<int, bool>? ColoredTokens { get; init; }
+    }
     private SearchProgressSnapshot _latestProgress;
     private SearchStatistics? _completedDefaultStats;
     private SearchStatistics? _completedCompactStats;
@@ -349,9 +367,11 @@ class MainForm : Form
             Dock = DockStyle.Fill,
             HideSelection = false,
             FullRowSelect = true,
+            DrawMode = TreeViewDrawMode.OwnerDrawText,
             Font = new Font(FontFamily.GenericSansSerif, 10),
         };
         _treeView.AfterSelect += (_, e) => ShowNodeDetails(e.Node);
+        _treeView.DrawNode += TreeView_DrawNode;
         _treeView.BeforeExpand += (_, e) => { if (e.Node is { } n) MaterializeDecision(n); };
         _treeView.NodeMouseDoubleClick += (_, e) => TryJumpToReferenceTarget(e.Node);
         _treeView.MouseDown += TreeView_MouseDown;
@@ -1444,10 +1464,30 @@ class MainForm : Form
         if (branch.EquivalentOrders is not null)
             branchHeader += $"  (×{branch.EquivalentOrders.Count} = {branch.EquivalentOrders.CountFormula})";
 
-        var branchNode = new TreeNode(branchHeader)
+        // Record which order-text tokens this outcome resolves so DrawNode can tint those "#n" tokens:
+        // doomed items (newly excluded) in the exclusion color and secured items (newly guaranteed into
+        // top-k) in the inclusion color. Restrict to labels that actually appear in the order text --
+        // items resolved outside this branch's shown order have nothing to highlight.
+        HashSet<int> orderLabels = ParseOrderLabels(branch.OrderText);
+        Dictionary<int, bool>? colored = null;
+        void MarkColored(IReadOnlyList<int> items, bool doomed)
+        {
+            foreach (int item in items)
+            {
+                int label = item + 1;
+                if (orderLabels.Contains(label))
+                    (colored ??= new Dictionary<int, bool>())[label] = doomed;
+            }
+        }
+
+        MarkColored(branch.Effect.NewlyGuaranteedTop, doomed: false);
+        MarkColored(branch.Effect.NewlyExcluded, doomed: true);
+
+        var branchNode = new BranchTreeNode(branchHeader)
         {
             ForeColor = _palette.BranchColor,
             Tag = BuildBranchDetails(branch),
+            ColoredTokens = colored,
         };
 
         if (branch.EquivalentOrders is not null)
@@ -1501,6 +1541,124 @@ class MainForm : Form
         // The next state node is always added LAST; the jump/copy path walks rely on that position.
         branchNode.Nodes.Add(CreateStateNode(branch.Next, k, scope, depthIndex));
         return branchNode;
+    }
+
+    // Parses the 1-based "#n" labels present in a branch's order text, which is always a " > "-joined
+    // chain of "#n" tokens. Done once per branch so token lookups are O(1) set membership rather than a
+    // repeated substring scan.
+    private static HashSet<int> ParseOrderLabels(string orderText)
+    {
+        var labels = new HashSet<int>();
+        int i = 0;
+        while (i < orderText.Length)
+        {
+            if (orderText[i] == '#' && i + 1 < orderText.Length && char.IsDigit(orderText[i + 1]))
+            {
+                int j = i + 1;
+                while (j < orderText.Length && char.IsDigit(orderText[j]))
+                    j++;
+
+                if (int.TryParse(orderText.AsSpan(i + 1, j - i - 1), out int label))
+                    labels.Add(label);
+                i = j;
+                continue;
+            }
+
+            i++;
+        }
+
+        return labels;
+    }
+
+    // Owner-drawn text so a branch header's resolved "#n" tokens can be tinted: doomed items (newly
+    // excluded) in the exclusion color and secured items (newly guaranteed into top-k) in the inclusion
+    // color, while the rest keeps the branch color. Every node is drawn here (not just colored ones): the
+    // system's default text draw in OwnerDrawText mode clips to a too-narrow bounds and truncates the tail
+    // of long labels, so we render all text ourselves into a wide rectangle and paint the row background to
+    // match, which avoids that truncation.
+    private void TreeView_DrawNode(object? sender, DrawTreeNodeEventArgs e)
+    {
+        if (e.Node is not { } node || string.IsNullOrEmpty(node.Text) || e.Bounds.Height <= 0)
+        {
+            e.DrawDefault = true;
+            return;
+        }
+
+        IReadOnlyDictionary<int, bool>? colored = (node as BranchTreeNode)?.ColoredTokens;
+
+        // Fill the row from the label's left edge to the control's right edge (the +/- glyphs and lines
+        // drawn by the system sit to the left of e.Bounds.Left, so they are preserved). Painting the full
+        // width both erases stale pixels and gives selected rows a consistent highlight behind wide text.
+        // Both brushes are shared (no per-paint allocation): the system highlight brush and a cached brush
+        // recreated on theme change.
+        bool selected = (e.State & TreeNodeStates.Selected) != 0;
+        int rightEdge = Math.Max(e.Bounds.Right, _treeView.ClientSize.Width);
+        var rowRect = new Rectangle(e.Bounds.Left, e.Bounds.Top, rightEdge - e.Bounds.Left, e.Bounds.Height);
+        e.Graphics.FillRectangle(selected ? SystemBrushes.Highlight : _treeRowBackBrush, rowRect);
+
+        Font font = node.NodeFont ?? _treeView.Font;
+        Color baseColor = selected
+            ? SystemColors.HighlightText
+            : (node.ForeColor.IsEmpty ? _treeView.ForeColor : node.ForeColor);
+
+        const TextFormatFlags flags = TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding
+            | TextFormatFlags.SingleLine | TextFormatFlags.VerticalCenter;
+
+        IEnumerable<(string Text, bool? Doomed)> segments = colored is null
+            ? new[] { (node.Text, (bool?)null) }
+            : SplitColoredSegments(node.Text, colored);
+
+        int x = e.Bounds.Left;
+        foreach ((string text, bool? doomed) in segments)
+        {
+            Color color = doomed switch
+            {
+                true => _palette.OutColor,
+                false => _palette.InColor,
+                null => baseColor,
+            };
+            var origin = new Rectangle(x, e.Bounds.Top, int.MaxValue, e.Bounds.Height);
+            TextRenderer.DrawText(e.Graphics, text, font, origin, color, flags);
+            x += TextRenderer.MeasureText(e.Graphics, text, font, Size.Empty, flags).Width;
+        }
+    }
+
+    // Splits header text into runs, flagging each "#n" token whose label is in coloredLabels with its role
+    // (true -> doomed/exclusion color, false -> secured/inclusion color). Non-token text and unresolved
+    // tokens accumulate into plain runs (null role). Single pass with lazy yielding: a plain run is
+    // emitted only when a colored token interrupts it or the text ends, so no intermediate list is built.
+    private static IEnumerable<(string Text, bool? Doomed)> SplitColoredSegments(string text, IReadOnlyDictionary<int, bool> coloredLabels)
+    {
+        int plainStart = 0;
+        int i = 0;
+        while (i < text.Length)
+        {
+            if (text[i] == '#' && i + 1 < text.Length && char.IsDigit(text[i + 1]))
+            {
+                int j = i + 1;
+                while (j < text.Length && char.IsDigit(text[j]))
+                    j++;
+
+                if (int.TryParse(text.AsSpan(i + 1, j - i - 1), out int label) && coloredLabels.TryGetValue(label, out bool doomed))
+                {
+                    if (i > plainStart)
+                        yield return (text.Substring(plainStart, i - plainStart), null);
+
+                    yield return (text.Substring(i, j - i), doomed);
+                    i = j;
+                    plainStart = j;
+                    continue;
+                }
+
+                i = j;
+                continue;
+            }
+
+            i++;
+        }
+
+        if (plainStart < text.Length)
+            yield return (text.Substring(plainStart), null);
     }
 
     private TreeNode CreateTerminalNode(StrategyNode node, int k, string scope)
@@ -1857,6 +2015,9 @@ class MainForm : Form
         _statusStrip.ForeColor = _palette.ForeColor;
         _statusLabel.ForeColor = _palette.ForeColor;
 
+        _treeRowBackBrush.Dispose();
+        _treeRowBackBrush = new SolidBrush(_treeView.BackColor);
+
         if (_feasiblePlan is not null)
         {
             PopulateTree(_feasiblePlan, _defaultPlan, _compactPlan, _exactImproved, _compactImproved);
@@ -1868,6 +2029,14 @@ class MainForm : Form
             _statusLabel.Text = "Ready.";
             _detailsTextBox.Text = BuildIdleDetailsText();
         }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+            _treeRowBackBrush.Dispose();
+
+        base.Dispose(disposing);
     }
 
     private void ApplyThemeToControlTree(Control control)

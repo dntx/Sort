@@ -1,0 +1,73 @@
+name: ai-code-review
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+      - synchronize
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number to review
+        required: true
+
+permissions:
+  contents: read
+  pull-requests: write
+  models: read
+
+concurrency:
+  group: ai-code-review-${{ github.event.pull_request.number || github.event.inputs.pr_number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve PR metadata
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            number="${{ github.event.inputs.pr_number }}"
+            data=$(gh api "repos/${{ github.repository }}/pulls/$number")
+            echo "number=$number" >> "$GITHUB_OUTPUT"
+            echo "base_sha=$(echo "$data" | jq -r .base.sha)" >> "$GITHUB_OUTPUT"
+            echo "head_sha=$(echo "$data" | jq -r .head.sha)" >> "$GITHUB_OUTPUT"
+          else
+            echo "number=${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+            echo "base_sha=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_OUTPUT"
+            echo "head_sha=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build diff
+        run: |
+          git fetch --no-tags origin "${{ steps.pr.outputs.base_sha }}" "${{ steps.pr.outputs.head_sha }}"
+          git diff "${{ steps.pr.outputs.base_sha }}...${{ steps.pr.outputs.head_sha }}" > pr.diff
+          echo "Diff size: $(wc -c < pr.diff) bytes"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run AI code review
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.pr.outputs.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          DIFF_FILE: pr.diff
+          REVIEW_MODEL: openai/gpt-4o
+        run: python .github/scripts/ai_review.py
