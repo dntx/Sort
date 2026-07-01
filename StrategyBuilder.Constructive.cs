@@ -136,7 +136,9 @@ partial class StrategyBuilder
         if (_constructiveDepthMemo!.TryGetValue(key, out int cached))
             return cached;
 
-        List<int> group = ChooseConstructiveGroup(state, remainingSlots);
+        // Rollout always uses the base antichain policy (never lookahead), so this is a fixed policy
+        // whose depth the lookahead scorer can trust as a stable estimate.
+        List<int> group = ChooseConstructiveGroupBase(state, remainingSlots);
 
         int maxChildSteps = 0;
         VisitComparisonOutcomes(
@@ -161,21 +163,126 @@ partial class StrategyBuilder
 
     // Builds the next comparison group constructively from the current partial order. Returns a group
     // of min(m, active) items GUARANTEED to contain an unresolved pair (so the sort makes progress).
-    //
-    // Strategy: build a near-ANTICHAIN incrementally. The maxima (items with zero active ancestors)
-    // form an antichain, so contesting mutually-unrelated items extracts the most information per
-    // sort (a sort of an antichain resolves every pair at once; a sort that re-includes an already
-    // known relation wastes a slot). Each pick maximizes the count of current group members it is
-    // UNRELATED to (new unresolved pairs), tie-broken toward the frontier: fewest active ancestors
-    // (closest to the top -> most likely a guaranteed top hit), then fewest total relations (most
-    // still to learn), then smallest id for determinism.
+    // Delegates to the 1-ply lookahead chooser, which refines the base antichain policy.
     private List<int> ChooseConstructiveGroup(ComparisonState state, int remainingSlots)
     {
+        return ChooseConstructiveGroupLookahead(state, remainingSlots);
+    }
+
+    // Base (single-ply greedy) group choice: the antichain proposer with the progress guarantee and
+    // canonical sort applied. This is the fixed rollout policy that the lookahead scorer evaluates, so
+    // it must not itself look ahead.
+    private List<int> ChooseConstructiveGroupBase(ComparisonState state, int remainingSlots)
+    {
         List<int> active = state.GetActiveItemsOrdered();
+
+        List<int> group = ProposeAntichainGroup(state, active, remainingSlots);
+
+        // Progress guarantee: if the picked group is a total chain (all pairs already resolved), force
+        // in an unresolved active pair so the sort still adds a new relation.
+        if (!GroupHasUnresolvedPair(state, group))
+            ForceUnresolvedPair(state, active, group);
+
+        group.Sort();
+        return group;
+    }
+
+    // 1-ply lookahead: enumerate a small set of candidate groups (the base antichain pick plus one
+    // antichain per possible seed item), score each by 1 + the worst-case base-rollout depth over its
+    // outcomes, and return the minimizer. Ties break toward the lexicographically smallest group for
+    // determinism. The rollout (ConstructiveDepth) uses the base policy, so this improves only the
+    // group chosen at this node -- a bounded, polynomial refinement, not a full minimax search.
+    private List<int> ChooseConstructiveGroupLookahead(ComparisonState state, int remainingSlots)
+    {
+        _constructiveDepthMemo ??= new Dictionary<SearchStateKey, int>();
+        List<int> active = state.GetActiveItemsOrdered();
+        SearchStateKey key = GetSearchStateKey(state, remainingSlots);
+
+        List<int>? bestGroup = null;
+        int bestScore = int.MaxValue;
+        var seenCandidates = new HashSet<string>();
+
+        void Consider(List<int> proposed)
+        {
+            var group = new List<int>(proposed);
+            if (!GroupHasUnresolvedPair(state, group))
+                ForceUnresolvedPair(state, active, group);
+            group.Sort();
+
+            string sig = string.Join(",", group);
+            if (!seenCandidates.Add(sig))
+                return;
+
+            int score = ScoreCandidateGroup(state, remainingSlots, key, group);
+            if (score < bestScore ||
+                (score == bestScore && bestGroup != null && LexLess(group, bestGroup)))
+            {
+                bestScore = score;
+                bestGroup = group;
+            }
+        }
+
+        Consider(ProposeAntichainGroup(state, active, remainingSlots));
+        foreach (int seed in active)
+            Consider(ProposeAntichainGroup(state, active, remainingSlots, seed));
+
+        return bestGroup!;
+    }
+
+    // Worst-case depth achieved by playing `group` at `state` and then following the base rollout
+    // policy: 1 (this sort) + max over distinct outcomes of the base ConstructiveDepth.
+    private int ScoreCandidateGroup(ComparisonState state, int remainingSlots, SearchStateKey key, List<int> group)
+    {
+        int maxChildSteps = 0;
+        VisitComparisonOutcomes(
+            state,
+            fixedTopMask: 0,
+            remainingSlots,
+            group,
+            currentKey: key,
+            collectMergedBranches: false,
+            onUsefulOutcome: outcome =>
+            {
+                int childSteps = ConstructiveDepth(outcome.NextState, outcome.NextRemainingSlots);
+                if (childSteps > maxChildSteps)
+                    maxChildSteps = childSteps;
+                return true;
+            });
+
+        return 1 + maxChildSteps;
+    }
+
+    private static bool LexLess(List<int> a, List<int> b)
+    {
+        int n = Math.Min(a.Count, b.Count);
+        for (int i = 0; i < n; i++)
+        {
+            if (a[i] != b[i])
+                return a[i] < b[i];
+        }
+        return a.Count < b.Count;
+    }
+
+    // Build a near-ANTICHAIN incrementally. The maxima (items with zero active ancestors) form an
+    // antichain, so contesting mutually-unrelated items extracts the most information per sort (a sort
+    // of an antichain resolves every pair at once; a sort that re-includes an already known relation
+    // wastes a slot). Each pick maximizes the count of current group members it is UNRELATED to (new
+    // unresolved pairs), tie-broken toward the frontier: fewest active ancestors (closest to the top
+    // -> most likely a guaranteed top hit), then fewest total relations (most still to learn), then
+    // smallest id for determinism. An optional forcedSeed pins the first member (used by the lookahead
+    // chooser to generate one candidate group per possible seed).
+    private List<int> ProposeAntichainGroup(ComparisonState state, List<int> active, int remainingSlots, int forcedSeed = -1)
+    {
         int size = Math.Min(_m, active.Count);
 
         var group = new List<int>(size);
         var inGroup = new HashSet<int>();
+
+        if (forcedSeed >= 0)
+        {
+            group.Add(forcedSeed);
+            inGroup.Add(forcedSeed);
+        }
 
         while (group.Count < size)
         {
@@ -211,12 +318,6 @@ partial class StrategyBuilder
             inGroup.Add(best);
         }
 
-        // Progress guarantee: if the picked group is a total chain (all pairs already resolved), force
-        // in an unresolved active pair so the sort still adds a new relation.
-        if (!GroupHasUnresolvedPair(state, group))
-            ForceUnresolvedPair(state, active, group);
-
-        group.Sort();
         return group;
     }
 

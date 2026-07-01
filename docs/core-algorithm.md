@@ -329,6 +329,14 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
 **确实可达**的步数）。正确性（`U ≥ opt`）只需「严格进展」：每次排序都至少新增一条比较关系——只要所选分组含有一对
 互不可比项即可，而 `ChooseConstructiveGroup` 保证了这一点（总链兜底见 `ForceUnresolvedPair`）。
 
+- **1-ply 前瞻收紧 `U`**（`ChooseConstructiveGroupLookahead`）：纯贪心反链每步只看「本步信息量最大」，会偏爱**全新孤立项**
+  （与一切互不可比、关系最少），因而催生互不相连的多条链，事后合并代价高；而更优的走法常常是**跨边界桥接**（把边界项
+  与新项一起排序）。物化时的分组选择因此改为一层前瞻：枚举一小组候选分组（基础反链挑选 + 每个种子项各一个反链），
+  用**固定的基础反链 rollout** 深度（`ConstructiveDepth`，按 `SearchStateKey` 记忆化）给每个候选打分 `1 + 各对手分支的最坏 rollout 深度`，
+  取最小者（平局取字典序最小以保持确定性）。**rollout 恒用基础策略、绝不递归前瞻**，所以这是一次有界的多项式改良、而非完整
+  minimax。它把已知最优参照表上 39 个形状的原始 `U` 总超出从 39 降到 25（`m=3..6` 多个形状归零），代价只是物化多花约 |active|
+  倍的 rollout（最坏 ~1s@`20,5,5`，相对随后 compact 收紧的 100s+ 可忽略）。
+
 - **夹逼**：`L = GetMinWorstCaseLowerBound(root, k)`（解析下界，与精确搜索**无关**、极便宜；`25,5,5 → 6`），经
   `RecordRootProvenLowerBound` 写入；`U = ` 构造树的 `MaxStep`。于是 `L ≤ opt ≤ U`。若 `L == U` 则该可行解
   **恰好达到了已证明下界**，即**已证明最优**（显示 `max steps = U (proven optimal)`）。
