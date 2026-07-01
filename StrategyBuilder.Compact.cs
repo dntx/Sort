@@ -31,6 +31,8 @@ partial class StrategyBuilder
     // cap keeps the phase correct -- it only trades a little per-state edge-count minimization for a
     // bounded, interruptible runtime. int.MaxValue preserves the original exhaustive behavior.
     internal int CompactGreedyCandidateCap = 128;
+    
+    
     private int _compactGroupsEnumerated;
     private int _compactStepOptimalGroups;
 
@@ -324,7 +326,7 @@ partial class StrategyBuilder
         // cap bounds BOTH the representative generation/dedup and the FitChildren cost per state -- the
         // materialized full enumeration over thousands of large-m groups is what makes the edge phase
         // hang. The constructive group above guarantees correctness regardless of the cap.
-        foreach (var group in EnumerateDistinctGroups(state, candidates, groupSize, CompactGreedyCandidateCap))
+         foreach (var group in EnumerateDistinctGroups(state, candidates, groupSize, CompactGreedyCandidateCap))
         {
             if (!seen.Add(new IntSequenceKey(group.ToArray())))
                 continue;
@@ -336,6 +338,8 @@ partial class StrategyBuilder
             _compactStepOptimalGroups++;
             fits.Add((group, children));
         }
+        
+        // Sort candidates by immediate FitChildren count as cheap proxy for tree quality
         fits.Sort((a, b) => a.Children.Count.CompareTo(b.Children.Count));
 
         foreach (var (group, children) in fits)
