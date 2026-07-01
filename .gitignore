@@ -1,5 +1,7 @@
 bin/
 obj/
+TestResults/
+*.trx
 anomaly-report.txt
 dominance-reuse-report.txt
 compact-gap-report.txt
