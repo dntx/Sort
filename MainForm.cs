@@ -123,11 +123,19 @@ class MainForm : Form
 
     private readonly record struct JumpTarget(TreeNode ScopeRoot, int[] BranchPath);
 
-    // Per branch node, the 1-based item labels in its order text that this outcome resolves, mapped to
-    // whether the item is doomed (true -> excluded from top-k, drawn in the exclusion color) or secured
-    // (false -> guaranteed into top-k, drawn in the inclusion color). Only labels that actually appear in
-    // the order text are recorded, so the colored head/tail of "a > b > c > d > e" stands out.
-    private readonly Dictionary<TreeNode, Dictionary<int, bool>> _coloredTokens = new();
+    // A branch header node that carries which of its order-text "#n" labels this outcome resolves, mapped
+    // to whether the item is doomed (true -> excluded from top-k, drawn in the exclusion color) or secured
+    // (false -> guaranteed into top-k, drawn in the inclusion color). Storing this on the node itself lets
+    // DrawNode tint the colored head/tail of "a > b > c > d > e"; the map is collected with the node when
+    // the tree is repopulated, so there is no side table keyed by TreeNode to keep in sync.
+    private sealed class BranchTreeNode : TreeNode
+    {
+        public BranchTreeNode(string text) : base(text)
+        {
+        }
+
+        public IReadOnlyDictionary<int, bool>? ColoredTokens { get; init; }
+    }
     private SearchProgressSnapshot _latestProgress;
     private SearchStatistics? _completedDefaultStats;
     private SearchStatistics? _completedCompactStats;
@@ -788,7 +796,6 @@ class MainForm : Form
         _referenceTargets.Clear();
         _lazyDecisions.Clear();
         _jumpTargets.Clear();
-        _coloredTokens.Clear();
         _navigationHistory.Clear();
         _backButton.Enabled = false;
 
@@ -1163,7 +1170,6 @@ class MainForm : Form
         _referenceTargets.Clear();
         _lazyDecisions.Clear();
         _jumpTargets.Clear();
-        _coloredTokens.Clear();
         _navigationHistory.Clear();
         _backButton.Enabled = false;
     }
@@ -1454,33 +1460,31 @@ class MainForm : Form
         if (branch.EquivalentOrders is not null)
             branchHeader += $"  (×{branch.EquivalentOrders.Count} = {branch.EquivalentOrders.CountFormula})";
 
-        var branchNode = new TreeNode(branchHeader)
-        {
-            ForeColor = _palette.BranchColor,
-            Tag = BuildBranchDetails(branch),
-        };
-
         // Record which order-text tokens this outcome resolves so DrawNode can tint those "#n" tokens:
         // doomed items (newly excluded) in the exclusion color and secured items (newly guaranteed into
         // top-k) in the inclusion color. Restrict to labels that actually appear in the order text --
         // items resolved outside this branch's shown order have nothing to highlight.
-        var colored = new Dictionary<int, bool>();
-        foreach (int item in branch.Effect.NewlyGuaranteedTop)
+        HashSet<int> orderLabels = ParseOrderLabels(branch.OrderText);
+        Dictionary<int, bool>? colored = null;
+        void MarkColored(IReadOnlyList<int> items, bool doomed)
         {
-            int label = item + 1;
-            if (OrderTextContainsToken(branch.OrderText, label))
-                colored[label] = false;
+            foreach (int item in items)
+            {
+                int label = item + 1;
+                if (orderLabels.Contains(label))
+                    (colored ??= new Dictionary<int, bool>())[label] = doomed;
+            }
         }
 
-        foreach (int item in branch.Effect.NewlyExcluded)
-        {
-            int label = item + 1;
-            if (OrderTextContainsToken(branch.OrderText, label))
-                colored[label] = true;
-        }
+        MarkColored(branch.Effect.NewlyGuaranteedTop, doomed: false);
+        MarkColored(branch.Effect.NewlyExcluded, doomed: true);
 
-        if (colored.Count > 0)
-            _coloredTokens[branchNode] = colored;
+        var branchNode = new BranchTreeNode(branchHeader)
+        {
+            ForeColor = _palette.BranchColor,
+            Tag = BuildBranchDetails(branch),
+            ColoredTokens = colored,
+        };
 
         if (branch.EquivalentOrders is not null)
         {
@@ -1535,21 +1539,31 @@ class MainForm : Form
         return branchNode;
     }
 
-    // Whether the order text contains "#label" as a standalone token (not a prefix of a longer number,
-    // e.g. "#1" must not match inside "#12"). Order text is always a " > "-joined chain of "#n" tokens.
-    private static bool OrderTextContainsToken(string orderText, int label)
+    // Parses the 1-based "#n" labels present in a branch's order text, which is always a " > "-joined
+    // chain of "#n" tokens. Done once per branch so token lookups are O(1) set membership rather than a
+    // repeated substring scan.
+    private static HashSet<int> ParseOrderLabels(string orderText)
     {
-        string token = "#" + label;
-        int index = 0;
-        while ((index = orderText.IndexOf(token, index, StringComparison.Ordinal)) >= 0)
+        var labels = new HashSet<int>();
+        int i = 0;
+        while (i < orderText.Length)
         {
-            int after = index + token.Length;
-            if (after >= orderText.Length || !char.IsDigit(orderText[after]))
-                return true;
-            index = after;
+            if (orderText[i] == '#' && i + 1 < orderText.Length && char.IsDigit(orderText[i + 1]))
+            {
+                int j = i + 1;
+                while (j < orderText.Length && char.IsDigit(orderText[j]))
+                    j++;
+
+                if (int.TryParse(orderText.AsSpan(i + 1, j - i - 1), out int label))
+                    labels.Add(label);
+                i = j;
+                continue;
+            }
+
+            i++;
         }
 
-        return false;
+        return labels;
     }
 
     // Owner-drawn text so a branch header's resolved "#n" tokens can be tinted: doomed items (newly
@@ -1566,7 +1580,7 @@ class MainForm : Form
             return;
         }
 
-        _coloredTokens.TryGetValue(node, out Dictionary<int, bool>? colored);
+        IReadOnlyDictionary<int, bool>? colored = (node as BranchTreeNode)?.ColoredTokens;
 
         // Fill the row from the label's left edge to the control's right edge (the +/- glyphs and lines
         // drawn by the system sit to the left of e.Bounds.Left, so they are preserved). Painting the full
@@ -1607,7 +1621,7 @@ class MainForm : Form
     // Splits header text into runs, flagging each "#n" token whose label is in coloredLabels with its role
     // (true -> doomed/exclusion color, false -> secured/inclusion color). Non-token text and unresolved
     // tokens accumulate into plain runs (null role).
-    private static IEnumerable<(string Text, bool? Doomed)> SplitColoredSegments(string text, Dictionary<int, bool> coloredLabels)
+    private static IEnumerable<(string Text, bool? Doomed)> SplitColoredSegments(string text, IReadOnlyDictionary<int, bool> coloredLabels)
     {
         var segments = new List<(string, bool?)>();
         var plain = new System.Text.StringBuilder();
