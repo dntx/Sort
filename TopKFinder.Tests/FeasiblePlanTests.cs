@@ -80,6 +80,27 @@ public class FeasiblePlanTests
             $"feasible upper bound {feasible} was below the true optimum {optimum}");
     }
 
+    // Pins the exact raw feasible U (before compact edge-tightening) that the 1-ply constructive
+    // lookahead achieves, so a regression that loosened or reverted the lookahead would fail loudly
+    // rather than silently slip back to the pure single-ply antichain bound. The shapes below are the
+    // strongest witnesses: on 6,3,3 and 6,3,2 the base antichain heuristic overshoots (U=5 and U=4),
+    // while lookahead reaches the proven optimum; 9,5,4 and 7,4,4 also hit optimum. 14,4,5 and 12,6,6
+    // are still above optimum but their exact tightened values are pinned to catch any drift. See
+    // docs/known-optimal-max-steps.md for the optima and docs/core-algorithm.md sec 4.6 for the policy.
+    [Theory]
+    [InlineData(6, 3, 3, 3)]
+    [InlineData(6, 3, 2, 3)]
+    [InlineData(9, 5, 4, 3)]
+    [InlineData(7, 4, 4, 3)]
+    [InlineData(14, 4, 5, 8)]
+    [InlineData(12, 6, 6, 4)]
+    public void FeasiblePlan_LookaheadPinsRawUpperBound(int n, int m, int k, int expectedRawU)
+    {
+        int feasible = new StrategyBuilder(n, m, k).BuildFeasiblePlan().MaxStep;
+
+        Assert.Equal(expectedRawU, feasible);
+    }
+
     private static void AssertEveryDecisionHasGroup(StrategyNode node)
     {
         if (node.Branches.Count > 0)
