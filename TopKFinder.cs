@@ -159,8 +159,10 @@ partial class StrategyBuilder
     // Opportunistically lowers the greedy edge plan's max-step by re-running the compact pass at
     // progressively tighter ceilings (U-1, U-2, ...). Each accepted retry strictly decreases the realized
     // max-step; the loop stops at the first infeasible ceiling (optimum reached), at the proven lower
-    // bound L, when the soft time budget is exhausted, or on user cancellation -- always returning the
-    // best (smallest max-step) plan found, never worse than the baseline.
+    // bound L, at a cap-truncated (incomplete) ceiling, or on user cancellation -- always returning the
+    // best (smallest max-step) plan found, never worse than the baseline. There is no wall-clock budget:
+    // tightening runs to completion. A user who no longer wants to wait cancels (GUI Stop / CLI Ctrl+C),
+    // which propagates the cancellation out with the best plan found so far already surfaced via onStage.
     private StrategyPlan TightenFeasibleCompact(StrategyPlan baseline, Action<GreedyEdgeStage>? onStage)
     {
         StrategyPlan best = baseline;
@@ -174,62 +176,26 @@ partial class StrategyBuilder
             return baseline;
 
         int provenLowerBound = Math.Max(1, _rootProvenLowerBound);
-        long baselineMs = (long)baseline.Elapsed.TotalMilliseconds;
-        long timeBudgetMs = Math.Max(
-            FeasibleTighteningMinTimeBudgetMs,
-            (long)(baselineMs * FeasibleTighteningTimeBudgetFactor));
-
-        var stopwatch = Stopwatch.StartNew();
         int budget = best.MaxStep - 1;
         while (budget >= provenLowerBound)
         {
             _cancellationToken.ThrowIfCancellationRequested();
-            long remainingMs = timeBudgetMs - stopwatch.ElapsedMilliseconds;
-            if (remainingMs <= 0)
-                break;
-
-            _tighteningDeadlineUtc = DateTime.UtcNow.AddMilliseconds(remainingMs);
-            System.Threading.Volatile.Write(ref _tighteningDeadlineTicksUtc, _tighteningDeadlineUtc.Value.Ticks);
-            _tighteningDeadlineHit = false;
-            StrategyPlan? candidate;
-            // This probe's own wall time, captured even when the probe proves infeasible (returns null)
-            // so the no-solution stage still reports its elapsed.
-            var probeStopwatch = Stopwatch.StartNew();
-            try
-            {
-                candidate = ProbeFeasibleCompact(budget);
-            }
-            catch (OperationCanceledException) when (_tighteningDeadlineHit && !_cancellationToken.IsCancellationRequested)
-            {
-                candidate = null; // soft deadline: abandon this retry and keep the best plan so far
-            }
-            finally
-            {
-                _tighteningDeadlineUtc = null;
-                System.Threading.Volatile.Write(ref _tighteningDeadlineTicksUtc, 0);
-                probeStopwatch.Stop();
-            }
 
             string stageName = $"compact\u2264{budget}";
 
-            // The soft deadline aborted this probe before it could decide feasibility: surface it as a
-            // timed-out stage (no proof either way -- the best plan so far still stands) and stop.
-            if (_tighteningDeadlineHit)
-            {
-                stopwatch.Stop();
-                onStage?.Invoke(new GreedyEdgeStage(
-                    stageName, null, probeStopwatch.Elapsed, GreedyEdgeStageOutcome.TimedOut));
-                break;
-            }
+            // This probe's own wall time, captured even when the probe proves infeasible (returns null)
+            // so the no-solution stage still reports its elapsed. A user cancellation raised inside the
+            // probe propagates out; the best plan so far has already been surfaced via onStage.
+            var probeStopwatch = Stopwatch.StartNew();
+            StrategyPlan? candidate = ProbeFeasibleCompact(budget);
+            probeStopwatch.Stop();
 
             if (candidate is null)
             {
-                stopwatch.Stop();
-
                 // The probe ran out of feasible groups, but if the greedy candidate cap truncated any
                 // state's enumeration the "no solution" is not a proof -- an untried group might have fit.
-                // Surface it as an incomplete stage (like a timeout: the best plan stands, the squeeze
-                // stays open) and stop tightening rather than claiming a false proven-optimal.
+                // Surface it as an incomplete stage (the best plan stands, the squeeze stays open) and
+                // stop tightening rather than claiming a false proven-optimal.
                 if (_lastProbeEnumerationCapped)
                 {
                     onStage?.Invoke(new GreedyEdgeStage(
@@ -253,18 +219,12 @@ partial class StrategyBuilder
             // it was given (the cache keys group choices by state only, so a group picked under a looser
             // budget can leak into a tighter path and deepen the subtree). Such a result never beats the
             // incumbent, and accepting it would re-derive budget = MaxStep - 1 above the current ceiling
-            // and oscillate until the time budget runs out. Stop at the first probe that does not
-            // strictly improve the best plan so far.
+            // and oscillate forever. Stop at the first probe that does not strictly improve the best plan.
             if (candidate.MaxStep >= best.MaxStep)
-            {
-                stopwatch.Stop();
                 break;
-            }
 
             best = candidate;
-            stopwatch.Stop();
             onStage?.Invoke(new GreedyEdgeStage(stageName, candidate, probeStopwatch.Elapsed));
-            stopwatch.Start();
             budget = best.MaxStep - 1; // realized max-step may already be below the attempted ceiling
         }
 
@@ -1165,15 +1125,6 @@ partial class StrategyBuilder
     private void ThrowIfCancellationRequested()
     {
         _cancellationToken.ThrowIfCancellationRequested();
-
-        // Soft deadline for a U-tightening retry: enforced via the same frequent checkpoints the search
-        // already calls, so a too-slow retry is abandoned without a dedicated timer thread. Recorded so
-        // the tightening loop can tell a deadline abort (keep the best plan) from a user cancellation.
-        if (_tighteningDeadlineUtc is { } deadline && DateTime.UtcNow >= deadline)
-        {
-            _tighteningDeadlineHit = true;
-            throw new OperationCanceledException();
-        }
     }
 
     private void EnsurePhase1Solved()

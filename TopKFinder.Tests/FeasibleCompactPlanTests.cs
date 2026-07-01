@@ -87,7 +87,7 @@ public class FeasibleCompactPlanTests
     }
 
     // Runs the greedy edge progression and returns the outcome of its final solution-less stage (the terminal
-    // NoSolution / Incomplete / TimedOut), or Solution if the progression never bottomed out.
+    // NoSolution / Incomplete), or Solution if the progression never bottomed out.
     private static GreedyEdgeStageOutcome TerminalOutcome(StrategyBuilder builder, out StrategyPlan plan)
     {
         var terminal = GreedyEdgeStageOutcome.Solution;
