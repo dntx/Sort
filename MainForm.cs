@@ -95,6 +95,10 @@ class MainForm : Form
     private readonly RichTextBox _detailsTextBox;
     private readonly System.Windows.Forms.Timer _elapsedTimer;
     private ThemePalette _palette = DarkPalette;
+
+    // Cached brush for the tree row background, recreated whenever the theme changes so DrawNode does not
+    // allocate a brush per paint. Selected rows use the shared SystemBrushes.Highlight instead.
+    private SolidBrush _treeRowBackBrush = new(DarkPalette.SurfaceBackColor);
     private StrategyPlan? _feasiblePlan;
     private StrategyPlan? _defaultPlan;
     private StrategyPlan? _compactPlan;
@@ -1585,11 +1589,12 @@ class MainForm : Form
         // Fill the row from the label's left edge to the control's right edge (the +/- glyphs and lines
         // drawn by the system sit to the left of e.Bounds.Left, so they are preserved). Painting the full
         // width both erases stale pixels and gives selected rows a consistent highlight behind wide text.
+        // Both brushes are shared (no per-paint allocation): the system highlight brush and a cached brush
+        // recreated on theme change.
         bool selected = (e.State & TreeNodeStates.Selected) != 0;
         int rightEdge = Math.Max(e.Bounds.Right, _treeView.ClientSize.Width);
         var rowRect = new Rectangle(e.Bounds.Left, e.Bounds.Top, rightEdge - e.Bounds.Left, e.Bounds.Height);
-        using (var backBrush = new SolidBrush(selected ? SystemColors.Highlight : _treeView.BackColor))
-            e.Graphics.FillRectangle(backBrush, rowRect);
+        e.Graphics.FillRectangle(selected ? SystemBrushes.Highlight : _treeRowBackBrush, rowRect);
 
         Font font = node.NodeFont ?? _treeView.Font;
         Color baseColor = selected
@@ -1620,11 +1625,11 @@ class MainForm : Form
 
     // Splits header text into runs, flagging each "#n" token whose label is in coloredLabels with its role
     // (true -> doomed/exclusion color, false -> secured/inclusion color). Non-token text and unresolved
-    // tokens accumulate into plain runs (null role).
+    // tokens accumulate into plain runs (null role). Single pass with lazy yielding: a plain run is
+    // emitted only when a colored token interrupts it or the text ends, so no intermediate list is built.
     private static IEnumerable<(string Text, bool? Doomed)> SplitColoredSegments(string text, IReadOnlyDictionary<int, bool> coloredLabels)
     {
-        var segments = new List<(string, bool?)>();
-        var plain = new System.Text.StringBuilder();
+        int plainStart = 0;
         int i = 0;
         while (i < text.Length)
         {
@@ -1636,26 +1641,24 @@ class MainForm : Form
 
                 if (int.TryParse(text.AsSpan(i + 1, j - i - 1), out int label) && coloredLabels.TryGetValue(label, out bool doomed))
                 {
-                    if (plain.Length > 0)
-                    {
-                        segments.Add((plain.ToString(), (bool?)null));
-                        plain.Clear();
-                    }
+                    if (i > plainStart)
+                        yield return (text.Substring(plainStart, i - plainStart), null);
 
-                    segments.Add((text.Substring(i, j - i), doomed));
+                    yield return (text.Substring(i, j - i), doomed);
                     i = j;
+                    plainStart = j;
                     continue;
                 }
+
+                i = j;
+                continue;
             }
 
-            plain.Append(text[i]);
             i++;
         }
 
-        if (plain.Length > 0)
-            segments.Add((plain.ToString(), (bool?)null));
-
-        return segments;
+        if (plainStart < text.Length)
+            yield return (text.Substring(plainStart), null);
     }
 
     private TreeNode CreateTerminalNode(StrategyNode node, int k, string scope)
@@ -2012,6 +2015,9 @@ class MainForm : Form
         _statusStrip.ForeColor = _palette.ForeColor;
         _statusLabel.ForeColor = _palette.ForeColor;
 
+        _treeRowBackBrush.Dispose();
+        _treeRowBackBrush = new SolidBrush(_treeView.BackColor);
+
         if (_feasiblePlan is not null)
         {
             PopulateTree(_feasiblePlan, _defaultPlan, _compactPlan, _exactImproved, _compactImproved);
@@ -2023,6 +2029,14 @@ class MainForm : Form
             _statusLabel.Text = "Ready.";
             _detailsTextBox.Text = BuildIdleDetailsText();
         }
+    }
+
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+            _treeRowBackBrush.Dispose();
+
+        base.Dispose(disposing);
     }
 
     private void ApplyThemeToControlTree(Control control)
