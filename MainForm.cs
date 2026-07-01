@@ -747,8 +747,21 @@ class MainForm : Form
         }
     }
 
-    private const string CompactComputingLabel = "compact: computing...";
-    private const string CompactStoppedLabel = "compact: stopped (not computed)";
+    private const string ComputingSuffix = ": computing...";
+    private const string CompactComputingLabel = "compact" + ComputingSuffix;
+
+    // A trailing tree/overview node ending in ": computing..." is a transient in-progress placeholder
+    // (the initial "compact: computing..." slot, or a live "compact≤N: computing..." probe appended
+    // between greedy tightening stages). Both are replaced in place once the stage they announce lands.
+    private static bool IsComputingPlaceholderText(string text)
+        => text.EndsWith(ComputingSuffix, StringComparison.Ordinal);
+
+    // Rewrite a "<stage>: computing..." placeholder to "<stage>: stopped (not computed)" so a Stop
+    // leaves no wording implying a computation is still running.
+    private static string MarkComputingPlaceholderStopped(string text)
+        => IsComputingPlaceholderText(text)
+            ? text[..^ComputingSuffix.Length] + ": stopped (not computed)"
+            : text;
 
     // On a user Stop, an interrupted stage leaves transient "computing.../in progress" placeholders on
     // screen (tree root suffix, the trailing compact slot, and the root details). Rewrite them to a
@@ -761,22 +774,22 @@ class MainForm : Form
 
         TreeNode root = _treeView.Nodes[0];
         bool hasResidue = root.Nodes.Count > 0
-            && root.Nodes[root.Nodes.Count - 1].Text == CompactComputingLabel;
+            && IsComputingPlaceholderText(root.Nodes[root.Nodes.Count - 1].Text);
         if (!hasResidue)
             return;
 
         _treeView.BeginUpdate();
         root.Text = MarkLabelStopped(root.Text);
-        root.Nodes[root.Nodes.Count - 1].Text = CompactStoppedLabel;
+        root.Nodes[root.Nodes.Count - 1].Text = MarkComputingPlaceholderStopped(root.Nodes[root.Nodes.Count - 1].Text);
         if (root.Tag is string tag)
             root.Tag = MarkDetailsStopped(tag);
         _treeView.EndUpdate();
 
         if (_overviewTree.Nodes.Count > 0
-            && _overviewTree.Nodes[_overviewTree.Nodes.Count - 1].Text == CompactComputingLabel)
+            && IsComputingPlaceholderText(_overviewTree.Nodes[_overviewTree.Nodes.Count - 1].Text))
         {
             _overviewTree.BeginUpdate();
-            _overviewTree.Nodes[_overviewTree.Nodes.Count - 1].Text = CompactStoppedLabel;
+            _overviewTree.Nodes[_overviewTree.Nodes.Count - 1].Text = MarkComputingPlaceholderStopped(_overviewTree.Nodes[_overviewTree.Nodes.Count - 1].Text);
             _overviewTree.EndUpdate();
         }
     }
@@ -947,7 +960,6 @@ class MainForm : Form
         if (_feasiblePlan is null || _treeView.Nodes.Count == 0)
             return;
 
-        bool isBaseline = _greedyEdgeStages.Count == 0;
         _greedyEdgeStages.Add(stage);
         int index = _greedyEdgeStages.Count - 1;
         string scope = $"edge{index}";
@@ -960,15 +972,22 @@ class MainForm : Form
         StrategyPlan incumbent = _compactPlan ?? _feasiblePlan;
         bool improved = stage.HasSolution && stage.Plan!.IsStrictRefinementOver(incumbent);
 
+        // After any solution stage that can still be tightened (max-step > 1), the worker immediately
+        // probes the next lower ceiling. We announce that in-progress probe with a trailing
+        // "compact<=N: computing..." placeholder so the tree/overview never look idle while a probe runs.
+        bool willTighten = stage.HasSolution && stage.Plan!.MaxStep > 1;
+        string nextStageName = willTighten ? $"compact\u2264{stage.Plan!.MaxStep - 1}" : "compact";
+        string probeComputingLabel = nextStageName + ComputingSuffix;
+
         _treeView.BeginUpdate();
         TreeNode root = _treeView.Nodes[0];
-        if (isBaseline)
-        {
-            // Replace the trailing "compact: computing..." placeholder (everything after the step slot).
-            while (root.Nodes.Count > 1)
-                root.Nodes.RemoveAt(root.Nodes.Count - 1);
-        }
+        // Replace the trailing in-progress placeholder (the initial "compact: computing..." slot before
+        // the baseline, or the previous probe's "compact<=N: computing..." note) with the landed stage.
+        if (root.Nodes.Count > 1 && IsComputingPlaceholderText(root.Nodes[root.Nodes.Count - 1].Text))
+            root.Nodes.RemoveAt(root.Nodes.Count - 1);
         root.Nodes.Add(BuildStageTreeNode(stage, scope, improved));
+        if (willTighten)
+            root.Nodes.Add(new TreeNode(probeComputingLabel) { ForeColor = _palette.MutedForeColor });
 
         if (improved)
             _compactPlan = stage.Plan;
@@ -984,9 +1003,12 @@ class MainForm : Form
         _treeView.EndUpdate();
 
         _overviewTree.BeginUpdate();
-        if (isBaseline && _overviewTree.Nodes.Count > 0)
+        if (_overviewTree.Nodes.Count > 0
+            && IsComputingPlaceholderText(_overviewTree.Nodes[_overviewTree.Nodes.Count - 1].Text))
             _overviewTree.Nodes.RemoveAt(_overviewTree.Nodes.Count - 1);
         _overviewTree.Nodes.Add(BuildStageOverviewNode(stage, scope, improved));
+        if (willTighten)
+            _overviewTree.Nodes.Add(BuildOverviewNoteNode(probeComputingLabel));
         _overviewTree.EndUpdate();
 
         if (stage.HasSolution)
@@ -997,7 +1019,7 @@ class MainForm : Form
             // The next tightening probe targets one below this stage's max-step. Reset the per-stage
             // clock so the progress panel times the upcoming probe from zero. This happens whether or
             // not the stage improved edges, because tightening continues either way.
-            _currentStageName = stage.Plan!.MaxStep > 1 ? $"compact\u2264{stage.Plan.MaxStep - 1}" : "compact";
+            _currentStageName = nextStageName;
             _stageStartMs = _runStopwatch?.ElapsedMilliseconds ?? 0;
         }
         UpdateStatsPanels();
