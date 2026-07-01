@@ -106,6 +106,22 @@ class MainForm : Form
     private readonly Dictionary<string, TreeNode> _stateNodesByKey = new();
     private readonly Dictionary<TreeNode, string> _referenceTargets = new();
     private readonly Stack<TreeNode> _navigationHistory = new();
+
+    // Lazy tree materialization. A decision node's branch subtree is expensive to build (thousands of
+    // formatted TreeNodes for large shapes), so it is deferred: each expandable decision node gets a
+    // single empty placeholder child and an entry here recording how to build its real children. The
+    // children are materialized on demand -- when the node is expanded, when a jump/copy needs it, or
+    // when the user requests "expand all". Membership in this dictionary (not any placeholder text) is
+    // the source of truth for "not yet materialized".
+    private readonly Dictionary<TreeNode, LazyDecision> _lazyDecisions = new();
+
+    // Per (scope:stateId) branch-index path from a plan's root state node to that state's node, so a jump
+    // target that has not been materialized yet can be reached by walking and materializing the path.
+    private readonly Dictionary<string, JumpTarget> _jumpTargets = new();
+
+    private readonly record struct LazyDecision(StrategyNode Node, int K, string Scope, StrategyDepthIndex DepthIndex);
+
+    private readonly record struct JumpTarget(TreeNode ScopeRoot, int[] BranchPath);
     private SearchProgressSnapshot _latestProgress;
     private SearchStatistics? _completedDefaultStats;
     private SearchStatistics? _completedCompactStats;
@@ -336,11 +352,12 @@ class MainForm : Form
             Font = new Font(FontFamily.GenericSansSerif, 10),
         };
         _treeView.AfterSelect += (_, e) => ShowNodeDetails(e.Node);
+        _treeView.BeforeExpand += (_, e) => { if (e.Node is { } n) MaterializeDecision(n); };
         _treeView.NodeMouseDoubleClick += (_, e) => TryJumpToReferenceTarget(e.Node);
         _treeView.MouseDown += TreeView_MouseDown;
         _treeView.KeyDown += TreeView_KeyDown;
         _treeView.ContextMenuStrip = CreateTreeContextMenu();
-        _treeExpandButton.Click += (_, _) => _treeView.ExpandAll();
+        _treeExpandButton.Click += (_, _) => ExpandEntireTree();
         _treeCollapseButton.Click += (_, _) => _treeView.CollapseAll();
         _backButton.Click += (_, _) => NavigateBack();
 
@@ -761,6 +778,8 @@ class MainForm : Form
         _treeView.Nodes.Clear();
         _stateNodesByKey.Clear();
         _referenceTargets.Clear();
+        _lazyDecisions.Clear();
+        _jumpTargets.Clear();
         _navigationHistory.Clear();
         _backButton.Enabled = false;
 
@@ -1133,6 +1152,8 @@ class MainForm : Form
 
         _stateNodesByKey.Clear();
         _referenceTargets.Clear();
+        _lazyDecisions.Clear();
+        _jumpTargets.Clear();
         _navigationHistory.Clear();
         _backButton.Enabled = false;
     }
@@ -1223,7 +1244,7 @@ class MainForm : Form
         if (_overviewTree.SelectedNode?.Tag is not string targetStateKey)
             return;
 
-        if (!_stateNodesByKey.TryGetValue(targetStateKey, out TreeNode? targetNode))
+        if (ResolveStateNode(targetStateKey) is not TreeNode targetNode)
             return;
 
         targetNode.EnsureVisible();
@@ -1321,7 +1342,9 @@ class MainForm : Form
             NodeFont = new Font(_treeView.Font, FontStyle.Bold),
             ForeColor = _palette.ForeColor,
         };
-        planNode.Nodes.Add(CreateStateNode(plan.Root, plan.K, scope, depthIndex));
+        TreeNode stateRoot = CreateStateNode(plan.Root, plan.K, scope, depthIndex);
+        IndexJumpTargets(plan.Root, scope, stateRoot, new List<int>());
+        planNode.Nodes.Add(stateRoot);
         return planNode;
     }
 
@@ -1388,77 +1411,102 @@ class MainForm : Form
             return treeNode;
         }
 
-        foreach (var branch in node.Branches)
+        if (node.Branches.Count > 0)
         {
-            string branchHeader = branch.OrderText;
-            if (branch.EquivalentOrders is not null)
-                branchHeader += $"  (×{branch.EquivalentOrders.Count})";
-
-            var branchNode = new TreeNode(branchHeader)
-            {
-                ForeColor = _palette.BranchColor,
-                Tag = BuildBranchDetails(branch),
-            };
-
-            if (branch.EquivalentOrders is not null)
-            {
-                string equivalentText = StrategyTextRenderer.FormatEquivalentFormsSummary(branch.EquivalentOrders);
-                string patternText = StrategyTextRenderer.FormatEquivalentPatternLine(branch.EquivalentOrders);
-
-                branchNode.Nodes.Add(new TreeNode(equivalentText)
-                {
-                    ForeColor = _palette.MutedForeColor,
-                    Tag = StrategyTextRenderer.FormatEquivalentDetails(branch.EquivalentOrders),
-                });
-
-                branchNode.Nodes.Add(new TreeNode(patternText)
-                {
-                    ForeColor = _palette.MutedForeColor,
-                    Tag = StrategyTextRenderer.FormatEquivalentDetails(branch.EquivalentOrders),
-                });
-            }
-
-            if (branch.Effect.NewlyGuaranteedTop.Count > 0)
-            {
-                branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatInEntry(branch.Effect.NewlyGuaranteedTop))
-                {
-                    ForeColor = _palette.InColor,
-                    Tag = $"Newly confirmed in top-k: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.NewlyGuaranteedTop)}",
-                });
-            }
-
-            if (branch.Effect.NewlyExcluded.Count > 0)
-            {
-                branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatOutEntry(branch.Effect.NewlyExcluded))
-                {
-                    ForeColor = _palette.OutColor,
-                    Tag = $"Newly excluded from top-k: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.NewlyExcluded)}",
-                });
-            }
-
-            if (branch.Effect.FixedCandidates.Count > 0)
-            {
-                branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatFixedEntry(branch.Effect.FixedCandidates))
-                {
-                    ForeColor = _palette.FixedColor,
-                    Tag = $"Current fixed top-k candidates: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.FixedCandidates)}",
-                });
-            }
-
-            if (branch.Effect.PossibleCandidates.Count > 0)
-            {
-                branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatPossibleEntry(branch.Effect.PossibleCandidates))
-                {
-                    ForeColor = _palette.PossibleColor,
-                    Tag = $"Current possible top-k candidates: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.PossibleCandidates)}",
-                });
-            }
-
-            branchNode.Nodes.Add(CreateStateNode(branch.Next, k, scope, depthIndex));
-            treeNode.Nodes.Add(branchNode);
+            // Defer the (potentially large) branch subtree: an empty placeholder gives the node its
+            // expander, and MaterializeDecision builds the real branch children on demand.
+            treeNode.Nodes.Add(new TreeNode());
+            _lazyDecisions[treeNode] = new LazyDecision(node, k, scope, depthIndex);
         }
 
         return treeNode;
+    }
+
+    // Builds the immediate branch children of a lazily-deferred decision node. Idempotent and a no-op for
+    // any node that is not a pending lazy decision (leaves, already-materialized nodes), so it is safe to
+    // call from BeforeExpand, jump/copy path walks, and "expand all".
+    private void MaterializeDecision(TreeNode treeNode)
+    {
+        if (!_lazyDecisions.TryGetValue(treeNode, out LazyDecision info))
+            return;
+
+        _lazyDecisions.Remove(treeNode);
+        _treeView.BeginUpdate();
+        treeNode.Nodes.Clear(); // drop the placeholder
+        foreach (StrategyBranch branch in info.Node.Branches)
+            treeNode.Nodes.Add(CreateBranchNode(branch, info.K, info.Scope, info.DepthIndex));
+        _treeView.EndUpdate();
+    }
+
+    private TreeNode CreateBranchNode(StrategyBranch branch, int k, string scope, StrategyDepthIndex depthIndex)
+    {
+        string branchHeader = branch.OrderText;
+        if (branch.EquivalentOrders is not null)
+            branchHeader += $"  (×{branch.EquivalentOrders.Count})";
+
+        var branchNode = new TreeNode(branchHeader)
+        {
+            ForeColor = _palette.BranchColor,
+            Tag = BuildBranchDetails(branch),
+        };
+
+        if (branch.EquivalentOrders is not null)
+        {
+            string equivalentText = StrategyTextRenderer.FormatEquivalentFormsSummary(branch.EquivalentOrders);
+            string patternText = StrategyTextRenderer.FormatEquivalentPatternLine(branch.EquivalentOrders);
+
+            branchNode.Nodes.Add(new TreeNode(equivalentText)
+            {
+                ForeColor = _palette.MutedForeColor,
+                Tag = StrategyTextRenderer.FormatEquivalentDetails(branch.EquivalentOrders),
+            });
+
+            branchNode.Nodes.Add(new TreeNode(patternText)
+            {
+                ForeColor = _palette.MutedForeColor,
+                Tag = StrategyTextRenderer.FormatEquivalentDetails(branch.EquivalentOrders),
+            });
+        }
+
+        if (branch.Effect.NewlyGuaranteedTop.Count > 0)
+        {
+            branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatInEntry(branch.Effect.NewlyGuaranteedTop))
+            {
+                ForeColor = _palette.InColor,
+                Tag = $"Newly confirmed in top-k: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.NewlyGuaranteedTop)}",
+            });
+        }
+
+        if (branch.Effect.NewlyExcluded.Count > 0)
+        {
+            branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatOutEntry(branch.Effect.NewlyExcluded))
+            {
+                ForeColor = _palette.OutColor,
+                Tag = $"Newly excluded from top-k: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.NewlyExcluded)}",
+            });
+        }
+
+        if (branch.Effect.FixedCandidates.Count > 0)
+        {
+            branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatFixedEntry(branch.Effect.FixedCandidates))
+            {
+                ForeColor = _palette.FixedColor,
+                Tag = $"Current fixed top-k candidates: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.FixedCandidates)}",
+            });
+        }
+
+        if (branch.Effect.PossibleCandidates.Count > 0)
+        {
+            branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatPossibleEntry(branch.Effect.PossibleCandidates))
+            {
+                ForeColor = _palette.PossibleColor,
+                Tag = $"Current possible top-k candidates: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.PossibleCandidates)}",
+            });
+        }
+
+        // The next state node is always added LAST; the jump/copy path walks rely on that position.
+        branchNode.Nodes.Add(CreateStateNode(branch.Next, k, scope, depthIndex));
+        return branchNode;
     }
 
     private TreeNode CreateTerminalNode(StrategyNode node, int k, string scope)
@@ -1502,7 +1550,7 @@ class MainForm : Form
         if (!_referenceTargets.TryGetValue(node, out string? targetStateKey))
             return;
 
-        if (!_stateNodesByKey.TryGetValue(targetStateKey, out TreeNode? targetNode))
+        if (ResolveStateNode(targetStateKey) is not TreeNode targetNode)
             return;
 
         _navigationHistory.Push(node);
@@ -1511,6 +1559,87 @@ class MainForm : Form
         targetNode.EnsureVisible();
         _treeView.SelectedNode = targetNode;
         _treeView.Focus();
+    }
+
+    // Resolves a "scope:stateId" key to its tree node, materializing the path to it if the target's
+    // subtree has not been expanded yet. Direct hits (already materialized, e.g. an ancestor was
+    // expanded) return immediately; otherwise the recorded branch path from the plan's root state node
+    // is walked, materializing each decision node along the way so the target node comes into existence.
+    private TreeNode? ResolveStateNode(string key)
+    {
+        if (_stateNodesByKey.TryGetValue(key, out TreeNode? existing))
+            return existing;
+
+        if (!_jumpTargets.TryGetValue(key, out JumpTarget target))
+            return null;
+
+        _treeView.BeginUpdate();
+        TreeNode current = target.ScopeRoot;
+        foreach (int branchIndex in target.BranchPath)
+        {
+            MaterializeDecision(current);
+            if (branchIndex >= current.Nodes.Count)
+            {
+                _treeView.EndUpdate();
+                return null;
+            }
+
+            TreeNode branchNode = current.Nodes[branchIndex];
+            if (branchNode.Nodes.Count == 0)
+            {
+                _treeView.EndUpdate();
+                return null;
+            }
+
+            // The next state node is always the branch node's last child (effect leaves precede it).
+            current = branchNode.Nodes[branchNode.Nodes.Count - 1];
+        }
+
+        _treeView.EndUpdate();
+        return current;
+    }
+
+    // Records, for every jumpable state (decision/terminal) in a plan, the branch-index path from the
+    // plan's root state node down to it. Cheap: walks the StrategyNode tree only, allocating no tree
+    // nodes. Mirrors the true-tree DFS order so the first-occurrence semantics match _stateNodesByKey.
+    private void IndexJumpTargets(StrategyNode node, string scope, TreeNode scopeRoot, List<int> path)
+    {
+        if (node.Kind is StrategyNodeKind.Decision or StrategyNodeKind.Terminal)
+            _jumpTargets.TryAdd($"{scope}:{node.StateId}", new JumpTarget(scopeRoot, path.ToArray()));
+
+        if (node.Kind == StrategyNodeKind.Decision && node.FinalChoice is null)
+        {
+            for (int i = 0; i < node.Branches.Count; i++)
+            {
+                path.Add(i);
+                IndexJumpTargets(node.Branches[i].Next, scope, scopeRoot, path);
+                path.RemoveAt(path.Count - 1);
+            }
+        }
+    }
+
+    // Fully materializes every deferred decision node, then expands the whole tree. Used by the "expand
+    // all" button, where the user has explicitly asked to see everything.
+    private void ExpandEntireTree()
+    {
+        _treeView.BeginUpdate();
+        while (_lazyDecisions.Count > 0)
+        {
+            foreach (TreeNode node in _lazyDecisions.Keys.ToList())
+                MaterializeDecision(node);
+        }
+
+        _treeView.ExpandAll();
+        _treeView.EndUpdate();
+    }
+
+    // Recursively materializes all deferred decision nodes under (and including) the given node, so a
+    // subtree copy captures the full strategy rather than an unexpanded placeholder.
+    private void MaterializeSubtree(TreeNode node)
+    {
+        MaterializeDecision(node);
+        foreach (TreeNode child in node.Nodes)
+            MaterializeSubtree(child);
     }
 
     private void NavigateBack()
@@ -1582,6 +1711,7 @@ class MainForm : Form
         if (_treeView.SelectedNode is not { } node)
             return;
 
+        MaterializeSubtree(node);
         var builder = new System.Text.StringBuilder();
         AppendNodeSubtree(node, 0, builder);
         SetClipboardText(builder.ToString().TrimEnd());
