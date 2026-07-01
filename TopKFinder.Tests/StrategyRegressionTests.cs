@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Xunit;
 
@@ -165,6 +166,12 @@ public sealed class StrategyRegressionTests
             plan.SearchStatistics.CandidateGroupsEnumerated <= candidateGroupsCap,
             $"candidate groups enumerated regressed to {plan.SearchStatistics.CandidateGroupsEnumerated} (cap {candidateGroupsCap})");
     }
+}
+
+public sealed class DefaultIterativeDeepeningRegressionTests
+{
+    // Per-class copy of the shared regression timeout (see StrategyRegressionTests for rationale).
+    private static readonly TimeSpan RegressionTestTimeout = TimeSpan.FromSeconds(90);
 
     // Proves the iterative-deepening gate actually pays off: on a gated (5,5) case, forcing the ID
     // path must reach the SAME MaxStep optimum as the single-pass exact path while constructing
@@ -239,6 +246,12 @@ public sealed class StrategyRegressionTests
 
         Assert.Equal(plan.MaxStep, plan.SearchStatistics.RootProvenLowerBound);
     }
+}
+
+public sealed class DefaultLowerBoundRegressionTests
+{
+    // Per-class copy of the shared regression timeout (see StrategyRegressionTests for rationale).
+    private static readonly TimeSpan RegressionTestTimeout = TimeSpan.FromSeconds(90);
 
     // Across the progress snapshots of an iterative-deepening run, the proven lower bound rises
     // monotonically, never exceeds the true optimum (it is always a VALID lower bound), and the
@@ -775,6 +788,12 @@ public sealed class StrategyRegressionTests
 
         Assert.Equal(StrategyTestHelpers.NormalizeRenderedSnapshot(expected), excerpt);
     }
+}
+
+public sealed class CompactCrashRegressionTests
+{
+    // Per-class copy of the shared regression timeout (see StrategyRegressionTests for rationale).
+    private static readonly TimeSpan RegressionTestTimeout = TimeSpan.FromSeconds(90);
 
     // These exact inputs previously crashed compact mode: incomplete 1-WL group
     // de-duplication merged structurally distinct groups, dropped a uniquely-optimal
@@ -832,6 +851,12 @@ public sealed class StrategyRegressionTests
             compact.TotalBranchEdges <= baseline.TotalBranchEdges,
             $"compact total edges {compact.TotalBranchEdges} exceeded baseline {baseline.TotalBranchEdges}");
     }
+}
+
+public sealed class CompactWorkRegressionTests
+{
+    // Per-class copy of the shared regression timeout (see StrategyRegressionTests for rationale).
+    private static readonly TimeSpan RegressionTestTimeout = TimeSpan.FromSeconds(90);
 
     // P2.1 -- compact-phase work-counter monitor (deterministic time proxy for the compact pass).
     // The compact selection runs a SECOND DP (StrategyBuilder.Compact.cs) on top of phase 1 and is
@@ -958,6 +983,12 @@ public sealed class StrategyRegressionTests
             compact.SearchStatistics.SearchedStates <= searchedStateCap,
             $"compact searched states regressed to {compact.SearchStatistics.SearchedStates} (cap {searchedStateCap})");
     }
+}
+
+public sealed class DefaultCounterRegressionTests
+{
+    // Per-class copy of the shared regression timeout (see StrategyRegressionTests for rationale).
+    private static readonly TimeSpan RegressionTestTimeout = TimeSpan.FromSeconds(90);
 
     // Searched-state monitor for the default (fast) pass. Several tests above already cap
     // searched states for individual cases, but loosely; this consolidated theory pins the
@@ -1128,6 +1159,12 @@ public sealed class StrategyRegressionTests
         Assert.Equal(reduced.MaxStep, dualInput.MaxStep);
         Assert.Equal(reduced.TotalBranchEdges, dualInput.TotalBranchEdges);
     }
+}
+
+public sealed class DefaultCandidateAndDoomedTailRegressionTests
+{
+    // Per-class copy of the shared regression timeout (see StrategyRegressionTests for rationale).
+    private static readonly TimeSpan RegressionTestTimeout = TimeSpan.FromSeconds(90);
 
     // Candidate-group enumeration monitor for the default pass. CandidateGroupsEnumerated counts the
     // symmetry-class representatives canonicalized before cross-class de-duplication -- i.e. the
