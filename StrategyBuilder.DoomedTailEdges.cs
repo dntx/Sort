@@ -241,12 +241,19 @@ partial class StrategyBuilder
         return builder.ToString();
     }
 
-    private EquivalentOrderSummary BuildDoomedTailSummary(
+    private EquivalentOrderSummary? BuildDoomedTailSummary(
         ComparisonState state, GroupSymmetryInfo symmetryInfo, DoomedTailBucket bucket)
     {
         IReadOnlyList<int> items = bucket.Representative.Family.RepresentativeOrderItems;
         int prefixLength = bucket.PrefixLength;
         int count = bucket.TotalCount;
+
+        // A single ordering is not an equivalence class: there is nothing to fold, so attach no
+        // summary (matching BuildEquivalentOrderSummary's totalCount <= 1 -> null contract). This
+        // keeps the invariant "EquivalentOrders non-null => Count >= 2" and suppresses the redundant
+        // "equivalent forms: 1" / "pattern" lines for trivial doomed-tail edges.
+        if (count <= 1)
+            return null;
 
         // Assign A, B, C... to the symmetry classes with more than one member, in class order.
         var classLetters = new Dictionary<int, string>();

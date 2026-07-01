@@ -19,7 +19,12 @@ public class FeasibleCompactPlanTests
     [InlineData(9, 3, 3)]
     public void FeasibleCompactPlan_IsValidStrategy(int n, int m, int k)
     {
-        StrategyPlan plan = new StrategyBuilder(n, m, k).BuildFeasibleCompactPlan();
+        // Tightening runs unbounded since #153 (it relies on interactive Ctrl+C / GUI Stop to end),
+        // and it is not what this test validates, so disable it here to keep the large cases
+        // (25,5,5 etc.) fast. The tightening loop itself stays covered by the (12,4,4) *Infeasibility
+        // Fact tests below.
+        StrategyPlan plan = new StrategyBuilder(n, m, k) { EnableFeasibleTightening = false }
+            .BuildFeasibleCompactPlan();
 
         Assert.True(plan.IsFeasibleUpperBound);
         Assert.True(plan.MaxStep > 0, "feasible compact plan should take at least one comparison");
@@ -37,7 +42,8 @@ public class FeasibleCompactPlanTests
     [InlineData(12, 5, 5)]
     public void FeasibleCompactPlan_StepNeverExceedsFeasibleUpperBound(int n, int m, int k)
     {
-        var builder = new StrategyBuilder(n, m, k);
+        // Baseline (pre-tightening) step already witnesses step <= U; skip the unbounded tightening.
+        var builder = new StrategyBuilder(n, m, k) { EnableFeasibleTightening = false };
         int stepU = builder.BuildFeasiblePlan().MaxStep;
         int edgeStep = builder.BuildFeasibleCompactPlan().MaxStep;
 
@@ -55,7 +61,9 @@ public class FeasibleCompactPlanTests
     public void FeasibleCompactPlan_StepNeverBelowOptimum(int n, int m, int k)
     {
         int optimum = new StrategyBuilder(n, m, k).BuildDefaultPlan().MaxStep;
-        int edgeStep = new StrategyBuilder(n, m, k).BuildFeasibleCompactPlan().MaxStep;
+        // Baseline (pre-tightening) step is >= optimum too; skip the unbounded tightening.
+        int edgeStep = new StrategyBuilder(n, m, k) { EnableFeasibleTightening = false }
+            .BuildFeasibleCompactPlan().MaxStep;
 
         Assert.True(edgeStep >= optimum,
             $"feasible compact step {edgeStep} was below the true optimum {optimum}");
