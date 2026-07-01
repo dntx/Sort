@@ -17,7 +17,8 @@ class Program
         "Options:\n" +
         "  -h, --help      Show this help and exit.\n" +
         "  --mode <mode>   Search mode. exact (default) = exact + compact (proven optimal).\n" +
-        "                  greedy = feasible + compact (interruptible with Ctrl+C, not proven optimal).\n" +
+        "                  greedy = feasible + compact with tightening (interruptible with Ctrl+C, not proven optimal).\n" +
+        "                  three-phase = feasible + compact-for-step + compact-for-edge (experimental, no tightening).\n" +
         "\n" +
         "Arguments:\n" +
         "  n   total number of elements   (1 <= n <= 64)\n" +
@@ -33,7 +34,7 @@ class Program
         "  TopKFinder 9 3 3\n" +
         "  (interactive) run with no args, or pipe n, m, k on three stdin lines";
 
-    [STAThread]
+     [STAThread]
     static void Main(string[] args)
     {
         if (args.Length > 0)
@@ -41,6 +42,13 @@ class Program
             if (IsHelpRequested(args))
             {
                 Console.WriteLine(HelpText);
+                return;
+            }
+
+            // Special benchmark mode to compare architectures
+            if (args.Length > 0 && args[0] == "--benchmark-architectures")
+            {
+                CompareArchitectures.RunComparison();
                 return;
             }
 

@@ -14,6 +14,15 @@ partial class StrategyBuilder
     private bool _compactUsesFeasibleBudget;
     private int _compactStatesSolved;
 
+    // NEW (three-phase Phase 2): Min-steps compact DP variant
+    // Instead of minimizing edges given a step budget, this variant minimizes the worst-case
+    // steps by considering all feasible groups at each state.
+    private bool _useCompactSelectionMinSteps;
+    private bool _compactUsesFeasibleBudgetMinSteps;
+    private readonly Dictionary<(SearchStateKey Key, int Budget), int> _compactMinStepsMemo = new();
+    private readonly Dictionary<SearchStateKey, BestGroupPattern> _compactMinStepsGroupPatternCache = new();
+
+
     // Per-state cap on how many candidate groups the greedy edge phase (mode A) generates and
     // evaluates before committing. At large m a single state can have 1000+ distinct step-optimal
     // groups, and generating + orbit-deduping + FitChildren over all of them is what makes the edge
@@ -66,6 +75,8 @@ partial class StrategyBuilder
         _compactGroupPatternCache.Clear();
         _compactCostMemo.Clear();
         _compactRealStepsMemo.Clear();
+        _compactMinStepsGroupPatternCache.Clear();
+        _compactMinStepsMemo.Clear();
         _phase1bSolved = false;
         _compactRootCost = int.MaxValue;
     }
@@ -79,6 +90,10 @@ partial class StrategyBuilder
     // group; in exact mode the budget equals the state's opt so the key reduces to state-only.
     private int SolveCompactSelection(ComparisonState state, int remainingSlots, int feasibleBudget = int.MaxValue)
     {
+        // Route to min-steps DP variant if Phase 2 is active
+        if (_useCompactSelectionMinSteps)
+            return SolveCompactSelectionForMinSteps(state, remainingSlots, feasibleBudget);
+
         ThrowIfCancellationRequested();
         ulong ignoredFixedTopMask = 0;
         NormalizeState(state, ref ignoredFixedTopMask, ref remainingSlots);
@@ -393,4 +408,109 @@ partial class StrategyBuilder
 
         return count;
     }
+
+    // THREE-PHASE NEW: Compact selection DP that minimizes worst-case steps (not edges).
+    // This is used in Phase 2 of the three-phase architecture to find the group that achieves
+    // the best (fewest) steps at the current budget. The returned "cost" is actually the worst-case
+    // steps under this group, not edge count. After this DP selects the best-step group at each state,
+    // Phase 3 runs another compact pass to minimize edges at the determined step.
+    private int SolveCompactSelectionForMinSteps(ComparisonState state, int remainingSlots, int feasibleBudget = int.MaxValue)
+    {
+        ThrowIfCancellationRequested();
+        ulong ignoredFixedTopMask = 0;
+        NormalizeState(state, ref ignoredFixedTopMask, ref remainingSlots);
+
+        if (remainingSlots == 0)
+            return 0;
+        if (TryGetDeterminedTopSet(state, remainingSlots, out _))
+            return 0;
+        if (state.ActiveCount <= remainingSlots)
+            return 0;
+        if (state.ActiveCount <= _m)
+            return 0;
+
+        // Use a separate memo to avoid mixing min-edges results with min-steps
+        if (!_compactMinStepsMemo.TryGetValue((GetSearchStateKey(state, remainingSlots), feasibleBudget), out int cachedSteps))
+            cachedSteps = -1;
+        else
+            return cachedSteps;
+
+        var candidates = state.GetActiveItemsOrdered();
+        int groupSize = Math.Min(_m, candidates.Count);
+
+        List<(ComparisonState State, int RemainingSlots)>? GetFeasibleChildren(IReadOnlyList<int> group)
+        {
+            int branchBudget = feasibleBudget - 1;
+            bool rejected = false;
+            var children = new List<(ComparisonState State, int RemainingSlots)>();
+            OutcomeTraversalSummary traversal = VisitComparisonOutcomes(
+                state, fixedTopMask: 0, remainingSlots, group,
+                currentKey: GetSearchStateKey(state, remainingSlots), collectMergedBranches: false,
+                onUsefulOutcome: outcome =>
+                {
+                    if (GetMinWorstCaseLowerBound(outcome.NextState, outcome.NextRemainingSlots) > branchBudget)
+                    {
+                        rejected = true;
+                        return false;
+                    }
+                    children.Add((outcome.NextState, outcome.NextRemainingSlots));
+                    return true;
+                });
+            return rejected || !traversal.IsUseful ? null : children;
+        }
+
+        int bestChildMaxSteps = feasibleBudget;
+        List<int>? bestGroup = null;
+
+        foreach (var group in EnumerateDistinctGroups(state, candidates, groupSize, CompactGreedyCandidateCap))
+        {
+            ThrowIfCancellationRequested();
+            var children = GetFeasibleChildren(group);
+            if (children is null)
+                continue;
+
+            // For this group, compute the max steps among all children
+            int groupMaxSteps = 0;
+            bool feasible = true;
+            foreach (var (childState, childRemaining) in children)
+            {
+                int childSteps = SolveCompactSelectionForMinSteps(childState, childRemaining, feasibleBudget - 1);
+                if (childSteps >= feasibleBudget)
+                {
+                    feasible = false;
+                    break;
+                }
+                groupMaxSteps = Math.Max(groupMaxSteps, childSteps);
+            }
+
+            if (!feasible)
+                continue;
+
+            groupMaxSteps += 1;  // Add this level's step
+
+            if (groupMaxSteps < bestChildMaxSteps)
+            {
+                bestChildMaxSteps = groupMaxSteps;
+                bestGroup = new List<int>(group);
+            }
+        }
+
+        if (bestGroup is null)
+            return feasibleBudget;  // No feasible group found
+
+        // Memoize and cache the group selection (same pattern as SolveCompactSelection)
+        SearchStateKey key = GetSearchStateKey(state, remainingSlots);
+        _compactMinStepsGroupPatternCache[key] = MakeGroupPattern(state, bestGroup);
+        _compactMinStepsMemo[(key, feasibleBudget)] = bestChildMaxSteps;
+
+        return bestChildMaxSteps;
+    }
+
+    // Caches for the min-steps DP
+    private void ResetMinStepsSelectionState()
+    {
+        _compactMinStepsMemo.Clear();
+        _compactMinStepsGroupPatternCache.Clear();
+    }
 }
+

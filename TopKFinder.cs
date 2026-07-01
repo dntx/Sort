@@ -134,6 +134,113 @@ partial class StrategyBuilder
         return BuildPlan(useCompactSelection: true, useFeasibleBudget: false);
     }
 
+    // Three-phase architecture (PRODUCTION VERSION):
+    // Phase 1: Feasible (greedy) - finds any feasible solution with steps U
+    // Phase 2: CompactForMinSteps - DP with min-steps objective (not min-edges)
+    //          This single-pass DP directly finds the step-minimizing groups
+    // Phase 3: CompactForEdges - standard DP with min-edges objective at the determined step
+    public StrategyPlan BuildThreePhasePlan(Action<GreedyEdgeStage>? onStage = null)
+    {
+        _progressScope = _reportCombinedRunProgress
+            ? ProgressScope.CompactFeasibleInCombinedRun
+            : ProgressScope.DefaultStandalone;
+
+        // Phase 1: Build greedy feasible plan
+        StrategyPlan phase1 = BuildPlan(useCompactSelection: false, useFeasibleBudget: false);
+        onStage?.Invoke(new GreedyEdgeStage("greedy", phase1, phase1.Elapsed));
+
+        // Phase 2: Compact with min-steps objective (new DP: direct step minimization)
+        StrategyPlan phase2 = BuildPlanMinSteps(phase1.MaxStep);
+        onStage?.Invoke(new GreedyEdgeStage($"compact (for step→{phase2.MaxStep})", phase2, phase2.Elapsed));
+
+        // Phase 3: Compact with min-edges objective at the step determined by Phase 2
+        ResetPerBuildTransientState();
+        ResetCompactSelectionState();
+        var phase3Stopwatch = Stopwatch.StartNew();
+        _compactUsesFeasibleBudget = true;
+        _feasibleRootBudgetActive = phase2.MaxStep;
+        
+        try
+        {
+            EnsureCompactSelectionSolved();
+            if (_compactRootCost != int.MaxValue)
+            {
+                _useCompactSelection = true;
+                var root = BuildState(new ComparisonState(_n), 0, _k, 1);
+                phase3Stopwatch.Stop();
+                
+                var phase3 = new StrategyPlan(
+                    _n, _m, _requestedK, _k, root, phase3Stopwatch.Elapsed, CreateSearchStatistics(),
+                    isFeasibleUpperBound: true);
+                
+                onStage?.Invoke(new GreedyEdgeStage($"compact (for edge@S={phase2.MaxStep})", phase3, phase3.Elapsed));
+                return phase3;
+            }
+        }
+        finally
+        {
+            _feasibleRootBudgetActive = -1;
+        }
+
+        return phase2;
+    }
+
+    // New DP: Compact pass targeting min-steps instead of min-edges
+    private StrategyPlan BuildPlanMinSteps(int maxAllowedSteps)
+    {
+        ResetPerBuildTransientState();
+        ResetCompactSelectionState();
+        
+        _compactUsesFeasibleBudgetMinSteps = true;
+        _useCompactSelectionMinSteps = true;
+        _feasibleRootBudgetActive = maxAllowedSteps;
+        
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            var root = BuildState(new ComparisonState(_n), 0, _k, 1);
+            stopwatch.Stop();
+            
+            return new StrategyPlan(
+                _n, _m, _requestedK, _k, root, stopwatch.Elapsed, CreateSearchStatistics(),
+                isFeasibleUpperBound: true);
+        }
+        finally
+        {
+            _feasibleRootBudgetActive = -1;
+            _compactUsesFeasibleBudgetMinSteps = false;
+            _useCompactSelectionMinSteps = false;
+        }
+    }
+
+    // Runs compact selection at a fixed step budget to optimize edges
+    private StrategyPlan ProbeCompactAtFixedStep(int fixedStep)
+    {
+        ResetPerBuildTransientState();
+        ResetCompactSelectionState();
+
+        var stopwatch = Stopwatch.StartNew();
+        _compactUsesFeasibleBudget = true;
+        _feasibleRootBudgetActive = fixedStep;
+        try
+        {
+            EnsureCompactSelectionSolved();
+            if (_compactRootCost == int.MaxValue)
+                return null;
+
+            _useCompactSelection = true;
+            var root = BuildState(new ComparisonState(_n), 0, _k, 1);
+            stopwatch.Stop();
+            return new StrategyPlan(
+                _n, _m, _requestedK, _k, root, stopwatch.Elapsed, CreateSearchStatistics(),
+                isFeasibleUpperBound: true);
+        }
+        finally
+        {
+            _feasibleRootBudgetActive = -1;
+        }
+    }
+
     // Feasible+compact (greedy mode edge phase): the step ceiling is the constructive feasible upper
     // bound U instead of the proven optimum, so the exact search is never run. The compact DP minimizes
     // displayed edges under U and reports the actual MaxStep realized (often below U via free pickup).
@@ -373,7 +480,11 @@ partial class StrategyBuilder
         // chosen comparison-group pattern, so phase 2 always finds a populated entry here.
         // The compact PoC overrides the choice with its size-minimizing pattern when enabled.
         BestGroupPattern cachedPattern;
-        if (_useCompactSelection && _compactGroupPatternCache.TryGetValue(currentKey, out BestGroupPattern compactPattern))
+        if (_useCompactSelectionMinSteps && _compactMinStepsGroupPatternCache.TryGetValue(currentKey, out BestGroupPattern minStepsPattern))
+        {
+            cachedPattern = minStepsPattern;
+        }
+        else if (_useCompactSelection && _compactGroupPatternCache.TryGetValue(currentKey, out BestGroupPattern compactPattern))
         {
             cachedPattern = compactPattern;
         }
@@ -1121,7 +1232,6 @@ partial class StrategyBuilder
         _rootProvenLowerBound = provenLowerBound;
         ReportProgress(force: true);
     }
-
     private void ThrowIfCancellationRequested()
     {
         _cancellationToken.ThrowIfCancellationRequested();
