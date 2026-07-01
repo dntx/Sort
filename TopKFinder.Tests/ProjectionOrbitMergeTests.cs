@@ -85,4 +85,28 @@ public sealed class ProjectionOrbitMergeTests
         // full poset). The projection pass must leave it exactly as a brace, never claim a drop.
         Assert.Contains("{#1, #5} > #2", onText);
     }
+
+    [Fact]
+    public void N6M3K2_LeafBlockTailedPartnerFoldsShapeA()
+    {
+        (StrategyPlan off, string offText) = Build(6, 3, 2, projectionMerging: false);
+        (StrategyPlan on, string onText) = Build(6, 3, 2, projectionMerging: true);
+
+        // Shape A is the mirror of the canonical quotient: the two-member symmetric block is a pair
+        // of leaves {#4, #5}, and the odd partner #1 is the one carrying the doomed tail. Folding the
+        // {A2, #1} brace saves an edge without changing the optimal depth.
+        Assert.Equal(off.MaxStep, on.MaxStep);
+        Assert.True(
+            on.TotalBranchEdges < off.TotalBranchEdges,
+            $"expected shape-A merging to reduce branch edges; off={off.TotalBranchEdges} on={on.TotalBranchEdges}");
+
+        // The block is printed as bare leaves and the covariant drop targets the partner's tail.
+        Assert.Contains("equivalent forms: 4 = 2! x 2", onText);
+        Assert.Contains("pattern: A1 > {A2, #1} ; A = {#4, #5} ; drop tail(#1)", onText);
+
+        // The default (toggle-off) render keeps the two families split and never invents the quotient.
+        Assert.Contains("pattern: A1 > #1 > A2 ; A = {#4, #5}", offText);
+        Assert.Contains("pattern: {#4, #5} > #1", offText);
+        Assert.DoesNotContain("A1 > {A2", offText);
+    }
 }

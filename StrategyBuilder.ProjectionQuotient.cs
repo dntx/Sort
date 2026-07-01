@@ -134,17 +134,21 @@ partial class StrategyBuilder
     }
 
     // Renders a multi-family projection component in the structural quotient notation. Supported
-    // shape (this is intentionally conservative -- any unsupported component returns null and is left
+    // shapes (this is intentionally conservative -- any unsupported component returns null and is left
     // un-merged): the orderings range over exactly three heads forming a two-member symmetric block
-    // (each head carrying a non-empty active tail chain) plus one partner leaf, and the component is
-    // exactly the set of orderings in which a block member is the unique maximum. That orbit folds to
+    // (a genuine parent-automorphism pair) plus one partner, and the component is exactly the set of
+    // orderings in which a block member is the unique maximum. Exactly one of {block loser A2, partner}
+    // carries the doomed active tail, giving two mirror sub-shapes that fold to
     //
-    //     pattern: A1 > {A2, #p} ; A = {<chain b1>, <chain b2>} ; drop tail(A2)
+    //     canonical: A1 > {A2, #p} ; A = {<chain b1>, <chain b2>} ; drop tail(A2)
+    //                (block members carry the chains, partner is a leaf; A2's tail is dropped)
+    //     shape A:   A1 > {A2, #p} ; A = {#b1, #b2} ; drop tail(#p)
+    //                (block members are leaves, partner carries the chain; the partner's tail is dropped)
     //
-    // A1/A2 are the block's winner/loser roles; {A2, #p} is the post-projection brace; "drop tail(A2)"
-    // is the structural (covariant) drop of A2's tail. Honesty of the folded representative subtree is
-    // separately guaranteed by ComponentIsSingleGlobalDropOrbit; this method only validates that the
-    // printed structure faithfully describes the component.
+    // A1/A2 are the block's winner/loser roles; {A2, #p} is the post-projection brace; "drop tail(...)"
+    // is the structural (covariant) drop of the doomed tail. Honesty of the folded representative
+    // subtree is separately guaranteed by ComponentIsSingleGlobalDropOrbit; this method only validates
+    // that the printed structure faithfully describes the component.
     private EquivalentOrderSummary? BuildProjectionQuotientSummary(
         ComparisonState state, List<MergedFamilyOutcome> line, MergedFamilyOutcome representative)
     {
@@ -160,20 +164,38 @@ partial class StrategyBuilder
         }
 
         ulong active = state.ActiveMask;
-        var blockHeads = new List<int>();
-        int partner = -1;
+        var tailedHeads = new List<int>();
+        var leafHeads = new List<int>();
         foreach (int head in headSet)
         {
             if ((state.GetDescendantMask(head) & active) != 0)
-                blockHeads.Add(head);
-            else if (partner < 0)
-                partner = head;
+                tailedHeads.Add(head);
             else
-                return null;
+                leafHeads.Add(head);
         }
 
-        if (blockHeads.Count != 2 || partner < 0)
+        // Two mirror shapes: the symmetric block is whichever side has two members (both tailed for the
+        // canonical shape, both leaves for shape A); the odd head out is the partner. Exactly one of
+        // {A2, partner} therefore carries a tail, and that tail is the covariant drop.
+        List<int> blockHeads;
+        int partner;
+        bool blockCarriesTail;
+        if (tailedHeads.Count == 2 && leafHeads.Count == 1)
+        {
+            blockHeads = tailedHeads;
+            partner = leafHeads[0];
+            blockCarriesTail = true;
+        }
+        else if (leafHeads.Count == 2 && tailedHeads.Count == 1)
+        {
+            blockHeads = leafHeads;
+            partner = tailedHeads[0];
+            blockCarriesTail = false;
+        }
+        else
+        {
             return null;
+        }
 
         blockHeads.Sort();
         int b1 = blockHeads[0];
@@ -183,14 +205,38 @@ partial class StrategyBuilder
         if (!state.TryMapOrderByAutomorphism(0, new[] { b1 }, new[] { b2 }))
             return null;
 
-        string? chain1 = FormatActiveChain(state, b1);
-        string? chain2 = FormatActiveChain(state, b2);
-        if (chain1 is null || chain2 is null)
+        // The printed quotient describes A1, A2 and the partner as three DISJOINT members, each with
+        // its own active down-chain. If any two of their active down-sets overlapped, the
+        // "A = {chain1, chain2}" / "{A2, #p}" structure would list a shared item twice, so the printed
+        // shape would no longer faithfully describe the component -- refuse to fold (fall back to split).
+        ulong ChainMask(int head) => (state.GetDescendantMask(head) & active) | (1UL << head);
+        ulong maskB1 = ChainMask(b1);
+        ulong maskB2 = ChainMask(b2);
+        ulong maskPartner = ChainMask(partner);
+        if ((maskB1 & maskB2) != 0 || (maskB1 & maskPartner) != 0 || (maskB2 & maskPartner) != 0)
             return null;
+
+        // The doomed tail (block loser's for the canonical shape, partner's for shape A) must be a
+        // single total chain so the "tail(...)" notation is unambiguous.
+        string legend;
+        if (blockCarriesTail)
+        {
+            string? chain1 = FormatActiveChain(state, b1);
+            string? chain2 = FormatActiveChain(state, b2);
+            if (chain1 is null || chain2 is null)
+                return null;
+            legend = $"A = {{{chain1}, {chain2}}} ; drop tail(A2)";
+        }
+        else
+        {
+            if (FormatActiveChain(state, partner) is null)
+                return null;
+            legend = $"A = {{#{b1 + 1}, #{b2 + 1}}} ; drop tail(#{partner + 1})";
+        }
 
         // The component must be exactly { orderings of the three heads with a block member on top }.
         // Each family's representative must lead with a block head; parent symmetry then keeps every
-        // expanded ordering block-led, and the partner leaf can never reach rank 1 within the bucket.
+        // expanded ordering block-led, and the partner can never reach rank 1 within the bucket.
         int totalCount = 0;
         foreach (MergedFamilyOutcome member in line)
         {
@@ -209,7 +255,6 @@ partial class StrategyBuilder
             return null;
 
         string patternText = $"A1 > {{A2, #{partner + 1}}}";
-        string legend = $"A = {{{chain1}, {chain2}}} ; drop tail(A2)";
         return new EquivalentOrderSummary(totalCount, patternText, "2! x 2", legend);
     }
 

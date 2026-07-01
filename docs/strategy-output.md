@@ -69,7 +69,7 @@ pattern: {PatternText} ; {Legend}                  // FormatEquivalentPatternLin
 | `(#a) ↔ (#b)` | **relabel 镜像**：`#a` 与 `#b` 互为父状态自同构（或投影后自同构）的镜像，可整体互换 |
 | `drop {...}` | **投影合并披露**：这条折叠边的代表与其镜像「共同注定出局」的元素集——丢掉它们后两者才等价（§4.2） |
 | `A1 > {A2, #7}` | **结构商记号**：投影后对称类成员 `A2` 与单叶 `#7` 落入同一 brace（多族投影合并的代表形状） |
-| `drop tail(A2)` | 结构商里的**协变 drop**：每个折叠成员各自丢掉其 `A2` 子块的 doomed 尾部后才互换 |
+| `drop tail(A2)` / `drop tail(#p)` | 结构商里的**协变 drop**：折叠成员各自丢掉那个带 doomed 尾部的成员——canonical 形态里是块败者 `A2`，其镜像（形态 A）里是带尾的 partner `#p`——之后才互换 |
 | `N!` / `c!` | 阶乘形式的计数因子（一条长 `c` 的链有 `c!` 种线性扩展） |
 | `... sym x ... tail` | doomed-tail 计数 = 对称因子 × 尾部因子 |
 | `p! x q`（投影商计数） | 投影商计数 = 块内排列 `p!` × 投影镜像数 `q`（如 `4 = 2! x 2`） |
@@ -164,6 +164,18 @@ pattern: #1 > #11 > ... > #5 ; (#1 ~ #10) ↔ (#11 ~ #20)
   其中块 `A` 携带各自的尾链，`{A2, #7}` 是投影后落进同一 brace 的成员，`drop tail(A2)` 是协变的
   结构性 drop（不是写死的元素集）。通用 pattern 引擎无法直接吐出 `{A2, #7}`：投影前 `#7` 是自由叶、
   `#4` 是链头，分属不同对称类，所以必须用这个专用结构渲染器。
+
+  **镜像形态（形态 A）**：对称块由**父态自同构对**决定，与「谁带尾巴」无关——canonical 是「块 = 两个带尾链的头 + partner 是单叶」，
+  形态 A 则是它的镜像「块 = 两个对称**叶子** + partner 是那个带 doomed 尾巴的头」。此时块成员没有尾链、
+  按裸标签列出，协变 drop 指向 partner 的尾部，例如 6,3,2 的 S2：
+
+  ```
+  equivalent forms: 4 = 2! x 2
+  pattern: A1 > {A2, #1} ; A = {#4, #5} ; drop tail(#1)
+  ```
+
+  `BuildProjectionQuotientSummary` 用「哪一侧（带尾 vs 叶子）恰好有两个成员」来判定块，落单的头即 partner；
+  `{A2, partner}` 里恰有一个带 doomed 尾部，那就是被 drop 的对象。
 
 **诚实性（两道闸）**：
 1. 全局-drop 闸 `ComponentIsSingleGlobalDropOrbit`（`StrategyBuilder.ProjectionPairingProbe.cs`）证明分量内
@@ -337,7 +349,8 @@ doomed-tail 边的计数被分解为**对称因子 × 尾部因子**：
     兄弟边仍保留 `{...}` + 图例。
   - 多个 `..._RenderedTextMatchesSnapshot` 快照对小算例的整段文本做逐字节比对。
 - `TopKFinder.Tests/ProjectionOrbitMergeTests.cs`：钉 §4.2 投影合并的两种形态——单序合并的
-  `drop {...}` 披露（9,4,4 / 8,3,3）与多族结构商（7,3,2：`A1 > {A2, #7} ; ... ; drop tail(A2)`），
+  `drop {...}` 披露（9,4,4 / 8,3,3）与多族结构商（canonical 7,3,2：`A1 > {A2, #7} ; ... ; drop tail(A2)`；
+  镜像形态 A 6,3,2：`A1 > {A2, #1} ; A = {#4, #5} ; drop tail(#1)`），
   并断言 `MaxStep` 不变、边数下降、且干净对称 brace（`{#1, #5} > #2`）不被误改。
 - `TopKFinder.Tests/ProjectionPairingProbeTests.cs`：测量型探针（`EnableProjectionPairingProbe`，不影响渲染），
   扫描小算例量化合并节省并断言 0 诚实性泄漏。
