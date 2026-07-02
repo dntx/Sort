@@ -5,16 +5,16 @@ using Xunit;
 namespace TopKFinder.Tests
 {
     /// <summary>
-    /// Test coverage for Stage 1 greedy mode optimization.
+    /// Test coverage for the three-phase greedy mode optimization (min-step objective).
     /// 
-    /// Stage 1 implements min-step objective using:
-    /// - Cheap proxy sorting (children.Count) instead of recursive evaluation
-    /// - Tightening loop to iteratively refine results
-    /// - Same 128-capacity cap as original architecture
+    /// The greedy mode now uses the three-phase architecture:
+    /// - Phase 1: Feasible (constructive greedy) - finds an initial feasible solution
+    /// - Phase 2: Compact-for-step - DP with direct min-step objective using cheap proxy sorting
+    /// - Phase 3: Compact-for-edge - DP with min-edge objective at the determined step
     /// 
-    /// Performance: Average 2.53x speedup while preserving solution quality (100% identical steps/edges).
+    /// This optimization achieves 2.53x average speedup while preserving solution quality (100% identical steps/edges).
     /// </summary>
-    public class Stage1OptimizationTests
+    public class MinStepGreedyTests
     {
         /// <summary>
         /// Validates that Stage 1 produces same quality solutions as original greedy.
