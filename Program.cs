@@ -34,7 +34,7 @@ class Program
         "  TopKFinder 9 3 3\n" +
         "  (interactive) run with no args, or pipe n, m, k on three stdin lines";
 
-     [STAThread]
+    [STAThread]
     static void Main(string[] args)
     {
         if (args.Length > 0)

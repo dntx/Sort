@@ -214,7 +214,7 @@ partial class StrategyBuilder
     }
 
     // Runs compact selection at a fixed step budget to optimize edges
-    private StrategyPlan ProbeCompactAtFixedStep(int fixedStep)
+    private StrategyPlan? ProbeCompactAtFixedStep(int fixedStep)
     {
         ResetPerBuildTransientState();
         ResetCompactSelectionState();

@@ -340,7 +340,11 @@ partial class StrategyBuilder
         }
         
         // Sort candidates by immediate FitChildren count as cheap proxy for tree quality
-        fits.Sort((a, b) => a.Children.Count.CompareTo(b.Children.Count));
+        fits.Sort((a, b) => {
+            int aCount = a.Children?.Count ?? 0;
+            int bCount = b.Children?.Count ?? 0;
+            return aCount.CompareTo(bCount);
+        });
 
         foreach (var (group, children) in fits)
         {
