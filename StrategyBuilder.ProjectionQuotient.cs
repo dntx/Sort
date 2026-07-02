@@ -163,6 +163,21 @@ partial class StrategyBuilder
                 return null;
         }
 
+        // Two anchoring orientations, mirror images of each other:
+        //   top-anchored    -- a block member is the unique MAXIMUM  (canonical + shape A)
+        //   bottom-anchored -- a block member is the unique MINIMUM   (shape B)
+        return TryTopAnchoredQuotient(state, line, repOrder, headSet)
+            ?? TryBottomAnchoredQuotient(state, line, repOrder, headSet);
+    }
+
+    // Top-anchored quotient: the three heads form a two-member symmetric block plus a partner, and the
+    // component is exactly { orderings with a block member on top }. Two sub-shapes, distinguished by
+    // which side has two members:
+    //   canonical: block = the two tailed heads, partner = leaf   -> A = {chain1, chain2} ; drop tail(A2)
+    //   shape A:   block = the two leaf heads,   partner = tailed  -> A = {#b1, #b2}       ; drop tail(#p)
+    private EquivalentOrderSummary? TryTopAnchoredQuotient(
+        ComparisonState state, List<MergedFamilyOutcome> line, IReadOnlyList<int> repOrder, HashSet<int> headSet)
+    {
         ulong active = state.ActiveMask;
         var tailedHeads = new List<int>();
         var leafHeads = new List<int>();
@@ -174,9 +189,6 @@ partial class StrategyBuilder
                 leafHeads.Add(head);
         }
 
-        // Two mirror shapes: the symmetric block is whichever side has two members (both tailed for the
-        // canonical shape, both leaves for shape A); the odd head out is the partner. Exactly one of
-        // {A2, partner} therefore carries a tail, and that tail is the covariant drop.
         List<int> blockHeads;
         int partner;
         bool blockCarriesTail;
@@ -255,6 +267,85 @@ partial class StrategyBuilder
             return null;
 
         string patternText = $"A1 > {{A2, #{partner + 1}}}";
+        return new EquivalentOrderSummary(totalCount, patternText, "2! x 2", legend);
+    }
+
+    // Bottom-anchored quotient (shape B): the mirror of the top-anchored case. The three heads form a
+    // two-member symmetric block A = {b1, b2} plus a partner, and the component is exactly { orderings
+    // with a block member as the unique MINIMUM }. Because the block loser A2 is the eliminated minimum,
+    // its WHOLE chain is the covariant drop (not just its tail):
+    //     {A1, #p} > A2 ; A = {chain(b1), chain(b2)} ; drop chain(A2)
+    // The surviving block member A1 and the partner become interchangeable exactly once A2's chain is
+    // dropped; that projection equivalence is separately certified by ComponentIsSingleGlobalDropOrbit.
+    private EquivalentOrderSummary? TryBottomAnchoredQuotient(
+        ComparisonState state, List<MergedFamilyOutcome> line, IReadOnlyList<int> repOrder, HashSet<int> headSet)
+    {
+        ulong active = state.ActiveMask;
+
+        // The block is the unique parent-automorphism pair among the three heads; the odd head is the
+        // partner. (In shape B every head carries a chain, so the tailed/leaf split cannot pick it out.)
+        var heads = headSet.ToList();
+        heads.Sort();
+        int b1 = -1;
+        int b2 = -1;
+        int symmetricPairs = 0;
+        for (int i = 0; i < heads.Count; i++)
+        {
+            for (int j = i + 1; j < heads.Count; j++)
+            {
+                if (state.TryMapOrderByAutomorphism(0, new[] { heads[i] }, new[] { heads[j] }))
+                {
+                    symmetricPairs++;
+                    b1 = heads[i];
+                    b2 = heads[j];
+                }
+            }
+        }
+        if (symmetricPairs != 1)
+            return null;
+        int partner = heads.Single(h => h != b1 && h != b2);
+
+        // Every family representative must end with a block head (the partner is never the minimum), and
+        // the component must be the full 4-ordering orbit.
+        int totalCount = 0;
+        foreach (MergedFamilyOutcome member in line)
+        {
+            IReadOnlyList<int> order = member.Family.RepresentativeOrderItems;
+            int last = order[order.Count - 1];
+            if (last != b1 && last != b2)
+                return null;
+            totalCount += member.Family.Count;
+        }
+        if (totalCount != 4)
+            return null;
+
+        int repLast = repOrder[repOrder.Count - 1];
+        if (repLast != b1 && repLast != b2)
+            return null;
+
+        // Each head owns a single total active chain, and the three chains must be disjoint so
+        // "A = {chain(b1), chain(b2)}" plus the partner name three separate subtrees.
+        string? chain1 = FormatActiveChain(state, b1);
+        string? chain2 = FormatActiveChain(state, b2);
+        if (chain1 is null || chain2 is null || FormatActiveChain(state, partner) is null)
+            return null;
+
+        ulong ChainMask(int head) => (state.GetDescendantMask(head) & active) | (1UL << head);
+        if ((ChainMask(b1) & ChainMask(b2)) != 0
+            || (ChainMask(b1) & ChainMask(partner)) != 0
+            || (ChainMask(b2) & ChainMask(partner)) != 0)
+            return null;
+
+        // The covariant drop must be exactly the eliminated minimum's whole chain: the global common
+        // doomed set has to equal the chain of the block member at the bottom of the representative (A2).
+        ulong globalDrop = ~0UL;
+        foreach (MergedFamilyOutcome member in line)
+            globalDrop &= EliminatedMask(state, member);
+        if (globalDrop != ChainMask(repLast))
+            return null;
+
+        string patternText = $"{{A1, #{partner + 1}}} > A2";
+        string legend = $"A = {{{chain1}, {chain2}}} ; drop chain(A2)";
         return new EquivalentOrderSummary(totalCount, patternText, "2! x 2", legend);
     }
 
