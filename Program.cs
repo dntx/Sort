@@ -17,7 +17,7 @@ class Program
         "Options:\n" +
         "  -h, --help      Show this help and exit.\n" +
         "  --mode <mode>   Search mode. exact (default) = exact + compact (proven optimal).\n" +
-        "                  greedy = three-phase architecture: feasible + compact-for-step + compact-for-edge (interruptible with Ctrl+C).\n" +
+        "                  greedy = feasible bound, then min-step tightening, then one min-edge pass (interruptible with Ctrl+C).\n" +
         "\n" +
         "Arguments:\n" +
         "  n   total number of elements   (1 <= n <= 64)\n" +

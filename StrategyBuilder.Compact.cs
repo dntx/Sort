@@ -12,19 +12,13 @@ partial class StrategyBuilder
     // rule shrinks the trees.
     private bool _useCompactSelection;
     private bool _compactUsesFeasibleBudget;
+    // When true, the feasible-budget compact solve only proves feasibility at the threaded step
+    // ceiling (children.Count-proxy sort is kept -- it is load-bearing for feasibility at tight
+    // budgets -- but the heavy CountDisplayBranches edge counting is skipped and deferred to a single
+    // final min-edge pass). Drives the greedy-mode Phase A feasibility-only tightening; Phase B clears
+    // it to run one real min-edge pass at the determined step.
+    private bool _compactFeasibilityOnly;
     private int _compactStatesSolved;
-
-    // NEW (three-phase Phase 2): Min-steps compact DP variant
-    // Instead of minimizing edges given a step budget, this variant minimizes the worst-case
-    // steps by considering all feasible groups at each state.
-    // 
-    // Note on recursion depth: The recursion is bounded by feasibleBudget parameter which decrements
-    // by 1 at each level. Since feasibleBudget starts at the current best step count (typically 5-10),
-    // stack depth is limited to that value. This is not a stack overflow risk in practice. The base
-    // cases (line 429-436) ensure the recursion terminates at feasibility boundaries.
-    private bool _useCompactSelectionMinSteps;
-    private readonly Dictionary<(SearchStateKey Key, int Budget), int> _compactMinStepsMemo = new();
-    private readonly Dictionary<SearchStateKey, BestGroupPattern> _compactMinStepsGroupPatternCache = new();
 
 
     // Per-state cap on how many candidate groups the greedy edge phase (mode A) generates and
@@ -49,7 +43,7 @@ partial class StrategyBuilder
     private bool _compactEnumerationCapped;
 
     // Snapshot of _compactEnumerationCapped taken at the moment a feasible-compact probe concluded
-    // infeasible (root cost == sentinel), so TightenFeasibleCompact can tell a proven-infeasible ceiling
+    // infeasible (root cost == sentinel), so the tightening loop can tell a proven-infeasible ceiling
     // (complete search) from a merely-incomplete one (cap truncated some state's enumeration).
     private bool _lastProbeEnumerationCapped;
     private readonly Dictionary<SearchStateKey, BestGroupPattern> _compactGroupPatternCache = new();
@@ -76,17 +70,12 @@ partial class StrategyBuilder
 
     // Clears the per-budget compact caches so a tightening retry re-solves from scratch at the new
     // (tighter) ceiling. The cross-phase step budget/estimate fields are intentionally left untouched.
-    // This also clears the min-steps DP caches (Phase 2 new variant), ensuring subsequent phases
-    // start with clean state. Cache clearing is performed here rather than separately
-    // because both standard and min-steps modes use the same phase-transition points and need consistent
-    // reset behavior.
+    // This resets the compact selection caches, ensuring subsequent phases start with clean state.
     private void ResetCompactSelectionState()
     {
         _compactGroupPatternCache.Clear();
         _compactCostMemo.Clear();
         _compactRealStepsMemo.Clear();
-        _compactMinStepsGroupPatternCache.Clear();
-        _compactMinStepsMemo.Clear();
         _phase1bSolved = false;
         _compactRootCost = int.MaxValue;
     }
@@ -100,10 +89,6 @@ partial class StrategyBuilder
     // group; in exact mode the budget equals the state's opt so the key reduces to state-only.
     private int SolveCompactSelection(ComparisonState state, int remainingSlots, int feasibleBudget = int.MaxValue)
     {
-        // Route to min-steps DP variant if Phase 2 is active
-        if (_useCompactSelectionMinSteps)
-            return SolveCompactSelectionForMinSteps(state, remainingSlots, feasibleBudget);
-
         ThrowIfCancellationRequested();
         ulong ignoredFixedTopMask = 0;
         NormalizeState(state, ref ignoredFixedTopMask, ref remainingSlots);
@@ -143,7 +128,9 @@ partial class StrategyBuilder
         // once, so the whole pass stays linear in reachable states like the feasible phase. Edge count
         // is a fast next-best, not the proven minimum.
         if (_compactUsesFeasibleBudget)
-            return SolveCompactSelectionGreedy(state, remainingSlots, optimalSteps, key, memoKey);
+            return _compactFeasibilityOnly
+                ? SolveCompactSelectionFeasibleOnly(state, remainingSlots, optimalSteps, key, memoKey)
+                : SolveCompactSelectionGreedy(state, remainingSlots, optimalSteps, key, memoKey);
 
         var candidates = state.GetActiveItemsOrdered();
         int groupSize = Math.Min(_m, candidates.Count);
@@ -360,7 +347,7 @@ partial class StrategyBuilder
 
         foreach (var (group, children) in fits)
         {
-            int maxChildSteps = 0;
+            int branchCostSum = 0;
             bool solvable = true;
             foreach (var (childState, childRemaining) in children)
             {
@@ -370,15 +357,108 @@ partial class StrategyBuilder
                     solvable = false;
                     break;
                 }
-                // Extract the actual steps from the child (not the edge count)
-                int childRealSteps = GetCompactRealSteps(childState, childRemaining);
-                maxChildSteps = Math.Max(maxChildSteps, childRealSteps);
+                branchCostSum += childCost;
             }
             if (!solvable)
                 continue;
 
             _compactGroupPatternCache[key] = MakeGroupPattern(state, group);
-            int cost = 1 + maxChildSteps;  // Return actual steps, not edge count
+            int cost = CountDisplayBranches(state, remainingSlots, group) + branchCostSum;
+            _compactCostMemo[memoKey] = cost;
+
+            // Track the realized worst-case depth separately from the edge cost so the plan's MaxStep
+            // can drop below the threaded budget when the chosen groups happen to resolve faster.
+            int realSteps = 0;
+            foreach (var (childState, childRemaining) in children)
+                realSteps = Math.Max(realSteps, GetCompactRealSteps(childState, childRemaining));
+            _compactRealStepsMemo[key] = 1 + realSteps;
+            return cost;
+        }
+
+        return int.MaxValue;
+    }
+
+    // Feasibility-only variant of SolveCompactSelectionGreedy. Proves a state is solvable within the
+    // threaded step ceiling using the first solvable group in children-count-proxy order, and returns
+    // as soon as one is found. It mirrors the min-edge greedy's candidate gathering and children.Count
+    // sort (that ordering is load-bearing for feasibility at tight budgets, not just an edge
+    // optimization), but DOES NOT call the heavy CountDisplayBranches edge counter -- all edge work is
+    // deferred to a single final min-edge pass at the determined step. It still caches the chosen group
+    // pattern (so BuildState can materialize) and the realized step count (so the plan's MaxStep is
+    // correct). Returns 1 + maxChildRealSteps as a finite "cost" (callers only compare against
+    // int.MaxValue), or int.MaxValue if no group fits the ceiling.
+    private int SolveCompactSelectionFeasibleOnly(
+        ComparisonState state, int remainingSlots, int budget, SearchStateKey key, (SearchStateKey, int) memoKey)
+    {
+        var candidates = state.GetActiveItemsOrdered();
+        int groupSize = Math.Min(_m, candidates.Count);
+        int branchBudget = budget - 1;
+
+        List<(ComparisonState State, int RemainingSlots)>? FitChildren(IReadOnlyList<int> group)
+        {
+            bool rejected = false;
+            var children = new List<(ComparisonState State, int RemainingSlots)>();
+            OutcomeTraversalSummary traversal = VisitComparisonOutcomes(
+                state, fixedTopMask: 0, remainingSlots, group, currentKey: key, collectMergedBranches: false,
+                onUsefulOutcome: outcome =>
+                {
+                    if (GetMinWorstCaseLowerBound(outcome.NextState, outcome.NextRemainingSlots) > branchBudget)
+                    {
+                        rejected = true;
+                        return false;
+                    }
+                    children.Add((outcome.NextState, outcome.NextRemainingSlots));
+                    return true;
+                });
+            return rejected || !traversal.IsUseful ? null : children;
+        }
+
+        // Mirror SolveCompactSelectionGreedy's candidate gathering and children-count proxy sort, but
+        // DEFER all exact edge counting (CountDisplayBranches) to the final min-edge pass.
+        var fits = new List<(List<int> Group, List<(ComparisonState State, int RemainingSlots)> Children)>();
+        List<int> constructiveGroup = ChooseConstructiveGroup(state, remainingSlots);
+        var seen = new HashSet<IntSequenceKey>();
+        var constructiveChildren = FitChildren(constructiveGroup);
+        if (constructiveChildren is not null)
+        {
+            _compactGroupsEnumerated++;
+            _compactStepOptimalGroups++;
+            seen.Add(new IntSequenceKey(constructiveGroup.ToArray()));
+            fits.Add((constructiveGroup, constructiveChildren));
+        }
+        foreach (var group in EnumerateDistinctGroups(state, candidates, groupSize, CompactGreedyCandidateCap))
+        {
+            if (!seen.Add(new IntSequenceKey(group.ToArray())))
+                continue;
+            ThrowIfCancellationRequested();
+            _compactGroupsEnumerated++;
+            var children = FitChildren(group);
+            if (children is null)
+                continue;
+            _compactStepOptimalGroups++;
+            fits.Add((group, children));
+        }
+        fits.Sort((a, b) => a.Children.Count.CompareTo(b.Children.Count));
+
+        foreach (var (group, children) in fits)
+        {
+            bool solvable = true;
+            int realSteps = 0;
+            foreach (var (childState, childRemaining) in children)
+            {
+                int childCost = SolveCompactSelection(childState, childRemaining, branchBudget);
+                if (childCost == int.MaxValue)
+                {
+                    solvable = false;
+                    break;
+                }
+                realSteps = Math.Max(realSteps, GetCompactRealSteps(childState, childRemaining));
+            }
+            if (!solvable)
+                continue;
+
+            _compactGroupPatternCache[key] = MakeGroupPattern(state, group);
+            int cost = 1 + realSteps;   // steps-as-cost; callers only test against int.MaxValue
             _compactCostMemo[memoKey] = cost;
             _compactRealStepsMemo[key] = cost;
             return cost;
@@ -425,140 +505,6 @@ partial class StrategyBuilder
             count += SplitMergedBucketIntoBranchLines(state, branch.FamilyOutcomes).Count;
 
         return count;
-    }
-
-    // THREE-PHASE NEW: Compact selection DP that minimizes worst-case steps (not edges).
-    // This is used in Phase 2 of the three-phase architecture to find the group that achieves
-    // the best (fewest) steps at the current budget. The returned "cost" is actually the worst-case
-    // steps under this group, not edge count. After this DP selects the best-step group at each state,
-    // Phase 3 runs another compact pass to minimize edges at the determined step.
-    // 
-    // Recursion Depth: Bounded by feasibleBudget parameter (typically 5-10), so no stack overflow risk.
-    // State fields (_useCompactSelectionMinSteps, etc.) are set/reset per build, not concurrent:
-    // this architecture does not support multi-threaded solving, so no synchronization is needed.
-    private int SolveCompactSelectionForMinSteps(ComparisonState state, int remainingSlots, int feasibleBudget = int.MaxValue)
-    {
-        ThrowIfCancellationRequested();
-        ulong ignoredFixedTopMask = 0;
-        NormalizeState(state, ref ignoredFixedTopMask, ref remainingSlots);
-
-        if (remainingSlots == 0)
-            return 0;
-        if (TryGetDeterminedTopSet(state, remainingSlots, out _))
-            return 0;
-        if (state.ActiveCount <= remainingSlots)
-            return 0;
-        if (state.ActiveCount <= _m)
-            return 0;
-
-        // Use a separate memo to avoid mixing min-edges results with min-steps.
-        // The memo key is (SearchStateKey, feasibleBudget) to ensure tightening phases (which reduce
-        // budget) don't collide with earlier phases. If cached, return immediately (already solved).
-        // If not cached, set sentinel to -1 (meaning "not yet computed") and proceed to solve.
-        if (!_compactMinStepsMemo.TryGetValue((GetSearchStateKey(state, remainingSlots), feasibleBudget), out int cachedSteps))
-            cachedSteps = -1;
-        else
-            return cachedSteps;
-
-        var candidates = state.GetActiveItemsOrdered();
-        int groupSize = Math.Min(_m, candidates.Count);
-
-        // Validates each branch within the budget and collects feasible child states.
-        // FitChildren returns either a populated list of child states or null (never an empty list).
-        // This contract is relied upon: if null, the group is infeasible; if not null,
-        // the list contains at least one viable child state (though it may filter some candidates).
-        // 
-        // The function prunes any branch where GetMinWorstCaseLowerBound (worst-case steps forecast)
-        // exceeds branchBudget (feasibleBudget - 1). If any branch is pruned (rejected=true), the
-        // entire group is rejected; otherwise, all child states within budget are collected.
-        List<(ComparisonState State, int RemainingSlots)>? GetFeasibleChildren(IReadOnlyList<int> group)
-        {
-            int branchBudget = feasibleBudget - 1;
-            bool rejected = false;
-            var children = new List<(ComparisonState State, int RemainingSlots)>();
-            OutcomeTraversalSummary traversal = VisitComparisonOutcomes(
-                state, fixedTopMask: 0, remainingSlots, group,
-                currentKey: GetSearchStateKey(state, remainingSlots), collectMergedBranches: false,
-                onUsefulOutcome: outcome =>
-                {
-                    if (GetMinWorstCaseLowerBound(outcome.NextState, outcome.NextRemainingSlots) > branchBudget)
-                    {
-                        rejected = true;
-                        return false;
-                    }
-                    children.Add((outcome.NextState, outcome.NextRemainingSlots));
-                    return true;
-                });
-            return rejected || !traversal.IsUseful ? null : children;
-        }
-
-        int bestChildMaxSteps = feasibleBudget;
-        List<int>? bestGroup = null;
-
-        foreach (var group in EnumerateDistinctGroups(state, candidates, groupSize, CompactGreedyCandidateCap))
-        {
-            ThrowIfCancellationRequested();
-            var children = GetFeasibleChildren(group);
-            if (children is null)
-                continue;
-
-            // For this group, compute the max steps among all children.
-            // This represents the worst-case step count if this group is chosen.
-            // groupMaxSteps = 1 (this step) + max(child worst-case steps)
-            int groupMaxSteps = 0;
-            bool feasible = true;
-            foreach (var (childState, childRemaining) in children)
-            {
-                int childSteps = SolveCompactSelectionForMinSteps(childState, childRemaining, feasibleBudget - 1);
-                if (childSteps >= feasibleBudget)
-                {
-                    feasible = false;
-                    break;
-                }
-                groupMaxSteps = Math.Max(groupMaxSteps, childSteps);
-            }
-
-            if (!feasible)
-                continue;
-
-            groupMaxSteps += 1;  // Add this level's step
-
-            if (groupMaxSteps < bestChildMaxSteps)
-            {
-                bestChildMaxSteps = groupMaxSteps;
-                bestGroup = new List<int>(group);
-            }
-        }
-
-        if (bestGroup is null)
-            // No feasible group within budget. Return int.MaxValue (not feasibleBudget) so callers detect
-            // infeasibility uniformly: the recursive guard `childSteps >= feasibleBudget` rejects the parent
-            // group, and the root-level check `_compactRootCost == int.MaxValue` reports no compact solution.
-            return int.MaxValue;
-
-        // Memoize and cache the group selection (same pattern as SolveCompactSelection).
-        // _compactMinStepsGroupPatternCache stores the best group for this state, enabling BuildState to
-        // retrieve it later via TryGetCompactGroupPattern when _useCompactSelectionMinSteps is true.
-        // This two-level cache (steps memo + group pattern cache) allows the DP to solve once and the
-        // build phase to query the cached group without recomputing.
-        SearchStateKey key = GetSearchStateKey(state, remainingSlots);
-        _compactMinStepsGroupPatternCache[key] = MakeGroupPattern(state, bestGroup);
-        _compactMinStepsMemo[(key, feasibleBudget)] = bestChildMaxSteps;
-
-        return bestChildMaxSteps;
-    }
-
-    // Caches for the min-steps DP.
-    // 
-    // Note: The _compactMinStepsMemo and _compactMinStepsGroupPatternCache are also cleared in
-    // ResetCompactSelectionState (line ~85) as part of the phase-transition reset. This method provides
-    // semantic clarity when explicitly resetting min-steps state outside of phase transitions (e.g., for
-    // isolated testing). In production, ResetCompactSelectionState is the primary reset point and ensures
-    // both standard compact and min-steps caches are cleared consistently.
-    private void ResetMinStepsSelectionState()
-    {
-        _compactMinStepsMemo.Clear();
-        _compactMinStepsGroupPatternCache.Clear();
     }
 }
 

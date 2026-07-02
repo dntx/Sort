@@ -134,226 +134,104 @@ partial class StrategyBuilder
         return BuildPlan(useCompactSelection: true, useFeasibleBudget: false);
     }
 
-    // Three-phase architecture (PRODUCTION VERSION):
-    // Phase 1: Feasible (greedy) - finds any feasible solution with steps U
-    // Phase 2: CompactForMinSteps - DP with min-steps objective (not min-edges)
-    //          This single-pass DP directly finds the step-minimizing groups
-    // Phase 3: CompactForEdges - standard DP with min-edges objective at the determined step
-    public StrategyPlan BuildThreePhasePlan(Action<GreedyEdgeStage>? onStage = null)
+    // Greedy mode: feasibility-only tightening followed by a single min-edge pass.
+    //
+    //   Phase A (tighten): starting from the feasible upper bound U (the greedy step plan's MaxStep,
+    //     threaded in via _feasibleRootBudget), probe ceilings U-1, U-2, ... with FEASIBILITY-ONLY
+    //     compact solves (first solvable group in children-count-proxy order wins; no edge counting) to
+    //     find the smallest feasible step S. Each probe is cheap relative to a full min-edge pass, and --
+    //     crucially -- this avoids the wasted min-edge work at intermediate ceilings whose step is later
+    //     superseded (the original architecture ran an edge-minimizing baseline at U first, which was
+    //     discarded whenever tightening lowered the step below U).
+    //   Phase B (min-edge): run ONE min-edge compact pass at the determined step S to produce the final
+    //     edge-minimized tree.
+    //
+    // Fast and interruptible, not proven optimal. onStage, when supplied, is invoked synchronously on
+    // this thread each time an edge stage becomes available: once per successful tightening ceiling
+    // ("feasible≤N", carrying the smaller plan), once for the terminal ceiling that stops tightening (a
+    // no-solution/incomplete stage whose plan is null), and finally once for the min-edge pass
+    // ("compact"). This drives an anytime UI/CLI that surfaces the full progression as it is found; a
+    // user who no longer wants to wait cancels (GUI Stop / CLI Ctrl+C), which propagates out with the
+    // best plan found so far already surfaced via onStage.
+    public StrategyPlan BuildFeasibleCompactPlan(Action<GreedyEdgeStage>? onStage = null)
     {
         _progressScope = _reportCombinedRunProgress
             ? ProgressScope.CompactFeasibleInCombinedRun
             : ProgressScope.DefaultStandalone;
 
-        // Phase 1: Build greedy feasible plan
-        StrategyPlan phase1 = BuildPlan(useCompactSelection: false, useFeasibleBudget: false);
-        onStage?.Invoke(new GreedyEdgeStage("greedy", phase1, phase1.Elapsed));
+        // The step ceiling U comes from the greedy feasible plan. Production callers (Program.cs /
+        // MainForm.cs) build it first and reuse this builder, so _feasibleRootBudget is already set;
+        // standalone callers (e.g. tests invoking BuildFeasibleCompactPlan directly) have not, so
+        // establish it here. BuildFeasiblePlan deliberately does not clear _feasibleRootBudget, so this
+        // never double-builds when the caller already ran the step phase.
+        if (_feasibleRootBudget < 0)
+            BuildFeasiblePlan();
 
-        // Phase 2: Compact with min-steps objective (new DP: direct step minimization)
-        StrategyPlan phase2 = BuildPlanMinSteps(phase1.MaxStep);
-        onStage?.Invoke(new GreedyEdgeStage($"compact (for step→{phase2.MaxStep})", phase2, phase2.Elapsed));
-
-        // Phase 3: Compact with min-edges objective at the step determined by Phase 2
-        // 
-        // Fallback behavior: If Phase 3 fails (no feasible group found), return Phase 2 as the best known
-        // solution. Phase 2 guarantees a feasible plan (Phase 1 seeded the budget, so Phase 2 always finds
-        // something within that budget). Phase 3 is an optimization attempt; if it fails to beat Phase 2,
-        // the Phase 2 min-step solution is still valid and returned.
-        ResetPerBuildTransientState();
-        ResetCompactSelectionState();
-        var phase3Stopwatch = Stopwatch.StartNew();
-        _compactUsesFeasibleBudget = true;
-        _feasibleRootBudgetActive = phase2.MaxStep;
-        
-        try
-        {
-            EnsureCompactSelectionSolved();
-            if (_compactRootCost != int.MaxValue)
-            {
-                _useCompactSelection = true;
-                var root = BuildState(new ComparisonState(_n), 0, _k, 1);
-
-                // Stopwatch is stopped in the finally block (runs on all paths). Reading Elapsed here while
-                // it is still running is fine — it captures the phase-3 build time.
-                var phase3 = new StrategyPlan(
-                    _n, _m, _requestedK, _k, root, phase3Stopwatch.Elapsed, CreateSearchStatistics(),
-                    isFeasibleUpperBound: true);
-                
-                onStage?.Invoke(new GreedyEdgeStage($"compact (for edge@S={phase2.MaxStep})", phase3, phase3.Elapsed));
-                return phase3;
-            }
-        }
-        finally
-        {
-            // Stop the stopwatch on all paths (e.g., if BuildState throws) so it is not left running.
-            if (phase3Stopwatch.IsRunning)
-                phase3Stopwatch.Stop();
-            // -1 is the "inactive" sentinel for the feasible-budget threading (a real budget is >= 0).
-            _feasibleRootBudgetActive = -1;
-        }
-
-        return phase2;
-    }
-
-    // New DP: Compact pass targeting min-steps instead of min-edges.
-    // 
-    // This method enables the min-steps variant of the compact DP by setting state flags that route
-    // group selection to SolveCompactSelectionForMinSteps (instead of SolveCompactSelection). The flags
-    // are reset in the finally block to ensure they do not leak into subsequent builds. Since solving
-    // is single-threaded (not concurrent), this flag-based routing is safe and does not require
-    // synchronization.
-    // 
-    // Flags set during execution:
-    //   - _useCompactSelectionMinSteps: Enables BuildPlanMinSteps routing throughout the build
-    //   - _feasibleRootBudgetActive: The budget (maxAllowedSteps) passed through recursion
-    private StrategyPlan BuildPlanMinSteps(int maxAllowedSteps)
-    {
-        ResetPerBuildTransientState();
-        ResetCompactSelectionState();
-        
-        _useCompactSelectionMinSteps = true;
-        _feasibleRootBudgetActive = maxAllowedSteps;
-        
-        var stopwatch = Stopwatch.StartNew();
-        try
-        {
-            var root = BuildState(new ComparisonState(_n), 0, _k, 1);
-            stopwatch.Stop();
-            
-            return new StrategyPlan(
-                _n, _m, _requestedK, _k, root, stopwatch.Elapsed, CreateSearchStatistics(),
-                isFeasibleUpperBound: true);
-        }
-        finally
-        {
-            _feasibleRootBudgetActive = -1;
-            _useCompactSelectionMinSteps = false;
-        }
-    }
-
-    // Runs compact selection at a fixed step budget to optimize edges.
-    // 
-    // Returns null if no feasible group is found at the given step budget (indicating the budget is
-    // infeasible). Otherwise returns a StrategyPlan that honors the step constraint. Stopwatch timing
-    // is captured via try-finally, ensuring elapsed time is recorded even if an exception occurs or
-    // the probe fails to find a feasible solution.
-    private StrategyPlan? ProbeCompactAtFixedStep(int fixedStep)
-    {
-        ResetPerBuildTransientState();
-        ResetCompactSelectionState();
-
-        var stopwatch = Stopwatch.StartNew();
-        _compactUsesFeasibleBudget = true;
-        _feasibleRootBudgetActive = fixedStep;
-        try
-        {
-            EnsureCompactSelectionSolved();
-            if (_compactRootCost == int.MaxValue)
-                return null;
-
-            _useCompactSelection = true;
-            var root = BuildState(new ComparisonState(_n), 0, _k, 1);
-            stopwatch.Stop();
-            return new StrategyPlan(
-                _n, _m, _requestedK, _k, root, stopwatch.Elapsed, CreateSearchStatistics(),
-                isFeasibleUpperBound: true);
-        }
-        finally
-        {
-            _feasibleRootBudgetActive = -1;
-        }
-    }
-
-    // Greedy mode now uses the three-phase architecture (min-step optimization).
-    // The old feasible+compact approach has been superseded by BuildThreePhasePlan, which consistently
-    // achieves better performance (2.53x average speedup) while preserving solution quality. This method
-    // now delegates to the three-phase architecture for all greedy-mode operations.
-    //
-    // onStage, when supplied, is invoked synchronously on this thread each time an edge stage becomes
-    // available: phase 1 (feasible greedy), phase 2 (compact-for-step), and optionally phase 3
-    // (compact-for-edge). This drives an anytime UI/CLI that surfaces the full progression as it is found.
-    public StrategyPlan BuildFeasibleCompactPlan(Action<GreedyEdgeStage>? onStage = null)
-    {
-        // Delegate to the three-phase architecture, which always outperforms the original greedy mode.
-        return BuildThreePhasePlan(onStage);
-    }
-
-    // Opportunistically lowers the greedy edge plan's max-step by re-running the compact pass at
-    // progressively tighter ceilings (U-1, U-2, ...). Each accepted retry strictly decreases the realized
-    // max-step; the loop stops at the first infeasible ceiling (optimum reached), at the proven lower
-    // bound L, at a cap-truncated (incomplete) ceiling, or on user cancellation -- always returning the
-    // best (smallest max-step) plan found, never worse than the baseline. There is no wall-clock budget:
-    // tightening runs to completion. A user who no longer wants to wait cancels (GUI Stop / CLI Ctrl+C),
-    // which propagates the cancellation out with the best plan found so far already surfaced via onStage.
-    private StrategyPlan TightenFeasibleCompact(StrategyPlan baseline, Action<GreedyEdgeStage>? onStage)
-    {
-        StrategyPlan best = baseline;
-
-        // If the compact baseline already failed to honor the feasible step budget U (the greedy
-        // plan's MaxStep, threaded in via _feasibleRootBudget), its materialized tree is deeper than U.
-        // The compact group selection is a budget-agnostic heuristic, so probing ever-tighter ceilings
-        // cannot beat a baseline that could not even meet U -- skip tightening and let the greedy plan
-        // remain the incumbent downstream.
-        if (_feasibleRootBudget >= 0 && baseline.MaxStep > _feasibleRootBudget)
-            return baseline;
-
+        int U = _feasibleRootBudget;
         int provenLowerBound = Math.Max(1, _rootProvenLowerBound);
-        int budget = best.MaxStep - 1;
-        while (budget >= provenLowerBound)
+
+        // Phase A: feasibility-only tighten to find the smallest feasible step S.
+        _compactFeasibilityOnly = true;
+        int bestStep = U;
+        int budget = U - 1;
+        try
         {
-            _cancellationToken.ThrowIfCancellationRequested();
-
-            string stageName = $"compact\u2264{budget}";
-
-            // This probe's own wall time, captured even when the probe proves infeasible (returns null)
-            // so the no-solution stage still reports its elapsed. A user cancellation raised inside the
-            // probe propagates out; the best plan so far has already been surfaced via onStage.
-            var probeStopwatch = Stopwatch.StartNew();
-            StrategyPlan? candidate = ProbeFeasibleCompact(budget);
-            probeStopwatch.Stop();
-
-            if (candidate is null)
+            while (budget >= provenLowerBound)
             {
-                // The probe ran out of feasible groups, but if the greedy candidate cap truncated any
-                // state's enumeration the "no solution" is not a proof -- an untried group might have fit.
-                // Surface it as an incomplete stage (the best plan stands, the squeeze stays open) and
-                // stop tightening rather than claiming a false proven-optimal.
-                if (_lastProbeEnumerationCapped)
+                _cancellationToken.ThrowIfCancellationRequested();
+                string stageName = $"feasible\u2264{budget}";
+                var probeStopwatch = Stopwatch.StartNew();
+                StrategyPlan? candidate = ProbeFeasibleCompact(budget);
+                probeStopwatch.Stop();
+
+                if (candidate is null)
                 {
-                    onStage?.Invoke(new GreedyEdgeStage(
-                        stageName, null, probeStopwatch.Elapsed, GreedyEdgeStageOutcome.Incomplete));
+                    // The probe ran out of feasible groups. If the greedy candidate cap truncated any
+                    // state's enumeration the "no solution" is not a proof (an untried group might have
+                    // fit) -- surface it as incomplete and stop without closing the squeeze. Otherwise
+                    // the ceiling is proven infeasible, so bestStep is optimal: raise the proven lower
+                    // bound to budget+1 (== bestStep) to close the L <= opt <= U squeeze.
+                    var outcome = _lastProbeEnumerationCapped
+                        ? GreedyEdgeStageOutcome.Incomplete
+                        : GreedyEdgeStageOutcome.NoSolution;
+                    if (outcome == GreedyEdgeStageOutcome.NoSolution)
+                        RecordRootProvenLowerBound(budget + 1);
+                    onStage?.Invoke(new GreedyEdgeStage(stageName, null, probeStopwatch.Elapsed, outcome));
                     break;
                 }
 
-                // Proven infeasible at this ceiling (complete enumeration) -> the previous best is the
-                // optimum within reach. Raise the proven lower bound to budget+1 (== best.MaxStep): the
-                // search has now proven opt >= best.MaxStep, and best achieves it, so the L <= opt <= U
-                // squeeze closes to a proven optimum. Surface it as a no-solution stage so the UI/CLI
-                // shows the search bottomed out here.
-                RecordRootProvenLowerBound(budget + 1);
-                onStage?.Invoke(new GreedyEdgeStage(
-                    stageName, null, probeStopwatch.Elapsed, GreedyEdgeStageOutcome.NoSolution));
-                break;
+                // Ground-truth guard: trust the materialized MaxStep, not the budget-agnostic compact
+                // group cache that produced it (a group picked under a looser budget can leak into a
+                // tighter path and deepen the subtree). A probe that does not strictly lower the step is
+                // rejected; accepting it would re-derive budget = MaxStep - 1 above the ceiling and loop.
+                if (candidate.MaxStep >= bestStep)
+                    break;
+
+                bestStep = candidate.MaxStep;
+                onStage?.Invoke(new GreedyEdgeStage(stageName, candidate, probeStopwatch.Elapsed));
+                budget = bestStep - 1; // realized max-step may already be below the attempted ceiling
             }
-
-            // Ground-truth guard: trust the materialized MaxStep, not the budget-agnostic compact
-            // group cache that produced it. A probe can return a tree that fails to honor the ceiling
-            // it was given (the cache keys group choices by state only, so a group picked under a looser
-            // budget can leak into a tighter path and deepen the subtree). Such a result never beats the
-            // incumbent, and accepting it would re-derive budget = MaxStep - 1 above the current ceiling
-            // and oscillate forever. Stop at the first probe that does not strictly improve the best plan.
-            if (candidate.MaxStep >= best.MaxStep)
-                break;
-
-            best = candidate;
-            onStage?.Invoke(new GreedyEdgeStage(stageName, candidate, probeStopwatch.Elapsed));
-            budget = best.MaxStep - 1; // realized max-step may already be below the attempted ceiling
+        }
+        finally
+        {
+            _compactFeasibilityOnly = false;
         }
 
-        // Reflect any proven lower bound learned during tightening (a proven-infeasible ceiling closes
-        // the squeeze on this feasible plan to a proven optimum) on the returned plan as well, so direct
-        // callers of the return value see the same closed squeeze the staged consumers do.
-        return best.WithRootProvenLowerBound(_rootProvenLowerBound);
+        // Phase B: one min-edge compact pass at the determined step S.
+        var edgeStopwatch = Stopwatch.StartNew();
+        StrategyPlan? edgePlan = ProbeFeasibleCompact(bestStep);
+        edgeStopwatch.Stop();
+        if (edgePlan is not null)
+        {
+            edgePlan = edgePlan.WithRootProvenLowerBound(_rootProvenLowerBound);
+            onStage?.Invoke(new GreedyEdgeStage("compact", edgePlan, edgeStopwatch.Elapsed));
+            return edgePlan;
+        }
+
+        // Should not happen (bestStep is a proven-feasible ceiling), but fall back to a min-edge pass at
+        // the feasible budget U so a valid plan is always returned.
+        return BuildPlan(useCompactSelection: true, useFeasibleBudget: true)
+            .WithRootProvenLowerBound(_rootProvenLowerBound);
     }
 
     // Runs a single compact pass at a fixed root ceiling, returning the materialized plan or null if the
@@ -495,11 +373,7 @@ partial class StrategyBuilder
         // chosen comparison-group pattern, so phase 2 always finds a populated entry here.
         // The compact PoC overrides the choice with its size-minimizing pattern when enabled.
         BestGroupPattern cachedPattern;
-        if (_useCompactSelectionMinSteps && _compactMinStepsGroupPatternCache.TryGetValue(currentKey, out BestGroupPattern minStepsPattern))
-        {
-            cachedPattern = minStepsPattern;
-        }
-        else if (_useCompactSelection && _compactGroupPatternCache.TryGetValue(currentKey, out BestGroupPattern compactPattern))
+        if (_useCompactSelection && _compactGroupPatternCache.TryGetValue(currentKey, out BestGroupPattern compactPattern))
         {
             cachedPattern = compactPattern;
         }

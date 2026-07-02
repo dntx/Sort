@@ -67,11 +67,12 @@ public class FeasibleCompactPlanTests
             $"feasible compact step {edgeStep} was below the true optimum {optimum}");
     }
 
-    // NOTE: Greedy now uses the three-phase architecture (BuildThreePhasePlan), which emits only Solution
-    // stages (greedy, compact-for-step, compact-for-edge) and has no tightening loop. The former tightening
-    // loop could emit terminal Incomplete / NoSolution stages; those semantics no longer exist here, so the
-    // tests that asserted them were removed. Feasibility and step-bound guarantees are covered by the tests
-    // above and by MinStepGreedyTests.
+    // NOTE: Greedy mode is feasibility-first: BuildFeasibleCompactPlan establishes a feasible upper
+    // bound U, tightens the max-step via feasibility-only probes (feasible≤U-1, feasible≤U-2, …) until a
+    // ceiling proves infeasible or the cap truncates enumeration, then runs one min-edge compact pass at
+    // the smallest feasible step S. The tightening loop can emit terminal Incomplete / NoSolution stages;
+    // those and the feasibility / step-bound guarantees are covered by the tests above and by
+    // MinStepGreedyTests.
 
     private static void AssertEveryDecisionHasGroup(StrategyNode node)
     {
