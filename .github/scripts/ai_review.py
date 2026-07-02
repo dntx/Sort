@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -58,8 +59,10 @@ MAX_DIFF_CHARS = 60000
 MAX_BATCH_CHARS = 12000
 # The structural pass sends the manifest plus a slice of the combined diff in a
 # single request; keep that slice comfortably under the model endpoint's payload
-# limit (large single requests return HTTP 413).
-STRUCTURAL_DIFF_CHARS = 8000
+# and per-request token limit (large single requests return HTTP 413). Notable
+# new identifiers are extracted from the WHOLE diff separately, so naming checks
+# still work even when this slice is truncated.
+STRUCTURAL_DIFF_CHARS = 14000
 # Transient rate limiting (HTTP 429) is retried with capped exponential backoff.
 # The per-attempt delay is capped so a large server-provided Retry-After (e.g. a
 # quota-window reset that can be many minutes) never stalls the whole review.
@@ -154,8 +157,10 @@ You are a senior software engineer performing a PR-LEVEL consistency and hygiene
 review of a GitHub pull request for a C#/.NET 8 project. Unlike a line-by-line
 code review, your job is to judge the change set AS A WHOLE against the PR's
 stated intent. You are given: the PR title and description, a manifest of every
-changed file (path, change status, category, and added/removed line counts), and
-the combined diff (which may be truncated).
+changed file (path, change status, category, and added/removed line counts), a
+list of notable NEW identifiers/literals extracted from the added lines of the
+WHOLE diff (CLI flags, mode/enum-like string values), and the combined diff
+(which may be truncated).
 
 Focus ONLY on the following five structural concerns. Do not repeat line-level
 correctness/security findings — a separate reviewer handles those.
@@ -178,6 +183,9 @@ correctness/security findings — a separate reviewer handles those.
    diff or description (casing, hyphenation, single vs multi word). Example: if
    the existing modes are `exact` and `greedy` (single lowercase word) and the PR
    adds `three-phase` (hyphenated), that is an inconsistency worth flagging.
+   Inspect the "Notable new identifiers/literals" list as well as the diff — the
+   diff may be truncated, so that list is your most reliable source for new
+   flags/mode values that appear later in the change set.
 
 4. MISSING TEST COVERAGE
    If the PR adds or materially changes production code (new functions, new
@@ -194,6 +202,11 @@ correctness/security findings — a separate reviewer handles those.
 ## Precision rules (avoid false positives)
 - Judge only from the provided manifest, diff, title, and description. Never
   assume files exist that are not listed.
+- The change-file manifest and its code/test/doc classification are
+  AUTHORITATIVE ground truth. Do NOT question, second-guess, or suggest
+  "correcting" the manifest, and do NOT comment on how a file was classified
+  (e.g. a root-level experiment file counted as code rather than a test is
+  intentional). Simply use the manifest's facts.
 - If the manifest already shows a test file changed, DO NOT flag missing tests.
 - If the manifest already shows a doc/README/*.md file changed, DO NOT flag
   missing docs.
@@ -420,6 +433,46 @@ def format_change_manifest(manifest: list[dict]) -> str:
     return summary + "\n\n" + "\n".join(lines)
 
 
+# Heuristics for surfacing new user-facing identifiers even when the diff sent to
+# the structural pass is truncated. Scans ADDED lines of the whole diff for CLI
+# flags and short mode/enum-like string literals.
+_FLAG_RE = re.compile(r"--[a-zA-Z][\w-]{1,40}")
+_TOKEN_LITERAL_RE = re.compile(r'"([A-Za-z][A-Za-z0-9_-]{1,30})"')
+
+
+def extract_new_identifiers(diff: str, limit: int = 40) -> list[str]:
+    """Collect notable new CLI flags / mode-like string literals from added lines."""
+    flags: set[str] = set()
+    literals: set[str] = set()
+    for section in split_diff_sections(diff):
+        if section_path(section) in EXCLUDED_REVIEW_PATHS:
+            continue
+        for line in section.splitlines():
+            # Only added content lines (skip the "+++" file header).
+            if not line.startswith("+") or line.startswith("+++"):
+                continue
+            body = line[1:]
+            for flag in _FLAG_RE.findall(body):
+                flags.add(flag)
+            for lit in _TOKEN_LITERAL_RE.findall(body):
+                # Keep tokens that look like mode/enum values: contain a hyphen,
+                # or are a single all-lower word (e.g. exact, greedy, three-phase).
+                if "-" in lit or lit.islower():
+                    literals.add(lit)
+    ordered = sorted(flags) + sorted(literals - flags)
+    return ordered[:limit]
+
+
+def format_new_identifiers(identifiers: list[str]) -> str:
+    if not identifiers:
+        return "Notable new identifiers/literals (from added lines): (none detected)"
+    return (
+        "Notable new identifiers/literals (from added lines of the whole diff):\n"
+        + ", ".join(f"`{t}`" for t in identifiers)
+    )
+
+
+
 def filtered_review_diff(diff: str, max_chars: int = MAX_DIFF_CHARS) -> str:
     """Concatenate reviewable (non-infra) diff sections, truncated for the model."""
     sections = [
@@ -502,7 +555,7 @@ def request_chat_completion(messages: list[dict]) -> str:
 
 
 
-def call_structural_model(manifest_text: str, diff: str) -> str:
+def call_structural_model(manifest_text: str, identifiers_text: str, diff: str) -> str:
     """Run the PR-level structural/consistency review pass."""
     pr_title = os.environ.get("PR_TITLE", "")
     pr_body = os.environ.get("PR_BODY", "")
@@ -511,6 +564,7 @@ def call_structural_model(manifest_text: str, diff: str) -> str:
         f"Pull request title: {pr_title}\n\n"
         f"Pull request description:\n{pr_body or '(none)'}\n\n"
         f"Changed-file manifest:\n{manifest_text}\n\n"
+        f"{identifiers_text}\n\n"
         f"Combined diff (may be truncated):\n\n```diff\n{diff}\n```"
     )
 
@@ -560,47 +614,124 @@ def strip_verdict_line(review: str) -> str:
     return "\n".join(lines).strip()
 
 
+_BULLET_RE = re.compile(r"^\s*[-*]\s+")
+_SEVERITY_TAG_RE = re.compile(r"\*\*\[[A-Za-z]+\]\*\*|\[[A-Za-z]+\]")
+
+
+def _drop_leading_heading(text: str) -> str:
+    """Remove leading blank lines and a single leading markdown heading."""
+    lines = text.splitlines()
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    if lines and lines[0].strip().startswith("#"):
+        lines.pop(0)
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    return "\n".join(lines).strip()
+
+
+def _split_summary_findings(review_text: str) -> tuple[str, str]:
+    """Split a model review into (summary prose, findings block)."""
+    text = strip_verdict_line(review_text)
+    lines = text.splitlines()
+    idx = next(
+        (i for i, l in enumerate(lines) if l.strip().lower().startswith("## findings")),
+        None,
+    )
+    if idx is None:
+        return _drop_leading_heading(text), ""
+    summary = _drop_leading_heading("\n".join(lines[:idx]))
+    rest = lines[idx + 1 :]
+    cut = next((i for i, l in enumerate(rest) if l.strip().startswith("## ")), len(rest))
+    findings = "\n".join(rest[:cut]).strip()
+    return summary, findings
+
+
+def _parse_bullets(findings_text: str) -> list[str]:
+    """Split a findings block into individual bullet items (multi-line aware)."""
+    items: list[str] = []
+    current: list[str] = []
+    for line in findings_text.splitlines():
+        if _BULLET_RE.match(line):
+            if current:
+                items.append("\n".join(current).rstrip())
+            current = [line.strip()]
+        elif current:
+            current.append(line.rstrip())
+    if current:
+        items.append("\n".join(current).rstrip())
+    return [i for i in items if i.strip()]
+
+
+def _norm_bullet_key(bullet: str) -> str:
+    """Normalise a bullet for de-duplication across batches."""
+    stripped = _SEVERITY_TAG_RE.sub("", bullet)
+    return re.sub(r"[^a-z0-9]+", " ", stripped.lower()).strip()[:90]
+
+
+def _is_noise_bullet(bullet: str) -> bool:
+    low = bullet.lower()
+    return "no issues found" in low or "**[approve]**" in low or "[approve]" in low
+
+
 def combine_batch_reviews(
     batch_reviews: list[tuple[int, int, str, str]],
     structural: tuple[str, str] | None = None,
 ) -> str:
-    """Combine the structural review and per-batch reviews into one PR review body."""
+    """Merge the structural review and per-batch reviews into ONE consolidated
+    review body. Batches are an internal chunking detail and are never exposed:
+    findings are integrated into a single list, deduplicated across batches."""
     verdict_order = {"APPROVE": 0, "COMMENT": 1, "BLOCK": 2}
     all_verdicts = [verdict for _, _, verdict, _ in batch_reviews]
     if structural is not None:
         all_verdicts.append(structural[0])
-    final_verdict = max(all_verdicts, key=lambda v: verdict_order[v])
+    final_verdict = max(all_verdicts, key=lambda v: verdict_order[v]) if all_verdicts else "APPROVE"
 
-    summary_lines = [
-        f"Reviewed in {len(batch_reviews)} batch(es).",
-        f"Final verdict: {final_verdict}.",
-    ]
-    if len(batch_reviews) > 1:
-        counts = {key: 0 for key in verdict_order}
-        for _, _, verdict, _ in batch_reviews:
-            counts[verdict] += 1
-        summary_lines.append(
-            "Batch verdicts: "
-            + ", ".join(f"{name}={counts[name]}" for name in ("BLOCK", "COMMENT", "APPROVE"))
-            + "."
-        )
+    # Structural (PR-level) summary + findings.
+    struct_summary, struct_findings = ("", "")
     if structural is not None:
-        summary_lines.append(f"Structural review: {structural[0]}.")
+        struct_summary, struct_findings = _split_summary_findings(structural[1])
+    struct_bullets = [b for b in _parse_bullets(struct_findings) if not _is_noise_bullet(b)]
 
-    parts = ["## Summary\n" + " ".join(summary_lines), ""]
+    # Merge code-level findings from every batch, dropping noise and duplicates.
+    code_bullets: list[str] = []
+    seen: set[str] = set()
+    batch_summaries: list[str] = []
+    for _, _, _, review in batch_reviews:
+        summary, findings = _split_summary_findings(review)
+        if summary:
+            batch_summaries.append(summary)
+        for bullet in _parse_bullets(findings):
+            if _is_noise_bullet(bullet):
+                continue
+            key = _norm_bullet_key(bullet)
+            if key in seen:
+                continue
+            seen.add(key)
+            code_bullets.append(bullet)
 
-    if structural is not None:
-        structural_verdict, structural_review = structural
-        parts.append(f"## Structural Review — {structural_verdict}")
-        parts.append(strip_verdict_line(structural_review))
-        parts.append("")
+    # Overall narrative: prefer the holistic structural summary; else the batch
+    # summaries joined into one paragraph.
+    overall_summary = struct_summary or " ".join(batch_summaries).strip()
+
+    parts: list[str] = ["## Summary"]
+    if overall_summary:
+        parts.append(overall_summary)
+    parts.append(f"\n_Verdict: **{final_verdict}**_")
+    parts.append("")
 
     parts.append("## Findings")
-    for index, total, verdict, review in batch_reviews:
-        parts.append(f"### Batch {index}/{total} — {verdict}")
-        parts.append(strip_verdict_line(review))
-        parts.append("")
+    if not struct_bullets and not code_bullets:
+        parts.append("No issues found.")
+    else:
+        if struct_bullets:
+            parts.append("### Structure & consistency")
+            parts.extend(struct_bullets)
+            parts.append("")
+        parts.append("### Code")
+        parts.extend(code_bullets if code_bullets else ["No issues found."])
 
+    parts.append("")
     parts.append(f"VERDICT: {final_verdict}")
     return "\n".join(parts).strip()
 
@@ -763,11 +894,13 @@ def main() -> int:
     # files, naming consistency, missing tests, missing docs). Best-effort: a
     # failure here must never abort the line-level review below.
     structural: tuple[str, str] | None = None
-    manifest = build_change_manifest(read_raw_diff())
+    raw_diff = read_raw_diff()
+    manifest = build_change_manifest(raw_diff)
     if manifest:
         try:
             structural_review = call_structural_model(
                 format_change_manifest(manifest),
+                format_new_identifiers(extract_new_identifiers(raw_diff)),
                 filtered_review_diff(diff, STRUCTURAL_DIFF_CHARS),
             )
             structural_verdict = parse_verdict(structural_review)
