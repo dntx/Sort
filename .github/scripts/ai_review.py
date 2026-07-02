@@ -693,6 +693,37 @@ def _is_noise_bullet(bullet: str) -> bool:
     return "no issues found" in low or "**[approve]**" in low or "[approve]" in low
 
 
+_BULLET_MARKER_RE = re.compile(r"^\s*[-*]\s+")
+_LEADING_SEVERITY_RE = re.compile(
+    r"^\**\[(?:BLOCK|COMMENT|APPROVE)\]\**\s*", re.IGNORECASE
+)
+
+
+def _bullet_severity(bullet: str) -> str:
+    """Classify a bullet as BLOCK or COMMENT from its leading severity tag."""
+    first = bullet.splitlines()[0] if bullet.strip() else ""
+    match = re.search(r"\[(BLOCK|COMMENT|APPROVE)\]", first, re.IGNORECASE)
+    return match.group(1).upper() if match else "COMMENT"
+
+
+def _reformat_bullet(bullet: str, source: str, number: int | None) -> str:
+    """Re-render a finding bullet with a source tag and (for blocks) a B# label.
+
+    The original inline severity tag is stripped: blocking items get a
+    ``**[B<n>]**`` prefix, comments drop the tag entirely (they live under the
+    Comments section). Continuation lines (e.g. quoted code) are preserved.
+    """
+    lines = bullet.splitlines()
+    if not lines:
+        return bullet
+    first = _BULLET_MARKER_RE.sub("", lines[0], count=1)
+    first = _LEADING_SEVERITY_RE.sub("", first)
+    label = f"**[B{number}]** " if number is not None else ""
+    src = f"({source}) " if source else ""
+    new_first = f"- {label}{src}{first}".rstrip()
+    return "\n".join([new_first, *lines[1:]])
+
+
 def combine_batch_reviews(
     batch_reviews: list[tuple[int, int, str, str]],
     structural: tuple[str, str] | None = None,
@@ -733,22 +764,46 @@ def combine_batch_reviews(
     # summaries joined into one paragraph.
     overall_summary = struct_summary or " ".join(batch_summaries).strip()
 
+    # Tag every finding with its source, then split by severity so all blocking
+    # items surface at the top regardless of source or arrival order.
+    tagged = (
+        [("structure", b) for b in struct_bullets]
+        + [("code", b) for b in code_bullets]
+    )
+    blocking = [(src, b) for src, b in tagged if _bullet_severity(b) == "BLOCK"]
+    comments = [(src, b) for src, b in tagged if _bullet_severity(b) != "BLOCK"]
+
     parts: list[str] = ["## Summary"]
     if overall_summary:
         parts.append(overall_summary)
-    parts.append(f"\n_Verdict: **{final_verdict}**_")
+    verdict_line = f"\n_Verdict: **{final_verdict}**_"
+    if blocking or comments:
+        comment_word = "comment" if len(comments) == 1 else "comments"
+        verdict_line += (
+            f" — 🚫 {len(blocking)} blocking · 💬 {len(comments)} {comment_word}"
+        )
+    parts.append(verdict_line)
     parts.append("")
 
-    parts.append("## Findings")
-    if not struct_bullets and not code_bullets:
+    if not blocking and not comments:
+        parts.append("## Findings")
         parts.append("No issues found.")
     else:
-        if struct_bullets:
-            parts.append("### Structure & consistency")
-            parts.extend(struct_bullets)
+        if blocking:
+            parts.append("## 🚫 Blocking (must fix)")
+            for index, (src, bullet) in enumerate(blocking, start=1):
+                parts.append(_reformat_bullet(bullet, src, index))
             parts.append("")
-        parts.append("### Code")
-        parts.extend(code_bullets if code_bullets else ["No issues found."])
+        if comments:
+            parts.append("<details>")
+            parts.append(
+                f"<summary>💬 Comments ({len(comments)}) — non-blocking</summary>"
+            )
+            parts.append("")  # blank line so the markdown list renders inside <details>
+            for src, bullet in comments:
+                parts.append(_reformat_bullet(bullet, src, None))
+            parts.append("")
+            parts.append("</details>")
 
     parts.append("")
     parts.append(f"VERDICT: {final_verdict}")
@@ -763,6 +818,18 @@ BOT_LOGINS = {"github-actions[bot]", "github-actions"}
 
 def _is_bot_login(login: str | None) -> bool:
     return (login or "") in BOT_LOGINS
+
+
+# Footer appended to every posted review/comment body, plus a hidden HTML marker
+# so the reviewer can reliably recognise its OWN issue comments (the fallback
+# path used when a formal review cannot be posted) and collapse stale ones.
+AI_REVIEW_FOOTER = "*🤖 Automated review via GitHub Models.*"
+AI_REVIEW_MARKER = "<!-- ai-code-review -->"
+
+
+def _is_ai_review_comment(body: str | None) -> bool:
+    text = body or ""
+    return AI_REVIEW_MARKER in text or AI_REVIEW_FOOTER in text
 
 
 def load_bot_reviews(repo: str, pr_number: str) -> list[dict]:
@@ -815,13 +882,13 @@ def load_bot_reviews(repo: str, pr_number: str) -> list[dict]:
 
 
 def _hide_review(review_node_id: str) -> bool:
-    """Minimize (collapse) a review via GraphQL so stale reviews are hidden.
+    """Minimize (collapse) a review OR issue comment via GraphQL so it is hidden.
 
     The REST ``dismissals`` endpoint only accepts reviews whose state is
-    ``APPROVED`` or ``CHANGES_REQUESTED``; a ``COMMENTED`` review cannot be
-    dismissed and would otherwise pile up visibly on the PR. ``minimizeComment``
-    works on any review state, so it is used to hide the ones dismissal cannot
-    reach (and to fully collapse dismissed ones too).
+    ``APPROVED`` or ``CHANGES_REQUESTED``; a ``COMMENTED`` review (and a plain
+    issue comment) cannot be dismissed and would otherwise pile up visibly on
+    the PR. ``minimizeComment`` works on any Minimizable node, so it is used to
+    hide the ones dismissal cannot reach (and to fully collapse dismissed ones).
     """
     if not review_node_id:
         return False
@@ -894,6 +961,79 @@ def dismiss_previous_bot_reviews(repo: str, pr_number: str, keep_review_id: int 
             print(f"Could not minimize review {database_id} (state={state}).")
 
 
+def load_bot_issue_comments(repo: str, pr_number: str) -> list[dict]:
+    """List a PR's issue comments via GraphQL (id, isMinimized, author, body).
+
+    These are distinct from reviews: the reviewer falls back to a plain issue
+    comment when it cannot post a formal review (e.g. the PR author cannot
+    request changes on their own PR), and those comments must be consolidated
+    too so only the latest AI-review artifact stays visible.
+    """
+    owner, _, name = repo.partition("/")
+    query = (
+        "query($owner: String!, $name: String!, $number: Int!) {"
+        " repository(owner: $owner, name: $name) {"
+        " pullRequest(number: $number) {"
+        " comments(first: 100) {"
+        " nodes { id isMinimized author { login } body } } } } }"
+    )
+    proc = subprocess.run(
+        [
+            "gh",
+            "api",
+            "graphql",
+            "-f",
+            f"query={query}",
+            "-F",
+            f"owner={owner}",
+            "-F",
+            f"name={name}",
+            "-F",
+            f"number={pr_number}",
+        ],
+        text=True,
+        capture_output=True,
+    )
+    if proc.returncode != 0:
+        print(f"Could not list issue comments for consolidation: {proc.stderr.strip()}")
+        return []
+
+    try:
+        data = json.loads(proc.stdout or "{}")
+    except json.JSONDecodeError:
+        return []
+
+    nodes = (
+        (((data.get("data") or {}).get("repository") or {}).get("pullRequest") or {})
+        .get("comments", {})
+        .get("nodes", [])
+    )
+    return nodes or []
+
+
+def hide_previous_bot_comments(repo: str, pr_number: str, keep_comment_id: str | None = None) -> None:
+    """Collapse stale AI-review issue comments so only the latest one remains.
+
+    Only the reviewer's own comments (identified by the AI-review marker/footer)
+    are touched; human comments are left alone. Already-minimized comments are
+    skipped so re-runs stay idempotent. ``keep_comment_id`` is the GraphQL node
+    id of a freshly posted fallback comment to preserve.
+    """
+    for comment in load_bot_issue_comments(repo, pr_number):
+        node_id = comment.get("id", "")
+        if node_id and node_id == keep_comment_id:
+            continue
+        if not _is_bot_login((comment.get("author") or {}).get("login")):
+            continue
+        if not _is_ai_review_comment(comment.get("body")):
+            continue
+        if comment.get("isMinimized"):
+            continue
+        if _hide_review(node_id):
+            print(f"Hid prior AI-review comment {node_id}.")
+        else:
+            print(f"Could not minimize comment {node_id}.")
+
 
 def post_review(review_body: str, verdict: str) -> None:
     repo = os.environ["GITHUB_REPOSITORY"]
@@ -906,7 +1046,7 @@ def post_review(review_body: str, verdict: str) -> None:
         "APPROVE": "## ✅ AI Code Review — Looks good\n\n",
     }[verdict]
 
-    body = header + review_body + "\n\n*🤖 Automated review via GitHub Models.*"
+    body = header + review_body + "\n\n" + AI_REVIEW_FOOTER + "\n\n" + AI_REVIEW_MARKER
 
     event = "REQUEST_CHANGES" if verdict == "BLOCK" else "APPROVE" if verdict == "APPROVE" else "COMMENT"
 
@@ -929,6 +1069,7 @@ def post_review(review_body: str, verdict: str) -> None:
     )
 
     keep_review_id: int | None = None
+    keep_comment_id: str | None = None
     if proc.returncode == 0:
         try:
             keep_review_id = int(proc.stdout.strip())
@@ -938,7 +1079,7 @@ def post_review(review_body: str, verdict: str) -> None:
         # Fall back to a plain issue comment if a formal review can't be posted
         # (e.g. the PR author cannot request changes on their own PR).
         print(f"Could not post review ({proc.stderr.strip()}); posting comment instead.")
-        subprocess.run(
+        comment_proc = subprocess.run(
             [
                 "gh",
                 "api",
@@ -947,11 +1088,17 @@ def post_review(review_body: str, verdict: str) -> None:
                 "POST",
                 "--input",
                 "-",
+                "--jq",
+                ".node_id",
             ],
             input=json.dumps({"body": body}),
             text=True,
-            check=True,
+            capture_output=True,
         )
+        if comment_proc.returncode == 0:
+            keep_comment_id = comment_proc.stdout.strip() or None
+        else:
+            print(f"Failed to post fallback comment: {comment_proc.stderr.strip()}")
 
     # Keep only the newest bot review; if the current post failed and the verdict
     # is BLOCK, preserve the old blocking review instead of accidentally unblocking.
@@ -961,6 +1108,15 @@ def post_review(review_body: str, verdict: str) -> None:
         except Exception as err:  # noqa: BLE001
             # Dismissal is best-effort and must never fail an otherwise-passing run.
             print(f"Skipping stale-review dismissal due to error: {err}")
+
+    # Collapse stale AI-review issue comments (the fallback path) so only the
+    # latest AI-review artifact stays visible. When a formal review was posted,
+    # keep_comment_id is None so every prior AI-review comment is hidden.
+    try:
+        hide_previous_bot_comments(repo, pr_number, keep_comment_id=keep_comment_id)
+    except Exception as err:  # noqa: BLE001
+        # Best-effort: must never fail an otherwise-passing run.
+        print(f"Skipping stale-comment hiding due to error: {err}")
 
 def main() -> int:
     diff = read_diff()
