@@ -23,7 +23,6 @@ partial class StrategyBuilder
     // stack depth is limited to that value. This is not a stack overflow risk in practice. The base
     // cases (line 429-436) ensure the recursion terminates at feasibility boundaries.
     private bool _useCompactSelectionMinSteps;
-    private bool _compactUsesFeasibleBudgetMinSteps;
     private readonly Dictionary<(SearchStateKey Key, int Budget), int> _compactMinStepsMemo = new();
     private readonly Dictionary<SearchStateKey, BestGroupPattern> _compactMinStepsGroupPatternCache = new();
 
@@ -532,7 +531,10 @@ partial class StrategyBuilder
         }
 
         if (bestGroup is null)
-            return feasibleBudget;  // No feasible group found within budget: return sentinel indicating infeasibility within this constraint
+            // No feasible group within budget. Return int.MaxValue (not feasibleBudget) so callers detect
+            // infeasibility uniformly: the recursive guard `childSteps >= feasibleBudget` rejects the parent
+            // group, and the root-level check `_compactRootCost == int.MaxValue` reports no compact solution.
+            return int.MaxValue;
 
         // Memoize and cache the group selection (same pattern as SolveCompactSelection).
         // _compactMinStepsGroupPatternCache stores the best group for this state, enabling BuildState to

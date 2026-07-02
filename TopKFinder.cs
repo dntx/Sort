@@ -173,7 +173,7 @@ partial class StrategyBuilder
                 _useCompactSelection = true;
                 var root = BuildState(new ComparisonState(_n), 0, _k, 1);
                 phase3Stopwatch.Stop();
-                
+
                 var phase3 = new StrategyPlan(
                     _n, _m, _requestedK, _k, root, phase3Stopwatch.Elapsed, CreateSearchStatistics(),
                     isFeasibleUpperBound: true);
@@ -184,6 +184,9 @@ partial class StrategyBuilder
         }
         finally
         {
+            // Stop on all paths (e.g., if BuildState throws) so the stopwatch is not left running.
+            if (phase3Stopwatch.IsRunning)
+                phase3Stopwatch.Stop();
             _feasibleRootBudgetActive = -1;
         }
 
@@ -200,14 +203,12 @@ partial class StrategyBuilder
     // 
     // Flags set during execution:
     //   - _useCompactSelectionMinSteps: Enables BuildPlanMinSteps routing throughout the build
-    //   - _compactUsesFeasibleBudgetMinSteps: Marker for this specific phase (reserving for future use)
     //   - _feasibleRootBudgetActive: The budget (maxAllowedSteps) passed through recursion
     private StrategyPlan BuildPlanMinSteps(int maxAllowedSteps)
     {
         ResetPerBuildTransientState();
         ResetCompactSelectionState();
         
-        _compactUsesFeasibleBudgetMinSteps = true;
         _useCompactSelectionMinSteps = true;
         _feasibleRootBudgetActive = maxAllowedSteps;
         
@@ -224,7 +225,6 @@ partial class StrategyBuilder
         finally
         {
             _feasibleRootBudgetActive = -1;
-            _compactUsesFeasibleBudgetMinSteps = false;
             _useCompactSelectionMinSteps = false;
         }
     }
