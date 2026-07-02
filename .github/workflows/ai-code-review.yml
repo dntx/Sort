@@ -76,5 +76,9 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
           DIFF_FILE: pr.diff
-          REVIEW_MODEL: openai/gpt-4o
+          # Comma-separated fallback chain. Each model has its own GitHub Models
+          # quota, so the reviewer rotates to the next one on HTTP 429. The most
+          # capable (high rate-limit tier) models are tried first for review
+          # quality; lower-tier mini models act as higher-quota overflow.
+          REVIEW_MODELS: openai/gpt-4.1,openai/gpt-4o,openai/gpt-4.1-mini,openai/gpt-4o-mini
         run: python .github/scripts/ai_review.py

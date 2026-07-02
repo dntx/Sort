@@ -18,7 +18,38 @@ import urllib.error
 import urllib.request
 
 MODELS_ENDPOINT = "https://models.github.ai/inference/chat/completions"
-MODEL = os.environ.get("REVIEW_MODEL", "openai/gpt-4o")
+
+
+def _resolve_model_chain() -> list[str]:
+    """Ordered list of models to try; each GitHub Models model has its own quota.
+
+    On HTTP 429 the reviewer falls back to the next model in the chain, so the
+    effective daily budget is the sum of every model's quota. Low rate-limit
+    tier models (150 requests/day) are tried before high tier (50/day).
+    Configure with REVIEW_MODELS (comma-separated) or a single REVIEW_MODEL.
+    """
+    raw = os.environ.get("REVIEW_MODELS", "").strip()
+    if raw:
+        chain = [m.strip() for m in raw.split(",") if m.strip()]
+    else:
+        single = os.environ.get("REVIEW_MODEL", "").strip()
+        chain = [single] if single else []
+    default_chain = [
+        "openai/gpt-4.1",
+        "openai/gpt-4o",
+        "openai/gpt-4.1-mini",
+        "openai/gpt-4o-mini",
+    ]
+    for model in default_chain:
+        if model not in chain:
+            chain.append(model)
+    return chain
+
+
+MODEL_CHAIN = _resolve_model_chain()
+# Index of the model currently in use; advances as models get rate limited so
+# batches after the first do not re-hit a model already known to be exhausted.
+_active_model_index = 0
 MAX_DIFF_CHARS = 60000
 # Group diff sections into larger batches to minimise the number of model
 # requests per review (fewer requests = less rate-limit pressure and faster
@@ -405,52 +436,70 @@ def filtered_review_diff(diff: str, max_chars: int = MAX_DIFF_CHARS) -> str:
     return combined
 
 
+def _post_once(model: str, payload: bytes, token: str) -> str:
+    """Single POST to the models endpoint for a specific model."""
+    request = urllib.request.Request(
+        MODELS_ENDPOINT,
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(request, timeout=180) as response:
+        data = json.loads(response.read().decode("utf-8"))
+    return data["choices"][0]["message"]["content"].strip()
+
+
 def request_chat_completion(messages: list[dict]) -> str:
-    """POST a chat completion, retrying transient rate limits (HTTP 429)."""
+    """POST a chat completion, rotating across the model chain on HTTP 429.
+
+    Each model in ``MODEL_CHAIN`` has its own quota, so on a 429 we immediately
+    fall back to the next model instead of waiting. A model that succeeds
+    becomes "sticky" for subsequent calls (batches) so we don't re-hit models
+    already known to be exhausted. Only when every model in the chain is rate
+    limited do we apply a capped backoff and retry the whole chain, up to
+    ``MODEL_MAX_RETRIES`` passes.
+    """
+    global _active_model_index
     token = os.environ["GITHUB_TOKEN"]
-    payload = json.dumps(
-        {
-            "model": MODEL,
-            "temperature": 0.1,
-            "messages": messages,
-        }
-    ).encode("utf-8")
+
+    def payload_for(model: str) -> bytes:
+        return json.dumps(
+            {"model": model, "temperature": 0.1, "messages": messages}
+        ).encode("utf-8")
 
     for attempt in range(MODEL_MAX_RETRIES):
-        request = urllib.request.Request(
-            MODELS_ENDPOINT,
-            data=payload,
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-            },
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(request, timeout=180) as response:
-                data = json.loads(response.read().decode("utf-8"))
-            return data["choices"][0]["message"]["content"].strip()
-        except urllib.error.HTTPError as err:
-            if err.code == 429 and attempt < MODEL_MAX_RETRIES - 1:
-                retry_after = (err.headers.get("Retry-After") or "").strip()
-                requested = (
-                    float(retry_after)
-                    if retry_after.isdigit()
-                    else MODEL_RETRY_BASE_SECONDS * (2 ** attempt)
-                )
-                # Cap the wait so a large server Retry-After (e.g. a quota-window
-                # reset spanning minutes) can never stall the whole review.
-                delay = min(requested, MODEL_RETRY_MAX_SECONDS)
-                print(
-                    f"Rate limited (429); retrying in {delay:.0f}s "
-                    f"(attempt {attempt + 1}/{MODEL_MAX_RETRIES})."
-                )
-                time.sleep(delay)
-                continue
-            raise
+        for offset in range(len(MODEL_CHAIN)):
+            index = (_active_model_index + offset) % len(MODEL_CHAIN)
+            model = MODEL_CHAIN[index]
+            try:
+                result = _post_once(model, payload_for(model), token)
+                _active_model_index = index  # stick with the working model
+                return result
+            except urllib.error.HTTPError as err:
+                if err.code == 429:
+                    print(f"Rate limited (429) on model '{model}'; trying next model.")
+                    continue
+                raise
+        # Every model in the chain was rate limited in this pass (a non-429
+        # error would have propagated above); back off and retry the chain.
+        if attempt < MODEL_MAX_RETRIES - 1:
+            delay = min(
+                MODEL_RETRY_BASE_SECONDS * (2 ** attempt), MODEL_RETRY_MAX_SECONDS
+            )
+            print(
+                f"All models rate limited; backing off {delay:.0f}s "
+                f"(pass {attempt + 1}/{MODEL_MAX_RETRIES})."
+            )
+            time.sleep(delay)
 
-    raise RuntimeError("Exhausted retries for chat completion request.")
+    raise urllib.error.HTTPError(
+        MODELS_ENDPOINT, 429, "All models rate limited (429).", {}, None
+    )
+
 
 
 def call_structural_model(manifest_text: str, diff: str) -> str:
