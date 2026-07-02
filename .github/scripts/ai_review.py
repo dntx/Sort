@@ -755,33 +755,63 @@ def combine_batch_reviews(
     return "\n".join(parts).strip()
 
 
-BOT_LOGIN = "github-actions[bot]"
+# github-actions surfaces as "github-actions[bot]" over REST but plain
+# "github-actions" over GraphQL; accept both so bot-authored reviews are
+# recognised regardless of the API used to list them.
+BOT_LOGINS = {"github-actions[bot]", "github-actions"}
+
+
+def _is_bot_login(login: str | None) -> bool:
+    return (login or "") in BOT_LOGINS
 
 
 def load_bot_reviews(repo: str, pr_number: str) -> list[dict]:
+    """List a PR's reviews via GraphQL, including databaseId and isMinimized.
+
+    GraphQL is used (instead of the REST reviews endpoint) so each review carries
+    ``isMinimized`` — letting consolidation skip reviews it has already hidden and
+    stay idempotent across re-runs.
+    """
+    owner, _, name = repo.partition("/")
+    query = (
+        "query($owner: String!, $name: String!, $number: Int!) {"
+        " repository(owner: $owner, name: $name) {"
+        " pullRequest(number: $number) {"
+        " reviews(first: 100) {"
+        " nodes { id databaseId state isMinimized author { login } } } } } }"
+    )
     proc = subprocess.run(
-        ["gh", "api", f"repos/{repo}/pulls/{pr_number}/reviews", "--paginate"],
+        [
+            "gh",
+            "api",
+            "graphql",
+            "-f",
+            f"query={query}",
+            "-F",
+            f"owner={owner}",
+            "-F",
+            f"name={name}",
+            "-F",
+            f"number={pr_number}",
+        ],
         text=True,
         capture_output=True,
     )
     if proc.returncode != 0:
-        print(f"Could not list reviews for dismissal: {proc.stderr.strip()}")
-        return []
-
-    raw = proc.stdout.strip()
-    if not raw:
+        print(f"Could not list reviews for consolidation: {proc.stderr.strip()}")
         return []
 
     try:
-        reviews = json.loads(raw)
-        return reviews if isinstance(reviews, list) else []
+        data = json.loads(proc.stdout or "{}")
     except json.JSONDecodeError:
-        reviews: list[dict] = []
-        for chunk in raw.replace("][", "]\n[").splitlines():
-            chunk = chunk.strip()
-            if chunk:
-                reviews.extend(json.loads(chunk))
-        return reviews
+        return []
+
+    nodes = (
+        (((data.get("data") or {}).get("repository") or {}).get("pullRequest") or {})
+        .get("reviews", {})
+        .get("nodes", [])
+    )
+    return nodes or []
 
 
 def _hide_review(review_node_id: str) -> bool:
@@ -809,28 +839,32 @@ def _hide_review(review_node_id: str) -> bool:
 
 
 def dismiss_previous_bot_reviews(repo: str, pr_number: str, keep_review_id: int | None = None) -> None:
-    """Hide every prior bot review so only the latest review remains visible.
+    """Hide every prior bot review so ONLY the latest review remains visible.
 
-    Reviews that carry a merge verdict (``CHANGES_REQUESTED``/``APPROVED``) are
-    dismissed to drop that verdict; reviews that cannot be dismissed (notably
-    ``COMMENTED``) are minimized instead so they collapse out of the way.
+    Regardless of state, each earlier bot review is collapsed via
+    ``minimizeComment``; reviews that still carry a merge verdict
+    (``CHANGES_REQUESTED``/``APPROVED``) are additionally dismissed first so the
+    stale verdict no longer affects mergeability. Already-minimized reviews are
+    skipped to keep re-runs idempotent and quiet.
     """
     for review in load_bot_reviews(repo, pr_number):
-        review_id = review.get("id")
-        if review_id == keep_review_id:
+        database_id = review.get("databaseId")
+        if database_id == keep_review_id:
             continue
-        if review.get("user", {}).get("login") != BOT_LOGIN:
+        if not _is_bot_login((review.get("author") or {}).get("login")):
             continue
 
         state = review.get("state")
-        node_id = review.get("node_id", "")
+        node_id = review.get("id", "")
 
+        # Drop any lingering merge verdict (approval or change request) so only
+        # the latest review governs mergeability.
         if state in {"CHANGES_REQUESTED", "APPROVED"}:
             dismiss = subprocess.run(
                 [
                     "gh",
                     "api",
-                    f"repos/{repo}/pulls/{pr_number}/reviews/{review_id}/dismissals",
+                    f"repos/{repo}/pulls/{pr_number}/reviews/{database_id}/dismissals",
                     "--method",
                     "PUT",
                     "--input",
@@ -846,19 +880,18 @@ def dismiss_previous_bot_reviews(repo: str, pr_number: str, keep_review_id: int 
                 capture_output=True,
             )
             if dismiss.returncode == 0:
-                print(f"Dismissed prior bot review {review_id}.")
+                print(f"Dismissed prior bot review {database_id}.")
             else:
-                print(f"Failed to dismiss review {review_id}: {dismiss.stderr.strip()}")
-        elif state == "DISMISSED":
-            # Already collapsed; leave it alone.
-            continue
+                print(f"Failed to dismiss review {database_id}: {dismiss.stderr.strip()}")
 
-        # Collapse the review body regardless of state so COMMENTED reviews (which
-        # dismissal cannot touch) and freshly dismissed ones stay out of the way.
+        # Collapse the review body so only the latest review stays visible. Skip
+        # ones already minimized to avoid redundant calls / noisy errors.
+        if review.get("isMinimized"):
+            continue
         if _hide_review(node_id):
-            print(f"Hid prior bot review {review_id} (state={state}).")
+            print(f"Hid prior bot review {database_id} (state={state}).")
         else:
-            print(f"Could not minimize review {review_id} (state={state}).")
+            print(f"Could not minimize review {database_id} (state={state}).")
 
 
 
