@@ -157,4 +157,26 @@ public sealed class ProjectionOrbitMergeTests
         Assert.DoesNotContain("A1 > B1 > {A2, B2}", offText);
         Assert.DoesNotContain("drop {chain(A2), B2}", offText);
     }
+
+    [Fact]
+    public void N11M4K3_ThreeBlockPartnerFoldsShapeC3()
+    {
+        (StrategyPlan off, string offText) = Build(11, 4, 3, projectionMerging: false);
+        (StrategyPlan on, string onText) = Build(11, 4, 3, projectionMerging: true);
+
+        // Shape C3 spans FOUR heads = a three-member symmetric leaf block A = {#9, #10, #11} plus a
+        // tailed partner #1. The component is the 12 orderings {A1, A2} > {A3, #1}: two block members
+        // on top, then the third block member and the partner interchangeable once #1's tail is dropped.
+        Assert.Equal(off.MaxStep, on.MaxStep);
+        Assert.True(
+            on.TotalBranchEdges < off.TotalBranchEdges,
+            $"expected shape-C3 merging to reduce branch edges; off={off.TotalBranchEdges} on={on.TotalBranchEdges}");
+
+        Assert.Contains("equivalent forms: 12 = 3! x 2", onText);
+        Assert.Contains("pattern: {A1, A2} > {A3, #1} ; A = {#9, #10, #11} ; drop tail(#1)", onText);
+
+        // The default (toggle-off) render keeps the two families split and never invents the quotient.
+        Assert.Contains("pattern: {#9, #10, #11} > #1", offText);
+        Assert.DoesNotContain("{A1, A2} > {A3, #1}", offText);
+    }
 }

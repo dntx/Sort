@@ -203,6 +203,19 @@ pattern: #1 > #11 > ... > #5 ; (#1 ~ #10) ↔ (#11 ~ #20)
   `TryTwoBlockQuotient` 校验：代表序前两位固定 `A1 > B1`、后两位是 `{A2, B2}` 的两种序；四条链两两不相交；且
   全局 drop 恰等于 `chain(A2) ∪ chain(B2)`（两个输家的链），否则回退拆分。
 
+  **三元块 + partner（形态 C3）**：四个头 = 一个**三元对称叶子块** `A = {b1, b2, b3}` + 一个带尾 partner。
+  分量恰好是 12 个序 `{A1, A2} > {A3, #p}`——两个块成员居顶（任意序），第三个块成员 A3 与 partner 在末两位
+  互换（丢掉 partner 尾巴后 A3 与 #p 等价），例如 11,4,3 的：
+
+  ```
+  equivalent forms: 12 = 3! x 2
+  pattern: {A1, A2} > {A3, #1} ; A = {#9, #10, #11} ; drop tail(#1)
+  ```
+
+  `TryThreeBlockPartnerQuotient` 校验：块 = 三个两两对称的叶子、partner = 唯一带尾的头；每个族代表都把 partner
+  放在末两位（rank 3/4）；四条链不相交；全局 drop 恰等于 partner 的尾部（partner **存活**、只丢尾，这才使它与
+  A3 可换），共 12 个序。
+
 **诚实性（两道闸）**：
 1. 全局-drop 闸 `ComponentIsSingleGlobalDropOrbit`（`StrategyBuilder.ProjectionPairingProbe.cs`）证明分量内
    每个族都映到代表上（确为单一全局 drop 轨道，杜绝传递性泄漏）；
@@ -378,7 +391,8 @@ doomed-tail 边的计数被分解为**对称因子 × 尾部因子**：
   `drop {...}` 披露（9,4,4 / 8,3,3）与多族结构商（canonical 7,3,2：`A1 > {A2, #7} ; ... ; drop tail(A2)`；
   镜像形态 A 6,3,2：`A1 > {A2, #1} ; A = {#4, #5} ; drop tail(#1)`；
   底锚定形态 B 8,3,3：`{A1, #5} > A2 ; A = {#2 > #3, #7 > #8} ; drop chain(A2)`；
-  双块形态 C1 10,4,3：`A1 > B1 > {A2, B2} ; A = {#2 > #3, #6 > #7}, B = {#9, #10} ; drop {chain(A2), B2}`），
+  双块形态 C1 10,4,3：`A1 > B1 > {A2, B2} ; A = {#2 > #3, #6 > #7}, B = {#9, #10} ; drop {chain(A2), B2}`；
+  三元块形态 C3 11,4,3：`{A1, A2} > {A3, #1} ; A = {#9, #10, #11} ; drop tail(#1)`），
   并断言 `MaxStep` 不变、边数下降、且干净对称 brace（`{#1, #5} > #2`）不被误改。
 - `TopKFinder.Tests/ProjectionPairingProbeTests.cs`：测量型探针（`EnableProjectionPairingProbe`，不影响渲染），
   扫描小算例量化合并节省并断言 0 诚实性泄漏。

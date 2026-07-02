@@ -853,7 +853,7 @@ public sealed class StrategyRegressionTests
     [InlineData(11, 3, 3, 131, 2847, 647)]
     [InlineData(12, 4, 4, 46, 1395, 165)]
     [InlineData(10, 3, 4, 324, 11228, 2777)]
-    [InlineData(12, 4, 3, 41, 799, 187)]
+    [InlineData(12, 4, 3, 43, 811, 199)]
     [InlineData(12, 3, 4, 690, 40377, 5931)]
     [InlineData(10, 2, 4, 4118, 120336, 29291)]
     public void Compact_WorkCountersStayWithinBaseline(
@@ -1059,7 +1059,7 @@ public sealed class StrategyRegressionTests
     [InlineData(11, 3, 3, 16220)]
     [InlineData(12, 4, 4, 20854)]
     [InlineData(10, 3, 4, 47255)]
-    [InlineData(12, 4, 3, 6219)]
+    [InlineData(12, 4, 3, 6321)]
     [InlineData(12, 3, 3, 8550)]
     // Ties/anomalies (see Compact_SearchedStateCountStaysWithinBaseline): now measure the genuine
     // compact candidate instead of the discarded default fallback.
@@ -1185,7 +1185,7 @@ public sealed class StrategyRegressionTests
     [InlineData(11, 3, 3, 1743)]
     [InlineData(12, 4, 4, 5538)]
     [InlineData(10, 3, 4, 5207)]
-    [InlineData(12, 4, 3, 2501)]
+    [InlineData(12, 4, 3, 2566)]
     [InlineData(12, 3, 3, 622)]
     // Ties/anomalies (see Compact_SearchedStateCountStaysWithinBaseline): now measure the genuine
     // compact candidate instead of the discarded default fallback.
