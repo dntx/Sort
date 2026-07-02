@@ -25,9 +25,12 @@ MAX_BATCH_CHARS = 5000
 # single request; keep that slice comfortably under the model endpoint's payload
 # limit (large single requests return HTTP 413).
 STRUCTURAL_DIFF_CHARS = 8000
-# Transient rate limiting (HTTP 429) is retried with exponential backoff.
-MODEL_MAX_RETRIES = 4
-MODEL_RETRY_BASE_SECONDS = 5
+# Transient rate limiting (HTTP 429) is retried with capped exponential backoff.
+# The per-attempt delay is capped so a large server-provided Retry-After (e.g. a
+# quota-window reset that can be many minutes) never stalls the whole review.
+MODEL_MAX_RETRIES = 3
+MODEL_RETRY_BASE_SECONDS = 4
+MODEL_RETRY_MAX_SECONDS = 20
 EXCLUDED_REVIEW_PATHS = {".github/scripts/ai_review.py", ".github/workflows/ai-code-review.yml"}
 
 SYSTEM_PROMPT = """\
@@ -427,11 +430,14 @@ def request_chat_completion(messages: list[dict]) -> str:
         except urllib.error.HTTPError as err:
             if err.code == 429 and attempt < MODEL_MAX_RETRIES - 1:
                 retry_after = (err.headers.get("Retry-After") or "").strip()
-                delay = (
+                requested = (
                     float(retry_after)
                     if retry_after.isdigit()
                     else MODEL_RETRY_BASE_SECONDS * (2 ** attempt)
                 )
+                # Cap the wait so a large server Retry-After (e.g. a quota-window
+                # reset spanning minutes) can never stall the whole review.
+                delay = min(requested, MODEL_RETRY_MAX_SECONDS)
                 print(
                     f"Rate limited (429); retrying in {delay:.0f}s "
                     f"(attempt {attempt + 1}/{MODEL_MAX_RETRIES})."
