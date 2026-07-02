@@ -12,7 +12,14 @@ partial class StrategyBuilder
     // rule shrinks the trees.
     private bool _useCompactSelection;
     private bool _compactUsesFeasibleBudget;
+    // When true, the feasible-budget compact solve only proves feasibility at the threaded step
+    // ceiling (children.Count-proxy sort is kept -- it is load-bearing for feasibility at tight
+    // budgets -- but the heavy CountDisplayBranches edge counting is skipped and deferred to a single
+    // final min-edge pass). Drives the greedy-mode Phase A feasibility-only tightening; Phase B clears
+    // it to run one real min-edge pass at the determined step.
+    private bool _compactFeasibilityOnly;
     private int _compactStatesSolved;
+
 
     // Per-state cap on how many candidate groups the greedy edge phase (mode A) generates and
     // evaluates before committing. At large m a single state can have 1000+ distinct step-optimal
@@ -22,6 +29,8 @@ partial class StrategyBuilder
     // cap keeps the phase correct -- it only trades a little per-state edge-count minimization for a
     // bounded, interruptible runtime. int.MaxValue preserves the original exhaustive behavior.
     internal int CompactGreedyCandidateCap = 128;
+    
+    
     private int _compactGroupsEnumerated;
     private int _compactStepOptimalGroups;
 
@@ -34,7 +43,7 @@ partial class StrategyBuilder
     private bool _compactEnumerationCapped;
 
     // Snapshot of _compactEnumerationCapped taken at the moment a feasible-compact probe concluded
-    // infeasible (root cost == sentinel), so TightenFeasibleCompact can tell a proven-infeasible ceiling
+    // infeasible (root cost == sentinel), so the tightening loop can tell a proven-infeasible ceiling
     // (complete search) from a merely-incomplete one (cap truncated some state's enumeration).
     private bool _lastProbeEnumerationCapped;
     private readonly Dictionary<SearchStateKey, BestGroupPattern> _compactGroupPatternCache = new();
@@ -61,6 +70,7 @@ partial class StrategyBuilder
 
     // Clears the per-budget compact caches so a tightening retry re-solves from scratch at the new
     // (tighter) ceiling. The cross-phase step budget/estimate fields are intentionally left untouched.
+    // This resets the compact selection caches, ensuring subsequent phases start with clean state.
     private void ResetCompactSelectionState()
     {
         _compactGroupPatternCache.Clear();
@@ -118,7 +128,9 @@ partial class StrategyBuilder
         // once, so the whole pass stays linear in reachable states like the feasible phase. Edge count
         // is a fast next-best, not the proven minimum.
         if (_compactUsesFeasibleBudget)
-            return SolveCompactSelectionGreedy(state, remainingSlots, optimalSteps, key, memoKey);
+            return _compactFeasibilityOnly
+                ? SolveCompactSelectionFeasibleOnly(state, remainingSlots, optimalSteps, key, memoKey)
+                : SolveCompactSelectionGreedy(state, remainingSlots, optimalSteps, key, memoKey);
 
         var candidates = state.GetActiveItemsOrdered();
         int groupSize = Math.Min(_m, candidates.Count);
@@ -309,7 +321,7 @@ partial class StrategyBuilder
         // cap bounds BOTH the representative generation/dedup and the FitChildren cost per state -- the
         // materialized full enumeration over thousands of large-m groups is what makes the edge phase
         // hang. The constructive group above guarantees correctness regardless of the cap.
-        foreach (var group in EnumerateDistinctGroups(state, candidates, groupSize, CompactGreedyCandidateCap))
+         foreach (var group in EnumerateDistinctGroups(state, candidates, groupSize, CompactGreedyCandidateCap))
         {
             if (!seen.Add(new IntSequenceKey(group.ToArray())))
                 continue;
@@ -321,7 +333,17 @@ partial class StrategyBuilder
             _compactStepOptimalGroups++;
             fits.Add((group, children));
         }
-        fits.Sort((a, b) => a.Children.Count.CompareTo(b.Children.Count));
+        
+        // Sort candidates by immediate FitChildren count as cheap proxy for tree quality.
+        // Children?.Count should never be null (FitChildren always returns a list or null, never a
+        // null list), but the null-safe accessor provides defensive safety. If somehow Children is null,
+        // treating it as 0 (worst proxy ranking) ensures the group is explored last, preserving algorithm
+        // correctness (all groups are still tried; only ordering changes).
+        fits.Sort((a, b) => {
+            int aCount = a.Children?.Count ?? 0;
+            int bCount = b.Children?.Count ?? 0;
+            return aCount.CompareTo(bCount);
+        });
 
         foreach (var (group, children) in fits)
         {
@@ -344,10 +366,101 @@ partial class StrategyBuilder
             int cost = CountDisplayBranches(state, remainingSlots, group) + branchCostSum;
             _compactCostMemo[memoKey] = cost;
 
+            // Track the realized worst-case depth separately from the edge cost so the plan's MaxStep
+            // can drop below the threaded budget when the chosen groups happen to resolve faster.
             int realSteps = 0;
             foreach (var (childState, childRemaining) in children)
                 realSteps = Math.Max(realSteps, GetCompactRealSteps(childState, childRemaining));
             _compactRealStepsMemo[key] = 1 + realSteps;
+            return cost;
+        }
+
+        return int.MaxValue;
+    }
+
+    // Feasibility-only variant of SolveCompactSelectionGreedy. Proves a state is solvable within the
+    // threaded step ceiling using the first solvable group in children-count-proxy order, and returns
+    // as soon as one is found. It mirrors the min-edge greedy's candidate gathering and children.Count
+    // sort (that ordering is load-bearing for feasibility at tight budgets, not just an edge
+    // optimization), but DOES NOT call the heavy CountDisplayBranches edge counter -- all edge work is
+    // deferred to a single final min-edge pass at the determined step. It still caches the chosen group
+    // pattern (so BuildState can materialize) and the realized step count (so the plan's MaxStep is
+    // correct). Returns 1 + maxChildRealSteps as a finite "cost" (callers only compare against
+    // int.MaxValue), or int.MaxValue if no group fits the ceiling.
+    private int SolveCompactSelectionFeasibleOnly(
+        ComparisonState state, int remainingSlots, int budget, SearchStateKey key, (SearchStateKey, int) memoKey)
+    {
+        var candidates = state.GetActiveItemsOrdered();
+        int groupSize = Math.Min(_m, candidates.Count);
+        int branchBudget = budget - 1;
+
+        List<(ComparisonState State, int RemainingSlots)>? FitChildren(IReadOnlyList<int> group)
+        {
+            bool rejected = false;
+            var children = new List<(ComparisonState State, int RemainingSlots)>();
+            OutcomeTraversalSummary traversal = VisitComparisonOutcomes(
+                state, fixedTopMask: 0, remainingSlots, group, currentKey: key, collectMergedBranches: false,
+                onUsefulOutcome: outcome =>
+                {
+                    if (GetMinWorstCaseLowerBound(outcome.NextState, outcome.NextRemainingSlots) > branchBudget)
+                    {
+                        rejected = true;
+                        return false;
+                    }
+                    children.Add((outcome.NextState, outcome.NextRemainingSlots));
+                    return true;
+                });
+            return rejected || !traversal.IsUseful ? null : children;
+        }
+
+        // Mirror SolveCompactSelectionGreedy's candidate gathering and children-count proxy sort, but
+        // DEFER all exact edge counting (CountDisplayBranches) to the final min-edge pass.
+        var fits = new List<(List<int> Group, List<(ComparisonState State, int RemainingSlots)> Children)>();
+        List<int> constructiveGroup = ChooseConstructiveGroup(state, remainingSlots);
+        var seen = new HashSet<IntSequenceKey>();
+        var constructiveChildren = FitChildren(constructiveGroup);
+        if (constructiveChildren is not null)
+        {
+            _compactGroupsEnumerated++;
+            _compactStepOptimalGroups++;
+            seen.Add(new IntSequenceKey(constructiveGroup.ToArray()));
+            fits.Add((constructiveGroup, constructiveChildren));
+        }
+        foreach (var group in EnumerateDistinctGroups(state, candidates, groupSize, CompactGreedyCandidateCap))
+        {
+            if (!seen.Add(new IntSequenceKey(group.ToArray())))
+                continue;
+            ThrowIfCancellationRequested();
+            _compactGroupsEnumerated++;
+            var children = FitChildren(group);
+            if (children is null)
+                continue;
+            _compactStepOptimalGroups++;
+            fits.Add((group, children));
+        }
+        fits.Sort((a, b) => a.Children.Count.CompareTo(b.Children.Count));
+
+        foreach (var (group, children) in fits)
+        {
+            bool solvable = true;
+            int realSteps = 0;
+            foreach (var (childState, childRemaining) in children)
+            {
+                int childCost = SolveCompactSelection(childState, childRemaining, branchBudget);
+                if (childCost == int.MaxValue)
+                {
+                    solvable = false;
+                    break;
+                }
+                realSteps = Math.Max(realSteps, GetCompactRealSteps(childState, childRemaining));
+            }
+            if (!solvable)
+                continue;
+
+            _compactGroupPatternCache[key] = MakeGroupPattern(state, group);
+            int cost = 1 + realSteps;   // steps-as-cost; callers only test against int.MaxValue
+            _compactCostMemo[memoKey] = cost;
+            _compactRealStepsMemo[key] = cost;
             return cost;
         }
 

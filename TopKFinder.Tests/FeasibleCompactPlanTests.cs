@@ -71,7 +71,7 @@ public class FeasibleCompactPlanTests
     // truncates a state's group enumeration, a probe that finds no feasible group has NOT proven the ceiling
     // infeasible -- an untried group might have fit. Such a terminal stage must be reported as Incomplete
     // (not NoSolution) and must leave the squeeze open (no proven-optimal claim). 12,4,4 exercises this: at
-    // the default cap the compact<=4 probe truncates, so it is Incomplete; raising the cap enough to enumerate
+    // the default cap the feasible<=4 probe truncates, so it is Incomplete; raising the cap enough to enumerate
     // completely flips the same probe to a genuine NoSolution proof that closes the squeeze.
     [Fact]
     public void FeasibleCompactPlan_CappedInfeasibility_IsIncomplete_NotProvenOptimal()

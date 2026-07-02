@@ -146,3 +146,16 @@ bound.
 ## Requirements
 
 - .NET 8.0 SDK
+
+## Greedy Mode: Min-Step Optimization
+
+### Overview
+Greedy mode is feasibility-first: it finds a valid solution fast, tightens its worst-case step count, then minimizes edges once at the final step. It never proves optimality by exhaustive search, but is fast and interruptible (Ctrl+C in the CLI, Stop in the GUI) — cancelling always surfaces the best plan found so far.
+
+- **Greedy (feasible)**: a constructive greedy pass finds an initial feasible solution and its step upper bound `U`.
+- **Tightening (feasible≤N)**: feasibility-only compact probes at ceilings `U-1, U-2, …` drive the worst-case step count down to the smallest feasible step `S`. These probes skip edge counting entirely; each successful one is reported as a `feasible≤N` stage.
+- **Compact (min-edge)**: a single min-edge compact pass runs at the determined step `S`, minimizing edge count without changing the step count.
+
+Doing min-edge only once, at the final step, avoids repeatedly computing edge counts at intermediate ceilings that tightening later discards. If a ceiling is *proven* infeasible (complete enumeration, no candidate cap truncation), the incumbent is proven optimal and the squeeze closes to `max steps = S (proven optimal)`.
+
+Regression coverage lives in `TopKFinder.Tests/MinStepGreedyTests.cs` and `TopKFinder.Tests/FeasibleCompactPlanTests.cs`.
