@@ -109,4 +109,28 @@ public sealed class ProjectionOrbitMergeTests
         Assert.Contains("pattern: {#4, #5} > #1", offText);
         Assert.DoesNotContain("A1 > {A2", offText);
     }
+
+    [Fact]
+    public void N8M3K3_BottomAnchoredBlockMinFoldsShapeB()
+    {
+        (StrategyPlan off, string offText) = Build(8, 3, 3, projectionMerging: false);
+        (StrategyPlan on, string onText) = Build(8, 3, 3, projectionMerging: true);
+
+        // Shape B is the bottom-anchored mirror of canonical: the symmetric block {#2, #7} sits above
+        // the partner #5, so a block member is the unique MINIMUM. The eliminated bottom block member
+        // (A2) has its WHOLE chain dropped, and A1 + the partner become interchangeable only then.
+        Assert.Equal(off.MaxStep, on.MaxStep);
+        Assert.True(
+            on.TotalBranchEdges < off.TotalBranchEdges,
+            $"expected shape-B merging to reduce branch edges; off={off.TotalBranchEdges} on={on.TotalBranchEdges}");
+
+        // The block carries its chains and the covariant drop is the whole chain of the min (A2).
+        Assert.Contains("equivalent forms: 4 = 2! x 2", onText);
+        Assert.Contains("pattern: {A1, #5} > A2 ; A = {#2 > #3, #7 > #8} ; drop chain(A2)", onText);
+
+        // The default (toggle-off) render keeps the two families split and never invents the quotient.
+        Assert.Contains("pattern: #5 > {#2, #7}", offText);
+        Assert.DoesNotContain("{A1, #5} > A2", offText);
+        Assert.DoesNotContain("drop chain(", offText);
+    }
 }

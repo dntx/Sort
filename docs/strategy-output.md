@@ -177,6 +177,19 @@ pattern: #1 > #11 > ... > #5 ; (#1 ~ #10) ↔ (#11 ~ #20)
   `BuildProjectionQuotientSummary` 用「哪一侧（带尾 vs 叶子）恰好有两个成员」来判定块，落单的头即 partner；
   `{A2, partner}` 里恰有一个带 doomed 尾部，那就是被 drop 的对象。
 
+  **上下镜像（形态 B）**：以上都是「块成员是唯一**最大值**」的**顶锚定**形态。形态 B 是它的**底锚定**镜像——
+  「块成员是唯一**最小值**」：对称块 `A = {b1, b2}`（各带尾链）压在 partner 之上，被淘汰的**底部**块成员
+  A2 连**整条链**（不只是尾部）一起 drop 掉，例如 8,3,3 的 `sort(#2, #5, #7)`：
+
+  ```
+  equivalent forms: 4 = 2! x 2
+  pattern: {A1, #5} > A2 ; A = {#2 > #3, #7 > #8} ; drop chain(A2)
+  ```
+
+  存活的块成员 A1 与 partner 只有在 A2 整条链被 drop 之后才互换。此时三个头**都带尾链**（带尾/叶子二分法
+  无法挑出块），故 `TryBottomAnchoredQuotient` 改用「唯一父自同构对」定位块；`drop chain(A2)` 与顶锚定的
+  `drop tail(A2)`（A2 存活、只丢尾）区分——底锚定的 A2 是被淘汰的最小值，整条链都出局。
+
 **诚实性（两道闸）**：
 1. 全局-drop 闸 `ComponentIsSingleGlobalDropOrbit`（`StrategyBuilder.ProjectionPairingProbe.cs`）证明分量内
    每个族都映到代表上（确为单一全局 drop 轨道，杜绝传递性泄漏）；
@@ -350,7 +363,8 @@ doomed-tail 边的计数被分解为**对称因子 × 尾部因子**：
   - 多个 `..._RenderedTextMatchesSnapshot` 快照对小算例的整段文本做逐字节比对。
 - `TopKFinder.Tests/ProjectionOrbitMergeTests.cs`：钉 §4.2 投影合并的两种形态——单序合并的
   `drop {...}` 披露（9,4,4 / 8,3,3）与多族结构商（canonical 7,3,2：`A1 > {A2, #7} ; ... ; drop tail(A2)`；
-  镜像形态 A 6,3,2：`A1 > {A2, #1} ; A = {#4, #5} ; drop tail(#1)`），
+  镜像形态 A 6,3,2：`A1 > {A2, #1} ; A = {#4, #5} ; drop tail(#1)`；
+  底锚定形态 B 8,3,3：`{A1, #5} > A2 ; A = {#2 > #3, #7 > #8} ; drop chain(A2)`），
   并断言 `MaxStep` 不变、边数下降、且干净对称 brace（`{#1, #5} > #2`）不被误改。
 - `TopKFinder.Tests/ProjectionPairingProbeTests.cs`：测量型探针（`EnableProjectionPairingProbe`，不影响渲染），
   扫描小算例量化合并节省并断言 0 诚实性泄漏。
