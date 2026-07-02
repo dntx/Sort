@@ -693,6 +693,37 @@ def _is_noise_bullet(bullet: str) -> bool:
     return "no issues found" in low or "**[approve]**" in low or "[approve]" in low
 
 
+_BULLET_MARKER_RE = re.compile(r"^\s*[-*]\s+")
+_LEADING_SEVERITY_RE = re.compile(
+    r"^\**\[(?:BLOCK|COMMENT|APPROVE)\]\**\s*", re.IGNORECASE
+)
+
+
+def _bullet_severity(bullet: str) -> str:
+    """Classify a bullet as BLOCK or COMMENT from its leading severity tag."""
+    first = bullet.splitlines()[0] if bullet.strip() else ""
+    match = re.search(r"\[(BLOCK|COMMENT|APPROVE)\]", first, re.IGNORECASE)
+    return match.group(1).upper() if match else "COMMENT"
+
+
+def _reformat_bullet(bullet: str, source: str, number: int | None) -> str:
+    """Re-render a finding bullet with a source tag and (for blocks) a B# label.
+
+    The original inline severity tag is stripped: blocking items get a
+    ``**[B<n>]**`` prefix, comments drop the tag entirely (they live under the
+    Comments section). Continuation lines (e.g. quoted code) are preserved.
+    """
+    lines = bullet.splitlines()
+    if not lines:
+        return bullet
+    first = _BULLET_MARKER_RE.sub("", lines[0], count=1)
+    first = _LEADING_SEVERITY_RE.sub("", first)
+    label = f"**[B{number}]** " if number is not None else ""
+    src = f"({source}) " if source else ""
+    new_first = f"- {label}{src}{first}".rstrip()
+    return "\n".join([new_first, *lines[1:]])
+
+
 def combine_batch_reviews(
     batch_reviews: list[tuple[int, int, str, str]],
     structural: tuple[str, str] | None = None,
@@ -733,22 +764,46 @@ def combine_batch_reviews(
     # summaries joined into one paragraph.
     overall_summary = struct_summary or " ".join(batch_summaries).strip()
 
+    # Tag every finding with its source, then split by severity so all blocking
+    # items surface at the top regardless of source or arrival order.
+    tagged = (
+        [("structure", b) for b in struct_bullets]
+        + [("code", b) for b in code_bullets]
+    )
+    blocking = [(src, b) for src, b in tagged if _bullet_severity(b) == "BLOCK"]
+    comments = [(src, b) for src, b in tagged if _bullet_severity(b) != "BLOCK"]
+
     parts: list[str] = ["## Summary"]
     if overall_summary:
         parts.append(overall_summary)
-    parts.append(f"\n_Verdict: **{final_verdict}**_")
+    verdict_line = f"\n_Verdict: **{final_verdict}**_"
+    if blocking or comments:
+        comment_word = "comment" if len(comments) == 1 else "comments"
+        verdict_line += (
+            f" — 🚫 {len(blocking)} blocking · 💬 {len(comments)} {comment_word}"
+        )
+    parts.append(verdict_line)
     parts.append("")
 
-    parts.append("## Findings")
-    if not struct_bullets and not code_bullets:
+    if not blocking and not comments:
+        parts.append("## Findings")
         parts.append("No issues found.")
     else:
-        if struct_bullets:
-            parts.append("### Structure & consistency")
-            parts.extend(struct_bullets)
+        if blocking:
+            parts.append("## 🚫 Blocking (must fix)")
+            for index, (src, bullet) in enumerate(blocking, start=1):
+                parts.append(_reformat_bullet(bullet, src, index))
             parts.append("")
-        parts.append("### Code")
-        parts.extend(code_bullets if code_bullets else ["No issues found."])
+        if comments:
+            parts.append("<details>")
+            parts.append(
+                f"<summary>💬 Comments ({len(comments)}) — non-blocking</summary>"
+            )
+            parts.append("")  # blank line so the markdown list renders inside <details>
+            for src, bullet in comments:
+                parts.append(_reformat_bullet(bullet, src, None))
+            parts.append("")
+            parts.append("</details>")
 
     parts.append("")
     parts.append(f"VERDICT: {final_verdict}")
