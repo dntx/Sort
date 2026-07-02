@@ -68,11 +68,11 @@ pattern: {PatternText} ; {Legend}                  // FormatEquivalentPatternLin
 | `x > y`（接在 ` ; ` 之后） | **residual 约束**：折叠成 `{...}` 的尾部里仍然成立的已知顺序（Hasse 覆盖边） |
 | `(#a) ↔ (#b)` | **relabel 镜像**：`#a` 与 `#b` 互为父状态自同构（或投影后自同构）的镜像，可整体互换 |
 | `drop {...}` | **投影合并披露**：这条折叠边的代表与其镜像「共同注定出局」的元素集——丢掉它们后两者才等价（§4.2） |
-| `A1 > {A2, #7}` | **结构商记号**：投影后对称类成员 `A2` 与单叶 `#7` 落入同一 brace（多族投影合并的代表形状） |
-| `drop tail(A2)` / `drop tail(#p)` | 结构商里的**协变 drop**：折叠成员各自丢掉那个带 doomed 尾部的成员——canonical 形态里是块败者 `A2`，其镜像（形态 A）里是带尾的 partner `#p`——之后才互换 |
+| `A1 > {A2, #7}` | **结构商记号**：投影后对称类成员 `A2` 与单叶 `#7` 落入同一 brace（多族投影合并的代表形状；另有底锚定 `{A1, #p} > A2`、双块 `A1 > B1 > {A2, B2}`、三元块 `{A1, A2} > {A3, #p}` 等变体，见 §4.2） |
+| `drop tail(...)` / `drop chain(...)` / `drop {...}` | 结构商里的**协变 drop**：丢掉「注定出局」的成员后各分支才互换。`tail(X)`=只丢 X 的尾（X **存活**；canonical / 形态 A / C3）；`chain(X)`=丢 X 整条链（X 是被淘汰的最小值；形态 B）；`{chain(A2), B2}`=双块各出一个输家的链（形态 C1） |
 | `N!` / `c!` | 阶乘形式的计数因子（一条长 `c` 的链有 `c!` 种线性扩展） |
 | `... sym x ... tail` | doomed-tail 计数 = 对称因子 × 尾部因子 |
-| `p! x q`（投影商计数） | 投影商计数 = 块内排列 `p!` × 投影镜像数 `q`（如 `4 = 2! x 2`） |
+| 投影商计数（如 `2! x 2` / `2! x 2! x 2` / `3! x 2`） | 各对称块的块内排列（`p!`）× 投影镜像数——如 canonical/A/B `4 = 2! x 2`、双块 C1 `8 = 2! x 2! x 2`、三元块 C3 `12 = 3! x 2` |
 
 一个核心约定：**`{...}` 永远只表示「任意顺序」**。无论它来自全排列、对称类，还是 doomed 尾部，
 读者看到花括号就知道「这些元素之间顺序无所谓」。
@@ -412,7 +412,7 @@ doomed-tail 边的计数被分解为**对称因子 × 尾部因子**：
 | 文本渲染 | `StrategyTextRenderer.cs` → `FormatEquivalentFormsSummary`、`FormatEquivalentPatternLine`、`FormatSet`（`#i ~ #j` 缩写） |
 | 轨道选择 | `StrategyBuilder.Transitions.cs` → `BuildBranchSpecs`、`SplitMergedBucketIntoBranchLines`、`PartitionFamiliesIntoOrbits`；`StrategyBuilder.Compact.cs`（compact 版） |
 | relabel 同构折叠 | `StrategyBuilder.Transitions.cs` → `BuildBranchSpecForLine`、`SelectOrbitRepresentative`；`StrategyBuilder.EquivalentOrders.cs` → `BuildRelabelingOrbitSummary`、`FormatRelabelingMap`；`ComparisonState.cs` → `TryFindOrderAutomorphism` |
-| 投影轨道合并（principle-D） | `StrategyBuilder.Transitions.cs` → `SplitMergedBucketIntoBranchLines`（开关 `EnableProjectionOrbitMerging`，默认 true）；`StrategyBuilder.ProjectionQuotient.cs` → `MergeOrbitsByProjection`、`BuildProjectionQuotientSummary`、`FormatActiveChain`；`MergeSingletonOrbitsByProjection`、`TryProjectionAutomorphism`（回退） |
+| 投影轨道合并（principle-D） | `StrategyBuilder.Transitions.cs` → `SplitMergedBucketIntoBranchLines`（开关 `EnableProjectionOrbitMerging`，默认 true）；`StrategyBuilder.ProjectionQuotient.cs` → `MergeOrbitsByProjection`、`BuildProjectionQuotientSummary`（分派器）→ `TryTopAnchoredQuotient`（canonical + 形态 A）/ `TryBottomAnchoredQuotient`（形态 B）/ `TryTwoBlockQuotient`（C1）/ `TryThreeBlockPartnerQuotient`（C3）、`FormatActiveChain`；`MergeSingletonOrbitsByProjection`、`TryProjectionAutomorphism`（回退） |
 | 投影诚实性闸 / 探针 | `StrategyBuilder.ProjectionPairingProbe.cs` → `ComponentIsSingleGlobalDropOrbit`、`EnableProjectionPairingProbe`（测量只读） |
 | 通用 pattern 引擎 | `StrategyBuilder.EquivalentOrders.cs` → `BuildEquivalentOrderSummary`、`BuildEquivalentPatternSummary`、`TryBuild*Summary` 系列 |
 | 归一化 / 图例 | `StrategyBuilder.EquivalentOrders.cs` → `SplitPlaceholderLegend`、`NormalizeEquivalentPattern`、`FormatBraceSet` |
