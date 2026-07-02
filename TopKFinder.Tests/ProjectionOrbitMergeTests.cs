@@ -133,4 +133,28 @@ public sealed class ProjectionOrbitMergeTests
         Assert.DoesNotContain("{A1, #5} > A2", offText);
         Assert.DoesNotContain("drop chain(", offText);
     }
+
+    [Fact]
+    public void N10M4K3_TwoBlockLosersFoldShapeC1()
+    {
+        (StrategyPlan off, string offText) = Build(10, 4, 3, projectionMerging: false);
+        (StrategyPlan on, string onText) = Build(10, 4, 3, projectionMerging: true);
+
+        // Shape C1 spans FOUR heads = two disjoint symmetric pairs A = {#2, #6} and B = {#9, #10}. The
+        // component is the 8 orderings A1 > B1 > {A2, B2}: an A winner on top, a B member second, then
+        // the A loser and the other B member interchangeable once A2's whole chain and B2 are dropped.
+        Assert.Equal(off.MaxStep, on.MaxStep);
+        Assert.True(
+            on.TotalBranchEdges < off.TotalBranchEdges,
+            $"expected shape-C1 merging to reduce branch edges; off={off.TotalBranchEdges} on={on.TotalBranchEdges}");
+
+        Assert.Contains("equivalent forms: 8 = 2! x 2! x 2", onText);
+        Assert.Contains(
+            "pattern: A1 > B1 > {A2, B2} ; A = {#2 > #3, #6 > #7}, B = {#9, #10} ; drop {chain(A2), B2}",
+            onText);
+
+        // The default (toggle-off) render keeps the families split and never invents the two-block quotient.
+        Assert.DoesNotContain("A1 > B1 > {A2, B2}", offText);
+        Assert.DoesNotContain("drop {chain(A2), B2}", offText);
+    }
 }

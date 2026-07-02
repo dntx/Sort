@@ -190,6 +190,19 @@ pattern: #1 > #11 > ... > #5 ; (#1 ~ #10) ↔ (#11 ~ #20)
   无法挑出块），故 `TryBottomAnchoredQuotient` 改用「唯一父自同构对」定位块；`drop chain(A2)` 与顶锚定的
   `drop tail(A2)`（A2 存活、只丢尾）区分——底锚定的 A2 是被淘汰的最小值，整条链都出局。
 
+  **双块（形态 C1）**：以上都是「一个对称块 + 一个 partner」（三个头）。形态 C1 是四个头 = **两个不相交的对称对**
+  `A = {A1, A2}`、`B = {B1, B2}`，分量恰好是 8 个序 `A1 > B1 > {A2, B2}`——A 的赢家居首、一个 B 成员居次，
+  然后 A 的输家 A2 与另一个 B 成员 B2 在丢掉「A2 整条链 + B2」之后互换，例如 10,4,3 的：
+
+  ```
+  equivalent forms: 8 = 2! x 2! x 2
+  pattern: A1 > B1 > {A2, B2} ; A = {#2 > #3, #6 > #7}, B = {#9, #10} ; drop {chain(A2), B2}
+  ```
+
+  `{A2, B2}` 是投影 brace——**每个块各出一个输家**配对（A2、B2 分属不同对称对、父态下不可换，须靠 drop 披露）。
+  `TryTwoBlockQuotient` 校验：代表序前两位固定 `A1 > B1`、后两位是 `{A2, B2}` 的两种序；四条链两两不相交；且
+  全局 drop 恰等于 `chain(A2) ∪ chain(B2)`（两个输家的链），否则回退拆分。
+
 **诚实性（两道闸）**：
 1. 全局-drop 闸 `ComponentIsSingleGlobalDropOrbit`（`StrategyBuilder.ProjectionPairingProbe.cs`）证明分量内
    每个族都映到代表上（确为单一全局 drop 轨道，杜绝传递性泄漏）；
@@ -364,7 +377,8 @@ doomed-tail 边的计数被分解为**对称因子 × 尾部因子**：
 - `TopKFinder.Tests/ProjectionOrbitMergeTests.cs`：钉 §4.2 投影合并的两种形态——单序合并的
   `drop {...}` 披露（9,4,4 / 8,3,3）与多族结构商（canonical 7,3,2：`A1 > {A2, #7} ; ... ; drop tail(A2)`；
   镜像形态 A 6,3,2：`A1 > {A2, #1} ; A = {#4, #5} ; drop tail(#1)`；
-  底锚定形态 B 8,3,3：`{A1, #5} > A2 ; A = {#2 > #3, #7 > #8} ; drop chain(A2)`），
+  底锚定形态 B 8,3,3：`{A1, #5} > A2 ; A = {#2 > #3, #7 > #8} ; drop chain(A2)`；
+  双块形态 C1 10,4,3：`A1 > B1 > {A2, B2} ; A = {#2 > #3, #6 > #7}, B = {#9, #10} ; drop {chain(A2), B2}`），
   并断言 `MaxStep` 不变、边数下降、且干净对称 brace（`{#1, #5} > #2`）不被误改。
 - `TopKFinder.Tests/ProjectionPairingProbeTests.cs`：测量型探针（`EnableProjectionPairingProbe`，不影响渲染），
   扫描小算例量化合并节省并断言 0 诚实性泄漏。

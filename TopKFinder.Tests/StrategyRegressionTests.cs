@@ -882,8 +882,8 @@ public sealed class StrategyRegressionTests
     // Verified: the 38-edge compact tree has objective==render at every node, 0 false-splits, and
     // 0 unbacked merges, and the consistent DP is exhaustive over step-optimal groups, so 38 is the
     // true minimum displayed-edge count under honest rendering (any lower count is necessarily a
-    // dishonest merge). With projection-orbit merging (default on) it folds further to 34.
-    [InlineData(12, 4, 4, 34)]
+    // dishonest merge). With projection-orbit merging (default on) it folds further to 33 (shape B/C).
+    [InlineData(12, 4, 4, 33)]
     // TODO (projection-merge compact follow-up): with merging default-on the compact objective
     // CountDisplayBranches estimates the merge with fixedTopMask=0, so the chosen compact tree here
     // renders 11 merged edges where the merge-off compact tree reached 9. Tracked in /memories/repo;
@@ -927,9 +927,9 @@ public sealed class StrategyRegressionTests
             cancellationToken => new StrategyBuilder(12, 4, 4, cancellationToken).BuildCompactPlan());
 
         Assert.Equal(baseline.MaxStep, compact.MaxStep);
-        // With the full-bucket pre-merge fix this reached 35; projection-orbit merging (default on)
-        // folds one further sibling pair to 34.
-        Assert.Equal(34, compact.TotalBranchEdges);
+        // With the full-bucket pre-merge fix this reached 35; projection-orbit merging (default on) folds
+        // further to 33 (a two-block shape-C1 component collapses on top of the earlier sibling fold).
+        Assert.Equal(33, compact.TotalBranchEdges);
     }
 
     // Searched-state monitor for the compact pass. Compact runs a second, less-prunable
