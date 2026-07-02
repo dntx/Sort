@@ -154,7 +154,7 @@ partial class StrategyBuilder
     {
         IReadOnlyList<int> repOrder = representative.Family.RepresentativeOrderItems;
         var headSet = new HashSet<int>(repOrder);
-        if (headSet.Count != 3)
+        if (headSet.Count < 3 || headSet.Count > 4)
             return null;
 
         foreach (MergedFamilyOutcome member in line)
@@ -163,11 +163,14 @@ partial class StrategyBuilder
                 return null;
         }
 
-        // Two anchoring orientations, mirror images of each other:
+        // Two anchoring orientations over three heads, mirror images of each other:
         //   top-anchored    -- a block member is the unique MAXIMUM  (canonical + shape A)
         //   bottom-anchored -- a block member is the unique MINIMUM   (shape B)
+        // plus a four-head shape:
+        //   two-block       -- two symmetric pairs, the two losers interchangeable post-drop (shape C1)
         return TryTopAnchoredQuotient(state, line, repOrder, headSet)
-            ?? TryBottomAnchoredQuotient(state, line, repOrder, headSet);
+            ?? TryBottomAnchoredQuotient(state, line, repOrder, headSet)
+            ?? TryTwoBlockQuotient(state, line, repOrder, headSet);
     }
 
     // Top-anchored quotient: the three heads form a two-member symmetric block plus a partner, and the
@@ -178,6 +181,9 @@ partial class StrategyBuilder
     private EquivalentOrderSummary? TryTopAnchoredQuotient(
         ComparisonState state, List<MergedFamilyOutcome> line, IReadOnlyList<int> repOrder, HashSet<int> headSet)
     {
+        if (headSet.Count != 3)
+            return null;
+
         ulong active = state.ActiveMask;
         var tailedHeads = new List<int>();
         var leafHeads = new List<int>();
@@ -280,6 +286,9 @@ partial class StrategyBuilder
     private EquivalentOrderSummary? TryBottomAnchoredQuotient(
         ComparisonState state, List<MergedFamilyOutcome> line, IReadOnlyList<int> repOrder, HashSet<int> headSet)
     {
+        if (headSet.Count != 3)
+            return null;
+
         ulong active = state.ActiveMask;
 
         // The block is the unique parent-automorphism pair among the three heads; the odd head is the
@@ -347,6 +356,84 @@ partial class StrategyBuilder
         string patternText = $"{{A1, #{partner + 1}}} > A2";
         string legend = $"A = {{{chain1}, {chain2}}} ; drop chain(A2)";
         return new EquivalentOrderSummary(totalCount, patternText, "2! x 2", legend);
+    }
+
+    // Two-block quotient (shape C1): the orderings range over FOUR heads forming two disjoint symmetric
+    // pairs A = {A1, A2} and B = {B1, B2}. The component is exactly the 8 orderings A1 > B1 > {A2, B2}:
+    // an A winner on top, a B member second, then the A loser and the other B member interchangeable
+    // once A2's whole chain and B2 are dropped:
+    //     A1 > B1 > {A2, B2} ; A = {chain(A1), chain(A2)}, B = {chain(B1), chain(B2)} ; drop {chain(A2), B2}
+    // {A2, B2} is the projection-merged brace (a loser from each block); honesty is separately certified
+    // by ComponentIsSingleGlobalDropOrbit.
+    private EquivalentOrderSummary? TryTwoBlockQuotient(
+        ComparisonState state, List<MergedFamilyOutcome> line, IReadOnlyList<int> repOrder, HashSet<int> headSet)
+    {
+        if (headSet.Count != 4 || repOrder.Count != 4)
+            return null;
+
+        int a1 = repOrder[0];
+        int b1 = repOrder[1];
+        int x = repOrder[2];
+        int y = repOrder[3];
+
+        bool Sym(int p, int q) => state.TryMapOrderByAutomorphism(0, new[] { p }, new[] { q });
+
+        // A2 is A1's symmetric partner among the last two heads; B2 is B1's. Each must resolve to exactly
+        // one of {x, y}, the two must differ, and the two blocks must be distinct (A1 not ~ B1) -- so the
+        // four heads split cleanly into the pairs {A1, A2} and {B1, B2}.
+        bool a1x = Sym(a1, x);
+        bool a1y = Sym(a1, y);
+        bool b1x = Sym(b1, x);
+        bool b1y = Sym(b1, y);
+        int a2 = (a1x ^ a1y) ? (a1x ? x : y) : -1;
+        int b2 = (b1x ^ b1y) ? (b1x ? x : y) : -1;
+        if (a2 < 0 || b2 < 0 || a2 == b2 || Sym(a1, b1))
+            return null;
+
+        // Every family representative must be A1 > B1 > (the two losers in either order), and together
+        // they must be the full 8-ordering orbit.
+        int totalCount = 0;
+        foreach (MergedFamilyOutcome member in line)
+        {
+            IReadOnlyList<int> order = member.Family.RepresentativeOrderItems;
+            if (order.Count != 4 || order[0] != a1 || order[1] != b1)
+                return null;
+            if (!((order[2] == a2 && order[3] == b2) || (order[2] == b2 && order[3] == a2)))
+                return null;
+            totalCount += member.Family.Count;
+        }
+        if (totalCount != 8)
+            return null;
+
+        // Each head owns a single total active chain, and the four chains must be disjoint so the printed
+        // A/B legends name four separate subtrees.
+        string? chainA1 = FormatActiveChain(state, a1);
+        string? chainA2 = FormatActiveChain(state, a2);
+        string? chainB1 = FormatActiveChain(state, b1);
+        string? chainB2 = FormatActiveChain(state, b2);
+        if (chainA1 is null || chainA2 is null || chainB1 is null || chainB2 is null)
+            return null;
+
+        ulong active = state.ActiveMask;
+        ulong ChainMask(int head) => (state.GetDescendantMask(head) & active) | (1UL << head);
+        ulong maskA1 = ChainMask(a1);
+        ulong maskA2 = ChainMask(a2);
+        ulong maskB1 = ChainMask(b1);
+        ulong maskB2 = ChainMask(b2);
+        if ((maskA1 & maskA2) != 0 || (maskA1 & maskB1) != 0 || (maskA1 & maskB2) != 0
+            || (maskA2 & maskB1) != 0 || (maskA2 & maskB2) != 0 || (maskB1 & maskB2) != 0)
+            return null;
+
+        // The covariant drop must be exactly the two losers' chains: A2's whole chain plus B2's.
+        ulong globalDrop = ~0UL;
+        foreach (MergedFamilyOutcome member in line)
+            globalDrop &= EliminatedMask(state, member);
+        if (globalDrop != (maskA2 | maskB2))
+            return null;
+
+        const string patternText = "A1 > B1 > {A2, B2}";
+        string legend = $"A = {{{chainA1}, {chainA2}}}, B = {{{chainB1}, {chainB2}}} ; drop {{chain(A2), B2}}";
+        return new EquivalentOrderSummary(totalCount, patternText, "2! x 2! x 2", legend);
     }
 
     // Formats a chain head together with its active down-set as "#a > #b > ...", or null when the
