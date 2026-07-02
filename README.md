@@ -147,37 +147,15 @@ bound.
 
 - .NET 8.0 SDK
 
-## New Features (Stage 1: Greedy Mode Optimization)
+## Greedy Mode: Min-Step Optimization
 
 ### Overview
-The greedy mode has been optimized to directly minimize worst-case steps (network depth) instead of edge count as a proxy.
+Greedy mode uses a three-phase architecture that directly minimizes worst-case steps (network depth) instead of using edge count as a proxy:
 
-**Key Changes**:
-- Phase 2 now uses `SolveCompactSelectionGreedy` with a min-step objective
-- Candidates are sorted by `children.Count` as a cheap proxy for tree quality
-- Tightening loops (Phase 3+) iteratively refine the solution
+- **Phase 1 (feasible)**: constructive greedy pass finds an initial feasible solution and its step upper bound.
+- **Phase 2 (compact-for-step)**: a DP with a direct min-step objective, sorting candidate groups by `children.Count` as a cheap proxy for tree quality.
+- **Phase 3 (compact-for-edge)**: a DP with the min-edge objective at the step determined by Phase 2.
 
-**Performance**: Average 2.53x speedup on benchmark cases while preserving solution quality (100% identical results on test suite).
+**Performance**: Average 2.53x speedup on benchmark cases while preserving solution quality (100% identical results on the test suite).
 
-### New CLI Options
-
-#### `--test-stage1`
-Validates the Stage 1 min-step greedy implementation on a standard test suite (6 test cases from 8,3,3 to 20,5,5).
-
-```bash
-dotnet run -- --test-stage1
-```
-
-Output shows steps, edges, execution time, and overall summary for each test case.
-
-#### `--compare-stage1`
-Side-by-side comparison of original greedy mode vs. Stage 1 implementation.
-
-```bash
-dotnet run -- --compare-stage1
-```
-
-Verifies that:
-- Solution quality (steps/edges) remains identical
-- Performance improvements are measured
-- No regressions are introduced
+Regression coverage lives in `TopKFinder.Tests/MinStepGreedyTests.cs`.
