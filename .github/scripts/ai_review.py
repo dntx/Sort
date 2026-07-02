@@ -7,17 +7,34 @@ blocking (serious) issue so the required status check fails. Blocking findings
 are held to a high bar to keep false positives low.
 """
 
+from __future__ import annotations
+
 import json
 import os
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 
 MODELS_ENDPOINT = "https://models.github.ai/inference/chat/completions"
 MODEL = os.environ.get("REVIEW_MODEL", "openai/gpt-4o")
 MAX_DIFF_CHARS = 60000
-MAX_BATCH_CHARS = 5000
+# Group diff sections into larger batches to minimise the number of model
+# requests per review (fewer requests = less rate-limit pressure and faster
+# runs). Kept comfortably under the endpoint payload limit that rejects very
+# large single requests with HTTP 413.
+MAX_BATCH_CHARS = 12000
+# The structural pass sends the manifest plus a slice of the combined diff in a
+# single request; keep that slice comfortably under the model endpoint's payload
+# limit (large single requests return HTTP 413).
+STRUCTURAL_DIFF_CHARS = 8000
+# Transient rate limiting (HTTP 429) is retried with capped exponential backoff.
+# The per-attempt delay is capped so a large server-provided Retry-After (e.g. a
+# quota-window reset that can be many minutes) never stalls the whole review.
+MODEL_MAX_RETRIES = 3
+MODEL_RETRY_BASE_SECONDS = 4
+MODEL_RETRY_MAX_SECONDS = 20
 EXCLUDED_REVIEW_PATHS = {".github/scripts/ai_review.py", ".github/workflows/ai-code-review.yml"}
 
 SYSTEM_PROMPT = """\
@@ -95,6 +112,90 @@ A short paragraph describing what the change does.
 A bulleted list. Prefix each with its severity in bold, e.g. **[BLOCK]**,
 **[COMMENT]**. For every BLOCK, quote or cite the specific line(s) that prove
 it. If there are none, write "No issues found."
+
+At the very END of your response, output a final line by itself in exactly this
+format (no extra text):
+VERDICT: <BLOCK|COMMENT|APPROVE>
+"""
+
+STRUCTURAL_SYSTEM_PROMPT = """\
+You are a senior software engineer performing a PR-LEVEL consistency and hygiene
+review of a GitHub pull request for a C#/.NET 8 project. Unlike a line-by-line
+code review, your job is to judge the change set AS A WHOLE against the PR's
+stated intent. You are given: the PR title and description, a manifest of every
+changed file (path, change status, category, and added/removed line counts), and
+the combined diff (which may be truncated).
+
+Focus ONLY on the following five structural concerns. Do not repeat line-level
+correctness/security findings — a separate reviewer handles those.
+
+1. DESCRIPTION ↔ CHANGE CONSISTENCY
+   Does the actual diff match what the PR title/description claims? Flag when the
+   description promises something the diff does not do, the diff does something
+   material the description never mentions, or the description is empty/generic
+   while the change is non-trivial.
+
+2. UNEXPLAINED NEW FILES
+   For every file whose status is `added`, is its purpose explained by the PR
+   description (or made obvious by an accompanying test/doc)? Flag brand-new
+   source files whose role is unclear and that the description does not mention.
+
+3. NAMING CONSISTENCY OF NEW PUBLIC IDENTIFIERS
+   When the diff introduces a new user-facing value that belongs to an existing
+   set — a CLI mode/flag value, enum member, command name, or option — verify it
+   follows the SAME naming convention as the existing siblings visible in the
+   diff or description (casing, hyphenation, single vs multi word). Example: if
+   the existing modes are `exact` and `greedy` (single lowercase word) and the PR
+   adds `three-phase` (hyphenated), that is an inconsistency worth flagging.
+
+4. MISSING TEST COVERAGE
+   If the PR adds or materially changes production code (new functions, new
+   branches, new modes/flags, new behavior) but the manifest shows NO test files
+   changed, flag the missing tests. Use the manifest's "Test files changed"
+   fact — do not guess.
+
+5. MISSING DOCUMENTATION UPDATES
+   If the PR adds or changes user-facing behavior (a new CLI mode/flag, new
+   command, changed output/interface) but the manifest shows NO doc files
+   changed (README/docs/*.md), flag the missing documentation. Use the
+   manifest's "Doc files changed" fact — do not guess.
+
+## Precision rules (avoid false positives)
+- Judge only from the provided manifest, diff, title, and description. Never
+  assume files exist that are not listed.
+- If the manifest already shows a test file changed, DO NOT flag missing tests.
+- If the manifest already shows a doc/README/*.md file changed, DO NOT flag
+  missing docs.
+- Pure refactors, pure formatting, pure dependency bumps, and comment-only
+  changes need neither new tests nor doc updates — do not flag them.
+- Changes that ONLY touch test files or ONLY touch docs need no extra tests/docs.
+- Trivial production changes (a guard clause, a log line, a config value, a typo
+  fix, < ~10 changed lines with no new branch) do not by themselves require new
+  tests.
+- Naming: only flag a NEW identifier that clearly joins an EXISTING set with a
+  visible, established convention. Do not invent conventions or bikeshed style
+  where no sibling pattern is shown.
+- New files: a new test file, doc file, or an obviously-named file matching the
+  described feature is self-explanatory — do not flag it.
+- Do not flag the AI review infrastructure itself.
+
+## Severities
+- BLOCK: reserve for a clear, demonstrable CONTRADICTION between the description
+  and the diff (the change does something materially different from, or opposite
+  to, what is described).
+- COMMENT: use for missing tests, missing docs, naming inconsistencies,
+  unexplained new files, and minor description gaps. These are advisory and must
+  NOT be raised as BLOCK.
+- APPROVE: the change set is internally consistent and adequately covered.
+
+Respond in GitHub-flavored Markdown with these sections:
+## Structural Review
+A short paragraph on how well the change set matches its stated intent.
+
+## Findings
+A bulleted list. Prefix each with its severity in bold, e.g. **[COMMENT]**.
+For every finding, name the specific file(s) or identifier involved. If there
+are none, write "No issues found."
 
 At the very END of your response, output a final line by itself in exactly this
 format (no extra text):
@@ -190,8 +291,189 @@ def build_diff_batches(diff: str) -> list[str]:
     return batches
 
 
-def call_model(diff: str, batch_index: int, batch_total: int) -> str:
+def read_raw_diff() -> str:
+    """Read the full, untruncated diff for file-level (manifest) analysis."""
+    path = os.environ["DIFF_FILE"]
+    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+        return fh.read()
+
+
+DOC_EXTENSIONS = {"md", "rst", "txt", "adoc"}
+
+
+def classify_path(path: str) -> str:
+    """Classify a changed file as 'doc', 'test', or 'code'."""
+    lower = path.lower()
+    segments = lower.split("/")
+    base = segments[-1]
+    name, _, ext = base.rpartition(".")
+    if not name:  # no extension
+        name, ext = base, ""
+
+    if ext in DOC_EXTENSIONS or "docs" in segments[:-1] or "readme" in name:
+        return "doc"
+
+    is_test = (
+        any("test" in seg or "spec" in seg for seg in segments[:-1])
+        or name.endswith(("test", "tests", "spec", "specs"))
+        or name.startswith(("test_", "test-"))
+        or ".test" in base
+        or ".spec" in base
+    )
+    if is_test:
+        return "test"
+    return "code"
+
+
+def section_status(section: str) -> str:
+    """Determine the change status of a diff section."""
+    for line in section.splitlines():
+        if line.startswith("new file mode"):
+            return "added"
+        if line.startswith("deleted file mode"):
+            return "deleted"
+        if line.startswith("rename from") or line.startswith("rename to"):
+            return "renamed"
+    return "modified"
+
+
+def section_line_counts(section: str) -> tuple[int, int]:
+    """Count added/removed content lines in a diff section."""
+    added = removed = 0
+    for line in section.splitlines():
+        if line.startswith("+++") or line.startswith("---"):
+            continue
+        if line.startswith("+"):
+            added += 1
+        elif line.startswith("-"):
+            removed += 1
+    return added, removed
+
+
+def build_change_manifest(diff: str) -> list[dict]:
+    """Build a per-file manifest (path, status, category, line counts)."""
+    manifest: list[dict] = []
+    for section in split_diff_sections(diff):
+        path = section_path(section)
+        if not path or path in EXCLUDED_REVIEW_PATHS:
+            continue
+        added, removed = section_line_counts(section)
+        manifest.append(
+            {
+                "path": path,
+                "status": section_status(section),
+                "category": classify_path(path),
+                "added": added,
+                "removed": removed,
+            }
+        )
+    return manifest
+
+
+def format_change_manifest(manifest: list[dict]) -> str:
+    """Render the manifest plus test/doc coverage facts for the structural pass."""
+    counts = {"code": 0, "test": 0, "doc": 0}
+    lines: list[str] = []
+    for entry in manifest:
+        counts[entry["category"]] += 1
+        lines.append(
+            f"- [{entry['category']}] {entry['status']}: {entry['path']} "
+            f"(+{entry['added']}/-{entry['removed']})"
+        )
+    summary = (
+        f"Changed files: {len(manifest)} "
+        f"(code={counts['code']}, test={counts['test']}, doc={counts['doc']}).\n"
+        f"Test files changed: {'yes' if counts['test'] else 'NO'}. "
+        f"Doc files changed: {'yes' if counts['doc'] else 'NO'}."
+    )
+    return summary + "\n\n" + "\n".join(lines)
+
+
+def filtered_review_diff(diff: str, max_chars: int = MAX_DIFF_CHARS) -> str:
+    """Concatenate reviewable (non-infra) diff sections, truncated for the model."""
+    sections = [
+        section
+        for section in split_diff_sections(diff)
+        if section_path(section) not in EXCLUDED_REVIEW_PATHS
+    ]
+    combined = "".join(sections)
+    if len(combined) > max_chars:
+        combined = (
+            combined[:max_chars]
+            + "\n\n[diff truncated for review — only the first part is shown]\n"
+        )
+    return combined
+
+
+def request_chat_completion(messages: list[dict]) -> str:
+    """POST a chat completion, retrying transient rate limits (HTTP 429)."""
     token = os.environ["GITHUB_TOKEN"]
+    payload = json.dumps(
+        {
+            "model": MODEL,
+            "temperature": 0.1,
+            "messages": messages,
+        }
+    ).encode("utf-8")
+
+    for attempt in range(MODEL_MAX_RETRIES):
+        request = urllib.request.Request(
+            MODELS_ENDPOINT,
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=180) as response:
+                data = json.loads(response.read().decode("utf-8"))
+            return data["choices"][0]["message"]["content"].strip()
+        except urllib.error.HTTPError as err:
+            if err.code == 429 and attempt < MODEL_MAX_RETRIES - 1:
+                retry_after = (err.headers.get("Retry-After") or "").strip()
+                requested = (
+                    float(retry_after)
+                    if retry_after.isdigit()
+                    else MODEL_RETRY_BASE_SECONDS * (2 ** attempt)
+                )
+                # Cap the wait so a large server Retry-After (e.g. a quota-window
+                # reset spanning minutes) can never stall the whole review.
+                delay = min(requested, MODEL_RETRY_MAX_SECONDS)
+                print(
+                    f"Rate limited (429); retrying in {delay:.0f}s "
+                    f"(attempt {attempt + 1}/{MODEL_MAX_RETRIES})."
+                )
+                time.sleep(delay)
+                continue
+            raise
+
+    raise RuntimeError("Exhausted retries for chat completion request.")
+
+
+def call_structural_model(manifest_text: str, diff: str) -> str:
+    """Run the PR-level structural/consistency review pass."""
+    pr_title = os.environ.get("PR_TITLE", "")
+    pr_body = os.environ.get("PR_BODY", "")
+
+    user_content = (
+        f"Pull request title: {pr_title}\n\n"
+        f"Pull request description:\n{pr_body or '(none)'}\n\n"
+        f"Changed-file manifest:\n{manifest_text}\n\n"
+        f"Combined diff (may be truncated):\n\n```diff\n{diff}\n```"
+    )
+
+    return request_chat_completion(
+        [
+            {"role": "system", "content": STRUCTURAL_SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ]
+    )
+
+
+def call_model(diff: str, batch_index: int, batch_total: int) -> str:
     pr_title = os.environ.get("PR_TITLE", "")
     pr_body = os.environ.get("PR_BODY", "")
 
@@ -202,32 +484,12 @@ def call_model(diff: str, batch_index: int, batch_total: int) -> str:
         f"Here is the unified diff to review:\n\n```diff\n{diff}\n```"
     )
 
-    payload = json.dumps(
-        {
-            "model": MODEL,
-            "temperature": 0.1,
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_content},
-            ],
-        }
-    ).encode("utf-8")
-
-    request = urllib.request.Request(
-        MODELS_ENDPOINT,
-        data=payload,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
-        method="POST",
+    return request_chat_completion(
+        [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ]
     )
-
-    with urllib.request.urlopen(request, timeout=180) as response:
-        data = json.loads(response.read().decode("utf-8"))
-
-    return data["choices"][0]["message"]["content"].strip()
 
 
 def parse_verdict(review: str) -> str:
@@ -249,10 +511,16 @@ def strip_verdict_line(review: str) -> str:
     return "\n".join(lines).strip()
 
 
-def combine_batch_reviews(batch_reviews: list[tuple[int, int, str, str]]) -> str:
-    """Combine per-batch reviews into a single PR review body."""
+def combine_batch_reviews(
+    batch_reviews: list[tuple[int, int, str, str]],
+    structural: tuple[str, str] | None = None,
+) -> str:
+    """Combine the structural review and per-batch reviews into one PR review body."""
     verdict_order = {"APPROVE": 0, "COMMENT": 1, "BLOCK": 2}
-    final_verdict = max((verdict for _, _, verdict, _ in batch_reviews), key=lambda v: verdict_order[v])
+    all_verdicts = [verdict for _, _, verdict, _ in batch_reviews]
+    if structural is not None:
+        all_verdicts.append(structural[0])
+    final_verdict = max(all_verdicts, key=lambda v: verdict_order[v])
 
     summary_lines = [
         f"Reviewed in {len(batch_reviews)} batch(es).",
@@ -267,8 +535,18 @@ def combine_batch_reviews(batch_reviews: list[tuple[int, int, str, str]]) -> str
             + ", ".join(f"{name}={counts[name]}" for name in ("BLOCK", "COMMENT", "APPROVE"))
             + "."
         )
+    if structural is not None:
+        summary_lines.append(f"Structural review: {structural[0]}.")
 
-    parts = ["## Summary\n" + " ".join(summary_lines), "", "## Findings"]
+    parts = ["## Summary\n" + " ".join(summary_lines), ""]
+
+    if structural is not None:
+        structural_verdict, structural_review = structural
+        parts.append(f"## Structural Review — {structural_verdict}")
+        parts.append(strip_verdict_line(structural_review))
+        parts.append("")
+
+    parts.append("## Findings")
     for index, total, verdict, review in batch_reviews:
         parts.append(f"### Batch {index}/{total} — {verdict}")
         parts.append(strip_verdict_line(review))
@@ -432,6 +710,23 @@ def main() -> int:
         return 0
     batch_reviews: list[tuple[int, int, str, str]] = []
 
+    # PR-level structural / consistency review (description match, unexplained new
+    # files, naming consistency, missing tests, missing docs). Best-effort: a
+    # failure here must never abort the line-level review below.
+    structural: tuple[str, str] | None = None
+    manifest = build_change_manifest(read_raw_diff())
+    if manifest:
+        try:
+            structural_review = call_structural_model(
+                format_change_manifest(manifest),
+                filtered_review_diff(diff, STRUCTURAL_DIFF_CHARS),
+            )
+            structural_verdict = parse_verdict(structural_review)
+            print(f"Structural review verdict: {structural_verdict}")
+            structural = (structural_verdict, structural_review)
+        except Exception as err:  # noqa: BLE001
+            print(f"Structural review skipped due to error: {err}")
+
     for index, batch in enumerate(batches, start=1):
         try:
             review = call_model(batch, index, len(batches))
@@ -446,9 +741,12 @@ def main() -> int:
         print(f"Batch {index}/{len(batches)} verdict: {verdict}")
         batch_reviews.append((index, len(batches), verdict, review))
 
-    review = combine_batch_reviews(batch_reviews)
+    review = combine_batch_reviews(batch_reviews, structural=structural)
     verdict_order = {"APPROVE": 0, "COMMENT": 1, "BLOCK": 2}
-    verdict = max((item[2] for item in batch_reviews), key=lambda v: verdict_order[v])
+    candidate_verdicts = [item[2] for item in batch_reviews]
+    if structural is not None:
+        candidate_verdicts.append(structural[0])
+    verdict = max(candidate_verdicts, key=lambda v: verdict_order[v])
 
     print(f"Verdict: {verdict}")
     print("----- Review -----")
