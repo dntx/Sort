@@ -224,22 +224,41 @@ correctness/security findings — a separate reviewer handles those.
 - Do not flag the AI review infrastructure itself.
 
 ## Severities
-- BLOCK: reserve for a clear, demonstrable CONTRADICTION between the description
-  and the diff (the change does something materially different from, or opposite
-  to, what is described).
-- COMMENT: use for missing tests, missing docs, naming inconsistencies,
-  unexplained new files, and minor description gaps. These are advisory and must
-  NOT be raised as BLOCK.
-- APPROVE: the change set is internally consistent and adequately covered.
+Each of the five structural concerns above is a BLOCK-worthy hygiene gate: the
+change set must not merge while any of them is genuinely violated. Raise a
+finding as BLOCK when you can concretely demonstrate the violation from the
+manifest, diff, title, or description:
+- DESCRIPTION ↔ CHANGE mismatch: the diff does something material the
+  description omits or contradicts, or the description is empty/generic for a
+  non-trivial change. → BLOCK
+- UNEXPLAINED NEW FILES: an `added` source file whose purpose the description
+  does not explain and that no accompanying test/doc makes obvious. → BLOCK
+- NAMING INCONSISTENCY: a new user-facing identifier that breaks the
+  established convention of its existing siblings (e.g. `three-phase` joining
+  `exact`/`greedy`). → BLOCK
+- MISSING TESTS: production code added or materially changed but the manifest
+  shows NO test files changed. → BLOCK
+- MISSING DOCS: user-facing behavior added or changed but the manifest shows NO
+  doc files changed. → BLOCK
+- COMMENT: reserve for genuinely optional polish that does NOT fall into any of
+  the five gates above.
+- APPROVE: the change set is internally consistent and adequately covered — no
+  gate is violated.
+
+Only downgrade a gate from BLOCK to COMMENT (or drop it) when the precision
+rules above void it — for example the manifest already shows a test/doc file
+changed, the change is a pure refactor/formatting/comment-only edit, or it is a
+trivial (<~10-line, no new branch) production tweak. When a gate genuinely
+applies, it is a BLOCK, not advisory.
 
 Respond in GitHub-flavored Markdown with these sections:
 ## Structural Review
 A short paragraph on how well the change set matches its stated intent.
 
 ## Findings
-A bulleted list. Prefix each with its severity in bold, e.g. **[COMMENT]**.
-For every finding, name the specific file(s) or identifier involved. If there
-are none, write "No issues found."
+A bulleted list. Prefix each with its severity in bold, e.g. **[BLOCK]** or
+**[COMMENT]**. For every finding, name the specific file(s) or identifier
+involved. If there are none, write "No issues found."
 
 At the very END of your response, output a final line by itself in exactly this
 format (no extra text):
@@ -765,40 +784,82 @@ def load_bot_reviews(repo: str, pr_number: str) -> list[dict]:
         return reviews
 
 
+def _hide_review(review_node_id: str) -> bool:
+    """Minimize (collapse) a review via GraphQL so stale reviews are hidden.
+
+    The REST ``dismissals`` endpoint only accepts reviews whose state is
+    ``APPROVED`` or ``CHANGES_REQUESTED``; a ``COMMENTED`` review cannot be
+    dismissed and would otherwise pile up visibly on the PR. ``minimizeComment``
+    works on any review state, so it is used to hide the ones dismissal cannot
+    reach (and to fully collapse dismissed ones too).
+    """
+    if not review_node_id:
+        return False
+    query = (
+        "mutation($id: ID!) {"
+        " minimizeComment(input: {subjectId: $id, classifier: OUTDATED}) {"
+        " minimizedComment { isMinimized } } }"
+    )
+    proc = subprocess.run(
+        ["gh", "api", "graphql", "-f", f"query={query}", "-F", f"id={review_node_id}"],
+        text=True,
+        capture_output=True,
+    )
+    return proc.returncode == 0
+
+
 def dismiss_previous_bot_reviews(repo: str, pr_number: str, keep_review_id: int | None = None) -> None:
-    """Dismiss prior bot reviews so only the latest review remains active."""
+    """Hide every prior bot review so only the latest review remains visible.
+
+    Reviews that carry a merge verdict (``CHANGES_REQUESTED``/``APPROVED``) are
+    dismissed to drop that verdict; reviews that cannot be dismissed (notably
+    ``COMMENTED``) are minimized instead so they collapse out of the way.
+    """
     for review in load_bot_reviews(repo, pr_number):
         review_id = review.get("id")
         if review_id == keep_review_id:
             continue
         if review.get("user", {}).get("login") != BOT_LOGIN:
             continue
-        if review.get("state") == "DISMISSED":
+
+        state = review.get("state")
+        node_id = review.get("node_id", "")
+
+        if state in {"CHANGES_REQUESTED", "APPROVED"}:
+            dismiss = subprocess.run(
+                [
+                    "gh",
+                    "api",
+                    f"repos/{repo}/pulls/{pr_number}/reviews/{review_id}/dismissals",
+                    "--method",
+                    "PUT",
+                    "--input",
+                    "-",
+                ],
+                input=json.dumps(
+                    {
+                        "message": "Replaced by a newer automated review.",
+                        "event": "DISMISS",
+                    }
+                ),
+                text=True,
+                capture_output=True,
+            )
+            if dismiss.returncode == 0:
+                print(f"Dismissed prior bot review {review_id}.")
+            else:
+                print(f"Failed to dismiss review {review_id}: {dismiss.stderr.strip()}")
+        elif state == "DISMISSED":
+            # Already collapsed; leave it alone.
             continue
 
-        dismiss = subprocess.run(
-            [
-                "gh",
-                "api",
-                f"repos/{repo}/pulls/{pr_number}/reviews/{review_id}/dismissals",
-                "--method",
-                "PUT",
-                "--input",
-                "-",
-            ],
-            input=json.dumps(
-                {
-                    "message": "Replaced by a newer automated review.",
-                    "event": "DISMISS",
-                }
-            ),
-            text=True,
-            capture_output=True,
-        )
-        if dismiss.returncode == 0:
-            print(f"Dismissed prior bot review {review_id}.")
+        # Collapse the review body regardless of state so COMMENTED reviews (which
+        # dismissal cannot touch) and freshly dismissed ones stay out of the way.
+        if _hide_review(node_id):
+            print(f"Hid prior bot review {review_id} (state={state}).")
         else:
-            print(f"Failed to dismiss review {review_id}: {dismiss.stderr.strip()}")
+            print(f"Could not minimize review {review_id} (state={state}).")
+
 
 
 def post_review(review_body: str, verdict: str) -> None:
