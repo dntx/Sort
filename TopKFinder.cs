@@ -153,7 +153,9 @@ partial class StrategyBuilder
     // ("compact"). This drives an anytime UI/CLI that surfaces the full progression as it is found; a
     // user who no longer wants to wait cancels (GUI Stop / CLI Ctrl+C), which propagates out with the
     // best plan found so far already surfaced via onStage.
-    public StrategyPlan BuildFeasibleCompactPlan(Action<GreedyEdgeStage>? onStage = null)
+    public StrategyPlan BuildFeasibleCompactPlan(
+        Action<GreedyEdgeStage>? onStage = null,
+        Action<string>? onStageStart = null)
     {
         _progressScope = _reportCombinedRunProgress
             ? ProgressScope.CompactFeasibleInCombinedRun
@@ -180,6 +182,7 @@ partial class StrategyBuilder
             {
                 _cancellationToken.ThrowIfCancellationRequested();
                 string stageName = $"feasible\u2264{budget}";
+                onStageStart?.Invoke(stageName);
                 var probeStopwatch = Stopwatch.StartNew();
                 StrategyPlan? candidate = ProbeFeasibleCompact(budget);
                 probeStopwatch.Stop();
@@ -218,6 +221,7 @@ partial class StrategyBuilder
         }
 
         // Phase B: one min-edge compact pass at the determined step S.
+        onStageStart?.Invoke("compact");
         var edgeStopwatch = Stopwatch.StartNew();
         StrategyPlan? edgePlan = ProbeFeasibleCompact(bestStep);
         edgeStopwatch.Stop();

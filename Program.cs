@@ -237,13 +237,26 @@ class Program
     {
         void ClearProgressLine() => clearProgressLine();
 
+        // Live per-stage status goes to stderr (the same stream as the progress line) so stdout keeps
+        // only the final progression summary and tree. Clearing the progress line first stops leftover
+        // "searching..." text from mangling the status line.
+        void WriteStageStatus(string text)
+        {
+            ClearProgressLine();
+            Console.Error.WriteLine(text);
+        }
+
         if (feasibleMode)
         {
             // Greedy mode: a fast greedy feasible plan gives a valid bound, then the compact stage
             // uses U as its step ceiling, minimizes edges under U, and may pick up a smaller real
             // step for free. Fast/interruptible, not proven optimal.
+            WriteStageStatus("stage greedy: started");
+            var greedyStopwatch = System.Diagnostics.Stopwatch.StartNew();
             StrategyPlan feasiblePlan = builder.BuildFeasiblePlan();
-            ClearProgressLine();
+            greedyStopwatch.Stop();
+            WriteStageStatus($"stage greedy: steps={feasiblePlan.MaxStep}, " +
+                $"edges={feasiblePlan.TotalBranchEdges} ({greedyStopwatch.Elapsed.TotalSeconds:F2}s)");
 
             // The anytime stages (baseline "compact", each "compact≤N" tightening, and a terminal
             // no-solution ceiling) are produced incrementally for the GUI. The CLI is a batch tool,
@@ -268,6 +281,8 @@ class Program
                             // optimal (opt = incumbent.MaxStep). Close its squeeze so the final tree reports
                             // proven optimal.
                             stageSummaries.Add($"{stage.Name}: no solution");
+                            WriteStageStatus($"stage {stage.Name}: no solution " +
+                                $"({stage.Elapsed.TotalSeconds:F2}s)");
                             finalPlan = finalPlan.WithRootProvenLowerBound(finalPlan.MaxStep);
                             incumbentPlan = finalPlan;
                         }
@@ -277,6 +292,8 @@ class Program
                             // "no group fit" is not a proof. Leave the squeeze open (no proven-optimal claim);
                             // the incumbent simply stands.
                             stageSummaries.Add($"{stage.Name}: search incomplete (candidate cap reached)");
+                            WriteStageStatus($"stage {stage.Name}: search incomplete, candidate cap reached " +
+                                $"({stage.Elapsed.TotalSeconds:F2}s)");
                         }
                         return;
                 }
@@ -284,6 +301,8 @@ class Program
                 if (stage.Plan!.IsStrictRefinementOver(incumbentPlan))
                 {
                     stageSummaries.Add(FormatStageSummary(stage.Name, stage.Plan));
+                    WriteStageStatus($"stage {stage.Name}: steps={stage.Plan.MaxStep}, " +
+                        $"edges={stage.Plan.TotalBranchEdges} ({stage.Elapsed.TotalSeconds:F2}s)");
                     incumbentPlan = stage.Plan;
                     finalName = stage.Name;
                     finalPlan = stage.Plan;
@@ -291,13 +310,17 @@ class Program
                 else
                 {
                     stageSummaries.Add($"{FormatStageSummary(stage.Name, stage.Plan)}: no improvement");
+                    WriteStageStatus($"stage {stage.Name}: steps={stage.Plan.MaxStep}, " +
+                        $"edges={stage.Plan.TotalBranchEdges} ({stage.Elapsed.TotalSeconds:F2}s), no improvement");
                 }
             }
+
+            void StartEdgeStage(string name) => WriteStageStatus($"stage {name}: started");
 
             bool interrupted = false;
             try
             {
-                builder.BuildFeasibleCompactPlan(CollectEdgeStage);
+                builder.BuildFeasibleCompactPlan(CollectEdgeStage, StartEdgeStage);
             }
             catch (OperationCanceledException)
             {
@@ -327,7 +350,9 @@ class Program
         // Exact mode: no feasible phase. The exact search (exact) proves the optimum, then the
         // compact phase (compact) trims displayed edges among equally optimal groups. A Ctrl+C here has
         // no partial tree to show (the exact search is all-or-nothing), so report the interruption.
+        WriteStageStatus("stage exact: started");
         StrategyPlan defaultPlan;
+        var exactStopwatch = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             defaultPlan = builder.BuildDefaultPlan();
@@ -338,7 +363,9 @@ class Program
             Console.WriteLine("interrupted before the exact search proved an optimum (no result).");
             return;
         }
-        ClearProgressLine();
+        exactStopwatch.Stop();
+        WriteStageStatus($"stage exact: steps={defaultPlan.MaxStep}, " +
+            $"edges={defaultPlan.TotalBranchEdges} ({exactStopwatch.Elapsed.TotalSeconds:F2}s)");
         Console.WriteLine($"==================== exact ({FormatSqueeze(defaultPlan)}) ====================");
         Console.Write(StrategyOverviewRenderer.RenderText(defaultPlan));
         Console.WriteLine();
@@ -346,6 +373,8 @@ class Program
 
         StrategyPlan incumbent = defaultPlan;
         StrategyPlan compactPlan;
+        WriteStageStatus("stage compact: started");
+        var compactStopwatch = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             compactPlan = builder.BuildCompactPlan();
@@ -355,11 +384,17 @@ class Program
             // Interrupted while trimming edges; the proven-optimal exact tree above already printed.
             return;
         }
+        compactStopwatch.Stop();
         bool compactImproved = compactPlan.IsStrictRefinementOver(incumbent);
         if (!compactImproved)
+        {
+            WriteStageStatus($"stage compact: steps={compactPlan.MaxStep}, " +
+                $"edges={compactPlan.TotalBranchEdges} ({compactStopwatch.Elapsed.TotalSeconds:F2}s), no improvement");
             return;
+        }
 
-        ClearProgressLine();
+        WriteStageStatus($"stage compact: steps={compactPlan.MaxStep}, " +
+            $"edges={compactPlan.TotalBranchEdges} ({compactStopwatch.Elapsed.TotalSeconds:F2}s)");
         Console.WriteLine();
         Console.WriteLine("==================== compact ====================");
         Console.Write(StrategyOverviewRenderer.RenderText(compactPlan));
