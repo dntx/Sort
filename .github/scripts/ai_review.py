@@ -35,9 +35,10 @@ def _resolve_model_chain() -> list[str]:
         single = os.environ.get("REVIEW_MODEL", "").strip()
         chain = [single] if single else []
     default_chain = [
+        "openai/gpt-4.1",
+        "openai/gpt-4o",
         "openai/gpt-4.1-mini",
         "openai/gpt-4o-mini",
-        "openai/gpt-4o",
     ]
     for model in default_chain:
         if model not in chain:
