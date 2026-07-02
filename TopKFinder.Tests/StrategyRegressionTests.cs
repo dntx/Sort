@@ -853,7 +853,7 @@ public sealed class StrategyRegressionTests
     [InlineData(11, 3, 3, 131, 2847, 647)]
     [InlineData(12, 4, 4, 46, 1395, 165)]
     [InlineData(10, 3, 4, 324, 11228, 2777)]
-    [InlineData(12, 4, 3, 41, 799, 187)]
+    [InlineData(12, 4, 3, 43, 811, 199)]
     [InlineData(12, 3, 4, 690, 40377, 5931)]
     [InlineData(10, 2, 4, 4118, 120336, 29291)]
     public void Compact_WorkCountersStayWithinBaseline(
@@ -882,8 +882,8 @@ public sealed class StrategyRegressionTests
     // Verified: the 38-edge compact tree has objective==render at every node, 0 false-splits, and
     // 0 unbacked merges, and the consistent DP is exhaustive over step-optimal groups, so 38 is the
     // true minimum displayed-edge count under honest rendering (any lower count is necessarily a
-    // dishonest merge). With projection-orbit merging (default on) it folds further to 34.
-    [InlineData(12, 4, 4, 34)]
+    // dishonest merge). With projection-orbit merging (default on) it folds further to 33 (shape B/C).
+    [InlineData(12, 4, 4, 33)]
     // TODO (projection-merge compact follow-up): with merging default-on the compact objective
     // CountDisplayBranches estimates the merge with fixedTopMask=0, so the chosen compact tree here
     // renders 11 merged edges where the merge-off compact tree reached 9. Tracked in /memories/repo;
@@ -927,9 +927,9 @@ public sealed class StrategyRegressionTests
             cancellationToken => new StrategyBuilder(12, 4, 4, cancellationToken).BuildCompactPlan());
 
         Assert.Equal(baseline.MaxStep, compact.MaxStep);
-        // With the full-bucket pre-merge fix this reached 35; projection-orbit merging (default on)
-        // folds one further sibling pair to 34.
-        Assert.Equal(34, compact.TotalBranchEdges);
+        // With the full-bucket pre-merge fix this reached 35; projection-orbit merging (default on) folds
+        // further to 33 (a two-block shape-C1 component collapses on top of the earlier sibling fold).
+        Assert.Equal(33, compact.TotalBranchEdges);
     }
 
     // Searched-state monitor for the compact pass. Compact runs a second, less-prunable
@@ -1059,7 +1059,7 @@ public sealed class StrategyRegressionTests
     [InlineData(11, 3, 3, 16220)]
     [InlineData(12, 4, 4, 20854)]
     [InlineData(10, 3, 4, 47255)]
-    [InlineData(12, 4, 3, 6219)]
+    [InlineData(12, 4, 3, 6321)]
     [InlineData(12, 3, 3, 8550)]
     // Ties/anomalies (see Compact_SearchedStateCountStaysWithinBaseline): now measure the genuine
     // compact candidate instead of the discarded default fallback.
@@ -1185,7 +1185,7 @@ public sealed class StrategyRegressionTests
     [InlineData(11, 3, 3, 1743)]
     [InlineData(12, 4, 4, 5538)]
     [InlineData(10, 3, 4, 5207)]
-    [InlineData(12, 4, 3, 2501)]
+    [InlineData(12, 4, 3, 2566)]
     [InlineData(12, 3, 3, 622)]
     // Ties/anomalies (see Compact_SearchedStateCountStaysWithinBaseline): now measure the genuine
     // compact candidate instead of the discarded default fallback.
