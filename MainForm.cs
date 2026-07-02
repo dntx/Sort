@@ -670,6 +670,7 @@ class MainForm : Form
                     cancellationToken);
                 _runStopwatch?.Stop();
 
+                RemoveTrailingComputingPlaceholder();
                 _compactPlan = feasibleCompactPlan;
                 _compactImproved = feasibleCompactPlan.IsStrictRefinementOver(feasiblePlan);
                 _latestProgress = CreateSnapshotFromPlan(feasibleCompactPlan);
@@ -789,6 +790,33 @@ class MainForm : Form
         {
             _overviewTree.BeginUpdate();
             _overviewTree.Nodes[_overviewTree.Nodes.Count - 1].Text = MarkComputingPlaceholderStopped(_overviewTree.Nodes[_overviewTree.Nodes.Count - 1].Text);
+            _overviewTree.EndUpdate();
+        }
+    }
+
+    // Defensive cleanup after a normal (non-stopped) greedy run: BuildFeasibleCompactPlan always ends
+    // by emitting the terminal "compact" stage, whose handler appends no follow-up placeholder. But the
+    // should-not-happen fallback (edgePlan null) returns without that final emission, which would leave
+    // the last "compact: computing..." placeholder stranded. Drop any such trailing placeholder so a
+    // finished run never shows a "computing..." node.
+    private void RemoveTrailingComputingPlaceholder()
+    {
+        if (_treeView.Nodes.Count > 0)
+        {
+            TreeNode root = _treeView.Nodes[0];
+            if (root.Nodes.Count > 0 && IsComputingPlaceholderText(root.Nodes[root.Nodes.Count - 1].Text))
+            {
+                _treeView.BeginUpdate();
+                root.Nodes.RemoveAt(root.Nodes.Count - 1);
+                _treeView.EndUpdate();
+            }
+        }
+
+        if (_overviewTree.Nodes.Count > 0
+            && IsComputingPlaceholderText(_overviewTree.Nodes[_overviewTree.Nodes.Count - 1].Text))
+        {
+            _overviewTree.BeginUpdate();
+            _overviewTree.Nodes.RemoveAt(_overviewTree.Nodes.Count - 1);
             _overviewTree.EndUpdate();
         }
     }
@@ -991,23 +1019,28 @@ class MainForm : Form
         StrategyPlan incumbent = _compactPlan ?? _feasiblePlan;
         bool improved = stage.HasSolution && stage.Plan!.IsStrictRefinementOver(incumbent);
 
-        // After any solution stage that can still be tightened (max-step > 1), the worker immediately
-        // probes the next lower ceiling. We announce that in-progress probe with a trailing
-        // "feasible<=N: computing..." placeholder so the tree/overview never look idle while a probe runs.
-        bool willTighten = stage.HasSolution && stage.Plan!.MaxStep > 1;
-        string nextStageName = willTighten
-            ? NextFeasibleCompactStageName(_feasiblePlan, stage.Plan!.MaxStep)
-            : "compact";
-        string probeComputingLabel = nextStageName + ComputingSuffix;
+        // A follow-up stage always lands after every emitted stage except the terminal min-edge
+        // "compact" pass: after a "feasible<=N" stage -- whether it found a solution or proved/failed
+        // the ceiling -- the worker next probes a deeper feasible ceiling or runs the final compact
+        // pass. We announce that in-progress probe with a trailing "<next>: computing..." placeholder
+        // so the tree/overview never look idle while it runs. The terminal compact stage has nothing
+        // after it, so it appends no placeholder.
+        bool hasFollowUp = stage.Name != "compact";
+        string? nextStageName = !hasFollowUp
+            ? null
+            : stage.HasSolution
+                ? NextFeasibleCompactStageName(_feasiblePlan, stage.Plan!.MaxStep)
+                : "compact"; // Phase A ended (no-solution/incomplete); only the min-edge pass remains
+        string? probeComputingLabel = nextStageName is null ? null : nextStageName + ComputingSuffix;
 
         _treeView.BeginUpdate();
         TreeNode root = _treeView.Nodes[0];
-        // Replace the trailing in-progress placeholder (the initial "compact: computing..." slot before
-        // the baseline, or the previous probe's "compact<=N: computing..." note) with the landed stage.
+        // Replace the trailing in-progress placeholder (the initial second-stage slot, or the previous
+        // probe's "feasible<=N: computing..." note) with the landed stage.
         if (root.Nodes.Count > 1 && IsComputingPlaceholderText(root.Nodes[root.Nodes.Count - 1].Text))
             root.Nodes.RemoveAt(root.Nodes.Count - 1);
         root.Nodes.Add(BuildStageTreeNode(stage, scope, improved));
-        if (willTighten)
+        if (probeComputingLabel is not null)
             root.Nodes.Add(new TreeNode(probeComputingLabel) { ForeColor = _palette.MutedForeColor });
 
         if (improved)
@@ -1028,20 +1061,24 @@ class MainForm : Form
             && IsComputingPlaceholderText(_overviewTree.Nodes[_overviewTree.Nodes.Count - 1].Text))
             _overviewTree.Nodes.RemoveAt(_overviewTree.Nodes.Count - 1);
         _overviewTree.Nodes.Add(BuildStageOverviewNode(stage, scope, improved));
-        if (willTighten)
+        if (probeComputingLabel is not null)
             _overviewTree.Nodes.Add(BuildOverviewNoteNode(probeComputingLabel));
         _overviewTree.EndUpdate();
+
+        // Reset the per-stage clock so the progress panel times the upcoming probe from zero, and label
+        // it with the stage about to run. Done whenever a follow-up stage exists (after both improving
+        // and non-improving feasible stages, and after a terminal that still leaves the compact pass).
+        if (nextStageName is not null)
+        {
+            _currentStageName = nextStageName;
+            _stageStartMs = _runStopwatch?.ElapsedMilliseconds ?? 0;
+        }
 
         if (stage.HasSolution)
         {
             _latestProgress = CreateSnapshotFromPlan(stage.Plan!);
             if (improved)
                 UpdateSummaryText(_feasiblePlan, defaultPlan: _feasiblePlan, compactPlan: stage.Plan, compactImproved: true);
-            // The next tightening probe targets one below this stage's max-step. Reset the per-stage
-            // clock so the progress panel times the upcoming probe from zero. This happens whether or
-            // not the stage improved edges, because tightening continues either way.
-            _currentStageName = nextStageName;
-            _stageStartMs = _runStopwatch?.ElapsedMilliseconds ?? 0;
         }
         UpdateStatsPanels();
         UpdateElapsedLabel();
