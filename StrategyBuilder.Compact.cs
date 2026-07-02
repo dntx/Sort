@@ -507,4 +507,3 @@ partial class StrategyBuilder
         return count;
     }
 }
-
