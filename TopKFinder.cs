@@ -154,6 +154,11 @@ partial class StrategyBuilder
         onStage?.Invoke(new GreedyEdgeStage($"compact (for step→{phase2.MaxStep})", phase2, phase2.Elapsed));
 
         // Phase 3: Compact with min-edges objective at the step determined by Phase 2
+        // 
+        // Fallback behavior: If Phase 3 fails (no feasible group found), return Phase 2 as the best known
+        // solution. Phase 2 guarantees a feasible plan (Phase 1 seeded the budget, so Phase 2 always finds
+        // something within that budget). Phase 3 is an optimization attempt; if it fails to beat Phase 2,
+        // the Phase 2 min-step solution is still valid and returned.
         ResetPerBuildTransientState();
         ResetCompactSelectionState();
         var phase3Stopwatch = Stopwatch.StartNew();
@@ -185,7 +190,18 @@ partial class StrategyBuilder
         return phase2;
     }
 
-    // New DP: Compact pass targeting min-steps instead of min-edges
+    // New DP: Compact pass targeting min-steps instead of min-edges.
+    // 
+    // This method enables the min-steps variant of the compact DP by setting state flags that route
+    // group selection to SolveCompactSelectionForMinSteps (instead of SolveCompactSelection). The flags
+    // are reset in the finally block to ensure they do not leak into subsequent builds. Since solving
+    // is single-threaded (not concurrent), this flag-based routing is safe and does not require
+    // synchronization.
+    // 
+    // Flags set during execution:
+    //   - _useCompactSelectionMinSteps: Enables BuildPlanMinSteps routing throughout the build
+    //   - _compactUsesFeasibleBudgetMinSteps: Marker for this specific phase (reserving for future use)
+    //   - _feasibleRootBudgetActive: The budget (maxAllowedSteps) passed through recursion
     private StrategyPlan BuildPlanMinSteps(int maxAllowedSteps)
     {
         ResetPerBuildTransientState();
@@ -213,7 +229,12 @@ partial class StrategyBuilder
         }
     }
 
-    // Runs compact selection at a fixed step budget to optimize edges
+    // Runs compact selection at a fixed step budget to optimize edges.
+    // 
+    // Returns null if no feasible group is found at the given step budget (indicating the budget is
+    // infeasible). Otherwise returns a StrategyPlan that honors the step constraint. Stopwatch timing
+    // is captured via try-finally, ensuring elapsed time is recorded even if an exception occurs or
+    // the probe fails to find a feasible solution.
     private StrategyPlan? ProbeCompactAtFixedStep(int fixedStep)
     {
         ResetPerBuildTransientState();

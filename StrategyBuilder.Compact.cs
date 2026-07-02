@@ -452,7 +452,10 @@ partial class StrategyBuilder
         if (state.ActiveCount <= _m)
             return 0;
 
-        // Use a separate memo to avoid mixing min-edges results with min-steps
+        // Use a separate memo to avoid mixing min-edges results with min-steps.
+        // The memo key is (SearchStateKey, feasibleBudget) to ensure tightening phases (which reduce
+        // budget) don't collide with earlier phases. If cached, return immediately (already solved).
+        // If not cached, set sentinel to -1 (meaning "not yet computed") and proceed to solve.
         if (!_compactMinStepsMemo.TryGetValue((GetSearchStateKey(state, remainingSlots), feasibleBudget), out int cachedSteps))
             cachedSteps = -1;
         else
@@ -461,6 +464,14 @@ partial class StrategyBuilder
         var candidates = state.GetActiveItemsOrdered();
         int groupSize = Math.Min(_m, candidates.Count);
 
+        // Validates each branch within the budget and collects feasible child states.
+        // FitChildren returns either a populated list of child states or null (never an empty list).
+        // This contract is relied upon: if null, the group is infeasible; if not null,
+        // the list contains at least one viable child state (though it may filter some candidates).
+        // 
+        // The function prunes any branch where GetMinWorstCaseLowerBound (worst-case steps forecast)
+        // exceeds branchBudget (feasibleBudget - 1). If any branch is pruned (rejected=true), the
+        // entire group is rejected; otherwise, all child states within budget are collected.
         List<(ComparisonState State, int RemainingSlots)>? GetFeasibleChildren(IReadOnlyList<int> group)
         {
             int branchBudget = feasibleBudget - 1;
@@ -492,7 +503,9 @@ partial class StrategyBuilder
             if (children is null)
                 continue;
 
-            // For this group, compute the max steps among all children
+            // For this group, compute the max steps among all children.
+            // This represents the worst-case step count if this group is chosen.
+            // groupMaxSteps = 1 (this step) + max(child worst-case steps)
             int groupMaxSteps = 0;
             bool feasible = true;
             foreach (var (childState, childRemaining) in children)
@@ -521,7 +534,11 @@ partial class StrategyBuilder
         if (bestGroup is null)
             return feasibleBudget;  // No feasible group found within budget: return sentinel indicating infeasibility within this constraint
 
-        // Memoize and cache the group selection (same pattern as SolveCompactSelection)
+        // Memoize and cache the group selection (same pattern as SolveCompactSelection).
+        // _compactMinStepsGroupPatternCache stores the best group for this state, enabling BuildState to
+        // retrieve it later via TryGetCompactGroupPattern when _useCompactSelectionMinSteps is true.
+        // This two-level cache (steps memo + group pattern cache) allows the DP to solve once and the
+        // build phase to query the cached group without recomputing.
         SearchStateKey key = GetSearchStateKey(state, remainingSlots);
         _compactMinStepsGroupPatternCache[key] = MakeGroupPattern(state, bestGroup);
         _compactMinStepsMemo[(key, feasibleBudget)] = bestChildMaxSteps;
@@ -529,7 +546,13 @@ partial class StrategyBuilder
         return bestChildMaxSteps;
     }
 
-    // Caches for the min-steps DP
+    // Caches for the min-steps DP.
+    // 
+    // Note: The _compactMinStepsMemo and _compactMinStepsGroupPatternCache are also cleared in
+    // ResetCompactSelectionState (line ~85) as part of the phase-transition reset. This method provides
+    // semantic clarity when explicitly resetting min-steps state outside of phase transitions (e.g., for
+    // isolated testing). In production, ResetCompactSelectionState is the primary reset point and ensures
+    // both standard compact and min-steps caches are cleared consistently.
     private void ResetMinStepsSelectionState()
     {
         _compactMinStepsMemo.Clear();
