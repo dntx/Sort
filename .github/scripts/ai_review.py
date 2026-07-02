@@ -13,6 +13,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -20,6 +21,13 @@ MODELS_ENDPOINT = "https://models.github.ai/inference/chat/completions"
 MODEL = os.environ.get("REVIEW_MODEL", "openai/gpt-4o")
 MAX_DIFF_CHARS = 60000
 MAX_BATCH_CHARS = 5000
+# The structural pass sends the manifest plus a slice of the combined diff in a
+# single request; keep that slice comfortably under the model endpoint's payload
+# limit (large single requests return HTTP 413).
+STRUCTURAL_DIFF_CHARS = 8000
+# Transient rate limiting (HTTP 429) is retried with exponential backoff.
+MODEL_MAX_RETRIES = 4
+MODEL_RETRY_BASE_SECONDS = 5
 EXCLUDED_REVIEW_PATHS = {".github/scripts/ai_review.py", ".github/workflows/ai-code-review.yml"}
 
 SYSTEM_PROMPT = """\
@@ -374,7 +382,7 @@ def format_change_manifest(manifest: list[dict]) -> str:
     return summary + "\n\n" + "\n".join(lines)
 
 
-def filtered_review_diff(diff: str) -> str:
+def filtered_review_diff(diff: str, max_chars: int = MAX_DIFF_CHARS) -> str:
     """Concatenate reviewable (non-infra) diff sections, truncated for the model."""
     sections = [
         section
@@ -382,17 +390,61 @@ def filtered_review_diff(diff: str) -> str:
         if section_path(section) not in EXCLUDED_REVIEW_PATHS
     ]
     combined = "".join(sections)
-    if len(combined) > MAX_DIFF_CHARS:
+    if len(combined) > max_chars:
         combined = (
-            combined[:MAX_DIFF_CHARS]
+            combined[:max_chars]
             + "\n\n[diff truncated for review — only the first part is shown]\n"
         )
     return combined
 
 
+def request_chat_completion(messages: list[dict]) -> str:
+    """POST a chat completion, retrying transient rate limits (HTTP 429)."""
+    token = os.environ["GITHUB_TOKEN"]
+    payload = json.dumps(
+        {
+            "model": MODEL,
+            "temperature": 0.1,
+            "messages": messages,
+        }
+    ).encode("utf-8")
+
+    for attempt in range(MODEL_MAX_RETRIES):
+        request = urllib.request.Request(
+            MODELS_ENDPOINT,
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=180) as response:
+                data = json.loads(response.read().decode("utf-8"))
+            return data["choices"][0]["message"]["content"].strip()
+        except urllib.error.HTTPError as err:
+            if err.code == 429 and attempt < MODEL_MAX_RETRIES - 1:
+                retry_after = (err.headers.get("Retry-After") or "").strip()
+                delay = (
+                    float(retry_after)
+                    if retry_after.isdigit()
+                    else MODEL_RETRY_BASE_SECONDS * (2 ** attempt)
+                )
+                print(
+                    f"Rate limited (429); retrying in {delay:.0f}s "
+                    f"(attempt {attempt + 1}/{MODEL_MAX_RETRIES})."
+                )
+                time.sleep(delay)
+                continue
+            raise
+
+    raise RuntimeError("Exhausted retries for chat completion request.")
+
+
 def call_structural_model(manifest_text: str, diff: str) -> str:
     """Run the PR-level structural/consistency review pass."""
-    token = os.environ["GITHUB_TOKEN"]
     pr_title = os.environ.get("PR_TITLE", "")
     pr_body = os.environ.get("PR_BODY", "")
 
@@ -403,36 +455,15 @@ def call_structural_model(manifest_text: str, diff: str) -> str:
         f"Combined diff (may be truncated):\n\n```diff\n{diff}\n```"
     )
 
-    payload = json.dumps(
-        {
-            "model": MODEL,
-            "temperature": 0.1,
-            "messages": [
-                {"role": "system", "content": STRUCTURAL_SYSTEM_PROMPT},
-                {"role": "user", "content": user_content},
-            ],
-        }
-    ).encode("utf-8")
-
-    request = urllib.request.Request(
-        MODELS_ENDPOINT,
-        data=payload,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
-        method="POST",
+    return request_chat_completion(
+        [
+            {"role": "system", "content": STRUCTURAL_SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ]
     )
-
-    with urllib.request.urlopen(request, timeout=180) as response:
-        data = json.loads(response.read().decode("utf-8"))
-
-    return data["choices"][0]["message"]["content"].strip()
 
 
 def call_model(diff: str, batch_index: int, batch_total: int) -> str:
-    token = os.environ["GITHUB_TOKEN"]
     pr_title = os.environ.get("PR_TITLE", "")
     pr_body = os.environ.get("PR_BODY", "")
 
@@ -443,32 +474,12 @@ def call_model(diff: str, batch_index: int, batch_total: int) -> str:
         f"Here is the unified diff to review:\n\n```diff\n{diff}\n```"
     )
 
-    payload = json.dumps(
-        {
-            "model": MODEL,
-            "temperature": 0.1,
-            "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": user_content},
-            ],
-        }
-    ).encode("utf-8")
-
-    request = urllib.request.Request(
-        MODELS_ENDPOINT,
-        data=payload,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
-        method="POST",
+    return request_chat_completion(
+        [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ]
     )
-
-    with urllib.request.urlopen(request, timeout=180) as response:
-        data = json.loads(response.read().decode("utf-8"))
-
-    return data["choices"][0]["message"]["content"].strip()
 
 
 def parse_verdict(review: str) -> str:
@@ -697,7 +708,8 @@ def main() -> int:
     if manifest:
         try:
             structural_review = call_structural_model(
-                format_change_manifest(manifest), filtered_review_diff(diff)
+                format_change_manifest(manifest),
+                filtered_review_diff(diff, STRUCTURAL_DIFF_CHARS),
             )
             structural_verdict = parse_verdict(structural_review)
             print(f"Structural review verdict: {structural_verdict}")
