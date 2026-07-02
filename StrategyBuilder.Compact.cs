@@ -17,6 +17,11 @@ partial class StrategyBuilder
     // NEW (three-phase Phase 2): Min-steps compact DP variant
     // Instead of minimizing edges given a step budget, this variant minimizes the worst-case
     // steps by considering all feasible groups at each state.
+    // 
+    // Note on recursion depth: The recursion is bounded by feasibleBudget parameter which decrements
+    // by 1 at each level. Since feasibleBudget starts at the current best step count (typically 5-10),
+    // stack depth is limited to that value. This is not a stack overflow risk in practice. The base
+    // cases (line 429-436) ensure the recursion terminates at feasibility boundaries.
     private bool _useCompactSelectionMinSteps;
     private bool _compactUsesFeasibleBudgetMinSteps;
     private readonly Dictionary<(SearchStateKey Key, int Budget), int> _compactMinStepsMemo = new();
@@ -72,6 +77,10 @@ partial class StrategyBuilder
 
     // Clears the per-budget compact caches so a tightening retry re-solves from scratch at the new
     // (tighter) ceiling. The cross-phase step budget/estimate fields are intentionally left untouched.
+    // This also clears the min-steps DP caches (Phase 2 new variant), ensuring subsequent phases
+    // start with clean state. Cache clearing is performed here rather than separately
+    // because both standard and min-steps modes use the same phase-transition points and need consistent
+    // reset behavior.
     private void ResetCompactSelectionState()
     {
         _compactGroupPatternCache.Clear();
@@ -339,7 +348,11 @@ partial class StrategyBuilder
             fits.Add((group, children));
         }
         
-        // Sort candidates by immediate FitChildren count as cheap proxy for tree quality
+        // Sort candidates by immediate FitChildren count as cheap proxy for tree quality.
+        // Children?.Count should never be null (FitChildren always returns a list or null, never a
+        // null list), but the null-safe accessor provides defensive safety. If somehow Children is null,
+        // treating it as 0 (worst proxy ranking) ensures the group is explored last, preserving algorithm
+        // correctness (all groups are still tried; only ordering changes).
         fits.Sort((a, b) => {
             int aCount = a.Children?.Count ?? 0;
             int bCount = b.Children?.Count ?? 0;
@@ -420,6 +433,10 @@ partial class StrategyBuilder
     // the best (fewest) steps at the current budget. The returned "cost" is actually the worst-case
     // steps under this group, not edge count. After this DP selects the best-step group at each state,
     // Phase 3 runs another compact pass to minimize edges at the determined step.
+    // 
+    // Recursion Depth: Bounded by feasibleBudget parameter (typically 5-10), so no stack overflow risk.
+    // State fields (_useCompactSelectionMinSteps, etc.) are set/reset per build, not concurrent:
+    // this architecture does not support multi-threaded solving, so no synchronization is needed.
     private int SolveCompactSelectionForMinSteps(ComparisonState state, int remainingSlots, int feasibleBudget = int.MaxValue)
     {
         ThrowIfCancellationRequested();
@@ -502,7 +519,7 @@ partial class StrategyBuilder
         }
 
         if (bestGroup is null)
-            return feasibleBudget;  // No feasible group found
+            return feasibleBudget;  // No feasible group found within budget: return sentinel indicating infeasibility within this constraint
 
         // Memoize and cache the group selection (same pattern as SolveCompactSelection)
         SearchStateKey key = GetSearchStateKey(state, remainingSlots);
