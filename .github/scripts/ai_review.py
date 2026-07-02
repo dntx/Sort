@@ -20,7 +20,11 @@ import urllib.request
 MODELS_ENDPOINT = "https://models.github.ai/inference/chat/completions"
 MODEL = os.environ.get("REVIEW_MODEL", "openai/gpt-4o")
 MAX_DIFF_CHARS = 60000
-MAX_BATCH_CHARS = 5000
+# Group diff sections into larger batches to minimise the number of model
+# requests per review (fewer requests = less rate-limit pressure and faster
+# runs). Kept comfortably under the endpoint payload limit that rejects very
+# large single requests with HTTP 413.
+MAX_BATCH_CHARS = 12000
 # The structural pass sends the manifest plus a slice of the combined diff in a
 # single request; keep that slice comfortably under the model endpoint's payload
 # limit (large single requests return HTTP 413).
