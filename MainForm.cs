@@ -660,7 +660,7 @@ class MainForm : Form
 
                 Interlocked.Exchange(ref _activePhase, 2);
                 _greedyEdgeStages.Clear();
-                _currentStageName = "compact";
+                _currentStageName = NextFeasibleCompactStageName(feasiblePlan, feasiblePlan.MaxStep);
                 _stageStartMs = _runStopwatch?.ElapsedMilliseconds ?? 0;
                 // Each edge stage is surfaced live. The callback runs on the worker thread; a synchronous
                 // Invoke marshals it onto the UI thread AND blocks the worker until the handler returns,
@@ -748,11 +748,10 @@ class MainForm : Form
     }
 
     private const string ComputingSuffix = ": computing...";
-    private const string CompactComputingLabel = "compact" + ComputingSuffix;
 
     // A trailing tree/overview node ending in ": computing..." is a transient in-progress placeholder
-    // (the initial "compact: computing..." slot, or a live "compact≤N: computing..." probe appended
-    // between greedy tightening stages). Both are replaced in place once the stage they announce lands.
+    // (the initial second-stage slot, or a live "feasible<=N: computing..." probe appended between
+    // greedy tightening stages). Both are replaced in place once the stage they announce lands.
     private static bool IsComputingPlaceholderText(string text)
         => text.EndsWith(ComputingSuffix, StringComparison.Ordinal);
 
@@ -832,9 +831,16 @@ class MainForm : Form
         string stepStageName = defaultPlan is null ? "greedy" : "exact";
         root.Nodes.Add(CreatePlanTreeRoot(stepStageName, stepPlan, "default", stepPlan.Elapsed));
 
-        // Slot 1: "compact" -- minimizes displayed edges at the fixed step ceiling (placeholder until done).
+        // Slot 1: the second stage's live placeholder. In exact mode this is the min-edge "compact"
+        // pass; in greedy mode it is whatever BuildFeasibleCompactPlan emits first -- a "feasible<=N"
+        // tightening stage, or "compact" directly when the greedy bound is already at the lower bound.
         if (compactPlan is null)
-            root.Nodes.Add(new TreeNode(CompactComputingLabel) { ForeColor = _palette.MutedForeColor });
+        {
+            string firstStageName = defaultPlan is null
+                ? NextFeasibleCompactStageName(feasiblePlan, feasiblePlan.MaxStep)
+                : "compact";
+            root.Nodes.Add(new TreeNode(firstStageName + ComputingSuffix) { ForeColor = _palette.MutedForeColor });
+        }
         else if (compactImproved)
             root.Nodes.Add(CreatePlanTreeRoot("compact", compactPlan, "compact", compactPlan.Elapsed));
         else
@@ -950,11 +956,24 @@ class MainForm : Form
         }
     }
 
+    // Name of the next stage BuildFeasibleCompactPlan will emit given the best incumbent max-step so
+    // far. Mirrors the V2 loop: it tightens to "feasible<=(step-1)" while that ceiling is still above
+    // the proven analytic lower bound, otherwise the final min-edge "compact" pass runs. Used to label
+    // the transient "...: computing..." placeholder so it matches the stage name that actually lands
+    // (feasibility-only tightening stages surface as "feasible<=N", the final min-edge pass as "compact").
+    private static string NextFeasibleCompactStageName(StrategyPlan feasiblePlan, int incumbentMaxStep)
+    {
+        int lower = Math.Max(1, feasiblePlan.SearchStatistics.RootProvenLowerBound);
+        int nextBudget = incumbentMaxStep - 1;
+        return nextBudget >= lower ? $"feasible\u2264{nextBudget}" : "compact";
+    }
+
     // Anytime greedy edge handler: invoked on the UI thread once per edge stage as the worker thread
-    // produces it (baseline "compact" first, then each "compact<=N" tightening, finally a no-solution
-    // terminal stage). The baseline fills the "compact" slot in place; every later stage is appended as
-    // a new tree + overview section, so the user watches the strategy improve stage by stage. Each tree
-    // gets a unique scope ("edge0", "edge1", ...) so their per-state navigation keys never collide.
+    // produces it (each "feasible<=N" feasibility-only tightening stage, then the final min-edge
+    // "compact" pass, or a no-solution/incomplete terminal stage). The first stage fills the computing
+    // slot in place; every later stage is appended as a new tree + overview section, so the user watches
+    // the strategy improve stage by stage. Each tree gets a unique scope ("edge0", "edge1", ...) so
+    // their per-state navigation keys never collide.
     private void OnGreedyEdgeStage(GreedyEdgeStage stage)
     {
         if (_feasiblePlan is null || _treeView.Nodes.Count == 0)
@@ -974,9 +993,11 @@ class MainForm : Form
 
         // After any solution stage that can still be tightened (max-step > 1), the worker immediately
         // probes the next lower ceiling. We announce that in-progress probe with a trailing
-        // "compact<=N: computing..." placeholder so the tree/overview never look idle while a probe runs.
+        // "feasible<=N: computing..." placeholder so the tree/overview never look idle while a probe runs.
         bool willTighten = stage.HasSolution && stage.Plan!.MaxStep > 1;
-        string nextStageName = willTighten ? $"compact\u2264{stage.Plan!.MaxStep - 1}" : "compact";
+        string nextStageName = willTighten
+            ? NextFeasibleCompactStageName(_feasiblePlan, stage.Plan!.MaxStep)
+            : "compact";
         string probeComputingLabel = nextStageName + ComputingSuffix;
 
         _treeView.BeginUpdate();
@@ -1214,7 +1235,12 @@ class MainForm : Form
         _overviewTree.Nodes.Add(BuildOverviewSectionNode(stepPlan, "default", stepStageName, stepPlan.Elapsed));
 
         if (compactPlan is null)
-            _overviewTree.Nodes.Add(BuildOverviewNoteNode(CompactComputingLabel));
+        {
+            string firstStageName = defaultPlan is null
+                ? NextFeasibleCompactStageName(feasiblePlan, feasiblePlan.MaxStep)
+                : "compact";
+            _overviewTree.Nodes.Add(BuildOverviewNoteNode(firstStageName + ComputingSuffix));
+        }
         else if (compactImproved)
             _overviewTree.Nodes.Add(BuildOverviewSectionNode(compactPlan, "compact", "compact", compactPlan.Elapsed));
         else
