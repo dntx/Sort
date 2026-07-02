@@ -172,8 +172,9 @@ partial class StrategyBuilder
             {
                 _useCompactSelection = true;
                 var root = BuildState(new ComparisonState(_n), 0, _k, 1);
-                phase3Stopwatch.Stop();
 
+                // Stopwatch is stopped in the finally block (runs on all paths). Reading Elapsed here while
+                // it is still running is fine — it captures the phase-3 build time.
                 var phase3 = new StrategyPlan(
                     _n, _m, _requestedK, _k, root, phase3Stopwatch.Elapsed, CreateSearchStatistics(),
                     isFeasibleUpperBound: true);
@@ -184,9 +185,10 @@ partial class StrategyBuilder
         }
         finally
         {
-            // Stop on all paths (e.g., if BuildState throws) so the stopwatch is not left running.
+            // Stop the stopwatch on all paths (e.g., if BuildState throws) so it is not left running.
             if (phase3Stopwatch.IsRunning)
                 phase3Stopwatch.Stop();
+            // -1 is the "inactive" sentinel for the feasible-budget threading (a real budget is >= 0).
             _feasibleRootBudgetActive = -1;
         }
 
