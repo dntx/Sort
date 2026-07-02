@@ -63,7 +63,7 @@ class CompareStage1WithOriginal
             else if (newPlan.TotalBranchEdges == oldPlan.TotalBranchEdges) sameEdges++;
             else worseEdges++;
             
-            double speedup = sw1.ElapsedMilliseconds > 0 
+            double speedup = (sw1.ElapsedMilliseconds > 0 && sw2.ElapsedMilliseconds > 0) 
                 ? (double)sw1.ElapsedMilliseconds / sw2.ElapsedMilliseconds
                 : 0;
             
