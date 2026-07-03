@@ -119,6 +119,42 @@ public sealed class ComparisonStateTests
         Assert.Equal(2, lowerBound);
     }
 
+    // Determinability floor (greedy/feasible-budget plan only): a normalized non-terminal state with
+    // activeCount > m provably needs at least 2 comparisons -- a single step totally orders one group of
+    // m active items but cannot decide an active item left outside that group, so the state is not
+    // determined in one step (full proof in docs/core-algorithm.md sec 7.7). This state's active poset is
+    // the near-chain 1>0>2 plus two free items (3,4). NormalizeState fixes the forced-top item 1, leaving
+    // 4 active items over 2 remaining slots with width <= m, so the information-theoretic and width bounds
+    // only prove 1; the floor is what lifts the feasible-budget bound to the true minimum of 2.
+    [Fact]
+    public void MinWorstCaseLowerBound_DeterminabilityFloor_LiftsFeasibleBudgetBoundToTwo()
+    {
+        int feasible = new StrategyBuilder(5, 3, 3)
+            .GetMinWorstCaseLowerBoundForTesting(NearChainWithFreeItems(), remainingSlots: 3, feasibleBudget: true);
+
+        Assert.Equal(2, feasible);
+    }
+
+    // Scoping guard: the floor must NOT perturb the exact/default plan, whose proven-optimal search and
+    // its tight regression baselines assume the unfloored bound. On the same state the exact plan returns
+    // the pre-floor value of 1.
+    [Fact]
+    public void MinWorstCaseLowerBound_DeterminabilityFloor_LeavesExactPlanUntouched()
+    {
+        int exact = new StrategyBuilder(5, 3, 3)
+            .GetMinWorstCaseLowerBoundForTesting(NearChainWithFreeItems(), remainingSlots: 3, feasibleBudget: false);
+
+        Assert.Equal(1, exact);
+    }
+
+    private static ComparisonState NearChainWithFreeItems()
+    {
+        var state = new ComparisonState(5);
+        state.AddRelation(1, 0); // 1 > 0
+        state.AddRelation(0, 2); // 0 > 2  => chain 1 > 0 > 2, items 3 and 4 free
+        return state;
+    }
+
     private static ulong CreateMask(params int[] items)
     {
         ulong mask = 0;

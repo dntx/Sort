@@ -616,6 +616,23 @@ partial class StrategyBuilder
         return GetMinWorstCaseLowerBound(state, remainingSlots);
     }
 
+    // Test hook for the determinability floor: lets a test evaluate the lower bound under either the
+    // exact plan (feasibleBudget == false, floor disabled) or the feasible/greedy plan
+    // (feasibleBudget == true, floor enabled) so the floor and its scoping can be asserted directly.
+    internal int GetMinWorstCaseLowerBoundForTesting(ComparisonState state, int remainingSlots, bool feasibleBudget)
+    {
+        bool prior = _compactUsesFeasibleBudget;
+        _compactUsesFeasibleBudget = feasibleBudget;
+        try
+        {
+            return GetMinWorstCaseLowerBound(state, remainingSlots);
+        }
+        finally
+        {
+            _compactUsesFeasibleBudget = prior;
+        }
+    }
+
     internal FeasibleTopSetInfo GetFeasibleTopSetInfoForTesting(ComparisonState state, int remainingSlots)
     {
         return GetFeasibleTopSetInfo(state, remainingSlots);
