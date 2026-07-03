@@ -17,6 +17,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+import unicodedata
 
 MODELS_ENDPOINT = "https://models.github.ai/inference/chat/completions"
 
@@ -489,6 +490,47 @@ def format_new_identifiers(identifiers: list[str]) -> str:
         "Notable new identifiers/literals (from added lines of the whole diff):\n"
         + ", ".join(f"`{t}`" for t in identifiers)
     )
+
+
+def _contains_non_english_letters(text: str) -> bool:
+    """Return True when text contains letters outside the Latin script.
+
+    English-only enforcement is intentionally strict for PR metadata: if title
+    or description includes letters from non-Latin scripts (e.g. Chinese,
+    Japanese, Korean, Cyrillic), the PR is blocked.
+    """
+    for ch in text:
+        if not ch.isalpha():
+            continue
+        # Fast path: plain ASCII letters are always accepted.
+        if "A" <= ch <= "Z" or "a" <= ch <= "z":
+            continue
+        name = unicodedata.name(ch, "")
+        if "LATIN" not in name:
+            return True
+    return False
+
+
+def validate_pr_metadata_language(pr_title: str, pr_body: str) -> tuple[bool, str]:
+    """Validate that PR title and description are written in English only."""
+    fields = [
+        ("title", pr_title or ""),
+        ("description", pr_body or ""),
+    ]
+    invalid = [field for field, value in fields if _contains_non_english_letters(value)]
+    if not invalid:
+        return True, ""
+
+    field_text = " and ".join(invalid)
+    review = (
+        "## Summary\n"
+        "This PR is blocked by metadata language policy.\n\n"
+        "## Findings\n"
+        f"- **[BLOCK]** Pull request {field_text} must be written in English only. "
+        "Non-English language content was detected.\n\n"
+        "VERDICT: BLOCK"
+    )
+    return False, review
 
 
 
@@ -1119,6 +1161,17 @@ def post_review(review_body: str, verdict: str) -> None:
         print(f"Skipping stale-comment hiding due to error: {err}")
 
 def main() -> int:
+    pr_title = os.environ.get("PR_TITLE", "")
+    pr_body = os.environ.get("PR_BODY", "")
+
+    language_ok, language_review = validate_pr_metadata_language(pr_title, pr_body)
+    if not language_ok:
+        print("Verdict: BLOCK")
+        print("----- Review -----")
+        print(language_review)
+        post_review(language_review, "BLOCK")
+        return 1
+
     diff = read_diff()
     if not diff.strip():
         print("Empty diff — nothing to review.")
