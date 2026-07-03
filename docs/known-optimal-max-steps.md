@@ -28,47 +28,47 @@
 
 | n | m | k | max steps | 运行时间 | 来源 |
 |---:|---:|---:|---:|---:|:--|
-| 5 | 3 | 2 | 3 | 待测 | tests, exact-run |
-| 6 | 2 | 2 | 7 | 待测 | tests |
-| 6 | 3 | 2 | 3 | 待测 | exact-run |
-| 6 | 3 | 3 | 3 | 待测 | exact-run |
-| 7 | 3 | 3 | 4 | 待测 | exact-run |
-| 8 | 2 | 3 | 10 | 待测 | tests |
-| 8 | 3 | 3 | 5 | 待测 | exact-run |
-| 8 | 3 | 4 | 5 | 待测 | tests |
-| 8 | 4 | 2 | 3 | 待测 | tests |
-| 8 | 4 | 3 | 3 | 待测 | exact-run |
-| 9 | 3 | 3 | 6 | 待测 | tests, exact-run |
-| 9 | 3 | 4 | 6 | 待测 | tests |
-| 9 | 4 | 3 | 4 | 待测 | tests, exact-run |
-| 9 | 5 | 4 | 3 | 待测 | exact-run |
-| 10 | 3 | 3 | 6 | 待测 | exact-run |
-| 10 | 3 | 5 | 6 | 待测 | tests |
-| 10 | 3 | 6 | 7 | 待测 | tests |
-| 10 | 4 | 3 | 4 | 待测 | exact-run |
-| 10 | 4 | 4 | 4 | 待测 | exact-run |
-| 10 | 4 | 5 | 5 | 待测 | exact-run |
-| 10 | 5 | 4 | 3 | 待测 | exact-run |
-| 11 | 3 | 3 | 7 | 待测 | exact-run |
-| 11 | 4 | 4 | 5 | 待测 | exact-run |
-| 11 | 5 | 4 | 4 | 待测 | exact-run |
-| 11 | 5 | 5 | 4 | 待测 | exact-run |
-| 12 | 3 | 3 | 7 | 待测 | tests, exact-run |
-| 12 | 3 | 4 | 8 | 待测 | exact-run |
-| 12 | 3 | 5 | 8 | 待测 | exact-run |
-| 12 | 4 | 3 | 5 | 待测 | tests |
-| 12 | 4 | 4 | 5 | 待测 | exact-run |
-| 12 | 4 | 5 | 6 | 待测 | tests |
-| 12 | 5 | 5 | 4 | 待测 | exact-run |
-| 12 | 6 | 6 | 3 | 待测 | tests, exact-run |
-| 13 | 4 | 4 | 6 | 待测 | exact-run |
-| 13 | 4 | 5 | 6 | 待测 | exact-run |
-| 13 | 5 | 5 | 5 | 待测 | exact-run |
-| 14 | 4 | 4 | 6 | 待测 | exact-run |
-| 14 | 4 | 5 | 6 | 待测 | exact-run |
-| 14 | 4 | 6 | 7 | 待测 | exact-run |
-| 14 | 5 | 5 | 5 | 待测 | tests, exact-run |
-| 14 | 6 | 6 | 4 | 待测 | tests |
+| 5 | 3 | 2 | 3 | 0.23s | tests, exact-run |
+| 6 | 2 | 2 | 7 | 0.14s | tests |
+| 6 | 3 | 2 | 3 | 0.14s | exact-run |
+| 6 | 3 | 3 | 3 | 0.14s | exact-run |
+| 7 | 3 | 3 | 4 | 0.16s | exact-run |
+| 8 | 2 | 3 | 10 | 0.21s | tests |
+| 8 | 3 | 3 | 5 | 0.18s | exact-run |
+| 8 | 3 | 4 | 5 | 0.19s | tests |
+| 8 | 4 | 2 | 3 | 0.15s | tests |
+| 8 | 4 | 3 | 3 | 0.14s | exact-run |
+| 9 | 3 | 3 | 6 | 0.26s | tests, exact-run |
+| 9 | 3 | 4 | 6 | 0.30s | tests |
+| 9 | 4 | 3 | 4 | 0.19s | tests, exact-run |
+| 9 | 5 | 4 | 3 | 0.15s | exact-run |
+| 10 | 3 | 3 | 6 | 0.22s | exact-run |
+| 10 | 3 | 5 | 6 | 0.30s | tests |
+| 10 | 3 | 6 | 7 | 0.90s | tests |
+| 10 | 4 | 3 | 4 | 0.18s | exact-run |
+| 10 | 4 | 4 | 4 | 0.20s | exact-run |
+| 10 | 4 | 5 | 5 | 0.57s | exact-run |
+| 10 | 5 | 4 | 3 | 0.15s | exact-run |
+| 11 | 3 | 3 | 7 | 0.49s | exact-run |
+| 11 | 4 | 4 | 5 | 0.66s | exact-run |
+| 11 | 5 | 4 | 4 | 0.32s | exact-run |
+| 11 | 5 | 5 | 4 | 0.52s | exact-run |
+| 12 | 3 | 3 | 7 | 0.41s | tests, exact-run |
+| 12 | 3 | 4 | 8 | 2.21s | exact-run |
+| 12 | 3 | 5 | 8 | 2.63s | exact-run |
+| 12 | 4 | 3 | 5 | 0.28s | tests |
+| 12 | 4 | 4 | 5 | 0.55s | exact-run |
+| 12 | 4 | 5 | 6 | 3.29s | tests |
+| 12 | 5 | 5 | 4 | 0.78s | exact-run |
+| 12 | 6 | 6 | 3 | 0.23s | tests, exact-run |
+| 13 | 4 | 4 | 6 | 2.83s | exact-run |
+| 13 | 4 | 5 | 6 | 2.77s | exact-run |
+| 13 | 5 | 5 | 5 | 4.21s | exact-run |
+| 14 | 4 | 4 | 6 | 1.81s | exact-run |
+| 14 | 4 | 5 | 6 | 2.46s | exact-run |
+| 14 | 4 | 6 | 7 | 35.19s | exact-run |
+| 14 | 5 | 5 | 5 | 5.00s | tests, exact-run |
+| 14 | 6 | 6 | 4 | 2.51s | tests |
 | 15 | 4 | 4 | 7 | 待测 | exact-run |
 | 15 | 4 | 5 | 7 | 待测 | exact-run |
 | 15 | 4 | 6 | 7 | 待测 | exact-run |
