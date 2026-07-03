@@ -458,6 +458,15 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
 
 相关代码：`ComparisonState.ComputeCanonicalForm`、`GetCanonicalKey`、`GetGroupCanonicalKey`。
 
+### 5.1 规范键的跨实例记忆化（`GetCanonicalKey` 已落地；`GetGroupCanonicalKey` 已探测无收益）
+
+McKay 规范化是搜索的实测**头号 wall-time 成本**（量化中 exact 模式 ~72% 的墙钟耗在 canonical 计算上）。同一个逻辑偏序会沿不同搜索路径被反复到达，每次都是一个**新的** `ComparisonState` 实例（各自带自己的 per-instance 缓存），因此规范化会被从头重算。
+
+- **搜索键 `GetCanonicalKey`（已落地）**：在 builder 层增加一个「廉价原始结构指纹 → 昂贵规范键」的记忆表。指纹是 `(ActiveMask, {各 active 顶点的 ancestors&ActiveMask})`——`ComputeCanonicalForm` 只读这些量（descendants 是 ancestors 的转置），故指纹**完全决定**规范键，记忆化无损。该表在一个 builder 实例内跨阶段（feasible/exact/compact）永不清空，命中的是**跨实例**重算。实测 greedy 20,5,5 提速 ~32%、exact 16/18/19,5,5 提速 15–23%，`maxStep`/边数不变。相关代码：`RawStructureKey`、`GetRawStructureKey`、`_canonicalKeyMemo`。
+
+- **组键 `GetGroupCanonicalKey`（已探测，结论：无收益）**：同样想法在这里**不划算**。组键的 McKay 计算发生在 `EnumerateDistinctGroups` 的**消歧**环节——先用廉价 signature 分桶，只对同桶冲突的组才跑 McKay，这些组按设计就是要区分开（产生不同键）。因此用 `(结构指纹, groupMask)` 做键的跨实例可命中率**天然极低且随规模下降**：实测 exact 16,5,5 为 16.0%、18,5,5 为 10.8%、19,5,5 仅 4.7%、greedy 20,5,5 仅 3.5%。在真正耗时的规模上 ≤5% 的可省调用很可能被每次查表的指纹构造 + 字典查找开销抵消乃至反超，故**不引入**该缓存。
+
+
 ---
 
 ## 6. 下界（lower bounds）
