@@ -147,6 +147,27 @@ public sealed class ComparisonStateTests
         Assert.Equal(1, bound);
     }
 
+    // Minimal hand-checkable witness of the floor's correctness (n=4, m=3, k=2). The active poset is just
+    // a>b with two free items c,d -- all four survive Eliminate (each has < 2 active ancestors), so the
+    // state the real search hands to the bound has activeCount=4 > m=3. The old bounds all prove only 1:
+    // the widest antichain is {a,c,d} (width 3) giving ceil((3-1)/(3-1))=1, and the feasible top-2 count is
+    // small enough that the information-theoretic bound is also 1. Yet opt is genuinely 2: any single group
+    // of 3 leaves one active item f outside it, and since f has < 2 active ancestors it stays strictly
+    // undecided in some outcome (e.g. comparing {a,c,d} and getting a>c>d leaves b vs c for the 2nd slot
+    // unresolved), so no single step determines the top-2. The floor is what lifts the bound from 1 to the
+    // true value of 2.
+    [Fact]
+    public void MinWorstCaseLowerBound_DeterminabilityFloor_LiftsSingleEdgeWithFreeItemsToTwo()
+    {
+        var state = new ComparisonState(4);
+        state.AddRelation(0, 1); // a > b; items c=2, d=3 free
+
+        int bound = new StrategyBuilder(4, 3, 2)
+            .GetMinWorstCaseLowerBoundForTesting(state, remainingSlots: 2);
+
+        Assert.Equal(2, bound);
+    }
+
     private static ComparisonState NearChainWithFreeItems()
     {
         var state = new ComparisonState(5);
