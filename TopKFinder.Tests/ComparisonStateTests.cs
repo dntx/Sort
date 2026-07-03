@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using Xunit;
 
 public sealed class ComparisonStateTests
@@ -166,6 +168,87 @@ public sealed class ComparisonStateTests
             .GetMinWorstCaseLowerBoundForTesting(state, remainingSlots: 2);
 
         Assert.Equal(2, bound);
+    }
+
+    // The raw structure key backs the cross-instance canonical-key memo. Its core soundness contract
+    // is that structurally identical active sub-posets -- regardless of the order relations were added --
+    // yield equal raw keys (so the memo hits) and, in turn, equal canonical keys.
+    [Fact]
+    public void RawStructureKey_EqualForIdenticalStructureBuiltInDifferentOrder()
+    {
+        var first = new ComparisonState(4);
+        first.AddRelation(0, 1);
+        first.AddRelation(1, 2);
+
+        var second = new ComparisonState(4);
+        second.AddRelation(1, 2);
+        second.AddRelation(0, 1);
+
+        Assert.Equal(first.GetRawStructureKey(), second.GetRawStructureKey());
+        Assert.Equal(first.GetRawStructureKey().GetHashCode(), second.GetRawStructureKey().GetHashCode());
+        Assert.Equal(first.GetCanonicalKey(), second.GetCanonicalKey());
+    }
+
+    [Fact]
+    public void RawStructureKey_DiffersForDifferentActiveStructure()
+    {
+        var chain = new ComparisonState(4);
+        chain.ApplyOrder(new[] { 0, 1, 2, 3 });
+
+        var star = new ComparisonState(4);
+        star.AddRelation(0, 1);
+        star.AddRelation(0, 2);
+        star.AddRelation(0, 3);
+
+        Assert.NotEqual(chain.GetRawStructureKey(), star.GetRawStructureKey());
+    }
+
+    // The raw key only reflects the ACTIVE sub-poset: a state whose eliminated items are pruned must
+    // match a freshly built state that never had them, so the memo reuses the canonical key correctly.
+    [Fact]
+    public void RawStructureKey_ReflectsOnlyActiveSubPoset()
+    {
+        var eliminated = new ComparisonState(4);
+        eliminated.ApplyOrder(new[] { 0, 1 }); // 0 > 1
+        eliminated.Eliminate(k: 1);            // removes item 1 (>=1 known ancestor), leaving 0, 2, 3 active
+        Assert.Equal(new[] { 0, 2, 3 }, eliminated.GetActiveItemsOrdered());
+
+        var reference = new ComparisonState(4);
+        reference.Deactivate(1UL << 1);        // three free active items 0, 2, 3
+
+        Assert.Equal(reference.GetRawStructureKey(), eliminated.GetRawStructureKey());
+        Assert.Equal(reference.GetCanonicalKey(), eliminated.GetCanonicalKey());
+    }
+
+    // Soundness property backing the memo: across a broad family of small posets, any two states that
+    // share a raw structure key MUST share a canonical key. If this ever failed, memoizing the canonical
+    // key by the raw key would return a wrong key and silently corrupt the search.
+    [Fact]
+    public void RawStructureKey_UniquelyDeterminesCanonicalKey()
+    {
+        const int n = 6;
+        var byRawKey = new Dictionary<RawStructureKey, IntSequenceKey>();
+        var rng = new Random(12345);
+
+        for (int trial = 0; trial < 4000; trial++)
+        {
+            var state = new ComparisonState(n);
+            int relations = rng.Next(0, 8);
+            for (int r = 0; r < relations; r++)
+            {
+                int a = rng.Next(n);
+                int b = rng.Next(n);
+                if (a != b && !state.HasAncestor(a, b) && !state.HasAncestor(b, a))
+                    state.AddRelation(a, b);
+            }
+
+            RawStructureKey raw = state.GetRawStructureKey();
+            IntSequenceKey canonical = state.GetCanonicalKey();
+            if (byRawKey.TryGetValue(raw, out IntSequenceKey seen))
+                Assert.Equal(seen, canonical);
+            else
+                byRawKey[raw] = canonical;
+        }
     }
 
     private static ComparisonState NearChainWithFreeItems()
