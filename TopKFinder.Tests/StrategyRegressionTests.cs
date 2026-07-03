@@ -462,10 +462,10 @@ public sealed class StrategyRegressionTests
             pending states = 0 (peak 2)
             output states = 4 (expanded 2)
             lower-bound states = 2, feasible-top-set states = 3
-            outcomes constructed = 12 (duplicate skips 3, merged collisions 1)
+            outcomes constructed = 8 (duplicate skips 2, merged collisions 1)
             candidate groups enumerated = 4 (symmetry-class representatives canonicalized before cross-class dedup)
-            lower-bound prunes = 2
-            cache hits = exact 0, lower-bound 1, feasible-top-set 11, best-group-pattern 2
+            lower-bound prunes = 0
+            cache hits = exact 0, lower-bound 1, feasible-top-set 9, best-group-pattern 2
 
             ==================== legend ====================
             #i                            item i (1-based labels; may be relabeled in references)
@@ -941,7 +941,7 @@ public sealed class StrategyRegressionTests
     [Theory]
     [InlineData(9, 3, 3, 159)]
     [InlineData(11, 3, 3, 540)]
-    [InlineData(12, 4, 4, 455)]
+    [InlineData(12, 4, 4, 471)]
     [InlineData(10, 3, 4, 1088)]
     [InlineData(12, 4, 3, 131)]
     [InlineData(12, 3, 3, 538)]
@@ -975,10 +975,10 @@ public sealed class StrategyRegressionTests
     [InlineData(12, 3, 3, 486)]
     [InlineData(12, 4, 4, 242)]
     [InlineData(12, 4, 3, 63)]
-    [InlineData(10, 3, 4, 405)]
+    [InlineData(10, 3, 4, 409)]
     [InlineData(10, 3, 5, 323)]
-    [InlineData(12, 4, 5, 671)]
-    [InlineData(16, 4, 4, 5547)]
+    [InlineData(12, 4, 5, 710)]
+    [InlineData(16, 4, 4, 5650)]
     [InlineData(20, 5, 4, 3587)]
     [InlineData(13, 4, 3, 97)]
     [InlineData(8, 4, 2, 3)]
@@ -986,7 +986,7 @@ public sealed class StrategyRegressionTests
     [InlineData(8, 3, 4, 53)]
     [InlineData(8, 2, 3, 317)]
     [InlineData(9, 3, 4, 173)]
-    [InlineData(10, 3, 6, 405)]
+    [InlineData(10, 3, 6, 409)]
     [InlineData(5, 3, 2, 4)]
     [InlineData(6, 2, 2, 21)]
     [InlineData(10, 2, 2, 106)]
@@ -1021,17 +1021,17 @@ public sealed class StrategyRegressionTests
     [InlineData(12, 3, 3, 7303)]
     [InlineData(12, 4, 4, 9809)]
     [InlineData(12, 4, 5, 32512)]
-    [InlineData(16, 4, 4, 324042)]
+    [InlineData(16, 4, 4, 328532)]
     [InlineData(20, 5, 4, 304457)]
     [InlineData(12, 4, 3, 492)]
-    [InlineData(10, 3, 4, 6002)]
+    [InlineData(10, 3, 4, 6360)]
     [InlineData(10, 3, 5, 5521)]
     [InlineData(13, 4, 3, 1346)]
     [InlineData(8, 4, 2, 4)]
     [InlineData(9, 4, 3, 93)]
     [InlineData(8, 3, 4, 591)]
     [InlineData(9, 3, 4, 2759)]
-    [InlineData(10, 3, 6, 6002)]
+    [InlineData(10, 3, 6, 6360)]
     [InlineData(5, 3, 2, 12)]
     [InlineData(6, 2, 2, 72)]
     [InlineData(10, 2, 2, 740)]
@@ -1058,7 +1058,7 @@ public sealed class StrategyRegressionTests
     [InlineData(9, 3, 3, 5473)]
     [InlineData(11, 3, 3, 16220)]
     [InlineData(12, 4, 4, 20854)]
-    [InlineData(10, 3, 4, 47255)]
+    [InlineData(10, 3, 4, 47634)]
     [InlineData(12, 4, 3, 6321)]
     [InlineData(12, 3, 3, 8550)]
     // Ties/anomalies (see Compact_SearchedStateCountStaysWithinBaseline): now measure the genuine
@@ -1093,14 +1093,14 @@ public sealed class StrategyRegressionTests
     [InlineData(12, 3, 3, 550)]
     [InlineData(12, 4, 4, 2232)]
     [InlineData(12, 4, 3, 111)]
-    [InlineData(10, 3, 4, 461)]
+    [InlineData(10, 3, 4, 495)]
     [InlineData(10, 3, 5, 360)]
     [InlineData(13, 4, 3, 329)]
     [InlineData(8, 4, 2, 0)]
     [InlineData(9, 4, 3, 29)]
     [InlineData(8, 3, 4, 73)]
     [InlineData(9, 3, 4, 254)]
-    [InlineData(10, 3, 6, 461)]
+    [InlineData(10, 3, 6, 495)]
     [InlineData(5, 3, 2, 3)]
     [InlineData(10, 2, 2, 2)]
     public void Default_DuplicateOutcomeSkipsStaysWithinBaseline(int n, int m, int k, int duplicateSkipCap)
@@ -1148,10 +1148,10 @@ public sealed class StrategyRegressionTests
     [InlineData(12, 3, 3, 10909)]
     [InlineData(12, 4, 4, 9776)]
     [InlineData(12, 4, 5, 33855)]
-    [InlineData(16, 4, 4, 456755)]
+    [InlineData(16, 4, 4, 464319)]
     [InlineData(20, 5, 4, 379108)]
     [InlineData(12, 4, 3, 544)]
-    [InlineData(10, 3, 4, 7602)]
+    [InlineData(10, 3, 4, 7882)]
     [InlineData(10, 3, 5, 5634)]
     [InlineData(13, 4, 3, 1542)]
     [InlineData(8, 4, 2, 5)]
@@ -1159,7 +1159,7 @@ public sealed class StrategyRegressionTests
     [InlineData(8, 3, 4, 546)]
     [InlineData(8, 2, 3, 4232)]
     [InlineData(9, 3, 4, 3008)]
-    [InlineData(10, 3, 6, 7602)]
+    [InlineData(10, 3, 6, 7882)]
     [InlineData(5, 3, 2, 4)]
     [InlineData(6, 2, 2, 85)]
     [InlineData(10, 2, 2, 1115)]
@@ -1184,7 +1184,7 @@ public sealed class StrategyRegressionTests
     [InlineData(9, 3, 3, 800)]
     [InlineData(11, 3, 3, 1743)]
     [InlineData(12, 4, 4, 5538)]
-    [InlineData(10, 3, 4, 5207)]
+    [InlineData(10, 3, 4, 5242)]
     [InlineData(12, 4, 3, 2566)]
     [InlineData(12, 3, 3, 622)]
     // Ties/anomalies (see Compact_SearchedStateCountStaysWithinBaseline): now measure the genuine

@@ -119,6 +119,63 @@ public sealed class ComparisonStateTests
         Assert.Equal(2, lowerBound);
     }
 
+    // Determinability floor: a normalized non-terminal state with activeCount > m provably needs at least
+    // 2 comparisons -- a single step totally orders one group of m active items but cannot decide an active
+    // item left outside that group, so the state is not determined in one step (full proof in
+    // docs/core-algorithm.md sec 7.7). This state's active poset is the near-chain 1>0>2 plus two free
+    // items (3,4). NormalizeState fixes the forced-top item 1, leaving 4 active items over 2 remaining slots
+    // with width <= m, so the information-theoretic and width bounds only prove 1; the floor is what lifts
+    // the bound to the true minimum of 2. The floor applies to both the greedy and the exact plan.
+    [Fact]
+    public void MinWorstCaseLowerBound_DeterminabilityFloor_LiftsNearChainToTwo()
+    {
+        int bound = new StrategyBuilder(5, 3, 3)
+            .GetMinWorstCaseLowerBoundForTesting(NearChainWithFreeItems(), remainingSlots: 3);
+
+        Assert.Equal(2, bound);
+    }
+
+    // Placement guard: the floor sits AFTER the base cases, so a state whose active count is exactly m must
+    // still return the base-case value of 1 (line 354), not be lifted to 2. Three free items with two
+    // remaining slots is undetermined and not forced-reduced by normalization, so activeCount stays m == 3.
+    [Fact]
+    public void MinWorstCaseLowerBound_DeterminabilityFloor_DoesNotLiftBaseCaseActiveCountEqualsM()
+    {
+        int bound = new StrategyBuilder(3, 3, 3)
+            .GetMinWorstCaseLowerBoundForTesting(new ComparisonState(3), remainingSlots: 2);
+
+        Assert.Equal(1, bound);
+    }
+
+    // Minimal hand-checkable witness of the floor's correctness (n=4, m=3, k=2). The active poset is just
+    // a>b with two free items c,d -- all four survive Eliminate (each has < 2 active ancestors), so the
+    // state the real search hands to the bound has activeCount=4 > m=3. The old bounds all prove only 1:
+    // the widest antichain is {a,c,d} (width 3) giving ceil((3-1)/(3-1))=1, and the feasible top-2 count is
+    // small enough that the information-theoretic bound is also 1. Yet opt is genuinely 2: any single group
+    // of 3 leaves one active item f outside it, and since f has < 2 active ancestors it stays strictly
+    // undecided in some outcome (e.g. comparing {a,c,d} and getting a>c>d leaves b vs c for the 2nd slot
+    // unresolved), so no single step determines the top-2. The floor is what lifts the bound from 1 to the
+    // true value of 2.
+    [Fact]
+    public void MinWorstCaseLowerBound_DeterminabilityFloor_LiftsSingleEdgeWithFreeItemsToTwo()
+    {
+        var state = new ComparisonState(4);
+        state.AddRelation(0, 1); // a > b; items c=2, d=3 free
+
+        int bound = new StrategyBuilder(4, 3, 2)
+            .GetMinWorstCaseLowerBoundForTesting(state, remainingSlots: 2);
+
+        Assert.Equal(2, bound);
+    }
+
+    private static ComparisonState NearChainWithFreeItems()
+    {
+        var state = new ComparisonState(5);
+        state.AddRelation(1, 0); // 1 > 0
+        state.AddRelation(0, 2); // 0 > 2  => chain 1 > 0 > 2, items 3 and 4 free
+        return state;
+    }
+
     private static ulong CreateMask(params int[] items)
     {
         ulong mask = 0;
