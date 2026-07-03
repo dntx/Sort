@@ -24,17 +24,21 @@ public class DominanceMetricTests
         Assert.Equal(0, builder.DominanceBudgetExhaustions);
     }
 
+    // Floor, not an exact count: a legitimate improvement may only raise it. The accompanying
+    // searched-state / outcomes-constructed monitors pin the downstream search-work reduction.
+    // These floors dropped when the determinability floor was reordered ahead of the dominance
+    // lower bound (commit seeding dominance's cheap prefilter): raising the seed to 2 makes the
+    // floor subsume the cost-2 dominance raises those states used to need, so dominance now fires
+    // only on genuinely harder (cost >= 3) subsumptions. The returned bounds are unchanged.
     [Theory]
-    [InlineData(9, 3, 3, 13)]
-    [InlineData(13, 4, 3, 16)]
-    [InlineData(12, 4, 4, 48)]
+    [InlineData(9, 3, 3, 9)]
+    [InlineData(13, 4, 3, 4)]
+    [InlineData(12, 4, 4, 9)]
     public void Phase1DominanceLowerBoundPruningFires(int n, int m, int k, int minBoundRaises)
     {
         var builder = new StrategyBuilder(n, m, k);
         builder.BuildDefaultPlan();
 
-        // Floor, not an exact count: a legitimate improvement may only raise it. The accompanying
-        // searched-state / outcomes-constructed monitors pin the downstream search-work reduction.
         Assert.True(
             builder.DominanceBoundRaises >= minBoundRaises,
             $"dominance bound raises regressed to {builder.DominanceBoundRaises} (floor {minBoundRaises})");
