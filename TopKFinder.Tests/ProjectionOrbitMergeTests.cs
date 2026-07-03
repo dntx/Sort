@@ -179,4 +179,37 @@ public sealed class ProjectionOrbitMergeTests
         Assert.Contains("pattern: {#9, #10, #11} > #1", offText);
         Assert.DoesNotContain("{A1, A2} > {A3, #1}", offText);
     }
+
+    [Fact]
+    public void N10M4K5_PureDropFoldCollapsesTailIntoBrace()
+    {
+        (StrategyPlan off, string offText) = Build(10, 4, 5, projectionMerging: false);
+        (_, string onText) = Build(10, 4, 5, projectionMerging: true);
+
+        // The three folded orderings differ only in the internal order of the dropped items #3 and
+        // #6, so the honest shape is "#5 > #2 > {#3, #6}" -- an any-order brace, NOT the misleading
+        // rigid chain "#5 > #2 > #3 > #6" that would claim a single total order for a 2-form fold.
+        Assert.Contains("equivalent forms: 2 = 2", onText);
+        Assert.Contains("pattern: #5 > #2 > {#3, #6} ; drop {#3, #4, #6}", onText);
+        Assert.DoesNotContain("pattern: #5 > #2 > #3 > #6 ; drop", onText);
+
+        // The default (toggle-off) render never invents a drop disclosure.
+        Assert.DoesNotContain("drop {", offText);
+    }
+
+    [Fact]
+    public void N11M4K4_PureDropFoldKeepsResidualOrderInBrace()
+    {
+        (_, string onText) = Build(11, 4, 4, projectionMerging: true);
+
+        // The dropped tail #3, #4, #9 folds into an any-order brace, but #3 > #4 is still known in
+        // the parent poset, so it is disclosed as a residual constraint. The brace's linear-extension
+        // count (3: the free position of #9 relative to the #3 > #4 chain) matches the fold count,
+        // which is exactly the honesty gate that permits the collapse.
+        Assert.Contains("equivalent forms: 3 = 3", onText);
+        Assert.Contains("pattern: #6 > {#3, #4, #9} ; #3 > #4 ; drop {#3, #4, #9, #10}", onText);
+
+        // The old misleading rigid tail chain must not appear.
+        Assert.DoesNotContain("pattern: #6 > #3 > #4 > #9", onText);
+    }
 }
