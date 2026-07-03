@@ -119,32 +119,32 @@ public sealed class ComparisonStateTests
         Assert.Equal(2, lowerBound);
     }
 
-    // Determinability floor (greedy/feasible-budget plan only): a normalized non-terminal state with
-    // activeCount > m provably needs at least 2 comparisons -- a single step totally orders one group of
-    // m active items but cannot decide an active item left outside that group, so the state is not
-    // determined in one step (full proof in docs/core-algorithm.md sec 7.7). This state's active poset is
-    // the near-chain 1>0>2 plus two free items (3,4). NormalizeState fixes the forced-top item 1, leaving
-    // 4 active items over 2 remaining slots with width <= m, so the information-theoretic and width bounds
-    // only prove 1; the floor is what lifts the feasible-budget bound to the true minimum of 2.
+    // Determinability floor: a normalized non-terminal state with activeCount > m provably needs at least
+    // 2 comparisons -- a single step totally orders one group of m active items but cannot decide an active
+    // item left outside that group, so the state is not determined in one step (full proof in
+    // docs/core-algorithm.md sec 7.7). This state's active poset is the near-chain 1>0>2 plus two free
+    // items (3,4). NormalizeState fixes the forced-top item 1, leaving 4 active items over 2 remaining slots
+    // with width <= m, so the information-theoretic and width bounds only prove 1; the floor is what lifts
+    // the bound to the true minimum of 2. The floor applies to both the greedy and the exact plan.
     [Fact]
-    public void MinWorstCaseLowerBound_DeterminabilityFloor_LiftsFeasibleBudgetBoundToTwo()
+    public void MinWorstCaseLowerBound_DeterminabilityFloor_LiftsNearChainToTwo()
     {
-        int feasible = new StrategyBuilder(5, 3, 3)
-            .GetMinWorstCaseLowerBoundForTesting(NearChainWithFreeItems(), remainingSlots: 3, feasibleBudget: true);
+        int bound = new StrategyBuilder(5, 3, 3)
+            .GetMinWorstCaseLowerBoundForTesting(NearChainWithFreeItems(), remainingSlots: 3);
 
-        Assert.Equal(2, feasible);
+        Assert.Equal(2, bound);
     }
 
-    // Scoping guard: the floor must NOT perturb the exact/default plan, whose proven-optimal search and
-    // its tight regression baselines assume the unfloored bound. On the same state the exact plan returns
-    // the pre-floor value of 1.
+    // Placement guard: the floor sits AFTER the base cases, so a state whose active count is exactly m must
+    // still return the base-case value of 1 (line 354), not be lifted to 2. Three free items with two
+    // remaining slots is undetermined and not forced-reduced by normalization, so activeCount stays m == 3.
     [Fact]
-    public void MinWorstCaseLowerBound_DeterminabilityFloor_LeavesExactPlanUntouched()
+    public void MinWorstCaseLowerBound_DeterminabilityFloor_DoesNotLiftBaseCaseActiveCountEqualsM()
     {
-        int exact = new StrategyBuilder(5, 3, 3)
-            .GetMinWorstCaseLowerBoundForTesting(NearChainWithFreeItems(), remainingSlots: 3, feasibleBudget: false);
+        int bound = new StrategyBuilder(3, 3, 3)
+            .GetMinWorstCaseLowerBoundForTesting(new ComparisonState(3), remainingSlots: 2);
 
-        Assert.Equal(1, exact);
+        Assert.Equal(1, bound);
     }
 
     private static ComparisonState NearChainWithFreeItems()

@@ -615,14 +615,32 @@ private int GetAntichainLowerBound(ComparisonState state)
 `GetMinWorstCaseLowerBound` 末尾对这些状态取 `max(steps, 2)` 即可，无需任何前瞻。它在活跃偏序近似为单链
 （`width ≤ m`）时把界从 1 抬到 2，提前剪掉 `budget=1` 的叶层，连带砍掉巨大子树。
 
-**作用域**：只在 feasible/greedy 计划（`_compactUsesFeasibleBudget`）中启用；proven-optimal 的 exact 搜索
-（其回归基线假设界不变）保持原样。**实测**（uncapped 完整证明，同机对比，`maxStep` 与基线完全一致）：
+**作用域**：全局启用（greedy/feasible 计划与 proven-optimal 的 exact 搜索均适用）。该下界与所选计划无关，
+恒为 sound；曾因 exact 回归基线假设界不变而临时门控，实测后确认它在两种模式下都净加速结论性求解，故去掉门控。
+
+**实测 1 —— greedy/feasible（uncapped 完整证明，同机对比，`maxStep` 与基线完全一致）**：
 
 | 规模 | 基线 | 加下界 | 加速 |
 |---|---|---|---|
 | 15,5,5 | 2.4s | 1.1s | 2.2× |
 | 20,5,5 | 61.2s | 16.0s | 3.8× |
 | 25,5,5 | 433.4s | 183.3s | 2.4× |
+
+**实测 2 —— exact（`BuildDefaultPlan` phase-1 纯搜索，Release，同 `maxStep`）**：
+
+| 规模 | floor OFF | floor ON | 加速 |
+|---|---|---|---|
+| 14,5,5 | 566ms | 127ms | 4.5× |
+| 15,5,5 | 790ms | 55ms | 14× |
+| 16,5,5 | 1815ms | 436ms | 4.2× |
+| 17,5,5 | 2342ms | 513ms | 4.6× |
+| 18,5,5 | 4022ms | 679ms | 5.9× |
+| 19,5,5 | 11082ms | 1086ms | 10.2× |
+
+`maxStep`/边数在所有规模上均不变。较窄的 `m=3/4` 形状 wall-time 中性偏快（12,4,5 3.3×、12,4,4 2.4×、
+13,4,3 2×；10,3,x 与 16,4,4 在噪声内）。注意：这些形状上少数 proxy 计数（searched states、candidate groups）
+会小涨 1–8%——因为 floor 用粗糙的「2」替代了 dominance 的某些具体 raise，改变了等优 tie 的代表分支，
+但真实工作量（outcomes/wall-time）中性或更好；相应回归基线（含 dominance `>=` 下限）已按实测同步更新。
 
 这是自四轮排除（时间预算、把已有界改作状态剪枝、更强去重、渲染期等价类）以来第一个真正提升
 **结论性**（更快地给出「找到更优解」或「证明不可行」）的改进，而非更快的 incomplete 退出。
