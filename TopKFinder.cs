@@ -41,6 +41,13 @@ partial class StrategyBuilder
     private readonly Dictionary<SearchStateKey, int> _searchLowerBoundCache = new();
     private readonly Dictionary<SearchStateKey, FeasibleTopSetInfo> _feasibleTopSetCache = new();
     private readonly Dictionary<SearchStateKey, BestGroupPattern> _bestGroupPatternCache = new();
+    // Cross-instance canonical-key memo: maps a state's cheap raw structural fingerprint to its
+    // expensive McKay canonical key. The same logical poset is reached via many search paths as
+    // distinct ComparisonState instances (each with its own per-instance cache), so without this the
+    // canonicalization is recomputed from scratch every time. Never cleared, so it accumulates across
+    // the feasible/exact/compact phases of one builder. Sound because the raw fingerprint fully
+    // determines the canonical key.
+    private readonly Dictionary<RawStructureKey, IntSequenceKey> _canonicalKeyMemo = new();
     private readonly Stopwatch _progressStopwatch = Stopwatch.StartNew();
     private readonly List<SearchMilestone> _rootIncumbents = new();
     private int _nextStateId = 1;
@@ -748,7 +755,18 @@ partial class StrategyBuilder
 
     private SearchStateKey GetSearchStateKey(ComparisonState state, int remainingSlots)
     {
-        return new SearchStateKey(remainingSlots, state.GetCanonicalKey());
+        return new SearchStateKey(remainingSlots, GetCanonicalKeyMemoized(state));
+    }
+
+    private IntSequenceKey GetCanonicalKeyMemoized(ComparisonState state)
+    {
+        RawStructureKey rawKey = state.GetRawStructureKey();
+        if (_canonicalKeyMemo.TryGetValue(rawKey, out IntSequenceKey cached))
+            return cached;
+
+        IntSequenceKey canonical = state.GetCanonicalKey();
+        _canonicalKeyMemo[rawKey] = canonical;
+        return canonical;
     }
 
     private IntSequenceKey GetDisplayStateKey(ComparisonState state, ulong fixedTopMask)

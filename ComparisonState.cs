@@ -65,6 +65,44 @@ readonly struct IntSequenceKey : IEquatable<IntSequenceKey>, IComparable<IntSequ
     }
 }
 
+// A cheap, non-canonical fingerprint of the active sub-poset structure: the active mask plus each
+// active vertex's ancestor set restricted to active items. Two states share this key iff they have
+// literally identical relation structure (before relabeling), which guarantees identical canonical
+// keys. Used to memoize the expensive McKay canonicalization across the many distinct state instances
+// that the same logical poset spawns along different search paths.
+readonly struct RawStructureKey : IEquatable<RawStructureKey>
+{
+    private readonly ulong[] _words;
+    private readonly int _hashCode;
+
+    public RawStructureKey(ulong[] words)
+    {
+        _words = words;
+        var hash = new HashCode();
+        foreach (ulong w in words)
+            hash.Add(w);
+        _hashCode = hash.ToHashCode();
+    }
+
+    public bool Equals(RawStructureKey other)
+    {
+        if (_words.Length != other._words.Length)
+            return false;
+
+        for (int i = 0; i < _words.Length; i++)
+        {
+            if (_words[i] != other._words[i])
+                return false;
+        }
+
+        return true;
+    }
+
+    public override bool Equals(object? obj) => obj is RawStructureKey other && Equals(other);
+
+    public override int GetHashCode() => _hashCode;
+}
+
 readonly struct SearchStateKey : IEquatable<SearchStateKey>
 {
     public SearchStateKey(int remainingSlots, IntSequenceKey stateKey)
@@ -243,6 +281,25 @@ class ComparisonState
 
         _canonicalKeyCache = ComputeCanonicalForm(ActiveMask, fixedTopMask: 0, highlightMask: 0);
         return _canonicalKeyCache.Value;
+    }
+
+    // Cheap non-canonical fingerprint of the active sub-poset (active mask + each active vertex's
+    // ancestor set restricted to active items). Fully determines GetCanonicalKey (which reads only
+    // these), so it is a sound memoization key for the expensive canonicalization. O(active) to build.
+    public RawStructureKey GetRawStructureKey()
+    {
+        var words = new ulong[ActiveCount + 1];
+        words[0] = ActiveMask;
+        int p = 1;
+        ulong remaining = ActiveMask;
+        while (remaining != 0)
+        {
+            int i = BitOperations.TrailingZeroCount(remaining);
+            remaining &= remaining - 1;
+            words[p++] = _ancestors[i] & ActiveMask;
+        }
+
+        return new RawStructureKey(words);
     }
 
     public IntSequenceKey GetDisplayCanonicalKey(ulong fixedTopMask)
