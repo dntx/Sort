@@ -380,24 +380,6 @@ partial class StrategyBuilder
         steps = Math.Max(steps, GetAntichainLowerBound(state));
         steps = ApplyDominanceLowerBound(state, remainingSlots, steps);
 
-        // Determinability floor (feasible/greedy plan only): any normalized non-terminal state that
-        // survives the base cases above has activeCount > _m (line 354 returns for activeCount <= _m).
-        // Such a state cannot be resolved in a single step, so it needs at least 2. Proof: a single step
-        // totally orders one group G of _m active items; since activeCount > _m there is an active item f
-        // outside G. Order G with f's known-ancestors at the top, items incomparable to f in the middle,
-        // and f's known-descendants at the bottom. The transitive closure then adds no new relation
-        // involving f (nothing is placed above its ancestors or below its descendants, and middle items
-        // stay incomparable to f), so in that outcome f keeps its prior ancestor set (< remainingSlots,
-        // so f is not forced out) and its prior descendant set (so f is not forced in). f therefore
-        // remains strictly undecided, meaning a top set containing f and one excluding f both exist -- the
-        // state is not determined. Hence no group resolves the state in every outcome, so opt >= 2. This
-        // lifts the bound above the width bound whenever the active poset is nearly a chain (width <= _m),
-        // pruning budget-1 leaf layers early and cutting large subtrees (measured ~4x faster conclusive
-        // proof on 20,5,5). Scoped to the feasible-budget plan so the proven-optimal exact search (whose
-        // tight regression baselines assume the unchanged bound) is untouched.
-        if (_compactUsesFeasibleBudget)
-            steps = Math.Max(steps, 2);
-
         _lowerBoundStepsCache[key] = steps;
         return steps;
     }
