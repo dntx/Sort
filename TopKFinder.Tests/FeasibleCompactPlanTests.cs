@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Xunit;
 
 // Guards the greedy-mode EDGE phase (BuildFeasibleCompactPlan), whose step ceiling is the
@@ -123,6 +124,24 @@ public class FeasibleCompactPlanTests
             Assert.True(
                 name.StartsWith("proof-tighten\u2264", StringComparison.Ordinal) || name == edgeCompactName,
                 $"unexpected stage label '{name}'"));
+
+        // The progression is ordered: every proof-tighten ceiling precedes the terminal edge-compact
+        // pass, which is announced exactly once and always last.
+        Assert.Equal(edgeCompactName, startedStages[^1]);
+        Assert.Equal(1, startedStages.Count(name => name == edgeCompactName));
+        int firstEdgeCompactIndex = startedStages.IndexOf(edgeCompactName);
+        Assert.All(startedStages.Take(firstEdgeCompactIndex), name =>
+            Assert.StartsWith("proof-tighten\u2264", name, StringComparison.Ordinal));
+
+        // The tightening ceilings step strictly downward (U-1, then lower), matching the U-1, U-2, …
+        // probe order the CLI/GUI progression surfaces.
+        var tightenBudgets = startedStages
+            .Where(name => name.StartsWith("proof-tighten\u2264", StringComparison.Ordinal))
+            .Select(name => int.Parse(name.Substring("proof-tighten\u2264".Length)))
+            .ToList();
+        for (int i = 1; i < tightenBudgets.Count; i++)
+            Assert.True(tightenBudgets[i] < tightenBudgets[i - 1],
+                $"tightening ceilings must strictly descend, saw {tightenBudgets[i - 1]} then {tightenBudgets[i]}");
     }
 
     // Runs the greedy edge progression and returns the outcome of its final solution-less stage (the terminal
