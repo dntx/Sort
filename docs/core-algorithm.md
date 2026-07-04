@@ -331,11 +331,11 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
 
 - **1-ply 前瞻收紧 `U`**（`ChooseConstructiveGroupLookahead`）：纯贪心反链每步只看「本步信息量最大」，会偏爱**全新孤立项**
   （与一切互不可比、关系最少），因而催生互不相连的多条链，事后合并代价高；而更优的走法常常是**跨边界桥接**（把边界项
-  与新项一起排序）。物化时的分组选择因此改为一层前瞻：枚举一小组候选分组（基础反链挑选 + 每个种子项各一个反链），
-  用**固定的基础反链 rollout** 深度（`ConstructiveDepth`，按 `SearchStateKey` 记忆化）给每个候选打分 `1 + 各对手分支的最坏 rollout 深度`，
-  取最小者（平局取字典序最小以保持确定性）。**rollout 恒用基础策略、绝不递归前瞻**，所以这是一次有界的多项式改良、而非完整
-  minimax。它把已知最优参照表上 39 个形状的原始 `U` 总超出从 39 降到 25（`m=3..6` 多个形状归零），代价只是物化多花约 |active|
-  倍的 rollout（最坏 ~1s@`20,5,5`，相对随后 compact 收紧的 100s+ 可忽略）。
+  与新项一起排序）。物化时的分组选择因此改为一层前瞻：枚举一小组候选分组（基础反链挑选 + 每个种子项各一个反链，再加
+  一个有界 swap 邻域），对每个候选只看**下一层所有结果分支**，用一个廉价打分来排序：先比较各分支里**最坏的解析下界**
+  `GetMinWorstCaseLowerBound`，再比较**最坏 active 数**，最后比较**平均 active 数**。也就是优先选出「下一步看起来最容易继续压缩」
+  的候选，而不是做递归 rollout。这个评分保持了选择器的多项式成本，同时把基础反链经常漏掉的跨边界桥接带了回来；
+  其效果由 `FeasiblePlan_LookaheadPinsRawUpperBound` 等回归测试固定。
 
 - **夹逼**：`L = GetMinWorstCaseLowerBound(root, k)`（解析下界，与精确搜索**无关**、极便宜；`25,5,5 → 6`），经
   `RecordRootProvenLowerBound` 写入；`U = ` 构造树的 `MaxStep`。于是 `L ≤ opt ≤ U`。若 `L == U` 则该可行解
