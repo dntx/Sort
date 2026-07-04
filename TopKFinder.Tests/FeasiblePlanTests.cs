@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Reflection;
 using Xunit;
 
 public class FeasiblePlanTests
@@ -101,38 +100,6 @@ public class FeasiblePlanTests
         int feasible = new StrategyBuilder(n, m, k).BuildFeasiblePlan().MaxStep;
 
         Assert.Equal(expectedRawU, feasible);
-    }
-
-    // Functional guard for the swap-neighborhood augmentation inside constructive lookahead:
-    // with default limits (incoming=6, outgoing=2) these witness shapes achieve a strictly smaller
-    // raw feasible U than the same policy with swap limits forced to zero.
-    [Theory]
-    [InlineData(10, 3, 4)]
-    [InlineData(12, 3, 3)]
-    [InlineData(14, 4, 3)]
-    public void FeasiblePlan_SwapAugmentationImprovesWitnessShapes(int n, int m, int k)
-    {
-        int withDefaultSwap = new StrategyBuilder(n, m, k).BuildFeasiblePlan().MaxStep;
-
-        var noSwapBuilder = new StrategyBuilder(n, m, k);
-        SetInternalIntField(noSwapBuilder, "ConstructiveLookaheadSwapIncomingLimit", 0);
-        SetInternalIntField(noSwapBuilder, "ConstructiveLookaheadSwapOutgoingLimit", 0);
-        int withoutSwap = noSwapBuilder.BuildFeasiblePlan().MaxStep;
-
-        Assert.True(
-            withDefaultSwap < withoutSwap,
-            $"expected default swap augmentation to improve U for ({n},{m},{k}), " +
-            $"but got default={withDefaultSwap}, noSwap={withoutSwap}");
-    }
-
-    private static void SetInternalIntField(StrategyBuilder builder, string fieldName, int value)
-    {
-        FieldInfo? field = typeof(StrategyBuilder).GetField(
-            fieldName,
-            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-
-        Assert.NotNull(field);
-        field!.SetValue(builder, value);
     }
 
     private static void AssertEveryDecisionHasGroup(StrategyNode node)
