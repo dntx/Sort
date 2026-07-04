@@ -44,7 +44,7 @@ public sealed class ProjectionOrbitMergeTests
         // The merged multi-family component renders in the structural quotient notation: the block A
         // carries its tail chains, {A2, #7} is the post-projection brace, and the drop is the
         // structural (covariant) tail of A2 -- never a hardcoded instance.
-        Assert.Contains("equivalent forms: 4 = 2! x 2", onText);
+        Assert.Contains("(×4 = 2! x 2)", onText);
         Assert.Contains("pattern: A1 > {A2, #7} ; A = {#1 > #2, #4 > #5} ; drop tail(A2)", onText);
 
         // The default (toggle-off) render keeps the families split and never invents the quotient.
@@ -101,7 +101,7 @@ public sealed class ProjectionOrbitMergeTests
             $"expected shape-A merging to reduce branch edges; off={off.TotalBranchEdges} on={on.TotalBranchEdges}");
 
         // The block is printed as bare leaves and the covariant drop targets the partner's tail.
-        Assert.Contains("equivalent forms: 4 = 2! x 2", onText);
+        Assert.Contains("(×4 = 2! x 2)", onText);
         Assert.Contains("pattern: A1 > {A2, #1} ; A = {#4, #5} ; drop tail(#1)", onText);
 
         // The default (toggle-off) render keeps the two families split and never invents the quotient.
@@ -125,7 +125,7 @@ public sealed class ProjectionOrbitMergeTests
             $"expected shape-B merging to reduce branch edges; off={off.TotalBranchEdges} on={on.TotalBranchEdges}");
 
         // The block carries its chains and the covariant drop is the whole chain of the min (A2).
-        Assert.Contains("equivalent forms: 4 = 2! x 2", onText);
+        Assert.Contains("(×4 = 2! x 2)", onText);
         Assert.Contains("pattern: {A1, #5} > A2 ; A = {#2 > #3, #7 > #8} ; drop chain(A2)", onText);
 
         // The default (toggle-off) render keeps the two families split and never invents the quotient.
@@ -148,7 +148,7 @@ public sealed class ProjectionOrbitMergeTests
             on.TotalBranchEdges < off.TotalBranchEdges,
             $"expected shape-C1 merging to reduce branch edges; off={off.TotalBranchEdges} on={on.TotalBranchEdges}");
 
-        Assert.Contains("equivalent forms: 8 = 2! x 2! x 2", onText);
+        Assert.Contains("(×8 = 2! x 2! x 2)", onText);
         Assert.Contains(
             "pattern: A1 > B1 > {A2, B2} ; A = {#2 > #3, #6 > #7}, B = {#9, #10} ; drop {chain(A2), B2}",
             onText);
@@ -172,7 +172,7 @@ public sealed class ProjectionOrbitMergeTests
             on.TotalBranchEdges < off.TotalBranchEdges,
             $"expected shape-C3 merging to reduce branch edges; off={off.TotalBranchEdges} on={on.TotalBranchEdges}");
 
-        Assert.Contains("equivalent forms: 12 = 3! x 2", onText);
+        Assert.Contains("(×12 = 3! x 2)", onText);
         Assert.Contains("pattern: {A1, A2} > {A3, #1} ; A = {#9, #10, #11} ; drop tail(#1)", onText);
 
         // The default (toggle-off) render keeps the two families split and never invents the quotient.
@@ -189,7 +189,7 @@ public sealed class ProjectionOrbitMergeTests
         // The three folded orderings differ only in the internal order of the dropped items #3 and
         // #6, so the honest shape is "#5 > #2 > {#3, #6}" -- an any-order brace, NOT the misleading
         // rigid chain "#5 > #2 > #3 > #6" that would claim a single total order for a 2-form fold.
-        Assert.Contains("equivalent forms: 2 = 2", onText);
+        Assert.Contains("(×2 = 2)", onText);
         Assert.Contains("pattern: #5 > #2 > {#3, #6} ; drop {#3, #4, #6}", onText);
         Assert.DoesNotContain("pattern: #5 > #2 > #3 > #6 ; drop", onText);
 
@@ -206,7 +206,7 @@ public sealed class ProjectionOrbitMergeTests
         // the parent poset, so it is disclosed as a residual constraint. The brace's linear-extension
         // count (3: the free position of #9 relative to the #3 > #4 chain) matches the fold count,
         // which is exactly the honesty gate that permits the collapse.
-        Assert.Contains("equivalent forms: 3 = 3", onText);
+        Assert.Contains("(×3 = 3)", onText);
         Assert.Contains("pattern: #6 > {#3, #4, #9} ; #3 > #4 ; drop {#3, #4, #9, #10}", onText);
 
         // The old misleading rigid tail chain must not appear.

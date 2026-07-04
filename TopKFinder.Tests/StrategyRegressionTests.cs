@@ -472,12 +472,12 @@ public sealed class StrategyRegressionTests
             #i ~ #j                       items #i through #j inclusive (a run of 4+ consecutive items)
             S{id} [step x/y] sort(...)    decision state: do this sort at step x of at most y
             a > b > c                     the sort revealed a ranks above b above c
-            equivalent forms: N = ...     this branch stands for N symmetric orderings (e.g. 3! = 6)
+            a > b > c  (×N = ...)         this branch stands for N symmetric orderings (e.g. ×6 = 3!)
             pattern: ...                  shape of those orderings; "{...}" = any order, "A = {...}" names a split block (members A1, A2 ...)
             S{id}: top k = (...)          solved: the top-k set is fully determined
             →S{id} (+N steps) [map: ...]  reuse state S{id}'s subtree (N more sorts); [map] relabels referenced→current
 
-            [+ ..., - ..., fixed ..., possible ...]   effect after an outcome (empty entries are omitted):
+            + ..., - ..., fixed ..., possible ...   per-outcome effect rows (empty rows are omitted):
                  +         newly guaranteed into the top-k
                  -         newly excluded from the top-k
                  fixed     already locked into the top-k
@@ -485,18 +485,25 @@ public sealed class StrategyRegressionTests
 
             ==================== strategy ====================
             S1 [step 1/3] sort(#1, #2, #3)
-              #1 > #2 > #3: [- (#3), possible (#1, #2, #4, #5)]
-                equivalent forms: 6 = 3!
+              #1 > #2 > #3  (×6 = 3!)
                 pattern: {#1, #2, #3}
+                - (#3)
+                possible (#1, #2, #4, #5)
                 S2 [step 2/3] sort(#1, #4, #5)
-                  #1 > #4 > #5: [+ (#1), - (#5), fixed (#1), possible (#2, #4)]
-                    equivalent forms: 2 = 2!
+                  #1 > #4 > #5  (×2 = 2!)
                     pattern: #1 > {#4, #5}
+                    + (#1)
+                    - (#5)
+                    fixed (#1)
+                    possible (#2, #4)
                     S3 [step 3/3] sort(#2, #4)
                       fixed (#1); choose 1 of (#2, #4) into top 2
-                  #4 > #1 > #5: [+ (#1, #4), - (#2, #5), fixed (#1, #4)] S4: top 2 = (#1, #4)
-                    equivalent forms: 4 = 2! x 2
+                  #4 > #1 > #5  (×4 = 2! x 2)
                     pattern: A1 > {A2, #1} ; A = {#4, #5} ; drop tail(#1)
+                    + (#1, #4)
+                    - (#2, #5)
+                    fixed (#1, #4)
+                    S4: top 2 = (#1, #4)
             """;
 
         Assert.Equal(StrategyTestHelpers.NormalizeRenderedSnapshot(expected), rendered);
@@ -757,24 +764,39 @@ public sealed class StrategyRegressionTests
 
         const string expected = """
                     S3 [step 3/5] sort(#2, #6, #9, #10)
-                      #2 > #6 > #9 > #10: [+ (#1), - (#7 ~ #10), fixed (#1), possible (#2 ~ #6, #11, #12)]
-                        equivalent forms: 4 = 2! x 2!
+                      #2 > #6 > #9 > #10  (×4 = 2! x 2!)
                         pattern: {#2, #6} > {#9, #10}
+                        + (#1)
+                        - (#7 ~ #10)
+                        fixed (#1)
+                        possible (#2 ~ #6, #11, #12)
                         S4 [step 4/5] sort(#3, #5, #11, #12)
-                          #11 > #12 > #3 > #5: [+ (#2, #11, #12), - (#3 ~ #6), fixed (#1, #2, #11, #12)] S5: top 4 = (#1, #2, #11, #12)
-                            equivalent forms: 2 = 2!
+                          #11 > #12 > #3 > #5  (×2 = 2!)
                             pattern: {#11, #12} > #3 > #5
-                          #11 > #12 > #5 > #3: [+ (#11, #12), - (#3, #4, #6), fixed (#1, #11, #12), possible (#2, #5)]
-                            equivalent forms: 2 = 2!
+                            + (#2, #11, #12)
+                            - (#3 ~ #6)
+                            fixed (#1, #2, #11, #12)
+                            S5: top 4 = (#1, #2, #11, #12)
+                          #11 > #12 > #5 > #3  (×2 = 2!)
                             pattern: {#11, #12} > #5 > #3
+                            + (#11, #12)
+                            - (#3, #4, #6)
+                            fixed (#1, #11, #12)
+                            possible (#2, #5)
                             S6 [step 5/5] sort(#2, #5)
                               fixed (#1, #11, #12); choose 1 of (#2, #5) into top 4
-                          #11 > #3 > #12 > #5: [+ (#2, #3, #11), - (#4, #5, #6, #12), fixed (#1, #2, #3, #11)] S7: top 4 = (#1, #2, #3, #11)
-                            equivalent forms: 2 = 2!
+                          #11 > #3 > #12 > #5  (×2 = 2!)
                             pattern: A1 > #3 > A2 > #5 ; A = {#11, #12}
-                          #11 > #3 > #5 > #12: [+ (#2, #3, #11), - (#4, #5, #6, #12), fixed (#1, #2, #3, #11)] S7: top 4 = (#1, #2, #3, #11)
-                            equivalent forms: 2 = 2!
+                            + (#2, #3, #11)
+                            - (#4, #5, #6, #12)
+                            fixed (#1, #2, #3, #11)
+                            S7: top 4 = (#1, #2, #3, #11)
+                          #11 > #3 > #5 > #12  (×2 = 2!)
                             pattern: A1 > #3 > #5 > A2 ; A = {#11, #12}
+                            + (#2, #3, #11)
+                            - (#4, #5, #6, #12)
+                            fixed (#1, #2, #3, #11)
+                            S7: top 4 = (#1, #2, #3, #11)
             """;
 
         Assert.Equal(StrategyTestHelpers.NormalizeRenderedSnapshot(expected), excerpt);
