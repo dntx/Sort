@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using Xunit;
 
 public class FeasiblePlanTests
@@ -80,12 +81,13 @@ public class FeasiblePlanTests
             $"feasible upper bound {feasible} was below the true optimum {optimum}");
     }
 
-    // Pins the exact raw feasible U (before compact edge-tightening) that the 1-ply constructive
-    // lookahead achieves, so a regression that loosened or reverted the lookahead would fail loudly
-    // rather than silently slip back to the pure single-ply antichain bound. The shapes below are the
-    // strongest witnesses: on 6,3,3 and 6,3,2 the base antichain heuristic overshoots (U=5 and U=4),
-    // while lookahead reaches the proven optimum; 9,5,4 and 7,4,4 also hit optimum. 14,4,5 and 12,6,6
-    // are still above optimum but their exact tightened values are pinned to catch any drift. See
+    // Pins the exact raw feasible U (before compact edge-tightening) that the cheap 1-ply
+    // constructive lookahead achieves, so a regression that weakened candidate generation or
+    // immediate-outcome scoring would fail loudly rather than silently slip back to the pure
+    // single-ply antichain bound. The shapes below are the strongest witnesses: on 6,3,3 and
+    // 6,3,2 the base antichain heuristic overshoots (U=5 and U=4), while lookahead reaches the
+    // proven optimum; 9,5,4 and 7,4,4 also hit optimum. 14,4,5 and 12,6,6 are still above
+    // optimum but their exact tightened values are pinned to catch any drift. See
     // docs/known-optimal-max-steps.md for the optima and docs/core-algorithm.md sec 4.6 for the policy.
     [Theory]
     [InlineData(6, 3, 3, 3)]
@@ -99,6 +101,38 @@ public class FeasiblePlanTests
         int feasible = new StrategyBuilder(n, m, k).BuildFeasiblePlan().MaxStep;
 
         Assert.Equal(expectedRawU, feasible);
+    }
+
+    // Functional guard for the swap-neighborhood augmentation inside constructive lookahead:
+    // with default limits (incoming=6, outgoing=2) these witness shapes achieve a strictly smaller
+    // raw feasible U than the same policy with swap limits forced to zero.
+    [Theory]
+    [InlineData(10, 3, 4)]
+    [InlineData(12, 3, 3)]
+    [InlineData(14, 4, 3)]
+    public void FeasiblePlan_SwapAugmentationImprovesWitnessShapes(int n, int m, int k)
+    {
+        int withDefaultSwap = new StrategyBuilder(n, m, k).BuildFeasiblePlan().MaxStep;
+
+        var noSwapBuilder = new StrategyBuilder(n, m, k);
+        SetInternalIntField(noSwapBuilder, "ConstructiveLookaheadSwapIncomingLimit", 0);
+        SetInternalIntField(noSwapBuilder, "ConstructiveLookaheadSwapOutgoingLimit", 0);
+        int withoutSwap = noSwapBuilder.BuildFeasiblePlan().MaxStep;
+
+        Assert.True(
+            withDefaultSwap < withoutSwap,
+            $"expected default swap augmentation to improve U for ({n},{m},{k}), " +
+            $"but got default={withDefaultSwap}, noSwap={withoutSwap}");
+    }
+
+    private static void SetInternalIntField(StrategyBuilder builder, string fieldName, int value)
+    {
+        FieldInfo? field = typeof(StrategyBuilder).GetField(
+            fieldName,
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+
+        Assert.NotNull(field);
+        field!.SetValue(builder, value);
     }
 
     private static void AssertEveryDecisionHasGroup(StrategyNode node)
