@@ -30,10 +30,6 @@ partial class StrategyBuilder
     // pattern cache / closure pre-solve is needed (the chooser is cheap and deterministic).
     private bool _useConstructiveSelection;
     private Dictionary<SearchStateKey, int>? _constructiveDepthMemo;
-    // Bounded candidate augmentation for constructive lookahead. This keeps the chooser
-    // polynomial while admitting one-hop replacements around the primary antichain pick.
-    internal int ConstructiveLookaheadSwapIncomingLimit = 6;
-    internal int ConstructiveLookaheadSwapOutgoingLimit = 2;
 
     // Feasible step budget U threaded from the step phase to the edge phase within one combined run.
     // BuildFeasiblePlan sets it to the MATERIALIZED MaxStep of the just-built step tree (the tightest
@@ -198,10 +194,17 @@ partial class StrategyBuilder
         return group;
     }
 
-    // 1-ply lookahead: enumerate a bounded candidate set (the base antichain pick plus one
-    // antichain per possible seed item, optionally augmented by a small swap neighborhood around
-    // the base pick), score each by a cheap immediate-outcome heuristic, and return the minimizer.
-    // Ties break toward the lexicographically smallest group for determinism.
+    // 1-ply lookahead: enumerate a bounded candidate set (the base antichain pick, one antichain
+    // seeded by each free-symmetry-class representative, and feature-shaped templates), score each by a cheap immediate-outcome
+    // heuristic, and return the minimizer. Ties break toward the lexicographically smallest group for
+    // determinism.
+    //
+    // Seeds range over ONE representative per free symmetry class rather than over every active item:
+    // members of a class relate identically to every other item, so seeding the antichain builder with
+    // any of them yields isomorphic groups with identical 1-ply scores. Quotienting by the class thus
+    // drops the seed loop from O(active) to O(distinct classes) candidates with no score coverage lost
+    // -- a pure reduction in scoring work (the dominant cost), and a feature-derived bound with no
+    // hardcoded candidate cap.
     private List<int> ChooseConstructiveGroupLookahead(ComparisonState state, int remainingSlots)
     {
         _constructiveDepthMemo ??= new Dictionary<SearchStateKey, int>();
@@ -234,18 +237,140 @@ partial class StrategyBuilder
 
         List<int> primary = ProposeAntichainGroup(state, active, remainingSlots);
         Consider(primary);
-        foreach (int seed in active)
-            Consider(ProposeAntichainGroup(state, active, remainingSlots, seed));
 
-        AddSwapCandidates(
-            state,
-            active,
-            primary,
-            Consider,
-            ConstructiveLookaheadSwapIncomingLimit,
-            ConstructiveLookaheadSwapOutgoingLimit);
+        // Seed one antichain per free-symmetry-class representative (smallest id of each class).
+        foreach (List<int> symmetryClass in state.GetFreeSymmetryClasses())
+            Consider(ProposeAntichainGroup(state, active, remainingSlots, symmetryClass[0]));
+
+        // Feature template A: frontier-first layering by active ancestor count.
+        Consider(ProposeFrontierLayerGroup(state, active));
+        // Feature template B: boundary-straddling around the current top-k cut.
+        Consider(ProposeBoundaryStraddlingGroup(state, active, remainingSlots));
 
         return bestGroup ?? primary;
+    }
+
+    // Feature template: fill the group from frontier layers first (fewest active ancestors),
+    // tie-breaking toward larger descendant count to include high-influence items.
+    private List<int> ProposeFrontierLayerGroup(ComparisonState state, List<int> active)
+    {
+        int size = Math.Min(_m, active.Count);
+        var ordered = new List<int>(active);
+        ordered.Sort((a, b) =>
+        {
+            int ancA = state.GetAncestorCount(a);
+            int ancB = state.GetAncestorCount(b);
+            if (ancA != ancB)
+                return ancA.CompareTo(ancB);
+
+            int descA = state.GetDescendantCount(a);
+            int descB = state.GetDescendantCount(b);
+            if (descA != descB)
+                return descB.CompareTo(descA);
+
+            return a.CompareTo(b);
+        });
+
+        var group = new List<int>(size);
+        for (int i = 0; i < size; i++)
+            group.Add(ordered[i]);
+
+        return group;
+    }
+
+    // Feature template: intentionally straddle the current top-k boundary. Prefer items just below
+    // and just above the ancestor-count cut, then fill by nearest distance to the cut.
+    private List<int> ProposeBoundaryStraddlingGroup(ComparisonState state, List<int> active, int remainingSlots)
+    {
+        int size = Math.Min(_m, active.Count);
+        int boundary = Math.Max(0, remainingSlots - 1);
+
+        var below = new List<int>();
+        var above = new List<int>();
+        foreach (int item in active)
+        {
+            int anc = state.GetAncestorCount(item);
+            if (anc <= boundary)
+                below.Add(item);
+            else
+                above.Add(item);
+        }
+
+        // Closest-to-boundary first on each side.
+        below.Sort((a, b) =>
+        {
+            int da = boundary - state.GetAncestorCount(a);
+            int db = boundary - state.GetAncestorCount(b);
+            if (da != db)
+                return da.CompareTo(db);
+            return a.CompareTo(b);
+        });
+        above.Sort((a, b) =>
+        {
+            int da = state.GetAncestorCount(a) - boundary;
+            int db = state.GetAncestorCount(b) - boundary;
+            if (da != db)
+                return da.CompareTo(db);
+            return a.CompareTo(b);
+        });
+
+        var group = new List<int>(size);
+        var chosen = new HashSet<int>();
+        int bi = 0, ai = 0;
+        bool takeBelow = true;
+
+        while (group.Count < size && (bi < below.Count || ai < above.Count))
+        {
+            if (takeBelow && bi < below.Count)
+            {
+                int item = below[bi++];
+                if (chosen.Add(item))
+                    group.Add(item);
+            }
+            else if (!takeBelow && ai < above.Count)
+            {
+                int item = above[ai++];
+                if (chosen.Add(item))
+                    group.Add(item);
+            }
+            else if (bi < below.Count)
+            {
+                int item = below[bi++];
+                if (chosen.Add(item))
+                    group.Add(item);
+            }
+            else if (ai < above.Count)
+            {
+                int item = above[ai++];
+                if (chosen.Add(item))
+                    group.Add(item);
+            }
+
+            takeBelow = !takeBelow;
+        }
+
+        if (group.Count < size)
+        {
+            var byDistance = new List<int>(active);
+            byDistance.Sort((a, b) =>
+            {
+                int da = Math.Abs(state.GetAncestorCount(a) - boundary);
+                int db = Math.Abs(state.GetAncestorCount(b) - boundary);
+                if (da != db)
+                    return da.CompareTo(db);
+                return a.CompareTo(b);
+            });
+
+            foreach (int item in byDistance)
+            {
+                if (group.Count >= size)
+                    break;
+                if (chosen.Add(item))
+                    group.Add(item);
+            }
+        }
+
+        return group;
     }
 
     // Candidate score used by constructive lookahead: a cheap one-step heuristic over immediate
@@ -299,69 +424,6 @@ partial class StrategyBuilder
                 return a[i] < b[i];
         }
         return a.Count < b.Count;
-    }
-
-    // Adds a tiny, score-ranked replacement neighborhood around `currentGroup` by swapping out
-    // a few positions and swapping in the most related outside items.
-    private static void AddSwapCandidates(
-        ComparisonState state,
-        List<int> active,
-        List<int> currentGroup,
-        Action<List<int>> consider,
-        int incomingLimit,
-        int outgoingLimit)
-    {
-        if (currentGroup.Count == 0 || active.Count == 0)
-            return;
-
-        int cappedIncoming = Math.Max(0, incomingLimit);
-        int cappedOutgoing = Math.Max(0, outgoingLimit);
-        if (cappedIncoming == 0 || cappedOutgoing == 0)
-            return;
-
-        var inGroup = new HashSet<int>(currentGroup);
-        var incoming = new List<(int Item, int Score)>();
-        foreach (int item in active)
-        {
-            if (inGroup.Contains(item))
-                continue;
-
-            int comparable = 0;
-            foreach (int g in currentGroup)
-            {
-                if (state.HasAncestor(item, g) || state.HasAncestor(g, item))
-                    comparable++;
-            }
-
-            incoming.Add((item, comparable));
-        }
-
-        incoming.Sort((a, b) =>
-        {
-            int scoreCompare = b.Score.CompareTo(a.Score);
-            return scoreCompare != 0 ? scoreCompare : a.Item.CompareTo(b.Item);
-        });
-
-        int incomingCount = Math.Min(cappedIncoming, incoming.Count);
-        int outgoingCount = Math.Min(cappedOutgoing, currentGroup.Count);
-
-        for (int outIdx = 0; outIdx < outgoingCount; outIdx++)
-        {
-            int removeItem = currentGroup[outIdx];
-            for (int inIdx = 0; inIdx < incomingCount; inIdx++)
-            {
-                int addItem = incoming[inIdx].Item;
-                var candidate = new List<int>(currentGroup.Count);
-                foreach (int g in currentGroup)
-                {
-                    if (g != removeItem)
-                        candidate.Add(g);
-                }
-
-                candidate.Add(addItem);
-                consider(candidate);
-            }
-        }
     }
 
     // Build a near-ANTICHAIN incrementally. The maxima (items with zero active ancestors) form an
