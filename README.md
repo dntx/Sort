@@ -109,9 +109,10 @@ S{id} [step x/y] sort(...)    decision state: do this sort at step x of at most 
 
 ==================== strategy ====================
 S1 [step 1/3] sort(#1, #2, #3)
-  #1 > #2 > #3: [- (#3), possible (#1, #2, #4, #5)]
-    equivalent forms: 6 = 3!
-    pattern: permute {#1, #2, #3}
+  #1 > #2 > #3  (×6 = 3!)
+    pattern: {#1, #2, #3}
+    - (#3)
+    possible (#1, #2, #4, #5)
     S2 [step 2/3] sort(#1, #4, #5)
       ...
 ```
@@ -119,9 +120,14 @@ S1 [step 1/3] sort(#1, #2, #3)
 The output is grouped into four banner-delimited sections: a **summary**
 (parameters and the worst-case number of sorts), **diagnostics** (search
 telemetry), a **legend** explaining the notation, and the **strategy** tree
-itself. The CLI runs the step stage first and then the edge refinement
-automatically: if the edge stage improves output-state count, both trees are
-printed; otherwise only the step tree is printed.
+itself. Each branch renders as a header line — the revealed order followed by
+`(×N = formula)` when it stands for `N` symmetric orderings — then indented
+child lines: a `pattern:` shape line and one line per non-empty effect
+(`+ / - / fixed / possible`). This layout is shared by the CLI text output and
+the desktop UI tree so both read identically. The CLI runs the step stage first
+and then the edge refinement automatically: if the edge stage improves
+output-state count, both trees are printed; otherwise only the step tree is
+printed.
 
 ### Desktop UI details
 
