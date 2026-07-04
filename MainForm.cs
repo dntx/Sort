@@ -1577,6 +1577,8 @@ class MainForm : Form
 
         if (branch.EquivalentOrders is not null)
         {
+            // The count and its formula live in the branch header (×N = formula), so this child row
+            // only carries the pattern/legend. The hover Tag still exposes the full two-line detail.
             branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatEquivalentPatternLine(branch.EquivalentOrders))
             {
                 ForeColor = _palette.MutedForeColor,
