@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Xunit;
 
 // Guards the greedy-mode EDGE phase (BuildFeasibleCompactPlan), whose step ceiling is the
@@ -90,6 +91,38 @@ public class FeasibleCompactPlanTests
         GreedyEdgeStageOutcome terminal = TerminalOutcome(builder, out StrategyPlan plan);
         Assert.Equal(GreedyEdgeStageOutcome.NoSolution, terminal);
         Assert.Equal(plan.MaxStep, plan.SearchStatistics.RootProvenLowerBound);
+    }
+
+    // Pins the user-facing stage-name contract emitted by BuildFeasibleCompactPlan: each downward
+    // tightening ceiling is announced as "proof-tighten\u2264N" and the final edge pass as
+    // "edge-compact@S" (S = the resulting plan's MaxStep). These labels are shared verbatim by the CLI
+    // headers, GUI tree roots, and the progress panel, so renaming them is a real behavior change --
+    // this test fails if the labels drift back to the old "feasible\u2264N" / "compact" wording. 12,4,4
+    // has U > opt so its tightening probes run, exercising both the proof-tighten ceilings and the
+    // terminal edge-compact stage.
+    [Fact]
+    public void FeasibleCompactPlan_EmitsProofTightenAndEdgeCompactStageNames()
+    {
+        var startedStages = new List<string>();
+        var solvedStages = new List<string>();
+
+        StrategyPlan plan = new StrategyBuilder(12, 4, 4).BuildFeasibleCompactPlan(
+            onStage: stage => { if (stage.HasSolution) solvedStages.Add(stage.Name); },
+            onStageStart: name => startedStages.Add(name));
+
+        string edgeCompactName = $"edge-compact@{plan.MaxStep}";
+
+        // The final edge-compaction pass is always announced and always carries the returned plan.
+        Assert.Contains(edgeCompactName, startedStages);
+        Assert.Contains(edgeCompactName, solvedStages);
+
+        // At least one downward tightening ceiling ran, and every announced stage uses either the
+        // "proof-tighten\u2264N" tightening label or the terminal "edge-compact@S" label.
+        Assert.Contains(startedStages, name => name.StartsWith("proof-tighten\u2264", StringComparison.Ordinal));
+        Assert.All(startedStages, name =>
+            Assert.True(
+                name.StartsWith("proof-tighten\u2264", StringComparison.Ordinal) || name == edgeCompactName,
+                $"unexpected stage label '{name}'"));
     }
 
     // Runs the greedy edge progression and returns the outcome of its final solution-less stage (the terminal

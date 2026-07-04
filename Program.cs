@@ -346,8 +346,8 @@ class Program
             return;
         }
 
-            // Exact mode: no feasible phase. StepProof proves the optimum step, then EdgeCompact trims
-            // displayed edges among equally optimal groups. A Ctrl+C here has
+        // Exact mode: no feasible phase. StepProof proves the optimum step, then EdgeCompact trims
+        // displayed edges among equally optimal groups. A Ctrl+C here has
         // no partial tree to show (the exact search is all-or-nothing), so report the interruption.
         WriteStageStatus("stage step-proof: started");
         StrategyPlan defaultPlan;
