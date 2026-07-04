@@ -66,7 +66,7 @@ static class StrategyTextRenderer
             ("#i ~ #j", "items #i through #j inclusive (a run of 4+ consecutive items)"),
             ("S{id} [step x/y] sort(...)", "decision state: do this sort at step x of at most y"),
             ("a > b > c", "the sort revealed a ranks above b above c"),
-            ("equivalent forms: N = ...", "this branch stands for N symmetric orderings (e.g. 3! = 6)"),
+            ("a > b > c  (×N = ...)", "this branch stands for N symmetric orderings (e.g. ×6 = 3!)"),
             ("pattern: ...", "shape of those orderings; \"{...}\" = any order, \"A = {...}\" names a split block (members A1, A2 ...)"),
             ("S{id}: top k = (...)", "solved: the top-k set is fully determined"),
             ("→S{id} (+N steps) [map: ...]", "reuse state S{id}'s subtree (N more sorts); [map] relabels referenced→current"),
@@ -77,7 +77,7 @@ static class StrategyTextRenderer
             writer.WriteLine($"{token.PadRight(width)}  {description}");
 
         writer.WriteLine();
-        writer.WriteLine("[+ ..., - ..., fixed ..., possible ...]   effect after an outcome (empty entries are omitted):");
+        writer.WriteLine("+ ..., - ..., fixed ..., possible ...   per-outcome effect rows (empty rows are omitted):");
         writer.WriteLine("     +         newly guaranteed into the top-k");
         writer.WriteLine("     -         newly excluded from the top-k");
         writer.WriteLine("     fixed     already locked into the top-k");
