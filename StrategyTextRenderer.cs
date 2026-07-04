@@ -127,21 +127,21 @@ static class StrategyTextRenderer
 
                 foreach (var branch in node.Branches)
                 {
-                    string effect = FormatEffect(branch.Effect);
+                    string branchLead = FormatBranchLead(branch);
                     if (branch.Next.Kind == StrategyNodeKind.Decision)
                     {
-                        writer.WriteLine($"{prefix}  {branch.OrderText}: {effect}");
+                        writer.WriteLine($"{prefix}  {branchLead}");
                         WriteEquivalentOrders(branch, writer, indent + 2);
                         RenderNode(branch.Next, k, writer, indent + 2, depthIndex);
                     }
                     else if (branch.Next.Kind == StrategyNodeKind.Terminal)
                     {
-                        writer.WriteLine($"{prefix}  {branch.OrderText}: {effect} S{branch.Next.StateId}: top {k} = ({FormatSet(branch.Next.TopSet)})");
+                        writer.WriteLine($"{prefix}  {branchLead} S{branch.Next.StateId}: top {k} = ({FormatSet(branch.Next.TopSet)})");
                         WriteEquivalentOrders(branch, writer, indent + 2);
                     }
                     else
                     {
-                        writer.WriteLine($"{prefix}  {branch.OrderText}: {effect} {FormatReference(branch.Next, depthIndex)}");
+                        writer.WriteLine($"{prefix}  {branchLead} {FormatReference(branch.Next, depthIndex)}");
                         WriteEquivalentOrders(branch, writer, indent + 2);
                     }
                 }
@@ -193,6 +193,9 @@ static class StrategyTextRenderer
         var parts = GetNonEmptyEffectEntries(effect);
         return $"[{string.Join(", ", parts)}]";
     }
+
+    public static string FormatBranchLead(StrategyBranch branch)
+        => $"{branch.OrderText}: {FormatEffect(branch.Effect)}";
 
     public static string FormatInEntry(IEnumerable<int> items) => $"{InLabel} {FormatOptionalSet(items)}";
 
