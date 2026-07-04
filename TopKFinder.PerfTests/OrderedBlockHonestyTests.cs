@@ -31,7 +31,6 @@ public sealed class OrderedBlockHonestyTests
 
         var residuals = new List<string>();
         int casesChecked = 0;
-        int casesSkippedOverCap = 0;
 
         for (int n = nMin; n <= nMax; n++)
             for (int m = 2; m <= n; m++)
