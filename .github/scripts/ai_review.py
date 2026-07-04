@@ -168,8 +168,11 @@ list of notable NEW identifiers/literals extracted from the added lines of the
 WHOLE diff (CLI flags, mode/enum-like string values), and the combined diff
 (which may be truncated).
 
-Focus ONLY on the following five structural concerns. Do not repeat line-level
-correctness/security findings — a separate reviewer handles those.
+Focus ONLY on the following four structural concerns. Do not repeat line-level
+correctness/security findings — a separate reviewer handles those. Do NOT judge
+test coverage at all: whether a change needs tests is decided by a separate,
+deterministic automated check, so NEVER raise a "missing tests" finding here
+(not even as a COMMENT).
 
 1. DESCRIPTION ↔ CHANGE CONSISTENCY
    Does the actual diff match what the PR title/description claims? Flag when the
@@ -177,10 +180,12 @@ correctness/security findings — a separate reviewer handles those.
    material the description never mentions, or the description is empty/generic
    while the change is non-trivial.
 
-2. UNEXPLAINED NEW FILES
-   For every file whose status is `added`, is its purpose explained by the PR
+2. UNEXPLAINED NEW SOURCE FILES
+   For every `added` SOURCE/code file, is its purpose explained by the PR
    description (or made obvious by an accompanying test/doc)? Flag brand-new
-   source files whose role is unclear and that the description does not mention.
+   code files whose role is unclear and that the description does not mention.
+   (Loose data/dump files and stray `.txt`/`.md` files are handled by a separate
+   deterministic gate — do NOT flag those here.)
 
 3. NAMING CONSISTENCY OF NEW PUBLIC IDENTIFIERS
    When the diff introduces a new user-facing value that belongs to an existing
@@ -193,13 +198,7 @@ correctness/security findings — a separate reviewer handles those.
    diff may be truncated, so that list is your most reliable source for new
    flags/mode values that appear later in the change set.
 
-4. MISSING TEST COVERAGE
-   If the PR adds or materially changes production code (new functions, new
-   branches, new modes/flags, new behavior) but the manifest shows NO test files
-   changed, flag the missing tests. Use the manifest's "Test files changed"
-   fact — do not guess.
-
-5. MISSING DOCUMENTATION UPDATES
+4. MISSING DOCUMENTATION UPDATES
    If the PR adds or changes user-facing behavior (a new CLI mode/flag, new
    command, changed output/interface) but the manifest shows NO doc files
    changed (README/docs/*.md), flag the missing documentation. Use the
@@ -213,49 +212,45 @@ correctness/security findings — a separate reviewer handles those.
   "correcting" the manifest, and do NOT comment on how a file was classified
   (e.g. a root-level experiment file counted as code rather than a test is
   intentional). Simply use the manifest's facts.
-- If the manifest already shows a test file changed, DO NOT flag missing tests.
+- Test coverage is OUT OF SCOPE for this pass (a separate deterministic check
+  owns it): never flag missing/insufficient tests here.
 - If the manifest already shows a doc/README/*.md file changed, DO NOT flag
   missing docs.
 - Pure refactors, pure formatting, pure dependency bumps, and comment-only
-  changes need neither new tests nor doc updates — do not flag them.
-- Changes that ONLY touch test files or ONLY touch docs need no extra tests/docs.
-- Trivial production changes (a guard clause, a log line, a config value, a typo
-  fix, < ~10 changed lines with no new branch) do not by themselves require new
-  tests.
+  changes need no doc updates — do not flag them.
+- Changes that ONLY touch test files or ONLY touch docs need no extra docs.
 - Naming: only flag a NEW identifier that clearly joins an EXISTING set with a
   visible, established convention. Do not invent conventions or bikeshed style
   where no sibling pattern is shown.
-- New files: a new test file, doc file, or an obviously-named file matching the
-  described feature is self-explanatory — do not flag it.
+- New files: a new test file, or an obviously-named code file that clearly
+  matches the described feature/change, is self-explanatory — do not flag it.
 - Do not flag the AI review infrastructure itself.
 
 ## Severities
-Each of the five structural concerns above is a BLOCK-worthy hygiene gate: the
+Each of the four structural concerns above is a BLOCK-worthy hygiene gate: the
 change set must not merge while any of them is genuinely violated. Raise a
 finding as BLOCK when you can concretely demonstrate the violation from the
 manifest, diff, title, or description:
 - DESCRIPTION ↔ CHANGE mismatch: the diff does something material the
   description omits or contradicts, or the description is empty/generic for a
   non-trivial change. → BLOCK
-- UNEXPLAINED NEW FILES: an `added` source file whose purpose the description
-  does not explain and that no accompanying test/doc makes obvious. → BLOCK
+- UNEXPLAINED NEW SOURCE FILE: an `added` code file whose purpose the
+  description does not explain and that no accompanying test/doc makes obvious.
+  → BLOCK
 - NAMING INCONSISTENCY: a new user-facing identifier that breaks the
   established convention of its existing siblings (e.g. `three-phase` joining
   `exact`/`greedy`). → BLOCK
-- MISSING TESTS: production code added or materially changed but the manifest
-  shows NO test files changed. → BLOCK
 - MISSING DOCS: user-facing behavior added or changed but the manifest shows NO
   doc files changed. → BLOCK
 - COMMENT: reserve for genuinely optional polish that does NOT fall into any of
-  the five gates above.
+  the four gates above.
 - APPROVE: the change set is internally consistent and adequately covered — no
   gate is violated.
 
 Only downgrade a gate from BLOCK to COMMENT (or drop it) when the precision
-rules above void it — for example the manifest already shows a test/doc file
-changed, the change is a pure refactor/formatting/comment-only edit, or it is a
-trivial (<~10-line, no new branch) production tweak. When a gate genuinely
-applies, it is a BLOCK, not advisory.
+rules above void it — for example the manifest already shows a doc file changed,
+or the change is a pure refactor/formatting/comment-only edit. When a gate
+genuinely applies, it is a BLOCK, not advisory.
 
 Respond in GitHub-flavored Markdown with these sections:
 ## Structural Review
@@ -331,7 +326,7 @@ def build_diff_batches(diff: str) -> list[str]:
     """Group diff sections into batches that fit comfortably under the model limit."""
     sections = [
         section for section in split_diff_sections(diff)
-        if section_path(section) not in EXCLUDED_REVIEW_PATHS
+        if is_line_reviewable(section_path(section))
     ]
     batches: list[str] = []
     current: list[str] = []
@@ -392,6 +387,27 @@ def classify_path(path: str) -> str:
     if is_test:
         return "test"
     return "code"
+
+
+def is_line_reviewable(path: str) -> bool:
+    """Whether a changed file should get the detailed LINE-LEVEL code review.
+
+    The line-level pass (and the new-identifier extraction that feeds the
+    structural pass) judge C#/code defects, so they only look at code and test
+    files. Documentation and free-form data/text files (`.md`, `.txt`, dumps,
+    logs) carry no code to review; deep-analyzing a large one (e.g. a multi-
+    thousand-line output dump accidentally committed) only wastes model budget
+    and manufactures false positives (phantom CLI flags, bogus
+    NullReference/"diff truncated" comments).
+
+    Such files are STILL listed in the change manifest, so the structural pass
+    can flag an unexplained/irrelevant addition and BLOCK on it. In other words:
+    once a mysterious file is spotted we block on its mere presence rather than
+    burning requests dissecting its contents.
+    """
+    if path in EXCLUDED_REVIEW_PATHS:
+        return False
+    return classify_path(path) != "doc"
 
 
 def section_status(section: str) -> str:
@@ -533,6 +549,76 @@ def detect_core_algorithm_test_gap(diff: str) -> str | None:
     )
 
 
+# Extensions that are almost never source/config and usually indicate an
+# accidental commit (build output, logs, scratch dumps) when added as loose
+# files outside a docs/ area.
+_SUSPICIOUS_DATA_EXTENSIONS = {
+    "txt", "log", "out", "csv", "tsv", "dat", "tmp", "bak", "orig", "dump",
+}
+_DOC_LIKE_EXTENSIONS = {"md", "rst", "adoc"}
+# Well-known root documentation stems that are always legitimate additions.
+_STANDARD_DOC_STEMS = {
+    "readme", "changelog", "license", "licence", "contributing",
+    "code_of_conduct", "security", "notice", "authors", "copying",
+}
+
+
+def _is_docs_location(path: str) -> bool:
+    """True when the file lives under a docs/ (or doc/) directory."""
+    segments = path.lower().split("/")[:-1]
+    return any(seg in {"docs", "doc"} for seg in segments)
+
+
+def detect_suspicious_added_files(diff: str) -> str | None:
+    """Deterministically BLOCK on loose, unexplained data/doc files added in a PR.
+
+    Whether an added file's *purpose* matches the description is a judgment call
+    left to the structural model, but certain additions are almost always
+    accidental — build/output or log/scratch dumps, or stray text/markdown files
+    dropped at the repo root outside any docs area. Detecting these
+    deterministically guarantees a BLOCK ("remove or explain") instead of relying
+    on the model, whose relevance judgment is inconsistent. Their contents are
+    never fed to the deep line-level review (see is_line_reviewable), so once
+    spotted we block on their mere presence rather than analyzing them.
+    """
+    suspicious: list[str] = []
+    for section in split_diff_sections(diff):
+        path = section_path(section)
+        if not path or path in EXCLUDED_REVIEW_PATHS:
+            continue
+        if section_status(section) != "added":
+            continue
+        segments = path.lower().split("/")
+        # Infra/config/tooling paths are legitimate.
+        if segments[0] in {".github", ".vscode", ".config"}:
+            continue
+        # Code and test files are structurally legitimate; unexplained NEW source
+        # files are judged by the structural model, not here.
+        if classify_path(path) in {"code", "test"}:
+            continue
+        base = segments[-1]
+        stem, _, ext = base.rpartition(".")
+        if not stem:  # no extension
+            stem, ext = base, ""
+        # Docs inside a docs/ area, or standard root docs, are legitimate.
+        if _is_docs_location(path) or stem in _STANDARD_DOC_STEMS:
+            continue
+        if ext in _SUSPICIOUS_DATA_EXTENSIONS or ext in _DOC_LIKE_EXTENSIONS:
+            suspicious.append(path)
+
+    if not suspicious:
+        return None
+    file_list = ", ".join(f"`{p}`" for p in sorted(suspicious))
+    return (
+        f"- **[BLOCK]** Unexplained/irrelevant new file(s) added: {file_list}. "
+        "These are loose data/dump or stray text/markdown files that are not part "
+        "of the normal source/test/docs structure and are a common sign of an "
+        "accidental commit. Remove the unrelated file(s); or, if they are "
+        "intentional, move them to an appropriate location (e.g. `docs/`) and "
+        "explain their purpose in the PR description."
+    )
+
+
 def format_change_manifest(manifest: list[dict]) -> str:
     """Render the manifest plus test/doc coverage facts for the structural pass."""
     counts = {"code": 0, "test": 0, "doc": 0}
@@ -564,7 +650,7 @@ def extract_new_identifiers(diff: str, limit: int = 40) -> list[str]:
     flags: set[str] = set()
     literals: set[str] = set()
     for section in split_diff_sections(diff):
-        if section_path(section) in EXCLUDED_REVIEW_PATHS:
+        if not is_line_reviewable(section_path(section)):
             continue
         for line in section.splitlines():
             # Only added content lines (skip the "+++" file header).
@@ -634,11 +720,11 @@ def validate_pr_metadata_language(pr_title: str, pr_body: str) -> tuple[bool, st
 
 
 def filtered_review_diff(diff: str, max_chars: int = MAX_DIFF_CHARS) -> str:
-    """Concatenate reviewable (non-infra) diff sections, truncated for the model."""
+    """Concatenate reviewable (non-infra, non-data) diff sections, truncated for the model."""
     sections = [
         section
         for section in split_diff_sections(diff)
-        if section_path(section) not in EXCLUDED_REVIEW_PATHS
+        if is_line_reviewable(section_path(section))
     ]
     combined = "".join(sections)
     if len(combined) > max_chars:
@@ -1280,8 +1366,11 @@ def main() -> int:
         print("Empty diff — nothing to review.")
         return 0
 
+    raw_diff = read_raw_diff()
+    manifest = build_change_manifest(raw_diff)
+
     batches = build_diff_batches(diff)
-    if not batches:
+    if not batches and not manifest:
         review = (
             "## Summary\n"
             "This PR only changes the AI review infrastructure itself, so the reviewer\n"
@@ -1298,15 +1387,19 @@ def main() -> int:
 
     # PR-level structural / consistency review (description match, unexplained new
     # files, naming consistency, missing tests, missing docs). Best-effort: a
-    # failure here must never abort the line-level review below.
+    # failure here must never abort the line-level review below. This still runs
+    # when there are no line-reviewable code batches (e.g. a PR that ONLY adds
+    # stray doc/data files) so such junk-only changes are still BLOCKed.
     structural: tuple[str, str] | None = None
-    raw_diff = read_raw_diff()
-    manifest = build_change_manifest(raw_diff)
     policy_findings: list[str] = []
     core_algo_test_gap = detect_core_algorithm_test_gap(raw_diff)
     if core_algo_test_gap:
         print("Policy check: core algorithm test gap detected (forcing BLOCK).")
         policy_findings.append(core_algo_test_gap)
+    suspicious_files = detect_suspicious_added_files(raw_diff)
+    if suspicious_files:
+        print("Policy check: suspicious/unexplained added files detected (forcing BLOCK).")
+        policy_findings.append(suspicious_files)
     if manifest:
         try:
             structural_review = call_structural_model(
@@ -1345,7 +1438,11 @@ def main() -> int:
         candidate_verdicts.append(structural[0])
     if policy_findings:
         candidate_verdicts.append("BLOCK")
-    verdict = max(candidate_verdicts, key=lambda v: verdict_order[v])
+    verdict = (
+        max(candidate_verdicts, key=lambda v: verdict_order[v])
+        if candidate_verdicts
+        else "APPROVE"
+    )
 
     print(f"Verdict: {verdict}")
     print("----- Review -----")
