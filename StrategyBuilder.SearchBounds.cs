@@ -378,6 +378,29 @@ partial class StrategyBuilder
         }
 
         steps = Math.Max(steps, GetAntichainLowerBound(state));
+
+        // Determinability floor: any normalized non-terminal state that survives the base cases above has
+        // activeCount > _m (line 354 returns for activeCount <= _m). Such a state cannot be resolved in a
+        // single step, so it needs at least 2. Proof: a single step totally orders one group G of _m active
+        // items; since activeCount > _m there is an active item f outside G. Order G with f's known-ancestors
+        // at the top, items incomparable to f in the middle, and f's known-descendants at the bottom. The
+        // transitive closure then adds no new relation involving f (nothing is placed above its ancestors or
+        // below its descendants, and middle items stay incomparable to f), so in that outcome f keeps its
+        // prior ancestor set (< remainingSlots, so f is not forced out) and its prior descendant set (so f is
+        // not forced in). f therefore remains strictly undecided, meaning a top set containing f and one
+        // excluding f both exist -- the state is not determined. Hence no group resolves the state in every
+        // outcome, so opt >= 2. This lifts the bound above the width bound whenever the active poset is nearly
+        // a chain (width <= _m), pruning budget-1 leaf layers early and cutting large subtrees. Applied to
+        // BOTH the greedy/feasible plan and the exact search: the floor is a sound lower bound regardless of
+        // plan, and it net-accelerates conclusive solving in both (measured exact-mode phase-1 speedups of
+        // 4-14x on 14..19,5,5 with identical MaxStep; see docs/core-algorithm.md sec 7.7).
+        //
+        // Applied BEFORE ApplyDominanceLowerBound so it seeds dominance's cheap prefilter: dominance skips
+        // any library entry whose cost <= the current best (see StrategyBuilder.Dominance.cs), so raising
+        // best from 1 to 2 here lets every cost-<=2 entry be discarded without running the expensive
+        // backtracking subgraph embedding. max() is order-independent, so the returned bound is identical.
+        steps = Math.Max(steps, 2);
+
         steps = ApplyDominanceLowerBound(state, remainingSlots, steps);
 
         _lowerBoundStepsCache[key] = steps;

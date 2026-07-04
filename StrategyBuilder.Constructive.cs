@@ -30,6 +30,10 @@ partial class StrategyBuilder
     // pattern cache / closure pre-solve is needed (the chooser is cheap and deterministic).
     private bool _useConstructiveSelection;
     private Dictionary<SearchStateKey, int>? _constructiveDepthMemo;
+    // Bounded candidate augmentation for constructive lookahead. This keeps the chooser
+    // polynomial while admitting one-hop replacements around the primary antichain pick.
+    internal int ConstructiveLookaheadSwapIncomingLimit = 6;
+    internal int ConstructiveLookaheadSwapOutgoingLimit = 2;
 
     // Feasible step budget U threaded from the step phase to the edge phase within one combined run.
     // BuildFeasiblePlan sets it to the MATERIALIZED MaxStep of the just-built step tree (the tightest
@@ -166,7 +170,8 @@ partial class StrategyBuilder
     // Delegates to the 1-ply lookahead chooser, which refines the base antichain policy.
     private List<int> ChooseConstructiveGroup(ComparisonState state, int remainingSlots)
     {
-        return ChooseConstructiveGroupLookahead(state, remainingSlots);
+        List<int>? group = ChooseConstructiveGroupLookahead(state, remainingSlots);
+        return group ?? ChooseConstructiveGroupBase(state, remainingSlots);
     }
 
     // Base (single-ply greedy) group choice: the antichain proposer with the progress guarantee and
@@ -176,7 +181,13 @@ partial class StrategyBuilder
     {
         List<int> active = state.GetActiveItemsOrdered();
 
-        List<int> group = ProposeAntichainGroup(state, active, remainingSlots);
+        List<int> group = ProposeAntichainGroup(state, active, remainingSlots) ?? new List<int>();
+        if (group.Count == 0)
+        {
+            int fallbackCount = Math.Min(_m, active.Count);
+            for (int i = 0; i < fallbackCount; i++)
+                group.Add(active[i]);
+        }
 
         // Progress guarantee: if the picked group is a total chain (all pairs already resolved), force
         // in an unresolved active pair so the sort still adds a new relation.
@@ -187,11 +198,10 @@ partial class StrategyBuilder
         return group;
     }
 
-    // 1-ply lookahead: enumerate a small set of candidate groups (the base antichain pick plus one
-    // antichain per possible seed item), score each by 1 + the worst-case base-rollout depth over its
-    // outcomes, and return the minimizer. Ties break toward the lexicographically smallest group for
-    // determinism. The rollout (ConstructiveDepth) uses the base policy, so this improves only the
-    // group chosen at this node -- a bounded, polynomial refinement, not a full minimax search.
+    // 1-ply lookahead: enumerate a bounded candidate set (the base antichain pick plus one
+    // antichain per possible seed item, optionally augmented by a small swap neighborhood around
+    // the base pick), score each by a cheap immediate-outcome heuristic, and return the minimizer.
+    // Ties break toward the lexicographically smallest group for determinism.
     private List<int> ChooseConstructiveGroupLookahead(ComparisonState state, int remainingSlots)
     {
         _constructiveDepthMemo ??= new Dictionary<SearchStateKey, int>();
@@ -222,18 +232,38 @@ partial class StrategyBuilder
             }
         }
 
-        Consider(ProposeAntichainGroup(state, active, remainingSlots));
+        List<int> primary = ProposeAntichainGroup(state, active, remainingSlots);
+        Consider(primary);
         foreach (int seed in active)
             Consider(ProposeAntichainGroup(state, active, remainingSlots, seed));
 
-        return bestGroup!;
+        AddSwapCandidates(
+            state,
+            active,
+            primary,
+            Consider,
+            ConstructiveLookaheadSwapIncomingLimit,
+            ConstructiveLookaheadSwapOutgoingLimit);
+
+        return bestGroup ?? primary;
     }
 
-    // Worst-case depth achieved by playing `group` at `state` and then following the base rollout
-    // policy: 1 (this sort) + max over distinct outcomes of the base ConstructiveDepth.
+    // Candidate score used by constructive lookahead: a cheap one-step heuristic over immediate
+    // outcomes only.
     private int ScoreCandidateGroup(ComparisonState state, int remainingSlots, SearchStateKey key, List<int> group)
     {
-        int maxChildSteps = 0;
+        return ScoreCandidateGroupCheap(state, remainingSlots, key, group);
+    }
+
+    // Fast heuristic score based on immediate outcomes only.
+    // Priority: lower max lower-bound, then lower max active count, then lower average active count.
+    private int ScoreCandidateGroupCheap(ComparisonState state, int remainingSlots, SearchStateKey key, List<int> group)
+    {
+        int maxChildLowerBound = 0;
+        int maxChildActiveCount = 0;
+        int sumChildActiveCount = 0;
+        int outcomeCount = 0;
+
         VisitComparisonOutcomes(
             state,
             fixedTopMask: 0,
@@ -243,13 +273,21 @@ partial class StrategyBuilder
             collectMergedBranches: false,
             onUsefulOutcome: outcome =>
             {
-                int childSteps = ConstructiveDepth(outcome.NextState, outcome.NextRemainingSlots);
-                if (childSteps > maxChildSteps)
-                    maxChildSteps = childSteps;
+                int childLowerBound = GetMinWorstCaseLowerBound(outcome.NextState, outcome.NextRemainingSlots);
+                if (childLowerBound > maxChildLowerBound)
+                    maxChildLowerBound = childLowerBound;
+
+                int childActiveCount = outcome.NextState.ActiveCount;
+                if (childActiveCount > maxChildActiveCount)
+                    maxChildActiveCount = childActiveCount;
+
+                sumChildActiveCount += childActiveCount;
+                outcomeCount++;
                 return true;
             });
 
-        return 1 + maxChildSteps;
+        int averageChildActiveCount = outcomeCount == 0 ? 0 : sumChildActiveCount / outcomeCount;
+        return (maxChildLowerBound * 1_000_000) + (maxChildActiveCount * 1_000) + averageChildActiveCount;
     }
 
     private static bool LexLess(List<int> a, List<int> b)
@@ -261,6 +299,69 @@ partial class StrategyBuilder
                 return a[i] < b[i];
         }
         return a.Count < b.Count;
+    }
+
+    // Adds a tiny, score-ranked replacement neighborhood around `currentGroup` by swapping out
+    // a few positions and swapping in the most related outside items.
+    private static void AddSwapCandidates(
+        ComparisonState state,
+        List<int> active,
+        List<int> currentGroup,
+        Action<List<int>> consider,
+        int incomingLimit,
+        int outgoingLimit)
+    {
+        if (currentGroup.Count == 0 || active.Count == 0)
+            return;
+
+        int cappedIncoming = Math.Max(0, incomingLimit);
+        int cappedOutgoing = Math.Max(0, outgoingLimit);
+        if (cappedIncoming == 0 || cappedOutgoing == 0)
+            return;
+
+        var inGroup = new HashSet<int>(currentGroup);
+        var incoming = new List<(int Item, int Score)>();
+        foreach (int item in active)
+        {
+            if (inGroup.Contains(item))
+                continue;
+
+            int comparable = 0;
+            foreach (int g in currentGroup)
+            {
+                if (state.HasAncestor(item, g) || state.HasAncestor(g, item))
+                    comparable++;
+            }
+
+            incoming.Add((item, comparable));
+        }
+
+        incoming.Sort((a, b) =>
+        {
+            int scoreCompare = b.Score.CompareTo(a.Score);
+            return scoreCompare != 0 ? scoreCompare : a.Item.CompareTo(b.Item);
+        });
+
+        int incomingCount = Math.Min(cappedIncoming, incoming.Count);
+        int outgoingCount = Math.Min(cappedOutgoing, currentGroup.Count);
+
+        for (int outIdx = 0; outIdx < outgoingCount; outIdx++)
+        {
+            int removeItem = currentGroup[outIdx];
+            for (int inIdx = 0; inIdx < incomingCount; inIdx++)
+            {
+                int addItem = incoming[inIdx].Item;
+                var candidate = new List<int>(currentGroup.Count);
+                foreach (int g in currentGroup)
+                {
+                    if (g != removeItem)
+                        candidate.Add(g);
+                }
+
+                candidate.Add(addItem);
+                consider(candidate);
+            }
+        }
     }
 
     // Build a near-ANTICHAIN incrementally. The maxima (items with zero active ancestors) form an

@@ -612,6 +612,21 @@ partial class StrategyBuilder
             }
         }
 
+        // When the only thing distinguishing the folded orderings is the internal order of the
+        // dropped items (every member maps onto the representative by the identity once the common
+        // drop set is removed, so no relabel legend was produced), the representative's rigid tail
+        // chain "... > #2 > #3 > #7" is misleading: it asserts a single total order among items that
+        // the fold declares interchangeable, contradicting the "equivalent forms" count. Collapse
+        // those trailing dropped items into an any-order brace "{...}" plus the residual known
+        // orderings, matching the doomed-tail rendering.
+        string patternText = representative.Family.RepresentativeOrder;
+        if (usedProjection && legends.Count == 0)
+        {
+            string? bracePattern = TryBuildProjectionDropBracePattern(state, line, commonDrop);
+            if (bracePattern is not null)
+                patternText = bracePattern;
+        }
+
         if (usedProjection && commonDrop != 0)
         {
             string dropNote = "drop {" + string.Join(", ",
@@ -624,9 +639,124 @@ partial class StrategyBuilder
             : null;
         return new EquivalentOrderSummary(
             line.Count,
-            representative.Family.RepresentativeOrder,
+            patternText,
             line.Count.ToString(),
             combinedLegend);
+    }
+
+    // For a pure projection-drop fold (the folded orderings become identical once the commonly-
+    // doomed items are removed), the surviving items keep a single fixed order while the dropped
+    // items are interchangeable. Renders "<survivors> > {dropped} ; <residual>" when the fold is
+    // faithfully described by that shape, and returns null otherwise so the caller falls back to
+    // the rigid representative order. Three conditions must all hold:
+    //   1. every folded member ranks all its dropped items strictly below all survivors (dropped
+    //      items form a contiguous suffix) and shares the identical survivor prefix, so the fold is
+    //      exactly { fixed prefix } x { arrangements of the dropped suffix };
+    //   2. the dropped suffix has at least two items (otherwise there is nothing to fold);
+    //   3. the number of linear extensions of the dropped items' induced sub-poset equals the fold
+    //      count -- proving the brace + residual enumerates precisely the folded orderings and
+    //      never claims more (or fewer) forms than the "equivalent forms" count states.
+    private string? TryBuildProjectionDropBracePattern(
+        ComparisonState state, List<MergedFamilyOutcome> line, ulong commonDrop)
+    {
+        if (commonDrop == 0)
+            return null;
+
+        List<int>? survivors = null;
+        List<int>? dropped = null;
+        foreach (MergedFamilyOutcome member in line)
+        {
+            if (!TrySplitSurvivorPrefix(member.Family.RepresentativeOrderItems, commonDrop,
+                    out List<int> memberSurvivors, out List<int> memberDropped))
+                return null; // a dropped item ranks above a survivor -- not a clean suffix
+
+            if (survivors is null)
+            {
+                survivors = memberSurvivors;
+                dropped = memberDropped;
+            }
+            else if (!survivors.SequenceEqual(memberSurvivors))
+            {
+                return null; // members disagree on the surviving prefix
+            }
+        }
+
+        if (survivors is null || dropped is null || dropped.Count < 2)
+            return null; // nothing to collapse into an any-order brace
+
+        // Honesty gate: the brace + residual represents exactly the linear extensions of the dropped
+        // items' induced poset. Only emit it when that equals the number of orderings actually
+        // folded, so the displayed shape never claims more (or fewer) forms than the count states.
+        if (CountLinearExtensions(state, dropped) != line.Count)
+            return null;
+
+        var tokens = survivors.Select(item => $"#{item + 1}").ToList();
+        tokens.Add(FormatBraceSet(dropped));
+        string body = string.Join(" > ", tokens);
+
+        string residual = BuildTailResidualConstraints(state, dropped);
+        return residual.Length == 0 ? body : body + " ; " + residual;
+    }
+
+    // Splits an ordering into its surviving prefix and dropped suffix, requiring every dropped item
+    // to rank strictly below every survivor. Returns false when a survivor appears after any dropped
+    // item, i.e. the dropped items are not a contiguous suffix.
+    private static bool TrySplitSurvivorPrefix(
+        IReadOnlyList<int> order, ulong dropMask, out List<int> survivors, out List<int> dropped)
+    {
+        survivors = new List<int>();
+        dropped = new List<int>();
+        bool seenDropped = false;
+        foreach (int item in order)
+        {
+            if ((dropMask & (1UL << item)) != 0)
+            {
+                seenDropped = true;
+                dropped.Add(item);
+            }
+            else
+            {
+                if (seenDropped)
+                    return false;
+                survivors.Add(item);
+            }
+        }
+
+        return true;
+    }
+
+    // Counts the linear extensions (topological orderings) of the sub-poset induced on the given
+    // items by the active parent order. Memoized over the remaining-item bitmask; the item set is a
+    // single sort group so it stays small.
+    private static long CountLinearExtensions(ComparisonState state, IReadOnlyList<int> items)
+    {
+        ulong mask = 0;
+        foreach (int item in items)
+            mask |= 1UL << item;
+        return CountLinearExtensions(state, mask, new Dictionary<ulong, long>());
+    }
+
+    private static long CountLinearExtensions(ComparisonState state, ulong remaining, Dictionary<ulong, long> memo)
+    {
+        if (remaining == 0)
+            return 1;
+        if (memo.TryGetValue(remaining, out long cached))
+            return cached;
+
+        long total = 0;
+        ulong candidates = remaining;
+        while (candidates != 0)
+        {
+            int next = BitOperations.TrailingZeroCount(candidates);
+            candidates &= candidates - 1;
+            // An item may lead only if none of its still-remaining ancestors precede it.
+            if ((state.GetAncestorMask(next) & remaining) != 0)
+                continue;
+            total += CountLinearExtensions(state, remaining & ~(1UL << next), memo);
+        }
+
+        memo[remaining] = total;
+        return total;
     }
 
     private static void AddRelabelLegend(List<string> legends, Dictionary<int, int> map)
