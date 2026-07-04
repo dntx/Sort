@@ -828,7 +828,7 @@ class MainForm : Form
     private static string MarkDetailsStopped(string details)
         => details
             .Replace("next stage in progress", "next stage not run (stopped)")
-            .Replace("compact stage in progress", "compact stage not run (stopped)");
+            .Replace("edge-compact stage in progress", "edge-compact stage not run (stopped)");
 
     private void PopulateTree(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool exactImproved, bool compactImproved)
     {
@@ -907,7 +907,7 @@ class MainForm : Form
         if (compactPlan is null)
         {
             double seconds = feasiblePlan.Elapsed.TotalSeconds + defaultPlan.Elapsed.TotalSeconds;
-            return $"{head}, max steps={defaultPlan.MaxStep}, elapsed={seconds:F3} s (computing compact stage...)";
+            return $"{head}, max steps={defaultPlan.MaxStep}, elapsed={seconds:F3} s (computing edge-compact stage...)";
         }
         double totalSeconds = feasiblePlan.Elapsed.TotalSeconds + defaultPlan.Elapsed.TotalSeconds + compactPlan.Elapsed.TotalSeconds;
         // Lead with the optimality squeeze on the best plan: once the final tightening proves the next
@@ -1259,7 +1259,7 @@ class MainForm : Form
     }
 
     // Renders the overview panel so it mirrors the tree one-to-one: a step section (named by mode --
-    // "step-proof"/"greedy-feasible") and an "edge-compact@S" section ("computing..." placeholder until the compact stage
+    // "step-proof"/"greedy-feasible") and an "edge-compact@S" section ("computing..." placeholder until the edge-compact stage
     // finishes). Each section is an independent root, so the strategies' overviews can be browsed and
     // collapsed separately. This is the full-rebuild path used for the initial render and theme switches.
     private void RebuildOverview(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool exactImproved, bool compactImproved)
@@ -2202,7 +2202,7 @@ class MainForm : Form
         {
             double seconds = feasiblePlan.Elapsed.TotalSeconds + defaultPlan.Elapsed.TotalSeconds;
             _statusLabel.Text =
-                $"{head}, step max={defaultPlan.MaxStep}, elapsed={seconds:F3} s. Computing compact stage...";
+                $"{head}, step max={defaultPlan.MaxStep}, elapsed={seconds:F3} s. Computing edge-compact stage...";
             return;
         }
 
@@ -2439,7 +2439,7 @@ class MainForm : Form
         string defaultText = StrategyTextRenderer.Render(defaultPlan).TrimEnd();
         var lines = new List<string>
         {
-            "Step result (compact stage in progress)",
+            "Step result (edge-compact stage in progress)",
             $"step elapsed: {defaultPlan.Elapsed.TotalSeconds:F3} s",
             $"step total edges: {defaultPlan.TotalBranchEdges}",
             $"step output states: {defaultPlan.SearchStatistics.OutputStates}",
