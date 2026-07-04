@@ -32,7 +32,6 @@ partial class StrategyBuilder
     private Dictionary<SearchStateKey, int>? _constructiveDepthMemo;
     // Bounded candidate augmentation for constructive lookahead. This keeps the chooser
     // polynomial while admitting one-hop replacements around the primary antichain pick.
-    internal bool EnableConstructiveLookaheadSwapCandidates = true;
     internal int ConstructiveLookaheadSwapIncomingLimit = 6;
     internal int ConstructiveLookaheadSwapOutgoingLimit = 2;
 
@@ -238,16 +237,13 @@ partial class StrategyBuilder
         foreach (int seed in active)
             Consider(ProposeAntichainGroup(state, active, remainingSlots, seed));
 
-        if (EnableConstructiveLookaheadSwapCandidates)
-        {
-            AddSwapCandidates(
-                state,
-                active,
-                primary,
-                Consider,
-                ConstructiveLookaheadSwapIncomingLimit,
-                ConstructiveLookaheadSwapOutgoingLimit);
-        }
+        AddSwapCandidates(
+            state,
+            active,
+            primary,
+            Consider,
+            ConstructiveLookaheadSwapIncomingLimit,
+            ConstructiveLookaheadSwapOutgoingLimit);
 
         return bestGroup ?? primary;
     }
