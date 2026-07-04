@@ -1545,7 +1545,9 @@ class MainForm : Form
 
     private TreeNode CreateBranchNode(StrategyBranch branch, int k, string scope, StrategyDepthIndex depthIndex)
     {
-        string branchHeader = StrategyTextRenderer.FormatBranchLead(branch);
+        string branchHeader = branch.OrderText;
+        if (branch.EquivalentOrders is not null)
+            branchHeader += $"  (×{branch.EquivalentOrders.Count} = {branch.EquivalentOrders.CountFormula})";
 
         // Record which order-text tokens this outcome resolves so DrawNode can tint those "#n" tokens:
         // doomed items (newly excluded) in the exclusion color and secured items (newly guaranteed into
@@ -1575,15 +1577,46 @@ class MainForm : Form
 
         if (branch.EquivalentOrders is not null)
         {
-            branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatEquivalentFormsSummary(branch.EquivalentOrders))
-            {
-                ForeColor = _palette.MutedForeColor,
-                Tag = StrategyTextRenderer.FormatEquivalentDetails(branch.EquivalentOrders),
-            });
             branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatEquivalentPatternLine(branch.EquivalentOrders))
             {
                 ForeColor = _palette.MutedForeColor,
                 Tag = StrategyTextRenderer.FormatEquivalentDetails(branch.EquivalentOrders),
+            });
+        }
+
+        if (branch.Effect.NewlyGuaranteedTop.Count > 0)
+        {
+            branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatInEntry(branch.Effect.NewlyGuaranteedTop))
+            {
+                ForeColor = _palette.InColor,
+                Tag = $"Newly confirmed in top-k: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.NewlyGuaranteedTop)}",
+            });
+        }
+
+        if (branch.Effect.NewlyExcluded.Count > 0)
+        {
+            branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatOutEntry(branch.Effect.NewlyExcluded))
+            {
+                ForeColor = _palette.OutColor,
+                Tag = $"Newly excluded from top-k: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.NewlyExcluded)}",
+            });
+        }
+
+        if (branch.Effect.FixedCandidates.Count > 0)
+        {
+            branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatFixedEntry(branch.Effect.FixedCandidates))
+            {
+                ForeColor = _palette.FixedColor,
+                Tag = $"Current fixed top-k candidates: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.FixedCandidates)}",
+            });
+        }
+
+        if (branch.Effect.PossibleCandidates.Count > 0)
+        {
+            branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatPossibleEntry(branch.Effect.PossibleCandidates))
+            {
+                ForeColor = _palette.PossibleColor,
+                Tag = $"Current possible top-k candidates: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.PossibleCandidates)}",
             });
         }
 
@@ -1792,7 +1825,7 @@ class MainForm : Form
                 return null;
             }
 
-            // The next state node is always the branch node's last child.
+            // The next state node is always the branch node's last child (effect leaves precede it).
             current = branchNode.Nodes[branchNode.Nodes.Count - 1];
         }
 
@@ -1943,7 +1976,10 @@ class MainForm : Form
 
     private static string BuildBranchDetails(StrategyBranch branch)
     {
-        string details = StrategyTextRenderer.FormatBranchLead(branch);
+        string details = branch.OrderText;
+        string effectDetails = StrategyTextRenderer.FormatEffectDetails(branch.Effect);
+        if (!string.IsNullOrEmpty(effectDetails))
+            details += "\n" + effectDetails;
 
         if (branch.EquivalentOrders is not null)
         {
