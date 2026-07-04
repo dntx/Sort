@@ -19,6 +19,11 @@ import urllib.error
 import urllib.request
 import unicodedata
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 MODELS_ENDPOINT = "https://models.github.ai/inference/chat/completions"
 
 
@@ -434,6 +439,100 @@ def build_change_manifest(diff: str) -> list[dict]:
     return manifest
 
 
+def _iter_changed_content_lines(section: str) -> list[str]:
+    """Return added/removed content lines from a diff section (without +/-)."""
+    lines: list[str] = []
+    for line in section.splitlines():
+        if line.startswith("+++") or line.startswith("---"):
+            continue
+        if line.startswith("+") or line.startswith("-"):
+            lines.append(line[1:])
+    return lines
+
+
+def _is_comment_or_blank_csharp(line: str) -> bool:
+    stripped = line.strip()
+    if not stripped:
+        return True
+    return (
+        stripped.startswith("//")
+        or stripped.startswith("/*")
+        or stripped.startswith("*/")
+        or stripped.startswith("*")
+    )
+
+
+def _is_substantive_csharp_change(line: str, *, test_file: bool) -> bool:
+    """Heuristic for whether a changed C# line is behavior-relevant."""
+    stripped = line.strip()
+    if _is_comment_or_blank_csharp(stripped):
+        return False
+    if stripped in {"{", "}"}:
+        return False
+    if stripped.startswith("using "):
+        return False
+    # Keep namespace-only edits non-substantive for tests so comment/header
+    # churn does not satisfy the "test coverage changed" gate.
+    if test_file and stripped.startswith("namespace "):
+        return False
+    return True
+
+
+def _is_core_algorithm_code_path(path: str) -> bool:
+    lower = path.lower()
+    if not lower.endswith(".cs"):
+        return False
+    base = lower.rsplit("/", 1)[-1]
+    return (
+        base == "topkfinder.cs"
+        or base == "comparisonstate.cs"
+        or base.startswith("strategybuilder.")
+    )
+
+
+def detect_core_algorithm_test_gap(diff: str) -> str | None:
+    """Return a BLOCK finding when core algorithm changes lack substantive tests."""
+    changed_core_files: set[str] = set()
+    changed_test_files: set[str] = set()
+    substantive_test_files: set[str] = set()
+
+    for section in split_diff_sections(diff):
+        path = section_path(section)
+        if not path or path in EXCLUDED_REVIEW_PATHS:
+            continue
+
+        category = classify_path(path)
+        changed_lines = _iter_changed_content_lines(section)
+
+        if category == "test":
+            changed_test_files.add(path)
+            if any(_is_substantive_csharp_change(line, test_file=True) for line in changed_lines):
+                substantive_test_files.add(path)
+            continue
+
+        if category != "code" or not _is_core_algorithm_code_path(path):
+            continue
+        if any(_is_substantive_csharp_change(line, test_file=False) for line in changed_lines):
+            changed_core_files.add(path)
+
+    if not changed_core_files or substantive_test_files:
+        return None
+
+    core_list = ", ".join(f"`{p}`" for p in sorted(changed_core_files))
+    if changed_test_files:
+        return (
+            f"- **[BLOCK]** Core algorithm files changed ({core_list}) but no substantive test "
+            "updates were detected. Current test-file edits appear to be non-functional "
+            "(e.g. comments/format/import/header only). Add or modify real test assertions/cases "
+            "that guard this algorithm change."
+        )
+    return (
+        f"- **[BLOCK]** Core algorithm files changed ({core_list}) but no test files with "
+        "substantive test logic updates were detected. Add or modify real test assertions/cases "
+        "that guard this algorithm change."
+    )
+
+
 def format_change_manifest(manifest: list[dict]) -> str:
     """Render the manifest plus test/doc coverage facts for the structural pass."""
     counts = {"code": 0, "test": 0, "doc": 0}
@@ -769,6 +868,7 @@ def _reformat_bullet(bullet: str, source: str, number: int | None) -> str:
 def combine_batch_reviews(
     batch_reviews: list[tuple[int, int, str, str]],
     structural: tuple[str, str] | None = None,
+    policy_findings: list[str] | None = None,
 ) -> str:
     """Merge the structural review and per-batch reviews into ONE consolidated
     review body. Batches are an internal chunking detail and are never exposed:
@@ -777,6 +877,8 @@ def combine_batch_reviews(
     all_verdicts = [verdict for _, _, verdict, _ in batch_reviews]
     if structural is not None:
         all_verdicts.append(structural[0])
+    if policy_findings:
+        all_verdicts.append("BLOCK")
     final_verdict = max(all_verdicts, key=lambda v: verdict_order[v]) if all_verdicts else "APPROVE"
 
     # Structural (PR-level) summary + findings.
@@ -809,7 +911,8 @@ def combine_batch_reviews(
     # Tag every finding with its source, then split by severity so all blocking
     # items surface at the top regardless of source or arrival order.
     tagged = (
-        [("structure", b) for b in struct_bullets]
+        [("policy", b) for b in (policy_findings or [])]
+        + [("structure", b) for b in struct_bullets]
         + [("code", b) for b in code_bullets]
     )
     blocking = [(src, b) for src, b in tagged if _bullet_severity(b) == "BLOCK"]
@@ -1199,6 +1302,11 @@ def main() -> int:
     structural: tuple[str, str] | None = None
     raw_diff = read_raw_diff()
     manifest = build_change_manifest(raw_diff)
+    policy_findings: list[str] = []
+    core_algo_test_gap = detect_core_algorithm_test_gap(raw_diff)
+    if core_algo_test_gap:
+        print("Policy check: core algorithm test gap detected (forcing BLOCK).")
+        policy_findings.append(core_algo_test_gap)
     if manifest:
         try:
             structural_review = call_structural_model(
@@ -1226,11 +1334,17 @@ def main() -> int:
         print(f"Batch {index}/{len(batches)} verdict: {verdict}")
         batch_reviews.append((index, len(batches), verdict, review))
 
-    review = combine_batch_reviews(batch_reviews, structural=structural)
+    review = combine_batch_reviews(
+        batch_reviews,
+        structural=structural,
+        policy_findings=policy_findings,
+    )
     verdict_order = {"APPROVE": 0, "COMMENT": 1, "BLOCK": 2}
     candidate_verdicts = [item[2] for item in batch_reviews]
     if structural is not None:
         candidate_verdicts.append(structural[0])
+    if policy_findings:
+        candidate_verdicts.append("BLOCK")
     verdict = max(candidate_verdicts, key=lambda v: verdict_order[v])
 
     print(f"Verdict: {verdict}")
