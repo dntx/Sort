@@ -248,28 +248,27 @@ class Program
 
         if (feasibleMode)
         {
-            // Greedy mode: a fast greedy feasible plan gives a valid bound, then the compact stage
-            // uses U as its step ceiling, minimizes edges under U, and may pick up a smaller real
-            // step for free. Fast/interruptible, not proven optimal.
-            WriteStageStatus("stage greedy: started");
+            // Greedy mode: GreedyFeasible gives a valid upper bound, then ProofTighten lowers the
+            // step ceiling when it can, and EdgeCompact minimizes edges at the final step.
+            WriteStageStatus("stage greedy-feasible: started");
             var greedyStopwatch = System.Diagnostics.Stopwatch.StartNew();
             StrategyPlan feasiblePlan = builder.BuildFeasiblePlan();
             greedyStopwatch.Stop();
-            WriteStageStatus($"stage greedy: steps={feasiblePlan.MaxStep}, " +
+            WriteStageStatus($"stage greedy-feasible: steps={feasiblePlan.MaxStep}, " +
                 $"edges={feasiblePlan.TotalBranchEdges} ({greedyStopwatch.Elapsed.TotalSeconds:F2}s)");
 
-            // The anytime stages (baseline "compact", each "compact≤N" tightening, and a terminal
-            // no-solution ceiling) are produced incrementally for the GUI. The CLI is a batch tool,
+            // The anytime stages (each "proof-tighten≤N" tightening, a terminal no-solution ceiling,
+            // and the final "edge-compact@S") are produced incrementally for the GUI. The CLI is a batch tool,
             // so printing every intermediate tree is just noise: collect the stages, then print a
             // one-line progression summary followed by only the final (best) tree. A stage that has a
-            // solution but does not strictly improve the incumbent (e.g. compact baseline = same steps,
-            // more edges than greedy) is flagged "no improvement" and never becomes the final tree.
+            // solution but does not strictly improve the incumbent is flagged "no improvement" and never
+            // becomes the final tree.
             var stageSummaries = new System.Collections.Generic.List<string>
             {
-                FormatStageSummary("greedy", feasiblePlan),
+                FormatStageSummary("greedy-feasible", feasiblePlan),
             };
             StrategyPlan incumbentPlan = feasiblePlan;
-            string finalName = "greedy";
+            string finalName = "greedy-feasible";
             StrategyPlan finalPlan = feasiblePlan;
             void CollectEdgeStage(GreedyEdgeStage stage)
             {
@@ -347,10 +346,10 @@ class Program
             return;
         }
 
-        // Exact mode: no feasible phase. The exact search (exact) proves the optimum, then the
-        // compact phase (compact) trims displayed edges among equally optimal groups. A Ctrl+C here has
+        // Exact mode: no feasible phase. StepProof proves the optimum step, then EdgeCompact trims
+        // displayed edges among equally optimal groups. A Ctrl+C here has
         // no partial tree to show (the exact search is all-or-nothing), so report the interruption.
-        WriteStageStatus("stage exact: started");
+        WriteStageStatus("stage step-proof: started");
         StrategyPlan defaultPlan;
         var exactStopwatch = System.Diagnostics.Stopwatch.StartNew();
         try
@@ -364,16 +363,17 @@ class Program
             return;
         }
         exactStopwatch.Stop();
-        WriteStageStatus($"stage exact: steps={defaultPlan.MaxStep}, " +
+        WriteStageStatus($"stage step-proof: steps={defaultPlan.MaxStep}, " +
             $"edges={defaultPlan.TotalBranchEdges} ({exactStopwatch.Elapsed.TotalSeconds:F2}s)");
-        Console.WriteLine($"==================== exact ({FormatSqueeze(defaultPlan)}) ====================");
+        Console.WriteLine($"==================== step-proof ({FormatSqueeze(defaultPlan)}) ====================");
         Console.Write(StrategyOverviewRenderer.RenderText(defaultPlan));
         Console.WriteLine();
         Console.Write(StrategyTextRenderer.Render(defaultPlan));
 
         StrategyPlan incumbent = defaultPlan;
         StrategyPlan compactPlan;
-        WriteStageStatus("stage compact: started");
+        string edgeCompactStageName = FormatEdgeCompactStageName(defaultPlan.MaxStep);
+        WriteStageStatus($"stage {edgeCompactStageName}: started");
         var compactStopwatch = System.Diagnostics.Stopwatch.StartNew();
         try
         {
@@ -388,19 +388,22 @@ class Program
         bool compactImproved = compactPlan.IsStrictRefinementOver(incumbent);
         if (!compactImproved)
         {
-            WriteStageStatus($"stage compact: steps={compactPlan.MaxStep}, " +
+            WriteStageStatus($"stage {edgeCompactStageName}: steps={compactPlan.MaxStep}, " +
                 $"edges={compactPlan.TotalBranchEdges} ({compactStopwatch.Elapsed.TotalSeconds:F2}s), no improvement");
             return;
         }
 
-        WriteStageStatus($"stage compact: steps={compactPlan.MaxStep}, " +
+        WriteStageStatus($"stage {edgeCompactStageName}: steps={compactPlan.MaxStep}, " +
             $"edges={compactPlan.TotalBranchEdges} ({compactStopwatch.Elapsed.TotalSeconds:F2}s)");
         Console.WriteLine();
-        Console.WriteLine("==================== compact ====================");
+        Console.WriteLine($"==================== {edgeCompactStageName} ====================");
         Console.Write(StrategyOverviewRenderer.RenderText(compactPlan));
         Console.WriteLine();
         Console.Write(StrategyTextRenderer.Render(compactPlan));
     }
+
+    private static string FormatEdgeCompactStageName(int step)
+        => $"edge-compact@{step}";
 
     // One-line descriptor for a single greedy stage in the progression summary: stage name plus its
     // worst-case steps and displayed edge count, e.g. "compact≤5(steps=5, edges=44)".
