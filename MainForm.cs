@@ -288,7 +288,7 @@ class MainForm : Form
         _statesTextBox = CreateStatTextBox(
             "searched: 0\npending: 0 (peak 0)\noutput: 0\nlower-bound: 0\ntop-set: 0");
         _workTextBox = CreateStatTextBox(
-            "outcomes: 0\nduplicate skips: 0\nmerged collisions: 0\nprunes: 0\ncache: 0/0/0/0\n[compact] -");
+            "outcomes: 0\nduplicate skips: 0\nmerged collisions: 0\nprunes: 0\ncache: 0/0/0/0\n[edge-compact] -");
         var inputsPanel = new FlowLayoutPanel
         {
             AutoSize = true,
@@ -622,7 +622,7 @@ class MainForm : Form
         _compactImproved = false;
         _activePhase = 0;
         _greedyEdgeStages.Clear();
-        _currentStageName = feasibleMode ? "greedy" : "exact";
+        _currentStageName = feasibleMode ? "greedy-feasible" : "step-proof";
         _stageStartMs = 0;
         ClearResultsView();
         _runStopwatch = Stopwatch.StartNew();
@@ -646,9 +646,8 @@ class MainForm : Form
         {
             if (feasibleMode)
             {
-                // Greedy mode: a fast greedy feasible plan (greedy) gives an instant browsable strategy
-                // even on shapes exact never resolves (e.g. 25,5,5), then a budget-bounded compact
-                // pass trims displayed edges under the feasible ceiling U.
+                // Greedy mode: GreedyFeasible gives an instant browsable strategy even on shapes exact
+                // never resolves (e.g. 25,5,5), then ProofTighten + EdgeCompact refine it.
                 StrategyPlan feasiblePlan = await Task.Run(() => builder.BuildFeasiblePlan(), cancellationToken);
                 _feasiblePlan = feasiblePlan;
                 _latestProgress = CreateSnapshotFromPlan(feasiblePlan);
@@ -680,10 +679,9 @@ class MainForm : Form
                 return;
             }
 
-            // Exact mode: no feasible phase. Phase 1 is the proven-optimal exact plan (exact), used as
-            // both the incumbent and the displayed strategy; phase 2 is the compact refinement
-            // (compact). The exact plan is MaxStep-optimal, so compact only trims edges among equally
-            // optimal groups.
+            // Exact mode: no feasible phase. Phase 1 is the proven-optimal StepProof plan, used as both
+            // the incumbent and the displayed strategy; phase 2 is EdgeCompact. The exact plan is
+            // MaxStep-optimal, so EdgeCompact only trims edges among equally optimal groups.
             Interlocked.Exchange(ref _activePhase, 1);
             StrategyPlan defaultPlan = await Task.Run(() => builder.BuildDefaultPlan(), cancellationToken);
 
@@ -704,7 +702,7 @@ class MainForm : Form
 
             // Phase 2: compact refinement.
             Interlocked.Exchange(ref _activePhase, 2);
-            _currentStageName = "compact";
+            _currentStageName = FormatEdgeCompactStageName(defaultPlan.MaxStep);
             _stageStartMs = _runStopwatch?.ElapsedMilliseconds ?? 0;
             StrategyPlan compactPlan = await Task.Run(() => builder.BuildCompactPlan(), cancellationToken);
             _runStopwatch?.Stop();
@@ -751,7 +749,7 @@ class MainForm : Form
     private const string ComputingSuffix = ": computing...";
 
     // A trailing tree/overview node ending in ": computing..." is a transient in-progress placeholder
-    // (the initial second-stage slot, or a live "feasible<=N: computing..." probe appended between
+    // (the initial second-stage slot, or a live "proof-tighten<=N: computing..." probe appended between
     // greedy tightening stages). Both are replaced in place once the stage they announce lands.
     private static bool IsComputingPlaceholderText(string text)
         => text.EndsWith(ComputingSuffix, StringComparison.Ordinal);
@@ -795,9 +793,9 @@ class MainForm : Form
     }
 
     // Defensive cleanup after a normal (non-stopped) greedy run: BuildFeasibleCompactPlan always ends
-    // by emitting the terminal "compact" stage, whose handler appends no follow-up placeholder. But the
+    // by emitting the terminal EdgeCompact stage, whose handler appends no follow-up placeholder. But the
     // should-not-happen fallback (edgePlan null) returns without that final emission, which would leave
-    // the last "compact: computing..." placeholder stranded. Drop any such trailing placeholder so a
+    // the last "edge-compact@S: computing..." placeholder stranded. Drop any such trailing placeholder so a
     // finished run never shows a "computing..." node.
     private void RemoveTrailingComputingPlaceholder()
     {
@@ -853,26 +851,28 @@ class MainForm : Form
             ForeColor = _palette.ForeColor,
         };
 
-        // Slot 0: the step strategy, named by mode -- "exact" once the exact pass finishes (it replaces
-        // the placeholder in place), or "greedy" for the constructive feasible plan in greedy mode.
+        // Slot 0: the step strategy, named by mode -- "step-proof" once the exact pass finishes (it
+        // replaces the placeholder in place), or "greedy-feasible" for the constructive feasible plan
+        // in greedy mode.
         StrategyPlan stepPlan = defaultPlan ?? feasiblePlan;
-        string stepStageName = defaultPlan is null ? "greedy" : "exact";
+        string stepStageName = defaultPlan is null ? "greedy-feasible" : "step-proof";
         root.Nodes.Add(CreatePlanTreeRoot(stepStageName, stepPlan, "default", stepPlan.Elapsed));
 
-        // Slot 1: the second stage's live placeholder. In exact mode this is the min-edge "compact"
-        // pass; in greedy mode it is whatever BuildFeasibleCompactPlan emits first -- a "feasible<=N"
-        // tightening stage, or "compact" directly when the greedy bound is already at the lower bound.
+        // Slot 1: the second stage's live placeholder. In exact mode this is the min-edge
+        // "edge-compact@S" pass; in greedy mode it is whatever BuildFeasibleCompactPlan emits first --
+        // a "proof-tighten<=N" tightening stage, or "edge-compact@S" directly when the greedy bound is
+        // already at the lower bound.
         if (compactPlan is null)
         {
             string firstStageName = defaultPlan is null
                 ? NextFeasibleCompactStageName(feasiblePlan, feasiblePlan.MaxStep)
-                : "compact";
+                : FormatEdgeCompactStageName(feasiblePlan.MaxStep);
             root.Nodes.Add(new TreeNode(firstStageName + ComputingSuffix) { ForeColor = _palette.MutedForeColor });
         }
         else if (compactImproved)
-            root.Nodes.Add(CreatePlanTreeRoot("compact", compactPlan, "compact", compactPlan.Elapsed));
+            root.Nodes.Add(CreatePlanTreeRoot(FormatEdgeCompactStageName(compactPlan.MaxStep), compactPlan, "compact", compactPlan.Elapsed));
         else
-            root.Nodes.Add(CreateNoSolutionTreeRoot("compact", compactPlan.Elapsed));
+            root.Nodes.Add(CreateNoSolutionTreeRoot(FormatEdgeCompactStageName(compactPlan.MaxStep), compactPlan.Elapsed));
 
         _treeView.Nodes.Add(root);
         root.Expand();
@@ -954,9 +954,9 @@ class MainForm : Form
         while (root.Nodes.Count > 1)
             root.Nodes.RemoveAt(root.Nodes.Count - 1);
         if (compactImproved)
-            root.Nodes.Add(CreatePlanTreeRoot("compact", compactPlan, "compact", compactPlan.Elapsed));
+            root.Nodes.Add(CreatePlanTreeRoot(FormatEdgeCompactStageName(compactPlan.MaxStep), compactPlan, "compact", compactPlan.Elapsed));
         else
-            root.Nodes.Add(CreateNoSolutionTreeRoot("compact", compactPlan.Elapsed));
+            root.Nodes.Add(CreateNoSolutionTreeRoot(FormatEdgeCompactStageName(compactPlan.MaxStep), compactPlan.Elapsed));
 
         _treeView.EndUpdate();
 
@@ -985,20 +985,20 @@ class MainForm : Form
     }
 
     // Name of the next stage BuildFeasibleCompactPlan will emit given the best incumbent max-step so
-    // far. Mirrors the V2 loop: it tightens to "feasible<=(step-1)" while that ceiling is still above
-    // the proven analytic lower bound, otherwise the final min-edge "compact" pass runs. Used to label
+    // far. Mirrors the V2 loop: it tightens to "proof-tighten<=(step-1)" while that ceiling is still above
+    // the proven analytic lower bound, otherwise the final "edge-compact@S" pass runs. Used to label
     // the transient "...: computing..." placeholder so it matches the stage name that actually lands
-    // (feasibility-only tightening stages surface as "feasible<=N", the final min-edge pass as "compact").
+    // (proof-tightening stages surface as "proof-tighten<=N", the final min-edge pass as "edge-compact@S").
     private static string NextFeasibleCompactStageName(StrategyPlan feasiblePlan, int incumbentMaxStep)
     {
         int lower = Math.Max(1, feasiblePlan.SearchStatistics.RootProvenLowerBound);
         int nextBudget = incumbentMaxStep - 1;
-        return nextBudget >= lower ? $"feasible\u2264{nextBudget}" : "compact";
+        return nextBudget >= lower ? $"proof-tighten\u2264{nextBudget}" : FormatEdgeCompactStageName(incumbentMaxStep);
     }
 
     // Anytime greedy edge handler: invoked on the UI thread once per edge stage as the worker thread
-    // produces it (each "feasible<=N" feasibility-only tightening stage, then the final min-edge
-    // "compact" pass, or a no-solution/incomplete terminal stage). The first stage fills the computing
+    // produces it (each "proof-tighten<=N" proof-tightening stage, then the final "edge-compact@S"
+    // pass, or a no-solution/incomplete terminal stage). The first stage fills the computing
     // slot in place; every later stage is appended as a new tree + overview section, so the user watches
     // the strategy improve stage by stage. Each tree gets a unique scope ("edge0", "edge1", ...) so
     // their per-state navigation keys never collide.
@@ -1012,31 +1012,31 @@ class MainForm : Form
         string scope = $"edge{index}";
 
         // A stage is "shown" as a full browsable tree only when it strictly improves the incumbent
-        // (the best plan so far: the greedy feasible plan, then any improving compact stage). A stage
-        // that has a solution but is no better (e.g. compact baseline = same steps, more edges than
-        // greedy) is recorded and marked "no improvement" but rendered only as a leaf note. Tightening
+        // (the best plan so far: the greedy-feasible plan, then any improving downstream stage). A stage
+        // that has a solution but is no better is recorded and marked "no improvement" but rendered
+        // only as a leaf note. Tightening
         // continues regardless, since the next ceiling is driven by max-steps, not edges.
         StrategyPlan incumbent = _compactPlan ?? _feasiblePlan;
         bool improved = stage.HasSolution && stage.Plan!.IsStrictRefinementOver(incumbent);
 
-        // A follow-up stage always lands after every emitted stage except the terminal min-edge
-        // "compact" pass: after a "feasible<=N" stage -- whether it found a solution or proved/failed
-        // the ceiling -- the worker next probes a deeper feasible ceiling or runs the final compact
+        // A follow-up stage always lands after every emitted stage except the terminal EdgeCompact
+        // pass: after a "proof-tighten<=N" stage -- whether it found a solution or proved/failed the
+        // ceiling -- the worker next probes a deeper feasible ceiling or runs the final edge-compaction
         // pass. We announce that in-progress probe with a trailing "<next>: computing..." placeholder
-        // so the tree/overview never look idle while it runs. The terminal compact stage has nothing
+        // so the tree/overview never look idle while it runs. The terminal EdgeCompact stage has nothing
         // after it, so it appends no placeholder.
-        bool hasFollowUp = stage.Name != "compact";
+        bool hasFollowUp = !IsEdgeCompactStageName(stage.Name);
         string? nextStageName = !hasFollowUp
             ? null
             : stage.HasSolution
                 ? NextFeasibleCompactStageName(_feasiblePlan, stage.Plan!.MaxStep)
-                : "compact"; // Phase A ended (no-solution/incomplete); only the min-edge pass remains
+            : FormatEdgeCompactStageName(_feasiblePlan.MaxStep); // Phase A ended (no-solution/incomplete); only the edge-compaction pass remains
         string? probeComputingLabel = nextStageName is null ? null : nextStageName + ComputingSuffix;
 
         _treeView.BeginUpdate();
         TreeNode root = _treeView.Nodes[0];
         // Replace the trailing in-progress placeholder (the initial second-stage slot, or the previous
-        // probe's "feasible<=N: computing..." note) with the landed stage.
+        // probe's "proof-tighten<=N: computing..." note) with the landed stage.
         if (root.Nodes.Count > 1 && IsComputingPlaceholderText(root.Nodes[root.Nodes.Count - 1].Text))
             root.Nodes.RemoveAt(root.Nodes.Count - 1);
         root.Nodes.Add(BuildStageTreeNode(stage, scope, improved));
@@ -1184,8 +1184,8 @@ class MainForm : Form
     {
         var lines = new List<string>
         {
-            "Greedy result (anytime: improving stages are shown as trees)",
-            $"greedy: {FormatPlanSqueeze(stepPlan)}, total edges={stepPlan.TotalBranchEdges}",
+            "GreedyFeasible result (anytime: improving stages are shown as trees)",
+            $"greedy-feasible: {FormatPlanSqueeze(stepPlan)}, total edges={stepPlan.TotalBranchEdges}",
         };
         StrategyPlan incumbent = stepPlan;
         foreach (GreedyEdgeStage stage in stages)
@@ -1259,7 +1259,7 @@ class MainForm : Form
     }
 
     // Renders the overview panel so it mirrors the tree one-to-one: a step section (named by mode --
-    // "exact"/"greedy") and a "compact" section ("computing..." placeholder until the compact stage
+    // "step-proof"/"greedy-feasible") and an "edge-compact@S" section ("computing..." placeholder until the compact stage
     // finishes). Each section is an independent root, so the strategies' overviews can be browsed and
     // collapsed separately. This is the full-rebuild path used for the initial render and theme switches.
     private void RebuildOverview(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool exactImproved, bool compactImproved)
@@ -1268,20 +1268,20 @@ class MainForm : Form
         _overviewTree.Nodes.Clear();
 
         StrategyPlan stepPlan = defaultPlan ?? feasiblePlan;
-        string stepStageName = defaultPlan is null ? "greedy" : "exact";
+        string stepStageName = defaultPlan is null ? "greedy-feasible" : "step-proof";
         _overviewTree.Nodes.Add(BuildOverviewSectionNode(stepPlan, "default", stepStageName, stepPlan.Elapsed));
 
         if (compactPlan is null)
         {
             string firstStageName = defaultPlan is null
                 ? NextFeasibleCompactStageName(feasiblePlan, feasiblePlan.MaxStep)
-                : "compact";
+                : FormatEdgeCompactStageName(feasiblePlan.MaxStep);
             _overviewTree.Nodes.Add(BuildOverviewNoteNode(firstStageName + ComputingSuffix));
         }
         else if (compactImproved)
-            _overviewTree.Nodes.Add(BuildOverviewSectionNode(compactPlan, "compact", "compact", compactPlan.Elapsed));
+            _overviewTree.Nodes.Add(BuildOverviewSectionNode(compactPlan, "compact", FormatEdgeCompactStageName(compactPlan.MaxStep), compactPlan.Elapsed));
         else
-            _overviewTree.Nodes.Add(BuildOverviewNoteNode(FormatStageRootLabel("compact", compactPlan.Elapsed, plan: null)));
+            _overviewTree.Nodes.Add(BuildOverviewNoteNode(FormatStageRootLabel(FormatEdgeCompactStageName(compactPlan.MaxStep), compactPlan.Elapsed, plan: null)));
 
         _overviewTree.EndUpdate();
     }
@@ -1293,14 +1293,14 @@ class MainForm : Form
     {
         _overviewTree.BeginUpdate();
 
-        // Drop the trailing compact "computing..." placeholder root.
+        // Drop the trailing edge-compact "computing..." placeholder root.
         if (_overviewTree.Nodes.Count > 0)
             _overviewTree.Nodes.RemoveAt(_overviewTree.Nodes.Count - 1);
 
         if (compactImproved)
-            _overviewTree.Nodes.Add(BuildOverviewSectionNode(compactPlan, "compact", "compact", compactPlan.Elapsed));
+            _overviewTree.Nodes.Add(BuildOverviewSectionNode(compactPlan, "compact", FormatEdgeCompactStageName(compactPlan.MaxStep), compactPlan.Elapsed));
         else
-            _overviewTree.Nodes.Add(BuildOverviewNoteNode(FormatStageRootLabel("compact", compactPlan.Elapsed, plan: null)));
+            _overviewTree.Nodes.Add(BuildOverviewNoteNode(FormatStageRootLabel(FormatEdgeCompactStageName(compactPlan.MaxStep), compactPlan.Elapsed, plan: null)));
 
         _overviewTree.EndUpdate();
     }
@@ -1437,6 +1437,12 @@ class MainForm : Form
         string body = $"{stageName}: {elapsedText}, max steps={plan.MaxStep}, edges={plan.TotalBranchEdges}, states={plan.SearchStatistics.OutputStates}";
         return marker is null ? body : $"{body}, {marker}";
     }
+
+    private static string FormatEdgeCompactStageName(int step)
+        => $"edge-compact@{step}";
+
+    private static bool IsEdgeCompactStageName(string stageName)
+        => stageName.StartsWith("edge-compact@", StringComparison.Ordinal);
 
     private TreeNode CreatePlanTreeRoot(string stageName, StrategyPlan plan, string scope, TimeSpan elapsed)
     {

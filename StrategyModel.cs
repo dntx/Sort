@@ -103,8 +103,8 @@ enum GreedyEdgeStageOutcome
 }
 
 // One stage of the greedy edge progression as it is produced by BuildFeasibleCompactPlan: the
-// baseline compact pass, each successful downward tightening, or a terminal ceiling that yielded no
-// solution. Name is the stage label (e.g. "compact", "compact<=4"); Plan is the materialized
+// final edge-compaction pass, each successful downward tightening, or a terminal ceiling that yielded
+// no solution. Name is the stage label (e.g. "edge-compact@5", "proof-tighten<=4"); Plan is the materialized
 // strategy, or null for the NoSolution/Incomplete outcomes. Elapsed is the stage's own wall time,
 // not a cumulative total.
 readonly struct GreedyEdgeStage

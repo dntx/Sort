@@ -141,23 +141,23 @@ partial class StrategyBuilder
         return BuildPlan(useCompactSelection: true, useFeasibleBudget: false);
     }
 
-    // Greedy mode: feasibility-only tightening followed by a single min-edge pass.
+    // Greedy mode: proof tightening followed by a single edge-compaction pass.
     //
-    //   Phase A (tighten): starting from the feasible upper bound U (the greedy step plan's MaxStep,
+    //   Phase A (ProofTighten): starting from the feasible upper bound U (the greedy step plan's MaxStep,
     //     threaded in via _feasibleRootBudget), probe ceilings U-1, U-2, ... with FEASIBILITY-ONLY
     //     compact solves (first solvable group in children-count-proxy order wins; no edge counting) to
     //     find the smallest feasible step S. Each probe is cheap relative to a full min-edge pass, and --
     //     crucially -- this avoids the wasted min-edge work at intermediate ceilings whose step is later
     //     superseded (the original architecture ran an edge-minimizing baseline at U first, which was
     //     discarded whenever tightening lowered the step below U).
-    //   Phase B (min-edge): run ONE min-edge compact pass at the determined step S to produce the final
-    //     edge-minimized tree.
+    //   Phase B (EdgeCompact): run ONE min-edge compact pass at the determined step S to produce the
+    //     final edge-minimized tree.
     //
     // Fast and interruptible, not proven optimal. onStage, when supplied, is invoked synchronously on
-    // this thread each time an edge stage becomes available: once per successful tightening ceiling
-    // ("feasible≤N", carrying the smaller plan), once for the terminal ceiling that stops tightening (a
-    // no-solution/incomplete stage whose plan is null), and finally once for the min-edge pass
-    // ("compact"). This drives an anytime UI/CLI that surfaces the full progression as it is found; a
+    // this thread each time a downstream stage becomes available: once per successful tightening ceiling
+    // ("proof-tighten≤N", carrying the smaller plan), once for the terminal ceiling that stops tightening
+    // (a no-solution/incomplete stage whose plan is null), and finally once for the edge-compaction pass
+    // ("edge-compact@S"). This drives an anytime UI/CLI that surfaces the full progression as it is found; a
     // user who no longer wants to wait cancels (GUI Stop / CLI Ctrl+C), which propagates out with the
     // best plan found so far already surfaced via onStage.
     public StrategyPlan BuildFeasibleCompactPlan(
@@ -179,7 +179,7 @@ partial class StrategyBuilder
         int U = _feasibleRootBudget;
         int provenLowerBound = Math.Max(1, _rootProvenLowerBound);
 
-        // Phase A: feasibility-only tighten to find the smallest feasible step S.
+        // Phase A: proof tightening to find the smallest feasible step S.
         _compactFeasibilityOnly = true;
         int bestStep = U;
         int budget = U - 1;
@@ -188,7 +188,7 @@ partial class StrategyBuilder
             while (budget >= provenLowerBound)
             {
                 _cancellationToken.ThrowIfCancellationRequested();
-                string stageName = $"feasible\u2264{budget}";
+                string stageName = FormatProofTightenStageName(budget);
                 onStageStart?.Invoke(stageName);
                 var probeStopwatch = Stopwatch.StartNew();
                 StrategyPlan? candidate = ProbeFeasibleCompact(budget);
@@ -227,15 +227,16 @@ partial class StrategyBuilder
             _compactFeasibilityOnly = false;
         }
 
-        // Phase B: one min-edge compact pass at the determined step S.
-        onStageStart?.Invoke("compact");
+        // Phase B: one edge-compaction pass at the determined step S.
+        string edgeCompactStageName = FormatEdgeCompactStageName(bestStep);
+        onStageStart?.Invoke(edgeCompactStageName);
         var edgeStopwatch = Stopwatch.StartNew();
         StrategyPlan? edgePlan = ProbeFeasibleCompact(bestStep);
         edgeStopwatch.Stop();
         if (edgePlan is not null)
         {
             edgePlan = edgePlan.WithRootProvenLowerBound(_rootProvenLowerBound);
-            onStage?.Invoke(new GreedyEdgeStage("compact", edgePlan, edgeStopwatch.Elapsed));
+            onStage?.Invoke(new GreedyEdgeStage(edgeCompactStageName, edgePlan, edgeStopwatch.Elapsed));
             return edgePlan;
         }
 
@@ -244,6 +245,12 @@ partial class StrategyBuilder
         return BuildPlan(useCompactSelection: true, useFeasibleBudget: true)
             .WithRootProvenLowerBound(_rootProvenLowerBound);
     }
+
+    private static string FormatProofTightenStageName(int budget)
+        => $"proof-tighten\u2264{budget}";
+
+    private static string FormatEdgeCompactStageName(int step)
+        => $"edge-compact@{step}";
 
     // Runs a single compact pass at a fixed root ceiling, returning the materialized plan or null if the
     // ceiling is infeasible (root solve yields the unsolvable sentinel). Resets the per-budget compact
