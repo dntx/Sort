@@ -165,4 +165,4 @@ Greedy mode is feasibility-first: it finds a valid solution fast, tightens its w
 
 Doing min-edge only once, at the final step, avoids repeatedly computing edge counts at intermediate ceilings that tightening later discards. If a ceiling is *proven* infeasible (complete enumeration, no candidate cap truncation), the incumbent is proven optimal and the squeeze closes to `max steps = S (proven optimal)`.
 
-Regression coverage lives in `TopKFinder.Tests/MinStepGreedyTests.cs` and `TopKFinder.Tests/FeasibleCompactPlanTests.cs`.
+Regression coverage lives in `TopKFinder.Tests/GreedyTightenTests.cs` and `TopKFinder.Tests/GreedyTightenPlanTests.cs`.
