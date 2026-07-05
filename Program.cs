@@ -372,7 +372,7 @@ class Program
 
         StrategyPlan incumbent = defaultPlan;
         StrategyPlan compactPlan;
-        string edgeCompactStageName = FormatEdgeCompactStageName(defaultPlan.MaxStep);
+        string edgeCompactStageName = StrategyBuilder.FormatEdgeCompactStageName(defaultPlan.MaxStep);
         WriteStageStatus($"stage {edgeCompactStageName}: started");
         var compactStopwatch = System.Diagnostics.Stopwatch.StartNew();
         try
@@ -401,9 +401,6 @@ class Program
         Console.WriteLine();
         Console.Write(StrategyTextRenderer.Render(compactPlan));
     }
-
-    private static string FormatEdgeCompactStageName(int step)
-        => $"edge-compact@{step}";
 
     // One-line descriptor for a single greedy stage in the progression summary: stage name plus its
     // worst-case steps and displayed edge count, e.g. "compact≤5(steps=5, edges=44)".
