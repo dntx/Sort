@@ -384,6 +384,16 @@ partial class StrategyBuilder
                 BuildMergedComparisonOutcomes(state, fixedTopMask, remainingSlots, constructiveGroup));
         }
 
+        // GreedyTighten materializes its tightened tree via the committed override map, falling back to
+        // the same constructive selector for un-edited states (so an empty map == greedy-feasible).
+        if (_useGreedyTightenSelection)
+        {
+            List<int> tightenGroup = CurrentGreedyTightenGroup(state, remainingSlots, GetSearchStateKey(state, remainingSlots));
+            return new SelectedComparisonGroup(
+                tightenGroup,
+                BuildMergedComparisonOutcomes(state, fixedTopMask, remainingSlots, tightenGroup));
+        }
+
         var candidates = state.GetActiveItemsOrdered();
         SearchStateKey currentKey = GetSearchStateKey(state, remainingSlots);
 
