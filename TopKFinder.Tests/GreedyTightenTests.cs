@@ -71,6 +71,62 @@ public class GreedyTightenTests
             $"greedy-tighten produced a reference cycle for ({n},{m},{k})");
     }
 
+    // Regression guard for test-only round cap control: when configured, the driver should stop at
+    // the exact cap and still produce a valid feasible-upper-bound strategy.
+    [Fact]
+    public void GreedyTightenPlan_RespectsConfiguredRoundCap()
+    {
+        const int n = 8;
+        const int m = 2;
+        const int k = 4;
+
+        var builder = new StrategyBuilder(n, m, k)
+        {
+            GreedyTightenMaxRoundsForTesting = 1,
+        };
+
+        StrategyPlan plan = builder.BuildGreedyTightenPlan();
+
+        Assert.True(plan.IsFeasibleUpperBound);
+        Assert.Equal(1, builder.GreedyTightenRounds);
+        Assert.Single(builder.GreedyTightenRoundTrace);
+    }
+
+    // The shared memo optimization must preserve internally consistent accounting across total
+    // counters and per-round diagnostics.
+    [Fact]
+    public void GreedyTightenPlan_DiagnosticsRemainConsistentWithSharedMemo()
+    {
+        const int n = 9;
+        const int m = 2;
+        const int k = 4;
+
+        var builder = new StrategyBuilder(n, m, k);
+        _ = builder.BuildGreedyTightenPlan();
+
+        Assert.NotEmpty(builder.GreedyTightenRoundTrace);
+        Assert.Equal(builder.GreedyTightenRounds, builder.GreedyTightenRoundTrace.Count);
+        Assert.True(builder.GreedyTightenHeightCalls >= builder.GreedyTightenHeightMemoHits);
+
+        int totalRoundHeightCalls = 0;
+        int totalRoundMemoHits = 0;
+        int totalRoundHeightUnderGroupCalls = 0;
+        int totalRoundCommits = 0;
+        foreach (StrategyBuilder.GreedyTightenRoundDiagnostics round in builder.GreedyTightenRoundTrace)
+        {
+            totalRoundHeightCalls += round.HeightCalls;
+            totalRoundMemoHits += round.HeightMemoHits;
+            totalRoundHeightUnderGroupCalls += round.HeightUnderGroupCalls;
+            totalRoundCommits += round.Commits;
+            Assert.True(round.HeightCalls >= round.HeightMemoHits);
+        }
+
+        Assert.Equal(builder.GreedyTightenHeightCalls, totalRoundHeightCalls);
+        Assert.Equal(builder.GreedyTightenHeightMemoHits, totalRoundMemoHits);
+        Assert.Equal(builder.GreedyTightenHeightUnderGroupCalls, totalRoundHeightUnderGroupCalls);
+        Assert.Equal(builder.GreedyTightenCommits, totalRoundCommits);
+    }
+
     private static void AssertEveryDecisionHasGroup(StrategyNode node)
     {
         if (node.Branches.Count > 0)
