@@ -8,3 +8,7 @@ compact-gap-report.txt
 compact-gap-*.txt
 dump-*.txt
 block-honesty-*.txt
+greedy-tighten-eval.txt
+cycle*.log
+eval*.log
+probe.log
