@@ -57,6 +57,20 @@ public class GreedyTightenTests
             $"greedy-tighten step {tightened} was worse than the greedy-feasible upper bound {feasible}");
     }
 
+    // Regression lock for the previously observed back-edge-prone region: materialization must not
+    // create reference cycles in the rendered strategy graph.
+    [Theory]
+    [InlineData(9, 2, 4)]
+    [InlineData(8, 2, 4)]
+    [InlineData(7, 2, 3)]
+    public void GreedyTightenPlan_DoesNotCreateReferenceCycles(int n, int m, int k)
+    {
+        StrategyPlan plan = new StrategyBuilder(n, m, k).BuildGreedyTightenPlan();
+
+        Assert.False(HasReferenceCycle(plan.Root),
+            $"greedy-tighten produced a reference cycle for ({n},{m},{k})");
+    }
+
     private static void AssertEveryDecisionHasGroup(StrategyNode node)
     {
         if (node.Branches.Count > 0)
@@ -66,5 +80,57 @@ public class GreedyTightenTests
             foreach (StrategyBranch branch in node.Branches)
                 AssertEveryDecisionHasGroup(branch.Next);
         }
+    }
+
+    private static bool HasReferenceCycle(StrategyNode root)
+    {
+        var targets = new Dictionary<int, StrategyNode>();
+        IndexTargets(root, targets);
+        var onStack = new HashSet<StrategyNode>(ReferenceEqualityComparer.Instance);
+        var done = new HashSet<StrategyNode>(ReferenceEqualityComparer.Instance);
+        return DetectCycle(root, targets, onStack, done);
+    }
+
+    private static void IndexTargets(StrategyNode node, Dictionary<int, StrategyNode> targets)
+    {
+        if (node.Kind == StrategyNodeKind.Decision && node.Branches.Count > 0)
+            targets[node.StateId] = node;
+        foreach (StrategyBranch branch in node.Branches)
+            IndexTargets(branch.Next, targets);
+    }
+
+    private static bool DetectCycle(
+        StrategyNode node,
+        Dictionary<int, StrategyNode> targets,
+        HashSet<StrategyNode> onStack,
+        HashSet<StrategyNode> done)
+    {
+        if (done.Contains(node))
+            return false;
+        if (!onStack.Add(node))
+            return true;
+
+        bool cycle;
+        if (node.Kind == StrategyNodeKind.Reference)
+        {
+            cycle = targets.TryGetValue(node.StateId, out StrategyNode? target)
+                && DetectCycle(target, targets, onStack, done);
+        }
+        else
+        {
+            cycle = false;
+            foreach (StrategyBranch branch in node.Branches)
+            {
+                if (DetectCycle(branch.Next, targets, onStack, done))
+                {
+                    cycle = true;
+                    break;
+                }
+            }
+        }
+
+        onStack.Remove(node);
+        done.Add(node);
+        return cycle;
     }
 }
