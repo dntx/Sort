@@ -107,7 +107,7 @@ TryBuildDoomedTailSpecs(...)  // 轨道 A：尾部已出局 → 折叠成 {...}
 
 ### 轨道 B：通用 pattern 引擎（`StrategyBuilder.EquivalentOrders.cs`）
 
-`BuildEquivalentOrderSummary`（~L568）处理「多个排序收敛到同一后继状态」的折叠：
+`BuildEquivalentOrderSummary`（分派入口，位于 `StrategyBuilder.RelabelingOrbit.cs`）处理「多个排序收敛到同一后继状态」的折叠：
 
 - 若所有族都是单例（每个具体排序各算 1 个），交给**整体 pattern 引擎**
   `BuildEquivalentPatternSummary`（~L809），它识别常见形状并压缩：
@@ -132,7 +132,7 @@ TryBuildDoomedTailSpecs(...)  // 轨道 A：尾部已出局 → 折叠成 {...}
 典型例子是 20,10,10 可行解的 S3：活跃偏序是两条等价长链（`#1~#10` 与 `#11~#20`），链交换
 `#i ↔ #i+10` 是真自同构，于是每条排序都有一个镜像收敛到同一个规范子状态。对这种**全单例**轨道，
 `BuildBranchSpecForLine` 选字典序最小的排序当代表，并交给 `BuildRelabelingOrbitSummary`
-（`StrategyBuilder.EquivalentOrders.cs`）渲染成一行 + 一句 relabel 图例，例如：
+（`StrategyBuilder.RelabelingOrbit.cs`）渲染成一行 + 一句 relabel 图例，例如：
 
 ```
 equivalent forms: 2 = 2
@@ -373,7 +373,7 @@ doomed-tail 边的计数被分解为**对称因子 × 尾部因子**：
 
 ## 8. 归一化：`NormalizeEquivalentPattern`
 
-两条轨道的输出最后都过一遍归一化（`StrategyBuilder.EquivalentOrders.cs`）：
+两条轨道的输出最后都过一遍归一化（`StrategyBuilder.RelabelingOrbit.cs`）：
 
 - **`SplitPlaceholderLegend`**（~L620）：把引擎内部的 `<alias>=permute{...}, ...; <body>` 拆成
   「body + 图例」，图例移到尾部并改成 doomed-tail 同款记号。它在**第一个 `;`** 处切分，所以
@@ -441,12 +441,12 @@ doomed-tail 边的计数被分解为**对称因子 × 尾部因子**：
 | 数据模型 | `StrategyModel.cs` → `EquivalentOrderSummary` |
 | 文本渲染 | `StrategyTextRenderer.cs` → `FormatEquivalentFormsSummary`、`FormatEquivalentPatternLine`、`FormatSet`（`#i ~ #j` 缩写） |
 | 轨道选择 | `StrategyBuilder.Transitions.cs` → `BuildBranchSpecs`、`SplitMergedBucketIntoBranchLines`、`PartitionFamiliesIntoOrbits`；`StrategyBuilder.Compact.cs`（compact 版） |
-| relabel 同构折叠 | `StrategyBuilder.Transitions.cs` → `BuildBranchSpecForLine`、`SelectOrbitRepresentative`；`StrategyBuilder.EquivalentOrders.cs` → `BuildRelabelingOrbitSummary`、`FormatRelabelingMap`；`ComparisonState.cs` → `TryFindOrderAutomorphism` |
+| relabel 同构折叠 | `StrategyBuilder.Transitions.cs` → `BuildBranchSpecForLine`、`SelectOrbitRepresentative`；`StrategyBuilder.RelabelingOrbit.cs` → `BuildRelabelingOrbitSummary`、`FormatRelabelingMap`；`ComparisonState.cs` → `TryFindOrderAutomorphism` |
 | 投影轨道合并（principle-D） | `StrategyBuilder.Transitions.cs` → `SplitMergedBucketIntoBranchLines`（开关 `EnableProjectionOrbitMerging`，默认 true）；`StrategyBuilder.ProjectionQuotient.cs` → `MergeOrbitsByProjection`、`BuildProjectionQuotientSummary`（分派器）→ `TryTopAnchoredQuotient`（canonical + 形态 A）/ `TryBottomAnchoredQuotient`（形态 B）/ `TryTwoBlockQuotient`（C1）/ `TryThreeBlockPartnerQuotient`（C3）、`FormatActiveChain`；`MergeSingletonOrbitsByProjection`、`TryProjectionAutomorphism`（回退） |
 | 投影诚实性闸 / 探针 | `StrategyBuilder.ProjectionPairingProbe.cs` → `ComponentIsSingleGlobalDropOrbit`、`EnableProjectionPairingProbe`（测量只读） |
-| 通用 pattern 引擎 | `StrategyBuilder.EquivalentOrders.cs` → `BuildEquivalentOrderSummary`、`BuildEquivalentPatternSummary`、`TryBuild*Summary` 系列 |
-| 归一化 / 图例 | `StrategyBuilder.EquivalentOrders.cs` → `SplitPlaceholderLegend`、`NormalizeEquivalentPattern`、`FormatBraceSet` |
-| 对称类信息 | `StrategyBuilder.EquivalentOrders.cs` → `BuildGroupSymmetryInfo`；`GroupSymmetryInfo` / `GroupSymmetryClass` |
+| 通用 pattern 引擎 | `StrategyBuilder.EquivalentOrders.cs` → `BuildEquivalentPatternSummary`、`TryBuild*Summary` 系列；`StrategyBuilder.RelabelingOrbit.cs` → `BuildEquivalentOrderSummary`（分派入口） |
+| 归一化 / 图例 | `StrategyBuilder.RelabelingOrbit.cs` → `SplitPlaceholderLegend`、`NormalizeEquivalentPattern`、`FormatBraceSet` |
+| 对称类信息 | `StrategyBuilder.OrderEnumeration.cs` → `BuildGroupSymmetryInfo`；`GroupSymmetryInfo` / `GroupSymmetryClass` |
 | doomed-tail 检测/分桶/轨道 | `StrategyBuilder.DoomedTailEdges.cs` → `TryBuildDoomedTailSpecs`、`ComputeDoomedPrefixLength`、`BuildDoomedPrefixKey`、`PartitionDoomedBucketsIntoOrbits` |
 | doomed-tail 渲染 | `StrategyBuilder.DoomedTailEdges.cs` → `BuildDoomedTailSummary`、`BuildTailResidualConstraints`、`BuildTailFactorFormula`、peel forced-first head（~L285–349） |
 | 回归 / 诚实性测试 | `TopKFinder.Tests/StrategyRegressionTests.cs`、`TopKFinder.Tests/ProjectionOrbitMergeTests.cs`、`TopKFinder.Tests/ProjectionPairingProbeTests.cs`、`TopKFinder.PerfTests/OrderedBlockHonestyTests.cs`、`TopKFinder.PerfTests/RelabelingOrbitFoldingTests.cs` |
