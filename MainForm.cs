@@ -148,7 +148,7 @@ class MainForm : Form
     // Anytime greedy edge state (UI thread only): every edge stage as it arrives (baseline compact,
     // each tightening, plus a terminal no-solution stage). The current-stage name and the run-clock ms
     // at which the current stage began drive the per-stage timing/labels in the progress panel.
-    private readonly List<GreedyEdgeStage> _greedyEdgeStages = new();
+    private readonly List<GreedyTightenStage> _greedyEdgeStages = new();
     private string _currentStageName = "-";
     private long _stageStartMs;
 
@@ -648,7 +648,7 @@ class MainForm : Form
             {
                 // Greedy mode: GreedyFeasible gives an instant browsable strategy even on shapes exact
                 // never resolves (e.g. 25,5,5), then ProofTighten + EdgeCompact refine it.
-                StrategyPlan feasiblePlan = await Task.Run(() => builder.BuildFeasiblePlan(), cancellationToken);
+                StrategyPlan feasiblePlan = await Task.Run(() => builder.BuildGreedyFeasiblePlan(), cancellationToken);
                 _feasiblePlan = feasiblePlan;
                 _latestProgress = CreateSnapshotFromPlan(feasiblePlan);
                 PopulateTree(feasiblePlan, defaultPlan: null, compactPlan: null, exactImproved: false, compactImproved: false);
@@ -659,13 +659,13 @@ class MainForm : Form
 
                 Interlocked.Exchange(ref _activePhase, 2);
                 _greedyEdgeStages.Clear();
-                _currentStageName = NextFeasibleCompactStageName(feasiblePlan, feasiblePlan.MaxStep);
+                _currentStageName = NextProofTightenStageName(feasiblePlan, feasiblePlan.MaxStep);
                 _stageStartMs = _runStopwatch?.ElapsedMilliseconds ?? 0;
                 // Each edge stage is surfaced live. The callback runs on the worker thread; a synchronous
                 // Invoke marshals it onto the UI thread AND blocks the worker until the handler returns,
                 // which is what lets the optional per-stage modal pause the search until the user clicks OK.
                 StrategyPlan feasibleCompactPlan = await Task.Run(
-                    () => builder.BuildFeasibleCompactPlan(MarshalEdgeStage),
+                    () => builder.BuildGreedyTightenPlan(MarshalGreedyTightenStage),
                     cancellationToken);
                 _runStopwatch?.Stop();
 
@@ -683,7 +683,7 @@ class MainForm : Form
             // the incumbent and the displayed strategy; phase 2 is EdgeCompact. The exact plan is
             // MaxStep-optimal, so EdgeCompact only trims edges among equally optimal groups.
             Interlocked.Exchange(ref _activePhase, 1);
-            StrategyPlan defaultPlan = await Task.Run(() => builder.BuildDefaultPlan(), cancellationToken);
+            StrategyPlan defaultPlan = await Task.Run(() => builder.BuildStepProofPlan(), cancellationToken);
 
             _defaultPlan = defaultPlan;
             _feasiblePlan = defaultPlan;
@@ -704,7 +704,7 @@ class MainForm : Form
             Interlocked.Exchange(ref _activePhase, 2);
             _currentStageName = StrategyBuilder.FormatEdgeCompactStageName(defaultPlan.MaxStep);
             _stageStartMs = _runStopwatch?.ElapsedMilliseconds ?? 0;
-            StrategyPlan compactPlan = await Task.Run(() => builder.BuildCompactPlan(), cancellationToken);
+            StrategyPlan compactPlan = await Task.Run(() => builder.BuildEdgeCompactPlan(), cancellationToken);
             _runStopwatch?.Stop();
 
             _compactPlan = compactPlan;
@@ -865,7 +865,7 @@ class MainForm : Form
         if (compactPlan is null)
         {
             string firstStageName = defaultPlan is null
-                ? NextFeasibleCompactStageName(feasiblePlan, feasiblePlan.MaxStep)
+                ? NextProofTightenStageName(feasiblePlan, feasiblePlan.MaxStep)
                 : StrategyBuilder.FormatEdgeCompactStageName(feasiblePlan.MaxStep);
             root.Nodes.Add(new TreeNode(firstStageName + ComputingSuffix) { ForeColor = _palette.MutedForeColor });
         }
@@ -966,13 +966,13 @@ class MainForm : Form
     // Synchronous marshaling shim: BuildFeasibleCompactPlan invokes this on the worker thread once per
     // edge stage. Control.Invoke hops to the UI thread AND blocks the worker until OnGreedyEdgeStage
     // returns, so when the per-stage modal is enabled the search genuinely pauses until the user clicks OK.
-    private void MarshalEdgeStage(GreedyEdgeStage stage)
+    private void MarshalGreedyTightenStage(GreedyTightenStage stage)
     {
         if (!IsHandleCreated || IsDisposed)
             return;
         try
         {
-            Invoke(() => OnGreedyEdgeStage(stage));
+            Invoke(() => OnGreedyTightenStage(stage));
         }
         catch (ObjectDisposedException)
         {
@@ -989,7 +989,7 @@ class MainForm : Form
     // the proven analytic lower bound, otherwise the final "edge-compact@S" pass runs. Used to label
     // the transient "...: computing..." placeholder so it matches the stage name that actually lands
     // (proof-tightening stages surface as "proof-tighten<=N", the final min-edge pass as "edge-compact@S").
-    private static string NextFeasibleCompactStageName(StrategyPlan feasiblePlan, int incumbentMaxStep)
+    private static string NextProofTightenStageName(StrategyPlan feasiblePlan, int incumbentMaxStep)
     {
         int lower = Math.Max(1, feasiblePlan.SearchStatistics.RootProvenLowerBound);
         int nextBudget = incumbentMaxStep - 1;
@@ -1002,7 +1002,7 @@ class MainForm : Form
     // slot in place; every later stage is appended as a new tree + overview section, so the user watches
     // the strategy improve stage by stage. Each tree gets a unique scope ("edge0", "edge1", ...) so
     // their per-state navigation keys never collide.
-    private void OnGreedyEdgeStage(GreedyEdgeStage stage)
+    private void OnGreedyTightenStage(GreedyTightenStage stage)
     {
         if (_feasiblePlan is null || _treeView.Nodes.Count == 0)
             return;
@@ -1029,7 +1029,7 @@ class MainForm : Form
         string? nextStageName = !hasFollowUp
             ? null
             : stage.HasSolution
-                ? NextFeasibleCompactStageName(_feasiblePlan, stage.Plan!.MaxStep)
+                ? NextProofTightenStageName(_feasiblePlan, stage.Plan!.MaxStep)
             : StrategyBuilder.FormatEdgeCompactStageName(_feasiblePlan.MaxStep); // Phase A ended (no-solution/incomplete); only the edge-compaction pass remains
         string? probeComputingLabel = nextStageName is null ? null : nextStageName + ComputingSuffix;
 
@@ -1048,7 +1048,7 @@ class MainForm : Form
 
         // A proven-infeasible terminal (NoSolution, not a timeout) proves the incumbent is optimal:
         // close its squeeze (opt = incumbent.MaxStep) so the progression detail reports proven optimal.
-        if (stage.Outcome == GreedyEdgeStageOutcome.NoSolution)
+        if (stage.Outcome == GreedyTightenStageOutcome.NoSolution)
             MarkGreedyIncumbentProvenOptimal();
 
         StrategyPlan shown = _compactPlan ?? _feasiblePlan;
@@ -1115,8 +1115,8 @@ class MainForm : Form
             {
                 if (ReferenceEquals(_greedyEdgeStages[i].Plan, incumbent))
                 {
-                    GreedyEdgeStage s = _greedyEdgeStages[i];
-                    _greedyEdgeStages[i] = new GreedyEdgeStage(s.Name, proven, s.Elapsed, s.Outcome);
+                    GreedyTightenStage s = _greedyEdgeStages[i];
+                    _greedyEdgeStages[i] = new GreedyTightenStage(s.Name, proven, s.Elapsed, s.Outcome);
                     break;
                 }
             }
@@ -1128,14 +1128,14 @@ class MainForm : Form
         }
     }
 
-    private TreeNode BuildStageTreeNode(GreedyEdgeStage stage, string scope, bool improved)
+    private TreeNode BuildStageTreeNode(GreedyTightenStage stage, string scope, bool improved)
         => improved
             ? CreatePlanTreeRoot(stage.Name, stage.Plan!, scope, stage.Elapsed)
             : stage.HasSolution
                 ? CreateNoImprovementTreeRoot(stage.Name, stage.Plan!, stage.Elapsed)
                 : CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, NoSolutionMarker(stage));
 
-    private TreeNode BuildStageOverviewNode(GreedyEdgeStage stage, string scope, bool improved)
+    private TreeNode BuildStageOverviewNode(GreedyTightenStage stage, string scope, bool improved)
         => improved
             ? BuildOverviewSectionNode(stage.Plan!, scope, stage.Name, stage.Elapsed)
             : BuildOverviewNoteNode(FormatStageRootLabel(
@@ -1147,7 +1147,7 @@ class MainForm : Form
     // Leaf note for a solution-less stage: null means "no solution" (a proven-infeasible ceiling),
     // otherwise the reason the incumbent merely stands -- "search incomplete (candidate cap reached)"
     // (the greedy cap truncated the enumeration, so infeasibility is unproven).
-    private static string? NoSolutionMarker(GreedyEdgeStage stage)
+    private static string? NoSolutionMarker(GreedyTightenStage stage)
         => stage.Incomplete ? "search incomplete (candidate cap reached)"
             : null;
 
@@ -1180,7 +1180,7 @@ class MainForm : Form
     // Root-node detail text for greedy mode: the step plan followed by the full edge progression
     // (compact baseline -> each tightening -> any no-solution stage), so the detail pane mirrors the
     // stacked trees.
-    private static string BuildGreedyProgressionDetails(StrategyPlan stepPlan, List<GreedyEdgeStage> stages)
+    private static string BuildGreedyProgressionDetails(StrategyPlan stepPlan, List<GreedyTightenStage> stages)
     {
         var lines = new List<string>
         {
@@ -1188,7 +1188,7 @@ class MainForm : Form
             $"greedy-feasible: {FormatPlanSqueeze(stepPlan)}, total edges={stepPlan.TotalBranchEdges}",
         };
         StrategyPlan incumbent = stepPlan;
-        foreach (GreedyEdgeStage stage in stages)
+        foreach (GreedyTightenStage stage in stages)
         {
             if (stage.Plan is { } p)
             {
@@ -1274,7 +1274,7 @@ class MainForm : Form
         if (compactPlan is null)
         {
             string firstStageName = defaultPlan is null
-                ? NextFeasibleCompactStageName(feasiblePlan, feasiblePlan.MaxStep)
+                ? NextProofTightenStageName(feasiblePlan, feasiblePlan.MaxStep)
                 : StrategyBuilder.FormatEdgeCompactStageName(feasiblePlan.MaxStep);
             _overviewTree.Nodes.Add(BuildOverviewNoteNode(firstStageName + ComputingSuffix));
         }

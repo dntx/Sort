@@ -17,7 +17,7 @@ public sealed class RelabelingOrbitFoldingTests
     public void FeasiblePlan_N20M10K10_HasNoAutomorphismBackedSplits()
     {
         var builder = new StrategyBuilder(20, 10, 10);
-        StrategyPlan plan = builder.BuildFeasiblePlan();
+        StrategyPlan plan = builder.BuildGreedyFeasiblePlan();
 
         System.Collections.Generic.List<string> residual = builder.CheckPlanFalseSplits(plan);
 

@@ -8,7 +8,7 @@ using Xunit;
 // coverage in FeasiblePlanTests; this fixes the previously-untested edge path so the budget source
 // can never silently over-constrain the compact pass (returning an unsolvable sentinel) or emit a
 // plan that violates the U/opt bounds.
-public class FeasibleCompactPlanTests
+public class GreedyTightenPlanTests
 {
     // The edge pass must always produce a valid, fully-grouped strategy under the constructive U
     // budget -- never throw "no group fits the budget" -- and stay a feasible plan.
@@ -23,9 +23,9 @@ public class FeasibleCompactPlanTests
     [InlineData(12, 4, 4)]
     [InlineData(12, 5, 5)]
     [InlineData(9, 3, 3)]
-    public void FeasibleCompactPlan_IsValidStrategy(int n, int m, int k)
+    public void GreedyTightenPlan_IsValidStrategy(int n, int m, int k)
     {
-        StrategyPlan plan = new StrategyBuilder(n, m, k).BuildFeasibleCompactPlan();
+        StrategyPlan plan = new StrategyBuilder(n, m, k).BuildGreedyTightenPlan();
 
         Assert.True(plan.IsFeasibleUpperBound);
         Assert.True(plan.MaxStep > 0, "feasible compact plan should take at least one comparison");
@@ -41,11 +41,11 @@ public class FeasibleCompactPlanTests
     [InlineData(10, 5, 5)]
     [InlineData(12, 4, 4)]
     [InlineData(12, 5, 5)]
-    public void FeasibleCompactPlan_StepNeverExceedsFeasibleUpperBound(int n, int m, int k)
+    public void GreedyTightenPlan_StepNeverExceedsFeasibleUpperBound(int n, int m, int k)
     {
         var builder = new StrategyBuilder(n, m, k);
-        int stepU = builder.BuildFeasiblePlan().MaxStep;
-        int edgeStep = builder.BuildFeasibleCompactPlan().MaxStep;
+        int stepU = builder.BuildGreedyFeasiblePlan().MaxStep;
+        int edgeStep = builder.BuildGreedyTightenPlan().MaxStep;
 
         Assert.True(edgeStep <= stepU,
             $"feasible compact step {edgeStep} exceeded the feasible upper bound {stepU}");
@@ -62,8 +62,8 @@ public class FeasibleCompactPlanTests
     [InlineData(12, 4, 4)]
     public void FeasibleCompactPlan_StepNeverBelowOptimum(int n, int m, int k)
     {
-        int optimum = new StrategyBuilder(n, m, k).BuildDefaultPlan().MaxStep;
-        int edgeStep = new StrategyBuilder(n, m, k).BuildFeasibleCompactPlan().MaxStep;
+        int optimum = new StrategyBuilder(n, m, k).BuildStepProofPlan().MaxStep;
+        int edgeStep = new StrategyBuilder(n, m, k).BuildGreedyTightenPlan().MaxStep;
 
         Assert.True(edgeStep >= optimum,
             $"feasible compact step {edgeStep} was below the true optimum {optimum}");
@@ -78,8 +78,8 @@ public class FeasibleCompactPlanTests
     [Fact]
     public void FeasibleCompactPlan_CappedInfeasibility_IsIncomplete_NotProvenOptimal()
     {
-        GreedyEdgeStageOutcome cappedTerminal = TerminalOutcome(new StrategyBuilder(12, 4, 4), out StrategyPlan cappedPlan);
-        Assert.Equal(GreedyEdgeStageOutcome.Incomplete, cappedTerminal);
+        GreedyTightenStageOutcome cappedTerminal = TerminalOutcome(new StrategyBuilder(12, 4, 4), out StrategyPlan cappedPlan);
+        Assert.Equal(GreedyTightenStageOutcome.Incomplete, cappedTerminal);
         Assert.True(
             cappedPlan.SearchStatistics.RootProvenLowerBound < cappedPlan.MaxStep,
             "a cap-truncated (incomplete) probe must not close the squeeze to a proven optimum");
@@ -89,8 +89,8 @@ public class FeasibleCompactPlanTests
     public void FeasibleCompactPlan_CompleteInfeasibility_IsProvenOptimal()
     {
         var builder = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 2_000_000 };
-        GreedyEdgeStageOutcome terminal = TerminalOutcome(builder, out StrategyPlan plan);
-        Assert.Equal(GreedyEdgeStageOutcome.NoSolution, terminal);
+        GreedyTightenStageOutcome terminal = TerminalOutcome(builder, out StrategyPlan plan);
+        Assert.Equal(GreedyTightenStageOutcome.NoSolution, terminal);
         Assert.Equal(plan.MaxStep, plan.SearchStatistics.RootProvenLowerBound);
     }
 
@@ -107,7 +107,7 @@ public class FeasibleCompactPlanTests
         var startedStages = new List<string>();
         var solvedStages = new List<string>();
 
-        StrategyPlan plan = new StrategyBuilder(12, 4, 4).BuildFeasibleCompactPlan(
+        StrategyPlan plan = new StrategyBuilder(12, 4, 4).BuildGreedyTightenPlan(
             onStage: stage => { if (stage.HasSolution) solvedStages.Add(stage.Name); },
             onStageStart: name => startedStages.Add(name));
 
@@ -146,10 +146,10 @@ public class FeasibleCompactPlanTests
 
     // Runs the greedy edge progression and returns the outcome of its final solution-less stage (the terminal
     // NoSolution / Incomplete), or Solution if the progression never bottomed out.
-    private static GreedyEdgeStageOutcome TerminalOutcome(StrategyBuilder builder, out StrategyPlan plan)
+    private static GreedyTightenStageOutcome TerminalOutcome(StrategyBuilder builder, out StrategyPlan plan)
     {
-        var terminal = GreedyEdgeStageOutcome.Solution;
-        plan = builder.BuildFeasibleCompactPlan(stage =>
+        var terminal = GreedyTightenStageOutcome.Solution;
+        plan = builder.BuildGreedyTightenPlan(stage =>
         {
             if (!stage.HasSolution)
                 terminal = stage.Outcome;

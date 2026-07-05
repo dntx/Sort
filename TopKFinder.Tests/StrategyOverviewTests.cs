@@ -11,7 +11,7 @@ public sealed class StrategyOverviewTests
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
             $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k})",
             OverviewTestTimeout,
-            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildDefaultPlan());
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildStepProofPlan());
         return StrategyOverviewRenderer.Build(plan);
     }
 
@@ -70,7 +70,7 @@ public sealed class StrategyOverviewTests
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
             "StrategyBuilder.BuildDefaultPlan(25, 5, 3)",
             OverviewTestTimeout,
-            cancellationToken => new StrategyBuilder(25, 5, 3, cancellationToken).BuildDefaultPlan());
+            cancellationToken => new StrategyBuilder(25, 5, 3, cancellationToken).BuildStepProofPlan());
 
         var stateIds = CollectStateIds(plan.Root).ToHashSet();
         foreach (OverviewRow row in StrategyOverviewRenderer.Build(plan).Rows)

@@ -95,7 +95,7 @@ sealed class StrategyPlan
 // finished and found no feasible strategy, but the greedy candidate cap truncated the group enumeration
 // on some state, so "no group fit" is NOT a proof that none exists -- it leaves the squeeze open (no
 // proven-optimal claim).
-enum GreedyEdgeStageOutcome
+enum GreedyTightenStageOutcome
 {
     Solution,
     NoSolution,
@@ -107,10 +107,10 @@ enum GreedyEdgeStageOutcome
 // no solution. Name is the stage label (e.g. "edge-compact@5", "proof-tighten<=4"); Plan is the materialized
 // strategy, or null for the NoSolution/Incomplete outcomes. Elapsed is the stage's own wall time,
 // not a cumulative total.
-readonly struct GreedyEdgeStage
+readonly struct GreedyTightenStage
 {
-    public GreedyEdgeStage(string name, StrategyPlan? plan, TimeSpan elapsed,
-        GreedyEdgeStageOutcome outcome = GreedyEdgeStageOutcome.Solution)
+    public GreedyTightenStage(string name, StrategyPlan? plan, TimeSpan elapsed,
+        GreedyTightenStageOutcome outcome = GreedyTightenStageOutcome.Solution)
     {
         Name = name;
         Plan = plan;
@@ -121,17 +121,17 @@ readonly struct GreedyEdgeStage
     public string Name { get; }
     public StrategyPlan? Plan { get; }
     public TimeSpan Elapsed { get; }
-    public GreedyEdgeStageOutcome Outcome { get; }
+    public GreedyTightenStageOutcome Outcome { get; }
     public bool HasSolution => Plan is not null;
 
     // A completed probe whose infeasibility verdict is not a proof because the greedy candidate cap
     // truncated the group enumeration: it leaves the incumbent standing without closing the squeeze to a
     // proven optimum.
-    public bool Incomplete => Outcome == GreedyEdgeStageOutcome.Incomplete;
+    public bool Incomplete => Outcome == GreedyTightenStageOutcome.Incomplete;
 
     // True only for a completed, complete-enumeration probe that proved the ceiling infeasible: the one
     // outcome that certifies the incumbent optimal and closes the squeeze.
-    public bool ProvesOptimal => Outcome == GreedyEdgeStageOutcome.NoSolution;
+    public bool ProvesOptimal => Outcome == GreedyTightenStageOutcome.NoSolution;
 }
 
 sealed class SearchMilestone

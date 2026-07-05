@@ -117,7 +117,7 @@ partial class StrategyBuilder
         _progressScope = ProgressScope.DefaultStandalone;
     }
 
-    public StrategyPlan BuildDefaultPlan()
+    public StrategyPlan BuildStepProofPlan()
     {
         _progressScope = _reportCombinedRunProgress
             ? ProgressScope.DefaultInCombinedRun
@@ -125,7 +125,7 @@ partial class StrategyBuilder
         return BuildPlan(useCompactSelection: false);
     }
 
-    public StrategyPlan BuildCompactPlan()
+    public StrategyPlan BuildEdgeCompactPlan()
     {
         // Returns the raw compact candidate: the compact DP keeps the optimal worst-case step count
         // (so MaxStep always matches default) and, among equally-optimal groups, minimizes a per-state
@@ -160,8 +160,8 @@ partial class StrategyBuilder
     // ("edge-compact@S"). This drives an anytime UI/CLI that surfaces the full progression as it is found; a
     // user who no longer wants to wait cancels (GUI Stop / CLI Ctrl+C), which propagates out with the
     // best plan found so far already surfaced via onStage.
-    public StrategyPlan BuildFeasibleCompactPlan(
-        Action<GreedyEdgeStage>? onStage = null,
+    public StrategyPlan BuildGreedyTightenPlan(
+        Action<GreedyTightenStage>? onStage = null,
         Action<string>? onStageStart = null)
     {
         _progressScope = _reportCombinedRunProgress
@@ -174,7 +174,7 @@ partial class StrategyBuilder
         // establish it here. BuildFeasiblePlan deliberately does not clear _feasibleRootBudget, so this
         // never double-builds when the caller already ran the step phase.
         if (_feasibleRootBudget < 0)
-            BuildFeasiblePlan();
+            BuildGreedyFeasiblePlan();
 
         int U = _feasibleRootBudget;
         int provenLowerBound = Math.Max(1, _rootProvenLowerBound);
@@ -202,11 +202,11 @@ partial class StrategyBuilder
                     // the ceiling is proven infeasible, so bestStep is optimal: raise the proven lower
                     // bound to budget+1 (== bestStep) to close the L <= opt <= U squeeze.
                     var outcome = _lastProbeEnumerationCapped
-                        ? GreedyEdgeStageOutcome.Incomplete
-                        : GreedyEdgeStageOutcome.NoSolution;
-                    if (outcome == GreedyEdgeStageOutcome.NoSolution)
+                        ? GreedyTightenStageOutcome.Incomplete
+                        : GreedyTightenStageOutcome.NoSolution;
+                    if (outcome == GreedyTightenStageOutcome.NoSolution)
                         RecordRootProvenLowerBound(budget + 1);
-                    onStage?.Invoke(new GreedyEdgeStage(stageName, null, probeStopwatch.Elapsed, outcome));
+                    onStage?.Invoke(new GreedyTightenStage(stageName, null, probeStopwatch.Elapsed, outcome));
                     break;
                 }
 
@@ -218,7 +218,7 @@ partial class StrategyBuilder
                     break;
 
                 bestStep = candidate.MaxStep;
-                onStage?.Invoke(new GreedyEdgeStage(stageName, candidate, probeStopwatch.Elapsed));
+                onStage?.Invoke(new GreedyTightenStage(stageName, candidate, probeStopwatch.Elapsed));
                 budget = bestStep - 1; // realized max-step may already be below the attempted ceiling
             }
         }
@@ -236,7 +236,7 @@ partial class StrategyBuilder
         if (edgePlan is not null)
         {
             edgePlan = edgePlan.WithRootProvenLowerBound(_rootProvenLowerBound);
-            onStage?.Invoke(new GreedyEdgeStage(edgeCompactStageName, edgePlan, edgeStopwatch.Elapsed));
+            onStage?.Invoke(new GreedyTightenStage(edgeCompactStageName, edgePlan, edgeStopwatch.Elapsed));
             return edgePlan;
         }
 
