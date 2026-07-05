@@ -109,9 +109,10 @@ S{id} [step x/y] sort(...)    decision state: do this sort at step x of at most 
 
 ==================== strategy ====================
 S1 [step 1/3] sort(#1, #2, #3)
-  #1 > #2 > #3: [- (#3), possible (#1, #2, #4, #5)]
-    equivalent forms: 6 = 3!
-    pattern: permute {#1, #2, #3}
+  #1 > #2 > #3  (×6 = 3!)
+    pattern: {#1, #2, #3}
+    - (#3)
+    possible (#1, #2, #4, #5)
     S2 [step 2/3] sort(#1, #4, #5)
       ...
 ```
@@ -119,9 +120,14 @@ S1 [step 1/3] sort(#1, #2, #3)
 The output is grouped into four banner-delimited sections: a **summary**
 (parameters and the worst-case number of sorts), **diagnostics** (search
 telemetry), a **legend** explaining the notation, and the **strategy** tree
-itself. The CLI runs the step stage first and then the edge refinement
-automatically: if the edge stage improves output-state count, both trees are
-printed; otherwise only the step tree is printed.
+itself. Each branch renders as a header line — the revealed order followed by
+`(×N = formula)` when it stands for `N` symmetric orderings — then indented
+child lines: a `pattern:` shape line and one line per non-empty effect
+(`+ / - / fixed / possible`). This layout is shared by the CLI text output and
+the desktop UI tree so both read identically. The CLI runs the step stage first
+and then the edge refinement automatically: if the edge stage improves
+output-state count, both trees are printed; otherwise only the step tree is
+printed.
 
 ### Desktop UI details
 
@@ -152,10 +158,10 @@ bound.
 ### Overview
 Greedy mode is feasibility-first: it finds a valid solution fast, tightens its worst-case step count, then minimizes edges once at the final step. It never proves optimality by exhaustive search, but is fast and interruptible (Ctrl+C in the CLI, Stop in the GUI) — cancelling always surfaces the best plan found so far.
 
-- **Greedy (feasible)**: a constructive greedy pass finds an initial feasible solution and its step upper bound `U`.
+- **Greedy-feasible**: a constructive greedy pass finds an initial feasible solution and its step upper bound `U` (emitted as the `greedy-feasible` stage).
 - **Cheap lookahead selector**: each greedy step scores a bounded set of constructive candidate groups by a cheap immediate-outcome heuristic (lower worst-case lower bound first, then smaller active-set spread), rather than by recursive rollout.
-- **Tightening (feasible≤N)**: feasibility-only compact probes at ceilings `U-1, U-2, …` drive the worst-case step count down to the smallest feasible step `S`. These probes skip edge counting entirely; each successful one is reported as a `feasible≤N` stage.
-- **Compact (min-edge)**: a single min-edge compact pass runs at the determined step `S`, minimizing edge count without changing the step count.
+- **Tightening (proof-tighten≤N)**: feasibility-only compact probes at ceilings `U-1, U-2, …` drive the worst-case step count down to the smallest feasible step `S`. These probes skip edge counting entirely; each successful one is reported as a `proof-tighten≤N` stage.
+- **Edge-compact (min-edge)**: a single min-edge compact pass runs at the determined step `S`, minimizing edge count without changing the step count (emitted as the `edge-compact@S` stage).
 
 Doing min-edge only once, at the final step, avoids repeatedly computing edge counts at intermediate ceilings that tightening later discards. If a ceiling is *proven* infeasible (complete enumeration, no candidate cap truncation), the incumbent is proven optimal and the squeeze closes to `max steps = S (proven optimal)`.
 

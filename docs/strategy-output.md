@@ -43,15 +43,30 @@
 | `PatternText` | 形状本身 | `#2 > #3 > {#6, #10}` |
 | `Legend` | 占位符图例，**仅 doomed-tail 边可能非空** | `A = {#6, #10}` |
 
-文本渲染由 `StrategyTextRenderer` 完成（`StrategyTextRenderer.cs`）：
+文本渲染由 `StrategyTextRenderer` 完成（`StrategyTextRenderer.cs`），CLI 输出的结构**与 GUI
+树视图（`MainForm.cs`）逐行对齐**——一条分支渲染成一个表头行加若干缩进子行：
 
 ```
-equivalent forms: {Count} = {CountFormula}        // FormatEquivalentFormsSummary
-pattern: {PatternText}                             // FormatEquivalentPatternLine，Legend 为空时
-pattern: {PatternText} ; {Legend}                  // FormatEquivalentPatternLine，Legend 非空时
+{OrderText}  (×{Count} = {CountFormula})           // 分支表头：排序链 + 等价计数（FormatBranchHeader）
+    pattern: {PatternText}                          // 形状子行（Legend 为空时，WriteEquivalentPatternOnly）
+    pattern: {PatternText} ; {Legend}               // 形状子行（Legend 非空时）
+    + (...)                                         // 每个非空 effect 各占一行（WriteEffectEntries）
+    - (...)
+    fixed (...)
+    possible (...)
 ```
 
-即 **legend 不另起一行，而是用 ` ; ` 接在 pattern 行尾**，让全树每条占位符 pattern 读起来格式一致。
+要点：
+
+- **计数不再单独占一行**（旧的 `equivalent forms: N = F` 行已移除），而是以 `(×N = F)` 的形式
+  内联在分支表头 `OrderText` 之后——与 GUI 表头一致。当分支只代表 1 个排序（`EquivalentOrders` 为
+  `null`）时，表头不带 `(×...)` 后缀，也不打印 `pattern:` 子行。
+- **legend 不另起一行，而是用 ` ; ` 接在 pattern 行尾**，让全树每条占位符 pattern 读起来格式一致。
+- **effect 拆成逐行**：`+ / - / fixed / possible` 四类各自成行（空集省略），取代旧的行内
+  `[+ ..., - ..., fixed ..., possible ...]` 方括号写法——同样是为对齐 GUI 的每效果一行布局。
+
+> 下文 §4 起的示例片段为聚焦「形状」本身，仍以 `equivalent forms: N = F` 单独一行展示计数/公式；
+> 请对照理解：该数值在实际 CLI/GUI 输出里内联于分支表头，写作 `(×N = F)`。
 
 ---
 

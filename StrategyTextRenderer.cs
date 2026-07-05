@@ -66,7 +66,7 @@ static class StrategyTextRenderer
             ("#i ~ #j", "items #i through #j inclusive (a run of 4+ consecutive items)"),
             ("S{id} [step x/y] sort(...)", "decision state: do this sort at step x of at most y"),
             ("a > b > c", "the sort revealed a ranks above b above c"),
-            ("equivalent forms: N = ...", "this branch stands for N symmetric orderings (e.g. 3! = 6)"),
+            ("a > b > c  (×N = ...)", "this branch stands for N symmetric orderings (e.g. ×6 = 3!)"),
             ("pattern: ...", "shape of those orderings; \"{...}\" = any order, \"A = {...}\" names a split block (members A1, A2 ...)"),
             ("S{id}: top k = (...)", "solved: the top-k set is fully determined"),
             ("→S{id} (+N steps) [map: ...]", "reuse state S{id}'s subtree (N more sorts); [map] relabels referenced→current"),
@@ -77,7 +77,7 @@ static class StrategyTextRenderer
             writer.WriteLine($"{token.PadRight(width)}  {description}");
 
         writer.WriteLine();
-        writer.WriteLine("[+ ..., - ..., fixed ..., possible ...]   effect after an outcome (empty entries are omitted):");
+        writer.WriteLine("+ ..., - ..., fixed ..., possible ...   per-outcome effect rows (empty rows are omitted):");
         writer.WriteLine("     +         newly guaranteed into the top-k");
         writer.WriteLine("     -         newly excluded from the top-k");
         writer.WriteLine("     fixed     already locked into the top-k");
@@ -127,23 +127,10 @@ static class StrategyTextRenderer
 
                 foreach (var branch in node.Branches)
                 {
-                    string effect = FormatEffect(branch.Effect);
-                    if (branch.Next.Kind == StrategyNodeKind.Decision)
-                    {
-                        writer.WriteLine($"{prefix}  {branch.OrderText}: {effect}");
-                        WriteEquivalentOrders(branch, writer, indent + 2);
-                        RenderNode(branch.Next, k, writer, indent + 2, depthIndex);
-                    }
-                    else if (branch.Next.Kind == StrategyNodeKind.Terminal)
-                    {
-                        writer.WriteLine($"{prefix}  {branch.OrderText}: {effect} S{branch.Next.StateId}: top {k} = ({FormatSet(branch.Next.TopSet)})");
-                        WriteEquivalentOrders(branch, writer, indent + 2);
-                    }
-                    else
-                    {
-                        writer.WriteLine($"{prefix}  {branch.OrderText}: {effect} {FormatReference(branch.Next, depthIndex)}");
-                        WriteEquivalentOrders(branch, writer, indent + 2);
-                    }
+                    writer.WriteLine($"{prefix}  {FormatBranchHeader(branch)}");
+                    WriteEquivalentPatternOnly(branch, writer, indent + 2);
+                    WriteEffectEntries(branch.Effect, writer, indent + 2);
+                    RenderNode(branch.Next, k, writer, indent + 2, depthIndex);
                 }
 
                 return;
@@ -194,6 +181,17 @@ static class StrategyTextRenderer
         return $"[{string.Join(", ", parts)}]";
     }
 
+    public static string FormatBranchLead(StrategyBranch branch)
+        => $"{branch.OrderText}: {FormatEffect(branch.Effect)}";
+
+    public static string FormatBranchHeader(StrategyBranch branch)
+    {
+        string header = branch.OrderText;
+        if (branch.EquivalentOrders is not null)
+            header += $"  (×{branch.EquivalentOrders.Count} = {branch.EquivalentOrders.CountFormula})";
+        return header;
+    }
+
     public static string FormatInEntry(IEnumerable<int> items) => $"{InLabel} {FormatOptionalSet(items)}";
 
     public static string FormatOutEntry(IEnumerable<int> items) => $"{OutLabel} {FormatOptionalSet(items)}";
@@ -226,6 +224,28 @@ static class StrategyTextRenderer
         string prefix = new string(' ', indent * 2);
         writer.WriteLine($"{prefix}{FormatEquivalentFormsSummary(branch.EquivalentOrders)}");
         writer.WriteLine($"{prefix}{FormatEquivalentPatternLine(branch.EquivalentOrders)}");
+    }
+
+    private static void WriteEquivalentPatternOnly(StrategyBranch branch, TextWriter writer, int indent)
+    {
+        if (branch.EquivalentOrders is null)
+            return;
+
+        string prefix = new string(' ', indent * 2);
+        writer.WriteLine($"{prefix}{FormatEquivalentPatternLine(branch.EquivalentOrders)}");
+    }
+
+    private static void WriteEffectEntries(StrategyEffect effect, TextWriter writer, int indent)
+    {
+        string prefix = new string(' ', indent * 2);
+        if (effect.NewlyGuaranteedTop.Count > 0)
+            writer.WriteLine($"{prefix}{FormatInEntry(effect.NewlyGuaranteedTop)}");
+        if (effect.NewlyExcluded.Count > 0)
+            writer.WriteLine($"{prefix}{FormatOutEntry(effect.NewlyExcluded)}");
+        if (effect.FixedCandidates.Count > 0)
+            writer.WriteLine($"{prefix}{FormatFixedEntry(effect.FixedCandidates)}");
+        if (effect.PossibleCandidates.Count > 0)
+            writer.WriteLine($"{prefix}{FormatPossibleEntry(effect.PossibleCandidates)}");
     }
 
     private static string FormatCompressedFinalChoice(FinalChoiceSummary summary, int k)
