@@ -335,6 +335,11 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
 > 会**少算**真实最坏步数（例如 greedy-feasible `6,2,2`：真实 7、少算成 6，使可行上界假性低于最优）。这条对所有计划
 > （exact / compact / feasible）都成立，回归见 `MaxStepReferenceDepthTests`。
 
+> **显示树结构异常时会 fail-fast**：`Reference` 本应只指向一个已展开的无环子树；若因显示 key 复用/重标号等异常导致出现
+> `Reference` 解析环（例如 A 的引用链又回到 A），`GetMaxStep` 会抛 `InvalidOperationException`（malformed strategy tree），
+> 而不是静默给出数值。这样可以避免无限递归/栈溢出，并尽早暴露上游构树错误。相关回归见
+> `MaxStepReferenceDepthTests.MaxStep_ThrowsOnReferenceCycle`。
+
 
 - **1-ply 前瞻收紧 `U`**（`ChooseConstructiveGroupLookahead`）：纯贪心反链每步只看「本步信息量最大」，会偏爱**全新孤立项**
   （与一切互不可比、关系最少），因而催生互不相连的多条链，事后合并代价高；而更优的走法常常是**跨边界桥接**（把边界项
