@@ -33,4 +33,33 @@ public class MaxStepReferenceDepthTests
         Assert.True(feasible >= optimum,
             $"feasible upper bound {feasible} was below the true optimum {optimum} for ({n},{m},{k})");
     }
+
+    // Guards termination of the reference-resolving MaxStep computation. Display-key normalization +
+    // relabeling can make two references point at each other (A's subtree references B, B's references
+    // A) even though the underlying search is acyclic; a naive reference-resolving MaxStep recurses
+    // forever and StackOverflows on such shapes (not caught by the fixed cases above). This sweep over
+    // reference-dense m=2 shapes forces GetMaxStep to run on those trees: without the cycle guard it
+    // does not terminate (the test process aborts); with it, every plan builds and stays sound.
+    [Theory]
+    [InlineData(6, 2, 1)]
+    [InlineData(6, 2, 2)]
+    [InlineData(6, 2, 3)]
+    [InlineData(7, 2, 2)]
+    [InlineData(7, 2, 3)]
+    [InlineData(8, 2, 2)]
+    [InlineData(8, 2, 3)]
+    [InlineData(8, 2, 4)]
+    [InlineData(9, 2, 2)]
+    [InlineData(9, 2, 3)]
+    [InlineData(9, 2, 4)]
+    public void MaxStep_TerminatesAndStaysSound_ReferenceDenseShapes(int n, int m, int k)
+    {
+        int optimum = new StrategyBuilder(n, m, k).BuildStepProofPlan().MaxStep;
+        int feasible = new StrategyBuilder(n, m, k).BuildGreedyFeasiblePlan().MaxStep;
+        int tightened = new StrategyBuilder(n, m, k).BuildGreedyTightenPlan().MaxStep;
+
+        Assert.True(feasible > 0 && tightened > 0);
+        Assert.True(feasible >= optimum, $"feasible {feasible} < opt {optimum} for ({n},{m},{k})");
+        Assert.True(tightened >= optimum, $"tightened {tightened} < opt {optimum} for ({n},{m},{k})");
+    }
 }

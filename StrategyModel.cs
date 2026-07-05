@@ -78,7 +78,8 @@ sealed class StrategyPlan
         var referenceTargets = new Dictionary<int, StrategyNode>();
         IndexReferenceTargets(root, referenceTargets);
         return StepsToResolve(root, referenceTargets,
-            new Dictionary<StrategyNode, int>(ReferenceEqualityComparer.Instance));
+            new Dictionary<StrategyNode, int>(ReferenceEqualityComparer.Instance),
+            new HashSet<StrategyNode>(ReferenceEqualityComparer.Instance));
     }
 
     // Records every genuinely-expanded decision state (Branches > 0) by its StateId. Final-choice
@@ -93,13 +94,20 @@ sealed class StrategyPlan
     }
 
     // Worst-case additional sorts from `node` down to a resolved top set, resolving Reference nodes
-    // through their target subtree. Memoized by node identity; the underlying state graph is acyclic
-    // (references point to equally-or-more-resolved states), so the recursion terminates.
+    // through their target subtree. Memoized by node identity. Display-key normalization + relabeling
+    // can make two references point at each other (A's subtree references B, B's references A) even
+    // though the underlying search is acyclic and every actual play is finite; resolving such a display
+    // cycle by naive expansion would not terminate. The `visiting` set breaks any such cycle (a
+    // re-entered node contributes 0), which is exact for the common acyclic case and guarantees
+    // termination otherwise.
     private static int StepsToResolve(
-        StrategyNode node, Dictionary<int, StrategyNode> targets, Dictionary<StrategyNode, int> memo)
+        StrategyNode node, Dictionary<int, StrategyNode> targets, Dictionary<StrategyNode, int> memo,
+        HashSet<StrategyNode> visiting)
     {
         if (memo.TryGetValue(node, out int cached))
             return cached;
+        if (!visiting.Add(node))
+            return 0; // break a reference display-cycle; this path is counted along its other branch
 
         int result;
         switch (node.Kind)
@@ -109,7 +117,7 @@ sealed class StrategyPlan
                 break;
             case StrategyNodeKind.Reference:
                 result = targets.TryGetValue(node.StateId, out StrategyNode? target)
-                    ? StepsToResolve(target, targets, memo)
+                    ? StepsToResolve(target, targets, memo, visiting)
                     : 0;
                 break;
             default: // Decision
@@ -119,12 +127,13 @@ sealed class StrategyPlan
                 {
                     int maxChild = 0;
                     foreach (StrategyBranch branch in node.Branches)
-                        maxChild = Math.Max(maxChild, StepsToResolve(branch.Next, targets, memo));
+                        maxChild = Math.Max(maxChild, StepsToResolve(branch.Next, targets, memo, visiting));
                     result = 1 + maxChild;
                 }
                 break;
         }
 
+        visiting.Remove(node);
         memo[node] = result;
         return result;
     }
