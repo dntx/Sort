@@ -20,7 +20,16 @@ partial class StrategyBuilder
     // lean-depth DP and the materializing ChooseGroup route use the override instead of the
     // constructive selector; absent keys fall back to the same ChooseConstructiveGroup that the
     // greedy-feasible baseline uses (so an empty override map reproduces greedy-feasible exactly).
+    //
+    // The group is stored in the label space of the concrete ANCHOR state it was committed on (kept in
+    // _greedyTightenOverrideAnchors under the same key). Because the key is the canonical isomorphism
+    // class, one entry is shared by every concrete relabeling in the class; CurrentGreedyTightenGroup
+    // relabels the stored group onto the concrete state via the poset isomorphism before use. This
+    // keeps GreedyTightenHeight (memoized by the canonical key) consistent across isomorphic states --
+    // applying a concrete group literally to a sibling labeling would otherwise yield a different
+    // subtree height and corrupt the shared height memo.
     private readonly Dictionary<SearchStateKey, List<int>> _greedyTightenOverrides = new();
+    private readonly Dictionary<SearchStateKey, ComparisonState> _greedyTightenOverrideAnchors = new();
     private readonly Dictionary<SearchStateKey, int> _greedyTightenSharedHeightMemo = new();
     private bool _useGreedyTightenSelection;
 
@@ -90,6 +99,7 @@ partial class StrategyBuilder
     private void RunGreedyTighten()
     {
         _greedyTightenOverrides.Clear();
+        _greedyTightenOverrideAnchors.Clear();
         _greedyTightenRounds = 0;
         _greedyTightenCommits = 0;
         _greedyTightenStatesVisited = 0;
@@ -228,6 +238,7 @@ partial class StrategyBuilder
             if (candidateHeight < height)
             {
                 _greedyTightenOverrides[key] = new List<int>(candidate);
+                _greedyTightenOverrideAnchors[key] = state.Clone();
                 _greedyTightenCommits++;
                 _greedyTightenCommitCandidateRankSum += candidateRank;
                 IncrementGreedyTightenDepthHistogram(_greedyTightenCommitDepthHistogram, depth);
@@ -305,11 +316,47 @@ partial class StrategyBuilder
     }
 
     // The comparison group GreedyTighten currently uses at a state: the committed override if present,
-    // otherwise the same constructive selector as the greedy-feasible baseline.
+    // otherwise the same constructive selector as the greedy-feasible baseline. The override group is
+    // stored in its anchor state's label space, so it is relabeled onto this concrete `state` via the
+    // poset isomorphism first (see the _greedyTightenOverrides field note for why this is required).
     private List<int> CurrentGreedyTightenGroup(ComparisonState state, int remainingSlots, SearchStateKey key)
-        => _greedyTightenOverrides.TryGetValue(key, out List<int>? overrideGroup)
-            ? overrideGroup
-            : ChooseConstructiveGroup(state, remainingSlots);
+    {
+        if (!_greedyTightenOverrides.TryGetValue(key, out List<int>? overrideGroup))
+            return ChooseConstructiveGroup(state, remainingSlots);
+
+        if (_greedyTightenOverrideAnchors.TryGetValue(key, out ComparisonState? anchor))
+        {
+            List<int>? relabeled = RelabelOverrideGroup(anchor, state, overrideGroup);
+            if (relabeled is not null)
+                return relabeled;
+        }
+
+        // Defensive fallback: an override whose anchor cannot be relabeled onto this labeling cannot be
+        // applied safely (this should not happen for two states sharing a canonical key), so use the
+        // always-valid constructive selector rather than a mislabeled group.
+        return ChooseConstructiveGroup(state, remainingSlots);
+    }
+
+    // Translates an override group from the anchor state's label space into `state`'s labels using the
+    // poset isomorphism between the two (they share a canonical SearchStateKey, so one exists). Returns
+    // null only if no isomorphism is found. Items unchanged by the relabeling map to themselves.
+    private static List<int>? RelabelOverrideGroup(ComparisonState anchor, ComparisonState state, List<int> anchorGroup)
+    {
+        IReadOnlyList<ItemRelabel>? relabeling = anchor.TryBuildDisplayRelabeling(0, state, 0);
+        if (relabeling is null)
+            return null;
+
+        var map = new Dictionary<int, int>(relabeling.Count);
+        foreach (ItemRelabel relabel in relabeling)
+            map[relabel.ReferencedItem] = relabel.CurrentItem;
+
+        var translated = new List<int>(anchorGroup.Count);
+        foreach (int item in anchorGroup)
+            translated.Add(map.TryGetValue(item, out int mapped) ? mapped : item);
+
+        translated.Sort();
+        return translated;
+    }
 
     private static bool SameGroupSequence(List<int> a, List<int> b)
     {
