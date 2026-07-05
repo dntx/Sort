@@ -376,7 +376,7 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     因此收紧循环以**物化 `MaxStep` 为地面真值**设了守卫：
     只接受 `MaxStep` **严格更小**的候选，任何未变优的结果一律停止收紧、绝不据此把天花板抬回 `MaxStep−1`（否则会在
     `U−1 → 更大` 之间反复震荡且再也停不下来）。由于真正被采纳的可行解永远不可能优于真实 `opt`，所以 `opt−1` 必然不可行——这保证收紧后的
-    `S` 仍满足 `S ≥ opt`、绝不会假性低于最优（见 `FeasibleCompactPlanTests`）。每次重跑前用
+    `S` 仍满足 `S ≥ opt`、绝不会假性低于最优（见 `ProofTightenPlanTests`）。每次重跑前用
     `ResetCompactSelectionState` 清掉 compact 专属缓存（`_compactGroupPatternCache` / `_compactCostMemo` /
     `_compactRealStepsMemo` / `_phase1bSolved`），让搜索在新的天花板下重新求解；跨阶段的 `_rootProvenLowerBound`
     则**刻意保留**，使收紧后的 compact 计划仍带着 `L`。**当某个预算 `N` 被证明不可行时**，把 `_rootProvenLowerBound`
@@ -391,7 +391,7 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     `NoSolution`、提升 `L`、闭合挤压；**发生过截断**则改发 `Incomplete` 终止阶段——像超时一样保留 incumbent、**不**提升 `L`、
     **不**声称已证明最优（挤压保持 `L <= max steps <= S` 开区间）。误差方向是单边保守的：截断只会导致 `Incomplete`（漏证最优），
     绝不会假性宣称最优；incumbent 计划本身始终是合法可达的策略。实测 `12,4,4` / `13,4,4` 在默认帽子下于 `proof-tighten≤(opt-1)` 处
-    截断而报 `Incomplete`，把帽子放大到完整枚举则翻回 `NoSolution` 证明（见 `FeasibleCompactPlanTests`）。
+    截断而报 `Incomplete`，把帽子放大到完整枚举则翻回 `NoSolution` 证明（见 `ProofTightenPlanTests`）。
     **无时间上限**：收紧循环只在触达 `L`、证明 `NoSolution`、遇到 `Incomplete`、候选未变优、或**用户取消**时停止。
     早先版本设过一个「软时间预算」（`max(2000ms, 基线×4)`）让 CLI 能自行停下，但其唯一目的就是「到点停」，不如让搜索
     跑到底、由用户在等够时手动停（GUI 的 Stop / CLI 的 Ctrl+C），故已整体移除。用户取消经由 `ThrowIfCancellationRequested`
@@ -411,7 +411,7 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     上一 `proof-tighten≤S` 阶段相同、无法再降边，见 `20,5,5`）记录下来、标 **`no improvement`**，但只渲染成一行注记、不画那棵重复的树；
     收紧**仍照常继续**（下一个天花板由步数决定）。收到 **`no solution`（证明不可行）** 终止时，编排层把当前
     incumbent 计划用 `WithRootProvenLowerBound(incumbent.MaxStep)` 闭合挤压（CLI 改写 `finalPlan`；GUI 走
-    `MarkGreedyIncumbentProvenOptimal`，同时改写 `_compactPlan`/`_feasiblePlan` 与 `_greedyEdgeStages` 里对应那一项），
+    `MarkGreedyIncumbentProvenOptimal`，同时改写 `_compactPlan`/`_feasiblePlan` 与 `_proofTightenStages` 里对应那一项），
     于是详情面板显示 `max steps = S (proven optimal)`；**`search incomplete (candidate cap reached)`**
     （即 `Incomplete`）终止则只标注、不闭合（文案强调是帽子截断导致的「没算完」，属「未证明」）。**CLI 与 GUI 在此分道**：CLI 是批处理工具，逐棵打印中间树
     太啰嗦，故只收集各阶段、打印一行
