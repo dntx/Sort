@@ -24,7 +24,7 @@ public sealed class ProjectionOrbitMergeTests
             cancellationToken => new StrategyBuilder(n, m, k, cancellationToken)
             {
                 EnableProjectionOrbitMerging = projectionMerging,
-            }.BuildDefaultPlan());
+            }.BuildStepProofPlan());
         return (plan, StrategyTextRenderer.Render(plan));
     }
 

@@ -57,7 +57,7 @@ public sealed class DominanceReuseStatsTests
                 builder = RunWithTimeout(caseTimeout, ct =>
                 {
                     var b = new StrategyBuilder(n, m, k, ct) { EnableDominanceMetric = true };
-                    b.BuildDefaultPlan();
+                    b.BuildStepProofPlan();
                     return b;
                 });
             }

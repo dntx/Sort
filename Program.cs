@@ -252,7 +252,7 @@ class Program
             // step ceiling when it can, and EdgeCompact minimizes edges at the final step.
             WriteStageStatus("stage greedy-feasible: started");
             var greedyStopwatch = System.Diagnostics.Stopwatch.StartNew();
-            StrategyPlan feasiblePlan = builder.BuildFeasiblePlan();
+            StrategyPlan feasiblePlan = builder.BuildGreedyFeasiblePlan();
             greedyStopwatch.Stop();
             WriteStageStatus($"stage greedy-feasible: steps={feasiblePlan.MaxStep}, " +
                 $"edges={feasiblePlan.TotalBranchEdges} ({greedyStopwatch.Elapsed.TotalSeconds:F2}s)");
@@ -270,11 +270,11 @@ class Program
             StrategyPlan incumbentPlan = feasiblePlan;
             string finalName = "greedy-feasible";
             StrategyPlan finalPlan = feasiblePlan;
-            void CollectEdgeStage(GreedyEdgeStage stage)
+            void CollectEdgeStage(GreedyTightenStage stage)
             {
                 if (!stage.HasSolution)
                 {
-                    if (stage.Outcome == GreedyEdgeStageOutcome.NoSolution)
+                    if (stage.Outcome == GreedyTightenStageOutcome.NoSolution)
                         {
                             // Proven infeasible at this ceiling (complete enumeration) => the incumbent is
                             // optimal (opt = incumbent.MaxStep). Close its squeeze so the final tree reports
@@ -319,7 +319,7 @@ class Program
             bool interrupted = false;
             try
             {
-                builder.BuildFeasibleCompactPlan(CollectEdgeStage, StartEdgeStage);
+                builder.BuildGreedyTightenPlan(CollectEdgeStage, StartEdgeStage);
             }
             catch (OperationCanceledException)
             {
@@ -354,7 +354,7 @@ class Program
         var exactStopwatch = System.Diagnostics.Stopwatch.StartNew();
         try
         {
-            defaultPlan = builder.BuildDefaultPlan();
+            defaultPlan = builder.BuildStepProofPlan();
         }
         catch (OperationCanceledException)
         {
@@ -377,7 +377,7 @@ class Program
         var compactStopwatch = System.Diagnostics.Stopwatch.StartNew();
         try
         {
-            compactPlan = builder.BuildCompactPlan();
+            compactPlan = builder.BuildEdgeCompactPlan();
         }
         catch (OperationCanceledException)
         {

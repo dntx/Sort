@@ -59,7 +59,7 @@ partial class StrategyBuilder
     // The comparison group at each state is built constructively from the current partial order
     // (ChooseConstructiveGroup, O(m*active^2)), so unlike the old enumeration-based greedy there is no
     // phase-1 closure / pattern cache: the policy is computed on the fly during materialization.
-    public StrategyPlan BuildFeasiblePlan()
+    public StrategyPlan BuildGreedyFeasiblePlan()
     {
         // The feasible phase is effectively instant. In a combined run it occupies the first band of
         // the unified progress bar (a single indivisible slice).

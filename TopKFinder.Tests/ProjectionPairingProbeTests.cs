@@ -52,7 +52,7 @@ public sealed class ProjectionPairingProbeTests
                         EnableProjectionOrbitMerging = false,
                         EnableProjectionPairingProbe = true,
                     };
-                    return builder.BuildDefaultPlan();
+                    return builder.BuildStepProofPlan();
                 });
 
             totalSavings += builder.ProbeLineSavings;
