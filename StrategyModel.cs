@@ -67,13 +67,66 @@ sealed class StrategyPlan
             SearchStatistics.WithRootProvenLowerBound(rootProvenLowerBound), IsFeasibleUpperBound);
     }
 
-    private static int GetMaxStep(StrategyNode node)
+    private static int GetMaxStep(StrategyNode root)
     {
-        int selfStep = node.Step ?? 0;
-        if (node.Branches.Count == 0)
-            return selfStep;
+        // A Reference node is a leaf standing in for an already-expanded state's subtree, which still
+        // needs additional sorts to resolve. Counting it as a 0-depth leaf UNDERCOUNTS the worst case
+        // whenever a reference lies on the deepest path and its target was first expanded shallower
+        // (e.g. greedy-feasible 6,2,2: the deepest path ends in a "+1 step" reference, true worst case
+        // 7, naive count 6 -- below the proven optimum). Resolve references through their target
+        // subtree so MaxStep is the true worst-case sort count.
+        var referenceTargets = new Dictionary<int, StrategyNode>();
+        IndexReferenceTargets(root, referenceTargets);
+        return StepsToResolve(root, referenceTargets,
+            new Dictionary<StrategyNode, int>(ReferenceEqualityComparer.Instance));
+    }
 
-        return Math.Max(selfStep, node.Branches.Max(branch => GetMaxStep(branch.Next)));
+    // Records every genuinely-expanded decision state (Branches > 0) by its StateId. Final-choice
+    // leaves are never reference targets (they are returned before a state is registered as expanded),
+    // so only branching decisions can be referenced.
+    private static void IndexReferenceTargets(StrategyNode node, Dictionary<int, StrategyNode> targets)
+    {
+        if (node.Kind == StrategyNodeKind.Decision && node.Branches.Count > 0)
+            targets[node.StateId] = node;
+        foreach (StrategyBranch branch in node.Branches)
+            IndexReferenceTargets(branch.Next, targets);
+    }
+
+    // Worst-case additional sorts from `node` down to a resolved top set, resolving Reference nodes
+    // through their target subtree. Memoized by node identity; the underlying state graph is acyclic
+    // (references point to equally-or-more-resolved states), so the recursion terminates.
+    private static int StepsToResolve(
+        StrategyNode node, Dictionary<int, StrategyNode> targets, Dictionary<StrategyNode, int> memo)
+    {
+        if (memo.TryGetValue(node, out int cached))
+            return cached;
+
+        int result;
+        switch (node.Kind)
+        {
+            case StrategyNodeKind.Terminal:
+                result = 0; // already resolved by the parent's sort
+                break;
+            case StrategyNodeKind.Reference:
+                result = targets.TryGetValue(node.StateId, out StrategyNode? target)
+                    ? StepsToResolve(target, targets, memo)
+                    : 0;
+                break;
+            default: // Decision
+                if (node.Branches.Count == 0)
+                    result = 1; // final-choice: one last sort resolves the top set
+                else
+                {
+                    int maxChild = 0;
+                    foreach (StrategyBranch branch in node.Branches)
+                        maxChild = Math.Max(maxChild, StepsToResolve(branch.Next, targets, memo));
+                    result = 1 + maxChild;
+                }
+                break;
+        }
+
+        memo[node] = result;
+        return result;
     }
 
     // Total number of displayed branch lines across the whole tree. The materialized tree is

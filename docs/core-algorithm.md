@@ -329,6 +329,13 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
 **确实可达**的步数）。正确性（`U ≥ opt`）只需「严格进展」：每次排序都至少新增一条比较关系——只要所选分组含有一对
 互不可比项即可，而 `ChooseConstructiveGroup` 保证了这一点（总链兜底见 `ForceUnresolvedPair`）。
 
+> **`MaxStep` 必须计入 Reference 子树深度**：物化树里同一状态第二次到达会渲染成一个 **Reference 叶子**（不是回边），
+> 它代表「复用目标状态子树、还要再 +N 步」。`StrategyPlan.MaxStep`（`GetMaxStep`）因此**解析 Reference 到其目标子树**
+> 再累加剩余步数，而不是把它当 0 深度叶子——否则当某条最深路径以 Reference 收尾、且其目标在更浅处首次展开时，`MaxStep`
+> 会**少算**真实最坏步数（例如 greedy-feasible `6,2,2`：真实 7、少算成 6，使可行上界假性低于最优）。这条对所有计划
+> （exact / compact / feasible）都成立，回归见 `MaxStepReferenceDepthTests`。
+
+
 - **1-ply 前瞻收紧 `U`**（`ChooseConstructiveGroupLookahead`）：纯贪心反链每步只看「本步信息量最大」，会偏爱**全新孤立项**
   （与一切互不可比、关系最少），因而催生互不相连的多条链，事后合并代价高；而更优的走法常常是**跨边界桥接**（把边界项
   与新项一起排序）。物化时的分组选择因此改为一层前瞻：枚举一小组候选分组（基础反链挑选 + 每个种子项各一个反链，再加
