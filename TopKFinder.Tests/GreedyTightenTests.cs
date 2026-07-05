@@ -94,6 +94,21 @@ public class GreedyTightenTests
         Assert.Single(builder.GreedyTightenRoundTrace);
     }
 
+    // The production default runs a single critical-path round (measurement showed extra rounds rarely
+    // change U' but roughly double the cost). A case that tightens across several commits must still
+    // stop after one round when no cap is configured.
+    [Fact]
+    public void GreedyTightenPlan_DefaultsToSingleRound()
+    {
+        var builder = new StrategyBuilder(10, 2, 5);
+
+        StrategyPlan plan = builder.BuildGreedyTightenPlan();
+
+        Assert.True(plan.IsFeasibleUpperBound);
+        Assert.Equal(1, builder.GreedyTightenRounds);
+        Assert.Single(builder.GreedyTightenRoundTrace);
+    }
+
     // The shared memo optimization must preserve internally consistent accounting across total
     // counters and per-round diagnostics.
     [Fact]
