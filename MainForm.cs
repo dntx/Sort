@@ -148,7 +148,7 @@ class MainForm : Form
     // Anytime greedy edge state (UI thread only): every edge stage as it arrives (baseline compact,
     // each tightening, plus a terminal no-solution stage). The current-stage name and the run-clock ms
     // at which the current stage began drive the per-stage timing/labels in the progress panel.
-    private readonly List<GreedyTightenStage> _greedyEdgeStages = new();
+    private readonly List<ProofTightenStage> _proofTightenStages = new();
     private string _currentStageName = "-";
     private long _stageStartMs;
 
@@ -621,7 +621,7 @@ class MainForm : Form
         _exactImproved = false;
         _compactImproved = false;
         _activePhase = 0;
-        _greedyEdgeStages.Clear();
+        _proofTightenStages.Clear();
         _currentStageName = feasibleMode ? "greedy-feasible" : "step-proof";
         _stageStartMs = 0;
         ClearResultsView();
@@ -658,14 +658,14 @@ class MainForm : Form
                 SetRunUiState(RunUiState.CompactComputingInteractive);
 
                 Interlocked.Exchange(ref _activePhase, 2);
-                _greedyEdgeStages.Clear();
+                _proofTightenStages.Clear();
                 _currentStageName = NextProofTightenStageName(feasiblePlan, feasiblePlan.MaxStep);
                 _stageStartMs = _runStopwatch?.ElapsedMilliseconds ?? 0;
                 // Each edge stage is surfaced live. The callback runs on the worker thread; a synchronous
                 // Invoke marshals it onto the UI thread AND blocks the worker until the handler returns,
                 // which is what lets the optional per-stage modal pause the search until the user clicks OK.
                 StrategyPlan feasibleCompactPlan = await Task.Run(
-                    () => builder.BuildGreedyTightenPlan(MarshalGreedyTightenStage),
+                    () => builder.BuildProofTightenPlan(MarshalProofTightenStage),
                     cancellationToken);
                 _runStopwatch?.Stop();
 
@@ -792,7 +792,7 @@ class MainForm : Form
         }
     }
 
-    // Defensive cleanup after a normal (non-stopped) greedy run: BuildFeasibleCompactPlan always ends
+    // Defensive cleanup after a normal (non-stopped) greedy run: BuildProofTightenPlan always ends
     // by emitting the terminal EdgeCompact stage, whose handler appends no follow-up placeholder. But the
     // should-not-happen fallback (edgePlan null) returns without that final emission, which would leave
     // the last "edge-compact@S: computing..." placeholder stranded. Drop any such trailing placeholder so a
@@ -859,7 +859,7 @@ class MainForm : Form
         root.Nodes.Add(CreatePlanTreeRoot(stepStageName, stepPlan, "default", stepPlan.Elapsed));
 
         // Slot 1: the second stage's live placeholder. In exact mode this is the min-edge
-        // "edge-compact@S" pass; in greedy mode it is whatever BuildFeasibleCompactPlan emits first --
+        // "edge-compact@S" pass; in greedy mode it is whatever BuildProofTightenPlan emits first --
         // a "proof-tighten<=N" tightening stage, or "edge-compact@S" directly when the greedy bound is
         // already at the lower bound.
         if (compactPlan is null)
@@ -963,16 +963,16 @@ class MainForm : Form
         FinalizeCompactInOverview(compactPlan, compactImproved);
     }
 
-    // Synchronous marshaling shim: BuildFeasibleCompactPlan invokes this on the worker thread once per
-    // edge stage. Control.Invoke hops to the UI thread AND blocks the worker until OnGreedyEdgeStage
+    // Synchronous marshaling shim: BuildProofTightenPlan invokes this on the worker thread once per
+    // stage. Control.Invoke hops to the UI thread AND blocks the worker until OnProofTightenStage
     // returns, so when the per-stage modal is enabled the search genuinely pauses until the user clicks OK.
-    private void MarshalGreedyTightenStage(GreedyTightenStage stage)
+    private void MarshalProofTightenStage(ProofTightenStage stage)
     {
         if (!IsHandleCreated || IsDisposed)
             return;
         try
         {
-            Invoke(() => OnGreedyTightenStage(stage));
+            Invoke(() => OnProofTightenStage(stage));
         }
         catch (ObjectDisposedException)
         {
@@ -984,7 +984,7 @@ class MainForm : Form
         }
     }
 
-    // Name of the next stage BuildFeasibleCompactPlan will emit given the best incumbent max-step so
+    // Name of the next stage BuildProofTightenPlan will emit given the best incumbent max-step so
     // far. Mirrors the V2 loop: it tightens to "proof-tighten<=(step-1)" while that ceiling is still above
     // the proven analytic lower bound, otherwise the final "edge-compact@S" pass runs. Used to label
     // the transient "...: computing..." placeholder so it matches the stage name that actually lands
@@ -1002,13 +1002,13 @@ class MainForm : Form
     // slot in place; every later stage is appended as a new tree + overview section, so the user watches
     // the strategy improve stage by stage. Each tree gets a unique scope ("edge0", "edge1", ...) so
     // their per-state navigation keys never collide.
-    private void OnGreedyTightenStage(GreedyTightenStage stage)
+    private void OnProofTightenStage(ProofTightenStage stage)
     {
         if (_feasiblePlan is null || _treeView.Nodes.Count == 0)
             return;
 
-        _greedyEdgeStages.Add(stage);
-        int index = _greedyEdgeStages.Count - 1;
+        _proofTightenStages.Add(stage);
+        int index = _proofTightenStages.Count - 1;
         string scope = $"edge{index}";
 
         // A stage is "shown" as a full browsable tree only when it strictly improves the incumbent
@@ -1048,12 +1048,12 @@ class MainForm : Form
 
         // A proven-infeasible terminal (NoSolution, not a timeout) proves the incumbent is optimal:
         // close its squeeze (opt = incumbent.MaxStep) so the progression detail reports proven optimal.
-        if (stage.Outcome == GreedyTightenStageOutcome.NoSolution)
+        if (stage.Outcome == ProofTightenStageOutcome.NoSolution)
             MarkGreedyIncumbentProvenOptimal();
 
         StrategyPlan shown = _compactPlan ?? _feasiblePlan;
         root.Text = BuildRootLabel(_feasiblePlan, _feasiblePlan, shown);
-        root.Tag = BuildGreedyProgressionDetails(_feasiblePlan, _greedyEdgeStages);
+        root.Tag = BuildGreedyProgressionDetails(_feasiblePlan, _proofTightenStages);
         _treeView.EndUpdate();
 
         _overviewTree.BeginUpdate();
@@ -1097,7 +1097,7 @@ class MainForm : Form
     // Closes the squeeze on the greedy incumbent (the best plan so far) to a proven optimum after a
     // tightening probe proved the next ceiling infeasible: opt = incumbent.MaxStep. Rewrites the
     // incumbent plan reference (_compactPlan, or _feasiblePlan when no edge stage improved) and the
-    // matching entry in _greedyEdgeStages so the rebuilt progression detail reports "proven optimal".
+    // matching entry in _proofTightenStages so the rebuilt progression detail reports "proven optimal".
     private void MarkGreedyIncumbentProvenOptimal()
     {
         if (_feasiblePlan is null)
@@ -1111,12 +1111,12 @@ class MainForm : Form
         StrategyPlan proven = incumbent.WithRootProvenLowerBound(provenLower);
         if (_compactPlan is not null)
         {
-            for (int i = 0; i < _greedyEdgeStages.Count; i++)
+            for (int i = 0; i < _proofTightenStages.Count; i++)
             {
-                if (ReferenceEquals(_greedyEdgeStages[i].Plan, incumbent))
+                if (ReferenceEquals(_proofTightenStages[i].Plan, incumbent))
                 {
-                    GreedyTightenStage s = _greedyEdgeStages[i];
-                    _greedyEdgeStages[i] = new GreedyTightenStage(s.Name, proven, s.Elapsed, s.Outcome);
+                    ProofTightenStage s = _proofTightenStages[i];
+                    _proofTightenStages[i] = new ProofTightenStage(s.Name, proven, s.Elapsed, s.Outcome);
                     break;
                 }
             }
@@ -1128,14 +1128,14 @@ class MainForm : Form
         }
     }
 
-    private TreeNode BuildStageTreeNode(GreedyTightenStage stage, string scope, bool improved)
+    private TreeNode BuildStageTreeNode(ProofTightenStage stage, string scope, bool improved)
         => improved
             ? CreatePlanTreeRoot(stage.Name, stage.Plan!, scope, stage.Elapsed)
             : stage.HasSolution
                 ? CreateNoImprovementTreeRoot(stage.Name, stage.Plan!, stage.Elapsed)
                 : CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, NoSolutionMarker(stage));
 
-    private TreeNode BuildStageOverviewNode(GreedyTightenStage stage, string scope, bool improved)
+    private TreeNode BuildStageOverviewNode(ProofTightenStage stage, string scope, bool improved)
         => improved
             ? BuildOverviewSectionNode(stage.Plan!, scope, stage.Name, stage.Elapsed)
             : BuildOverviewNoteNode(FormatStageRootLabel(
@@ -1147,7 +1147,7 @@ class MainForm : Form
     // Leaf note for a solution-less stage: null means "no solution" (a proven-infeasible ceiling),
     // otherwise the reason the incumbent merely stands -- "search incomplete (candidate cap reached)"
     // (the greedy cap truncated the enumeration, so infeasibility is unproven).
-    private static string? NoSolutionMarker(GreedyTightenStage stage)
+    private static string? NoSolutionMarker(ProofTightenStage stage)
         => stage.Incomplete ? "search incomplete (candidate cap reached)"
             : null;
 
@@ -1180,7 +1180,7 @@ class MainForm : Form
     // Root-node detail text for greedy mode: the step plan followed by the full edge progression
     // (compact baseline -> each tightening -> any no-solution stage), so the detail pane mirrors the
     // stacked trees.
-    private static string BuildGreedyProgressionDetails(StrategyPlan stepPlan, List<GreedyTightenStage> stages)
+    private static string BuildGreedyProgressionDetails(StrategyPlan stepPlan, List<ProofTightenStage> stages)
     {
         var lines = new List<string>
         {
@@ -1188,7 +1188,7 @@ class MainForm : Form
             $"greedy-feasible: {FormatPlanSqueeze(stepPlan)}, total edges={stepPlan.TotalBranchEdges}",
         };
         StrategyPlan incumbent = stepPlan;
-        foreach (GreedyTightenStage stage in stages)
+        foreach (ProofTightenStage stage in stages)
         {
             if (stage.Plan is { } p)
             {

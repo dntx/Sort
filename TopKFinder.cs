@@ -160,8 +160,8 @@ partial class StrategyBuilder
     // ("edge-compact@S"). This drives an anytime UI/CLI that surfaces the full progression as it is found; a
     // user who no longer wants to wait cancels (GUI Stop / CLI Ctrl+C), which propagates out with the
     // best plan found so far already surfaced via onStage.
-    public StrategyPlan BuildGreedyTightenPlan(
-        Action<GreedyTightenStage>? onStage = null,
+    public StrategyPlan BuildProofTightenPlan(
+        Action<ProofTightenStage>? onStage = null,
         Action<string>? onStageStart = null)
     {
         _progressScope = _reportCombinedRunProgress
@@ -170,8 +170,8 @@ partial class StrategyBuilder
 
         // The step ceiling U comes from the greedy feasible plan. Production callers (Program.cs /
         // MainForm.cs) build it first and reuse this builder, so _feasibleRootBudget is already set;
-        // standalone callers (e.g. tests invoking BuildFeasibleCompactPlan directly) have not, so
-        // establish it here. BuildFeasiblePlan deliberately does not clear _feasibleRootBudget, so this
+        // standalone callers (e.g. tests invoking BuildProofTightenPlan directly) have not, so
+        // establish it here. BuildGreedyFeasiblePlan deliberately does not clear _feasibleRootBudget, so this
         // never double-builds when the caller already ran the step phase.
         if (_feasibleRootBudget < 0)
             BuildGreedyFeasiblePlan();
@@ -202,11 +202,11 @@ partial class StrategyBuilder
                     // the ceiling is proven infeasible, so bestStep is optimal: raise the proven lower
                     // bound to budget+1 (== bestStep) to close the L <= opt <= U squeeze.
                     var outcome = _lastProbeEnumerationCapped
-                        ? GreedyTightenStageOutcome.Incomplete
-                        : GreedyTightenStageOutcome.NoSolution;
-                    if (outcome == GreedyTightenStageOutcome.NoSolution)
+                        ? ProofTightenStageOutcome.Incomplete
+                        : ProofTightenStageOutcome.NoSolution;
+                    if (outcome == ProofTightenStageOutcome.NoSolution)
                         RecordRootProvenLowerBound(budget + 1);
-                    onStage?.Invoke(new GreedyTightenStage(stageName, null, probeStopwatch.Elapsed, outcome));
+                    onStage?.Invoke(new ProofTightenStage(stageName, null, probeStopwatch.Elapsed, outcome));
                     break;
                 }
 
@@ -218,7 +218,7 @@ partial class StrategyBuilder
                     break;
 
                 bestStep = candidate.MaxStep;
-                onStage?.Invoke(new GreedyTightenStage(stageName, candidate, probeStopwatch.Elapsed));
+                onStage?.Invoke(new ProofTightenStage(stageName, candidate, probeStopwatch.Elapsed));
                 budget = bestStep - 1; // realized max-step may already be below the attempted ceiling
             }
         }
@@ -236,7 +236,7 @@ partial class StrategyBuilder
         if (edgePlan is not null)
         {
             edgePlan = edgePlan.WithRootProvenLowerBound(_rootProvenLowerBound);
-            onStage?.Invoke(new GreedyTightenStage(edgeCompactStageName, edgePlan, edgeStopwatch.Elapsed));
+            onStage?.Invoke(new ProofTightenStage(edgeCompactStageName, edgePlan, edgeStopwatch.Elapsed));
             return edgePlan;
         }
 

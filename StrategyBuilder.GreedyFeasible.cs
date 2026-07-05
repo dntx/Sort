@@ -5,7 +5,7 @@ partial class StrategyBuilder
 {
     // Constructive feasible-strategy upper bound ("tournament keeping the poset").
     //
-    // This is the greedy mode's step phase (BuildFeasiblePlan). An earlier enumeration-based greedy
+    // This is the greedy mode's step phase (BuildGreedyFeasiblePlan). An earlier enumeration-based greedy
     // committed to a single policy but still PICKED that policy by fully enumerating + scoring every
     // distinct candidate group at each state (EnumeratePrioritizedGroups -> ~C(active, m) work). On
     // large m that selection dominated (25,10,10 step phase ~49 s) even though only the #1 group was
@@ -32,9 +32,9 @@ partial class StrategyBuilder
     private Dictionary<SearchStateKey, int>? _constructiveDepthMemo;
 
     // Feasible step budget U threaded from the step phase to the edge phase within one combined run.
-    // BuildFeasiblePlan sets it to the MATERIALIZED MaxStep of the just-built step tree (the tightest
+    // BuildGreedyFeasiblePlan sets it to the MATERIALIZED MaxStep of the just-built step tree (the tightest
     // sound budget: the step plan itself witnesses a U-step solution, so the compact pass under this
-    // ceiling can never need more than U). The edge phase (BuildFeasibleCompactPlan) reads it so it
+    // ceiling can never need more than U). The edge phase (BuildProofTightenPlan) reads it so it
     // never produces a plan worse than the step phase. -1 until a step plan is built; deliberately NOT
     // cleared by ResetPerBuildTransientState so it survives the step->edge build boundary on the same
     // builder. When the edge phase runs standalone (no prior step build) it falls back to the lean
@@ -42,7 +42,7 @@ partial class StrategyBuilder
     private int _feasibleRootBudget = -1;
 
     // Total distinct canonical search states the step phase visited, captured at the end of
-    // BuildFeasiblePlan and (like _feasibleRootBudget) deliberately NOT cleared by
+    // BuildGreedyFeasiblePlan and (like _feasibleRootBudget) deliberately NOT cleared by
     // ResetPerBuildTransientState so it survives the step->edge boundary on the same builder. The edge
     // phase has no pending/searched signal, so this serves as the SCALE anchor for a self-correcting
     // asymptote (see EstimateProgress) that turns _compactStatesSolved into a live progress fraction --
