@@ -411,6 +411,7 @@ partial class StrategyBuilder
             {
                 // Drop malformed local edits whose outcomes would reference an ancestor display state.
                 _greedyTightenOverrides.Remove(key);
+                _greedyTightenOverrideAnchors.Remove(key);
                 tightenGroup = ChooseConstructiveGroup(state, remainingSlots);
                 if (!GroupAvoidsDisplayBackEdge(state, fixedTopMask, remainingSlots, tightenGroup))
                 {
