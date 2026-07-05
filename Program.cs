@@ -270,11 +270,11 @@ class Program
             StrategyPlan incumbentPlan = feasiblePlan;
             string finalName = "greedy-feasible";
             StrategyPlan finalPlan = feasiblePlan;
-            void CollectEdgeStage(GreedyTightenStage stage)
+            void CollectEdgeStage(ProofTightenStage stage)
             {
                 if (!stage.HasSolution)
                 {
-                    if (stage.Outcome == GreedyTightenStageOutcome.NoSolution)
+                    if (stage.Outcome == ProofTightenStageOutcome.NoSolution)
                         {
                             // Proven infeasible at this ceiling (complete enumeration) => the incumbent is
                             // optimal (opt = incumbent.MaxStep). Close its squeeze so the final tree reports
@@ -319,7 +319,7 @@ class Program
             bool interrupted = false;
             try
             {
-                builder.BuildGreedyTightenPlan(CollectEdgeStage, StartEdgeStage);
+                builder.BuildProofTightenPlan(CollectEdgeStage, StartEdgeStage);
             }
             catch (OperationCanceledException)
             {

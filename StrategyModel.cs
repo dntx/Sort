@@ -89,28 +89,28 @@ sealed class StrategyPlan
     }
 }
 
-// How a greedy edge progression stage ended. Solution: a strategy was materialized (Plan is set).
+// How a proof-tighten progression stage ended. Solution: a strategy was materialized (Plan is set).
 // NoSolution: a tightening probe ran to completion over the COMPLETE candidate enumeration and proved
 // no strategy exists at that step ceiling (the previous best is therefore optimal). Incomplete: a probe
 // finished and found no feasible strategy, but the greedy candidate cap truncated the group enumeration
 // on some state, so "no group fit" is NOT a proof that none exists -- it leaves the squeeze open (no
 // proven-optimal claim).
-enum GreedyTightenStageOutcome
+enum ProofTightenStageOutcome
 {
     Solution,
     NoSolution,
     Incomplete,
 }
 
-// One stage of the greedy edge progression as it is produced by BuildFeasibleCompactPlan: the
+// One stage of the proof-tighten progression as it is produced by BuildProofTightenPlan: the
 // final edge-compaction pass, each successful downward tightening, or a terminal ceiling that yielded
 // no solution. Name is the stage label (e.g. "edge-compact@5", "proof-tighten<=4"); Plan is the materialized
 // strategy, or null for the NoSolution/Incomplete outcomes. Elapsed is the stage's own wall time,
 // not a cumulative total.
-readonly struct GreedyTightenStage
+readonly struct ProofTightenStage
 {
-    public GreedyTightenStage(string name, StrategyPlan? plan, TimeSpan elapsed,
-        GreedyTightenStageOutcome outcome = GreedyTightenStageOutcome.Solution)
+    public ProofTightenStage(string name, StrategyPlan? plan, TimeSpan elapsed,
+        ProofTightenStageOutcome outcome = ProofTightenStageOutcome.Solution)
     {
         Name = name;
         Plan = plan;
@@ -121,17 +121,17 @@ readonly struct GreedyTightenStage
     public string Name { get; }
     public StrategyPlan? Plan { get; }
     public TimeSpan Elapsed { get; }
-    public GreedyTightenStageOutcome Outcome { get; }
+    public ProofTightenStageOutcome Outcome { get; }
     public bool HasSolution => Plan is not null;
 
     // A completed probe whose infeasibility verdict is not a proof because the greedy candidate cap
     // truncated the group enumeration: it leaves the incumbent standing without closing the squeeze to a
     // proven optimum.
-    public bool Incomplete => Outcome == GreedyTightenStageOutcome.Incomplete;
+    public bool Incomplete => Outcome == ProofTightenStageOutcome.Incomplete;
 
     // True only for a completed, complete-enumeration probe that proved the ceiling infeasible: the one
     // outcome that certifies the incumbent optimal and closes the squeeze.
-    public bool ProvesOptimal => Outcome == GreedyTightenStageOutcome.NoSolution;
+    public bool ProvesOptimal => Outcome == ProofTightenStageOutcome.NoSolution;
 }
 
 sealed class SearchMilestone
