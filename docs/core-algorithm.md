@@ -499,6 +499,7 @@ greedy-feasible(U) → greedy-tighten≤N → proof-tighten≤N → edge-compact
 - **后代策略**：GreedyTighten 一次只**覆写被编辑状态自身的分组**，`S` 以下的后代仍走 greedy-feasible 的构造式选择器。用**全局覆写表** `override: stateKey → group` 统一表达；任意状态分组 = 有 override 用 override、否则贪心。
 - **度量一致性**：阶段内部搜索/比较统一用**精简构造深度**（lean depth，`height(state)=1+max(height(child))`，预算无关、按状态 key memo，与后代策略一致）；仅在本轮结束、把 `U'` 交给 `ProofTighten` 前，对已提交的树**物化一次**算真实 `MaxStep`。
 - **落地形态（选 B）**：搜索期不物化，只跑 memo 化高度 DP + override 字典；最终才物化一次用于展示/交接。memo 失效只沿含 override 的祖先链发生。
+- **物化安全护栏（已落地）**：在 `GreedyTighten` 物化路径上维护当前 display-key 递归栈；若某个 override 分组的 outcome 会回指到栈上祖先 display state（形成 back-edge），该 override 会被丢弃并回退到 greedy-feasible 的构造式分组。若回退后仍无法保持 display 进展，则 fail-fast 抛异常，避免产出 malformed reference graph。
 
 **实现分期**：阶段 A 先落**主体框架**（多轮 / 遍历 / 单状态改造 / 接受语义 / override 表 + 高度 DP / 与 ProofTighten 衔接），候选来源第一版只用现成的 antichain/构造式候选枚举 + 占位排序；阶段 B 再做**候选来源多样化（seed 变体 / 1-swap 扰动 / 桥接）+ 评分器调优**（效率与收效的主要调优点）；除 `cap=128` 外 v1 不加额外预算控制，按实测再定。
 

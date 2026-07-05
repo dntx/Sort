@@ -32,6 +32,9 @@ partial class StrategyBuilder
     internal bool? ForceIterativeDeepeningForTesting { get; set; }
     private readonly Dictionary<IntSequenceKey, int> _stateIds = new();
     private readonly Dictionary<IntSequenceKey, ExpandedStateSnapshot> _expandedStates = new();
+    // Active display-key recursion path while materializing a GreedyTighten tree. Used to reject
+    // local overrides whose outcomes would reference an ancestor display state.
+    private readonly HashSet<IntSequenceKey> _materializationDisplayPath = new();
     private readonly HashSet<SearchStateKey> _visitedSearchStates = new();
     private readonly Dictionary<SearchStateKey, int> _minWorstCaseStepsCache = new();
     private readonly Dictionary<SearchStateKey, int> _lowerBoundStepsCache = new();
@@ -359,10 +362,24 @@ partial class StrategyBuilder
 
         _expandedStates.Add(displayKey, new ExpandedStateSnapshot(state.Clone(), fixedTopMask));
 
-        SelectedComparisonGroup chosenGroup = ChooseGroup(state, fixedTopMask, remainingSlots);
-        var branches = BuildBranches(state, fixedTopMask, remainingSlots, chosenGroup, step + 1);
+        bool trackingDisplayPath = _useGreedyTightenSelection;
+        if (trackingDisplayPath && !_materializationDisplayPath.Add(displayKey))
+        {
+            throw new InvalidOperationException(
+                "GreedyTighten materialization detected a recursive display-state expansion path.");
+        }
 
-        return StrategyNode.Decision(stateId, step, chosenGroup.Group, branches);
+        try
+        {
+            SelectedComparisonGroup chosenGroup = ChooseGroup(state, fixedTopMask, remainingSlots);
+            var branches = BuildBranches(state, fixedTopMask, remainingSlots, chosenGroup, step + 1);
+            return StrategyNode.Decision(stateId, step, chosenGroup.Group, branches);
+        }
+        finally
+        {
+            if (trackingDisplayPath)
+                _materializationDisplayPath.Remove(displayKey);
+        }
     }
 
     private List<int> GetPossibleCandidates(ComparisonState state)
@@ -388,7 +405,20 @@ partial class StrategyBuilder
         // the same constructive selector for un-edited states (so an empty map == greedy-feasible).
         if (_useGreedyTightenSelection)
         {
-            List<int> tightenGroup = CurrentGreedyTightenGroup(state, remainingSlots, GetSearchStateKey(state, remainingSlots));
+            SearchStateKey key = GetSearchStateKey(state, remainingSlots);
+            List<int> tightenGroup = CurrentGreedyTightenGroup(state, remainingSlots, key);
+            if (!GroupAvoidsDisplayBackEdge(state, fixedTopMask, remainingSlots, tightenGroup))
+            {
+                // Drop malformed local edits whose outcomes would reference an ancestor display state.
+                _greedyTightenOverrides.Remove(key);
+                tightenGroup = ChooseConstructiveGroup(state, remainingSlots);
+                if (!GroupAvoidsDisplayBackEdge(state, fixedTopMask, remainingSlots, tightenGroup))
+                {
+                    throw new InvalidOperationException(
+                        "GreedyTighten materialization found no display-progress group at the current state.");
+                }
+            }
+
             return new SelectedComparisonGroup(
                 tightenGroup,
                 BuildMergedComparisonOutcomes(state, fixedTopMask, remainingSlots, tightenGroup));
@@ -440,6 +470,29 @@ partial class StrategyBuilder
             currentKey: null,
             collectMergedBranches: true,
             onUsefulOutcome: _ => true).MergedBranches;
+    }
+
+    // True iff every materialized outcome of `group` stays off the active display recursion path.
+    // A child whose display key is already on the path would become a reference back-edge to an
+    // ancestor (including self), i.e. a malformed reference cycle.
+    private bool GroupAvoidsDisplayBackEdge(
+        ComparisonState state,
+        ulong fixedTopMask,
+        int remainingSlots,
+        IReadOnlyList<int> group)
+    {
+        bool anyOutcome = false;
+        foreach (ComparisonOutcome outcome in EnumerateDisplayOutcomes(state, remainingSlots, group))
+        {
+            anyOutcome = true;
+            IntSequenceKey nextDisplayKey = GetDisplayStateKey(
+                outcome.NextState,
+                fixedTopMask | outcome.AddedFixedTopMask);
+            if (_materializationDisplayPath.Contains(nextDisplayKey))
+                return false;
+        }
+
+        return anyOutcome;
     }
 
     private static IntSequenceKey GetGroupPattern(ComparisonState state, IReadOnlyList<int> group)
@@ -1207,6 +1260,7 @@ partial class StrategyBuilder
     {
         _stateIds.Clear();
         _expandedStates.Clear();
+        _materializationDisplayPath.Clear();
         _nextStateId = 1;
 
         _visitedSearchStates.Clear();
