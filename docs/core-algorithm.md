@@ -503,6 +503,8 @@ greedy-feasible(U) → greedy-tighten≤N → proof-tighten≤N → edge-compact
 
 **实现分期**：阶段 A 先落**主体框架**（多轮 / 遍历 / 单状态改造 / 接受语义 / override 表 + 高度 DP / 与 ProofTighten 衔接），候选来源第一版只用现成的 antichain/构造式候选枚举 + 占位排序；阶段 B 再做**候选来源多样化（seed 变体 / 1-swap 扰动 / 桥接）+ 评分器调优**（效率与收效的主要调优点）；除 `cap=128` 外 v1 不加额外预算控制，按实测再定。
 
+**默认轮数（已实现，实测定档）**：驱动器**默认只跑单轮**（`DefaultGreedyTightenMaxRounds = 1`）。修复同构覆写串味 bug（override/高度 memo 以规范键为键、组按具体标号存取，见 PR #216）后的重基线（`nMax=10`，320 例）显示：单轮在 305/320 例达到与无界多轮相同的收紧 `U'`，成本仅约 0.47x；多轮平均只多收紧约 1 例却成本翻倍。多轮循环与跨轮 override 持久化仍保留，通过测试/评测开关 `GreedyTightenMaxRoundsForTesting`（设更大值或 `int.MaxValue` 跑无界）驱动，供后续调优使用。
+
 ---
 
 ## 5. 对称性约减：McKay 风格规范形

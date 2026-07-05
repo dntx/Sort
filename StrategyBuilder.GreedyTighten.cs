@@ -14,6 +14,14 @@ partial class StrategyBuilder
     // It is NOT wired into the production pipeline yet; BuildGreedyTightenPlan is only exercised by
     // tests until the mechanism is validated.
     internal int GreedyTightenCandidateCap = 128;
+
+    // Production default: GreedyTighten runs a SINGLE critical-path round. Post-fix measurement (eval
+    // nMax=10) shows one round reaches the same tightened U' as unbounded rounds on 305/320 cases at
+    // ~0.47x the cost, so additional rounds are not worth their cost by default.
+    private const int DefaultGreedyTightenMaxRounds = 1;
+
+    // Test/eval override of the round cap (null = DefaultGreedyTightenMaxRounds). Set a larger value to
+    // run more rounds, or int.MaxValue for an effectively-unbounded full run.
     internal int? GreedyTightenMaxRoundsForTesting { get; set; }
 
     // Accumulated local edits: canonical stateKey -> chosen comparison group. Where present, both the
@@ -95,7 +103,9 @@ partial class StrategyBuilder
     // Multi-round driver. Each round runs one critical-path post-order pass from the root; a pass that
     // lowers the root height ends the round and a fresh (tighter) round starts from scratch. When a
     // pass cannot lower the root, GreedyTighten has converged. Overrides persist across rounds; the
-    // lean-depth tree is recomputed from the override map each round.
+    // lean-depth tree is recomputed from the override map each round. By default the driver stops after
+    // a single round (DefaultGreedyTightenMaxRounds); the loop and cross-round persistence are retained
+    // for the test/eval round-cap override and future tuning.
     private void RunGreedyTighten()
     {
         _greedyTightenOverrides.Clear();
@@ -145,7 +155,8 @@ partial class StrategyBuilder
                 _greedyTightenCriticalShortCircuits - shortCircuitsBefore,
                 rootDropped));
 
-            if (GreedyTightenMaxRoundsForTesting is int maxRounds && _greedyTightenRounds >= maxRounds)
+            int maxRounds = GreedyTightenMaxRoundsForTesting ?? DefaultGreedyTightenMaxRounds;
+            if (_greedyTightenRounds >= maxRounds)
                 break;
             if (!rootDropped)
                 break;
