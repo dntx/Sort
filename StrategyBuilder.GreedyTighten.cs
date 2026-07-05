@@ -14,19 +14,43 @@ partial class StrategyBuilder
     // It is NOT wired into the production pipeline yet; BuildGreedyTightenPlan is only exercised by
     // tests until the mechanism is validated.
     internal int GreedyTightenCandidateCap = 128;
+    internal int? GreedyTightenMaxRoundsForTesting { get; set; }
 
     // Accumulated local edits: canonical stateKey -> chosen comparison group. Where present, both the
     // lean-depth DP and the materializing ChooseGroup route use the override instead of the
     // constructive selector; absent keys fall back to the same ChooseConstructiveGroup that the
     // greedy-feasible baseline uses (so an empty override map reproduces greedy-feasible exactly).
     private readonly Dictionary<SearchStateKey, List<int>> _greedyTightenOverrides = new();
+    private readonly Dictionary<SearchStateKey, int> _greedyTightenSharedHeightMemo = new();
     private bool _useGreedyTightenSelection;
 
     // Diagnostics (per BuildGreedyTightenPlan run).
     private int _greedyTightenRounds;
     private int _greedyTightenCommits;
+    private int _greedyTightenStatesVisited;
+    private int _greedyTightenCandidateGroupsTried;
+    private int _greedyTightenHeightCalls;
+    private int _greedyTightenHeightMemoHits;
+    private int _greedyTightenHeightUnderGroupCalls;
+    private int _greedyTightenCriticalShortCircuits;
+    private int _greedyTightenCommitCandidateRankSum;
+    private readonly Dictionary<int, int> _greedyTightenVisitedDepthHistogram = new();
+    private readonly Dictionary<int, int> _greedyTightenCommitDepthHistogram = new();
+    private readonly List<GreedyTightenRoundDiagnostics> _greedyTightenRoundDiagnostics = new();
     internal int GreedyTightenRounds => _greedyTightenRounds;
     internal int GreedyTightenCommits => _greedyTightenCommits;
+    internal int GreedyTightenStatesVisited => _greedyTightenStatesVisited;
+    internal int GreedyTightenCandidateGroupsTried => _greedyTightenCandidateGroupsTried;
+    internal int GreedyTightenHeightCalls => _greedyTightenHeightCalls;
+    internal int GreedyTightenHeightMemoHits => _greedyTightenHeightMemoHits;
+    internal int GreedyTightenHeightUnderGroupCalls => _greedyTightenHeightUnderGroupCalls;
+    internal int GreedyTightenCriticalShortCircuits => _greedyTightenCriticalShortCircuits;
+    internal int GreedyTightenAverageCommitCandidateRank => _greedyTightenCommits == 0
+        ? 0
+        : _greedyTightenCommitCandidateRankSum / _greedyTightenCommits;
+    internal IReadOnlyDictionary<int, int> GreedyTightenVisitedDepthHistogram => _greedyTightenVisitedDepthHistogram;
+    internal IReadOnlyDictionary<int, int> GreedyTightenCommitDepthHistogram => _greedyTightenCommitDepthHistogram;
+    internal IReadOnlyList<GreedyTightenRoundDiagnostics> GreedyTightenRoundTrace => _greedyTightenRoundDiagnostics;
 
     // Builds the GreedyTighten stage plan: runs the local restructuring to tighten the upper bound,
     // then materializes the tightened tree once. Returns a feasible-upper-bound plan (never proven).
@@ -68,12 +92,51 @@ partial class StrategyBuilder
         _greedyTightenOverrides.Clear();
         _greedyTightenRounds = 0;
         _greedyTightenCommits = 0;
+        _greedyTightenStatesVisited = 0;
+        _greedyTightenCandidateGroupsTried = 0;
+        _greedyTightenHeightCalls = 0;
+        _greedyTightenHeightMemoHits = 0;
+        _greedyTightenHeightUnderGroupCalls = 0;
+        _greedyTightenCriticalShortCircuits = 0;
+        _greedyTightenCommitCandidateRankSum = 0;
+        _greedyTightenVisitedDepthHistogram.Clear();
+        _greedyTightenCommitDepthHistogram.Clear();
+        _greedyTightenRoundDiagnostics.Clear();
+        _greedyTightenSharedHeightMemo.Clear();
 
         while (true)
         {
             _cancellationToken.ThrowIfCancellationRequested();
             _greedyTightenRounds++;
-            bool rootDropped = TryLowerHeight(new ComparisonState(_n), _k);
+            int round = _greedyTightenRounds;
+            int statesVisitedBefore = _greedyTightenStatesVisited;
+            int candidatesTriedBefore = _greedyTightenCandidateGroupsTried;
+            int commitsBefore = _greedyTightenCommits;
+            int heightCallsBefore = _greedyTightenHeightCalls;
+            int memoHitsBefore = _greedyTightenHeightMemoHits;
+            int heightUnderGroupCallsBefore = _greedyTightenHeightUnderGroupCalls;
+            int shortCircuitsBefore = _greedyTightenCriticalShortCircuits;
+            var stopwatch = Stopwatch.StartNew();
+            int rootHeightBefore = GreedyTightenHeight(new ComparisonState(_n), _k, _greedyTightenSharedHeightMemo);
+            bool rootDropped = TryLowerHeight(new ComparisonState(_n), _k, 0);
+            int rootHeightAfter = GreedyTightenHeight(new ComparisonState(_n), _k, _greedyTightenSharedHeightMemo);
+            stopwatch.Stop();
+            _greedyTightenRoundDiagnostics.Add(new GreedyTightenRoundDiagnostics(
+                round,
+                rootHeightBefore,
+                rootHeightAfter,
+                stopwatch.ElapsedMilliseconds,
+                _greedyTightenStatesVisited - statesVisitedBefore,
+                _greedyTightenCandidateGroupsTried - candidatesTriedBefore,
+                _greedyTightenCommits - commitsBefore,
+                _greedyTightenHeightCalls - heightCallsBefore,
+                _greedyTightenHeightMemoHits - memoHitsBefore,
+                _greedyTightenHeightUnderGroupCalls - heightUnderGroupCallsBefore,
+                _greedyTightenCriticalShortCircuits - shortCircuitsBefore,
+                rootDropped));
+
+            if (GreedyTightenMaxRoundsForTesting is int maxRounds && _greedyTightenRounds >= maxRounds)
+                break;
             if (!rootDropped)
                 break;
         }
@@ -84,7 +147,7 @@ partial class StrategyBuilder
     // children (AND relationship, short-circuited on the first child that cannot drop), or by replacing
     // its own comparison group with a candidate that yields a strictly shorter subtree. Any override
     // committed in a descendant is permanent regardless of whether this state (or the root) drops.
-    private bool TryLowerHeight(ComparisonState state, int remainingSlots)
+    private bool TryLowerHeight(ComparisonState state, int remainingSlots, int depth)
     {
         ThrowIfCancellationRequested();
         ulong ignoredFixedTopMask = 0;
@@ -100,8 +163,11 @@ partial class StrategyBuilder
         if (state.ActiveCount <= _m)
             return false;
 
+        _greedyTightenStatesVisited++;
+        IncrementGreedyTightenDepthHistogram(_greedyTightenVisitedDepthHistogram, depth);
+
         SearchStateKey key = GetSearchStateKey(state, remainingSlots);
-        int height = GreedyTightenHeight(state, remainingSlots, new Dictionary<SearchStateKey, int>());
+        int height = GreedyTightenHeight(state, remainingSlots, _greedyTightenSharedHeightMemo);
         List<int> group = CurrentGreedyTightenGroup(state, remainingSlots, key);
 
         // Enumerate children under the current group and find the critical (max-height) ones.
@@ -110,7 +176,7 @@ partial class StrategyBuilder
             state, fixedTopMask: 0, remainingSlots, group, currentKey: key, collectMergedBranches: false,
             onUsefulOutcome: outcome =>
             {
-                int h = GreedyTightenHeight(outcome.NextState, outcome.NextRemainingSlots, new Dictionary<SearchStateKey, int>());
+                int h = GreedyTightenHeight(outcome.NextState, outcome.NextRemainingSlots, _greedyTightenSharedHeightMemo);
                 children.Add((outcome.NextState, outcome.NextRemainingSlots, h));
                 return true;
             });
@@ -127,15 +193,16 @@ partial class StrategyBuilder
         {
             if (child.Height < childMax)
                 continue;
-            if (!TryLowerHeight(child.State, child.Rem))
+            if (!TryLowerHeight(child.State, child.Rem, depth + 1))
             {
+                _greedyTightenCriticalShortCircuits++;
                 allCriticalDropped = false;
                 break;
             }
         }
         if (allCriticalDropped)
         {
-            int newHeight = GreedyTightenHeight(state, remainingSlots, new Dictionary<SearchStateKey, int>());
+            int newHeight = GreedyTightenHeight(state, remainingSlots, _greedyTightenSharedHeightMemo);
             if (newHeight < height)
                 return true;
         }
@@ -145,6 +212,7 @@ partial class StrategyBuilder
         // height (hit-once-and-move-on). Scoring/ordering is the deferred 阶段 B tuning.
         var candidates = state.GetActiveItemsOrdered();
         int groupSize = Math.Min(_m, candidates.Count);
+        int candidateRank = 0;
         foreach (List<int> candidate in EnumerateDistinctGroups(state, candidates, groupSize, GreedyTightenCandidateCap))
         {
             if (!GroupHasUnresolvedPair(state, candidate))
@@ -152,12 +220,20 @@ partial class StrategyBuilder
             if (SameGroupSequence(candidate, group))
                 continue;
 
+            candidateRank++;
+            _greedyTightenCandidateGroupsTried++;
+
             int candidateHeight = GreedyTightenHeightUnderGroup(
-                state, remainingSlots, candidate, new Dictionary<SearchStateKey, int>());
+                state, remainingSlots, candidate, _greedyTightenSharedHeightMemo);
             if (candidateHeight < height)
             {
                 _greedyTightenOverrides[key] = new List<int>(candidate);
                 _greedyTightenCommits++;
+                _greedyTightenCommitCandidateRankSum += candidateRank;
+                IncrementGreedyTightenDepthHistogram(_greedyTightenCommitDepthHistogram, depth);
+                // A committed override changes the effective policy for this state, so previously
+                // memoized heights may be stale under the new override map.
+                _greedyTightenSharedHeightMemo.Clear();
                 return true;
             }
         }
@@ -172,6 +248,7 @@ partial class StrategyBuilder
     // the materialized tree's structure (modulo display-key Reference de-duplication).
     private int GreedyTightenHeight(ComparisonState state, int remainingSlots, Dictionary<SearchStateKey, int> memo)
     {
+        _greedyTightenHeightCalls++;
         ThrowIfCancellationRequested();
         ulong ignoredFixedTopMask = 0;
         NormalizeState(state, ref ignoredFixedTopMask, ref remainingSlots);
@@ -187,7 +264,10 @@ partial class StrategyBuilder
 
         SearchStateKey key = GetSearchStateKey(state, remainingSlots);
         if (memo.TryGetValue(key, out int cached))
+        {
+            _greedyTightenHeightMemoHits++;
             return cached;
+        }
 
         List<int> group = CurrentGreedyTightenGroup(state, remainingSlots, key);
         int result = 1 + MaxChildHeight(state, remainingSlots, key, group, memo);
@@ -201,6 +281,7 @@ partial class StrategyBuilder
     private int GreedyTightenHeightUnderGroup(
         ComparisonState state, int remainingSlots, List<int> group, Dictionary<SearchStateKey, int> memo)
     {
+        _greedyTightenHeightUnderGroupCalls++;
         SearchStateKey key = GetSearchStateKey(state, remainingSlots);
         return 1 + MaxChildHeight(state, remainingSlots, key, group, memo);
     }
@@ -238,4 +319,23 @@ partial class StrategyBuilder
                 return false;
         return true;
     }
+
+    private static void IncrementGreedyTightenDepthHistogram(Dictionary<int, int> histogram, int depth)
+    {
+        histogram[depth] = histogram.TryGetValue(depth, out int count) ? count + 1 : 1;
+    }
+
+    internal readonly record struct GreedyTightenRoundDiagnostics(
+        int Round,
+        int RootHeightBefore,
+        int RootHeightAfter,
+        long ElapsedMilliseconds,
+        int StatesVisited,
+        int CandidateGroupsTried,
+        int Commits,
+        int HeightCalls,
+        int HeightMemoHits,
+        int HeightUnderGroupCalls,
+        int CriticalShortCircuits,
+        bool RootDropped);
 }
