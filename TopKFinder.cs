@@ -249,7 +249,7 @@ partial class StrategyBuilder
     private static string FormatProofTightenStageName(int budget)
         => $"proof-tighten\u2264{budget}";
 
-    private static string FormatEdgeCompactStageName(int step)
+    internal static string FormatEdgeCompactStageName(int step)
         => $"edge-compact@{step}";
 
     // Runs a single compact pass at a fixed root ceiling, returning the materialized plan or null if the

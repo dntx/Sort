@@ -702,7 +702,7 @@ class MainForm : Form
 
             // Phase 2: compact refinement.
             Interlocked.Exchange(ref _activePhase, 2);
-            _currentStageName = FormatEdgeCompactStageName(defaultPlan.MaxStep);
+            _currentStageName = StrategyBuilder.FormatEdgeCompactStageName(defaultPlan.MaxStep);
             _stageStartMs = _runStopwatch?.ElapsedMilliseconds ?? 0;
             StrategyPlan compactPlan = await Task.Run(() => builder.BuildCompactPlan(), cancellationToken);
             _runStopwatch?.Stop();
@@ -866,13 +866,13 @@ class MainForm : Form
         {
             string firstStageName = defaultPlan is null
                 ? NextFeasibleCompactStageName(feasiblePlan, feasiblePlan.MaxStep)
-                : FormatEdgeCompactStageName(feasiblePlan.MaxStep);
+                : StrategyBuilder.FormatEdgeCompactStageName(feasiblePlan.MaxStep);
             root.Nodes.Add(new TreeNode(firstStageName + ComputingSuffix) { ForeColor = _palette.MutedForeColor });
         }
         else if (compactImproved)
-            root.Nodes.Add(CreatePlanTreeRoot(FormatEdgeCompactStageName(compactPlan.MaxStep), compactPlan, "compact", compactPlan.Elapsed));
+            root.Nodes.Add(CreatePlanTreeRoot(StrategyBuilder.FormatEdgeCompactStageName(compactPlan.MaxStep), compactPlan, "compact", compactPlan.Elapsed));
         else
-            root.Nodes.Add(CreateNoSolutionTreeRoot(FormatEdgeCompactStageName(compactPlan.MaxStep), compactPlan.Elapsed));
+            root.Nodes.Add(CreateNoSolutionTreeRoot(StrategyBuilder.FormatEdgeCompactStageName(compactPlan.MaxStep), compactPlan.Elapsed));
 
         _treeView.Nodes.Add(root);
         root.Expand();
@@ -954,9 +954,9 @@ class MainForm : Form
         while (root.Nodes.Count > 1)
             root.Nodes.RemoveAt(root.Nodes.Count - 1);
         if (compactImproved)
-            root.Nodes.Add(CreatePlanTreeRoot(FormatEdgeCompactStageName(compactPlan.MaxStep), compactPlan, "compact", compactPlan.Elapsed));
+            root.Nodes.Add(CreatePlanTreeRoot(StrategyBuilder.FormatEdgeCompactStageName(compactPlan.MaxStep), compactPlan, "compact", compactPlan.Elapsed));
         else
-            root.Nodes.Add(CreateNoSolutionTreeRoot(FormatEdgeCompactStageName(compactPlan.MaxStep), compactPlan.Elapsed));
+            root.Nodes.Add(CreateNoSolutionTreeRoot(StrategyBuilder.FormatEdgeCompactStageName(compactPlan.MaxStep), compactPlan.Elapsed));
 
         _treeView.EndUpdate();
 
@@ -993,7 +993,7 @@ class MainForm : Form
     {
         int lower = Math.Max(1, feasiblePlan.SearchStatistics.RootProvenLowerBound);
         int nextBudget = incumbentMaxStep - 1;
-        return nextBudget >= lower ? $"proof-tighten\u2264{nextBudget}" : FormatEdgeCompactStageName(incumbentMaxStep);
+        return nextBudget >= lower ? $"proof-tighten\u2264{nextBudget}" : StrategyBuilder.FormatEdgeCompactStageName(incumbentMaxStep);
     }
 
     // Anytime greedy edge handler: invoked on the UI thread once per edge stage as the worker thread
@@ -1030,7 +1030,7 @@ class MainForm : Form
             ? null
             : stage.HasSolution
                 ? NextFeasibleCompactStageName(_feasiblePlan, stage.Plan!.MaxStep)
-            : FormatEdgeCompactStageName(_feasiblePlan.MaxStep); // Phase A ended (no-solution/incomplete); only the edge-compaction pass remains
+            : StrategyBuilder.FormatEdgeCompactStageName(_feasiblePlan.MaxStep); // Phase A ended (no-solution/incomplete); only the edge-compaction pass remains
         string? probeComputingLabel = nextStageName is null ? null : nextStageName + ComputingSuffix;
 
         _treeView.BeginUpdate();
@@ -1275,13 +1275,13 @@ class MainForm : Form
         {
             string firstStageName = defaultPlan is null
                 ? NextFeasibleCompactStageName(feasiblePlan, feasiblePlan.MaxStep)
-                : FormatEdgeCompactStageName(feasiblePlan.MaxStep);
+                : StrategyBuilder.FormatEdgeCompactStageName(feasiblePlan.MaxStep);
             _overviewTree.Nodes.Add(BuildOverviewNoteNode(firstStageName + ComputingSuffix));
         }
         else if (compactImproved)
-            _overviewTree.Nodes.Add(BuildOverviewSectionNode(compactPlan, "compact", FormatEdgeCompactStageName(compactPlan.MaxStep), compactPlan.Elapsed));
+            _overviewTree.Nodes.Add(BuildOverviewSectionNode(compactPlan, "compact", StrategyBuilder.FormatEdgeCompactStageName(compactPlan.MaxStep), compactPlan.Elapsed));
         else
-            _overviewTree.Nodes.Add(BuildOverviewNoteNode(FormatStageRootLabel(FormatEdgeCompactStageName(compactPlan.MaxStep), compactPlan.Elapsed, plan: null)));
+            _overviewTree.Nodes.Add(BuildOverviewNoteNode(FormatStageRootLabel(StrategyBuilder.FormatEdgeCompactStageName(compactPlan.MaxStep), compactPlan.Elapsed, plan: null)));
 
         _overviewTree.EndUpdate();
     }
@@ -1298,9 +1298,9 @@ class MainForm : Form
             _overviewTree.Nodes.RemoveAt(_overviewTree.Nodes.Count - 1);
 
         if (compactImproved)
-            _overviewTree.Nodes.Add(BuildOverviewSectionNode(compactPlan, "compact", FormatEdgeCompactStageName(compactPlan.MaxStep), compactPlan.Elapsed));
+            _overviewTree.Nodes.Add(BuildOverviewSectionNode(compactPlan, "compact", StrategyBuilder.FormatEdgeCompactStageName(compactPlan.MaxStep), compactPlan.Elapsed));
         else
-            _overviewTree.Nodes.Add(BuildOverviewNoteNode(FormatStageRootLabel(FormatEdgeCompactStageName(compactPlan.MaxStep), compactPlan.Elapsed, plan: null)));
+            _overviewTree.Nodes.Add(BuildOverviewNoteNode(FormatStageRootLabel(StrategyBuilder.FormatEdgeCompactStageName(compactPlan.MaxStep), compactPlan.Elapsed, plan: null)));
 
         _overviewTree.EndUpdate();
     }
@@ -1437,9 +1437,6 @@ class MainForm : Form
         string body = $"{stageName}: {elapsedText}, max steps={plan.MaxStep}, edges={plan.TotalBranchEdges}, states={plan.SearchStatistics.OutputStates}";
         return marker is null ? body : $"{body}, {marker}";
     }
-
-    private static string FormatEdgeCompactStageName(int step)
-        => $"edge-compact@{step}";
 
     private static bool IsEdgeCompactStageName(string stageName)
         => stageName.StartsWith("edge-compact@", StringComparison.Ordinal);
