@@ -218,6 +218,8 @@ deterministic automated check, so NEVER raise a "missing tests" finding here
   missing docs.
 - Pure refactors, pure formatting, pure dependency bumps, and comment-only
   changes need no doc updates — do not flag them.
+- Mechanical file splits/extractions (including partial-class splits or method
+  relocation into focused files) are pure refactors when behavior is preserved.
 - Changes that ONLY touch test files or ONLY touch docs need no extra docs.
 - Naming: only flag a NEW identifier that clearly joins an EXISTING set with a
   visible, established convention. Do not invent conventions or bikeshed style
@@ -504,6 +506,22 @@ def _is_visibility_only_change(added: list[str], removed: list[str]) -> bool:
     return norm_added == norm_removed
 
 
+def _is_split_scaffolding_csharp(line: str) -> bool:
+    """True for non-behavioral file-split scaffolding around moved code."""
+    stripped = line.strip()
+    return stripped.startswith("partial class ") or stripped.startswith("namespace ")
+
+
+def _normalized_move_lines(lines: list[str]) -> list[str]:
+    """Normalize substantive lines for cross-file move/split comparison."""
+    normalized: list[str] = []
+    for line in lines:
+        if _is_split_scaffolding_csharp(line):
+            continue
+        normalized.append(_normalize_csharp_visibility(line))
+    return normalized
+
+
 
 def _is_comment_or_blank_csharp(line: str) -> bool:
     stripped = line.strip()
@@ -550,6 +568,9 @@ def detect_core_algorithm_test_gap(diff: str) -> str | None:
     changed_core_files: set[str] = set()
     changed_test_files: set[str] = set()
     substantive_test_files: set[str] = set()
+    core_added_norm: list[str] = []
+    core_removed_norm: list[str] = []
+    saw_core_added_file = False
 
     for section in split_diff_sections(diff):
         path = section_path(section)
@@ -567,6 +588,8 @@ def detect_core_algorithm_test_gap(diff: str) -> str | None:
 
         if category != "code" or not _is_core_algorithm_code_path(path):
             continue
+        if section_status(section) == "added":
+            saw_core_added_file = True
         added_lines, removed_lines = _split_changed_content_lines(section)
         added_sub = [l for l in added_lines if _is_substantive_csharp_change(l, test_file=False)]
         removed_sub = [l for l in removed_lines if _is_substantive_csharp_change(l, test_file=False)]
@@ -576,7 +599,19 @@ def detect_core_algorithm_test_gap(diff: str) -> str | None:
         # to the UI) changes no behavior, so it does not require new tests.
         if _is_visibility_only_change(added_sub, removed_sub):
             continue
+        core_added_norm.extend(_normalized_move_lines(added_sub))
+        core_removed_norm.extend(_normalized_move_lines(removed_sub))
         changed_core_files.add(path)
+
+    # A mechanical split/move of existing core-algorithm code into new partial or
+    # focused files (same substantive lines removed and added overall) is a
+    # reorganization-only change and does not require new tests.
+    if (
+        changed_core_files
+        and saw_core_added_file
+        and sorted(core_added_norm) == sorted(core_removed_norm)
+    ):
+        return None
 
     if not changed_core_files or substantive_test_files:
         return None
