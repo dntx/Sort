@@ -28,12 +28,12 @@ partial class MainForm
 
     private static string BuildStateDetails(StrategyNode node)
     {
+        string stepAndGroup =
+            $"Step: {node.Step}\n" +
+            $"Comparison group: ({StrategyTextRenderer.FormatSet(node.Group)})";
         string details = node.FinalChoice is not null
-            ? $"Step: {node.Step}\n" +
-              $"Comparison group: ({StrategyTextRenderer.FormatSet(node.Group)})"
-            : $"State S{node.StateId}\n" +
-              $"Step: {node.Step}\n" +
-              $"Comparison group: ({StrategyTextRenderer.FormatSet(node.Group)})";
+            ? stepAndGroup
+            : $"State S{node.StateId}\n" + stepAndGroup;
 
         if (node.FinalChoice is not null)
         {
