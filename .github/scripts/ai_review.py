@@ -466,6 +466,45 @@ def _iter_changed_content_lines(section: str) -> list[str]:
     return lines
 
 
+def _split_changed_content_lines(section: str) -> tuple[list[str], list[str]]:
+    """Return (added, removed) content lines from a diff section (without +/-)."""
+    added: list[str] = []
+    removed: list[str] = []
+    for line in section.splitlines():
+        if line.startswith("+++") or line.startswith("---"):
+            continue
+        if line.startswith("+"):
+            added.append(line[1:])
+        elif line.startswith("-"):
+            removed.append(line[1:])
+    return added, removed
+
+
+# Access/visibility modifiers whose flip (e.g. private→internal to expose a
+# helper to another assembly/UI) changes no behavior.
+_ACCESS_MODIFIER_RE = re.compile(r"\b(?:public|private|protected|internal)\b")
+
+
+def _normalize_csharp_visibility(line: str) -> str:
+    """Strip access-modifier tokens and collapse whitespace for comparison."""
+    return re.sub(r"\s+", " ", _ACCESS_MODIFIER_RE.sub("", line)).strip()
+
+
+def _is_visibility_only_change(added: list[str], removed: list[str]) -> bool:
+    """True when the substantive added/removed lines differ ONLY by visibility.
+
+    Pairs the substantive changed lines after removing access modifiers; if the
+    two multisets are then identical, the entire change was an access-modifier
+    flip (e.g. `private static` → `internal static`) with no behavioral effect.
+    """
+    if not added and not removed:
+        return False
+    norm_added = sorted(_normalize_csharp_visibility(l) for l in added)
+    norm_removed = sorted(_normalize_csharp_visibility(l) for l in removed)
+    return norm_added == norm_removed
+
+
+
 def _is_comment_or_blank_csharp(line: str) -> bool:
     stripped = line.strip()
     if not stripped:
@@ -528,8 +567,16 @@ def detect_core_algorithm_test_gap(diff: str) -> str | None:
 
         if category != "code" or not _is_core_algorithm_code_path(path):
             continue
-        if any(_is_substantive_csharp_change(line, test_file=False) for line in changed_lines):
-            changed_core_files.add(path)
+        added_lines, removed_lines = _split_changed_content_lines(section)
+        added_sub = [l for l in added_lines if _is_substantive_csharp_change(l, test_file=False)]
+        removed_sub = [l for l in removed_lines if _is_substantive_csharp_change(l, test_file=False)]
+        if not added_sub and not removed_sub:
+            continue
+        # A pure access-modifier flip (e.g. private→internal to expose a helper
+        # to the UI) changes no behavior, so it does not require new tests.
+        if _is_visibility_only_change(added_sub, removed_sub):
+            continue
+        changed_core_files.add(path)
 
     if not changed_core_files or substantive_test_files:
         return None
