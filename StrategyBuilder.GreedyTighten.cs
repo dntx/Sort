@@ -243,9 +243,10 @@ partial class StrategyBuilder
 
     // Lean subtree height at (state, remainingSlots) under the current override map: 1 + max child
     // height, where each state's group is its override (if any) or the constructive selector. Budget
-    // independent; memoized within a single evaluation (a fresh memo per call keeps it correct as
-    // overrides change between evaluations). Mirrors ConstructiveDepth's terminal cases so it matches
-    // the materialized tree's structure (modulo display-key Reference de-duplication).
+    // independent; callers may share a memo across repeated evaluations, but any committed override
+    // change must invalidate that memo before heights are queried again. Mirrors ConstructiveDepth's
+    // terminal cases so it matches the materialized tree's structure (modulo display-key Reference
+    // de-duplication).
     private int GreedyTightenHeight(ComparisonState state, int remainingSlots, Dictionary<SearchStateKey, int> memo)
     {
         _greedyTightenHeightCalls++;
