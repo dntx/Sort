@@ -67,14 +67,21 @@ sealed class StrategyPlan
             SearchStatistics.WithRootProvenLowerBound(rootProvenLowerBound), IsFeasibleUpperBound);
     }
 
-    private static int GetMaxStep(StrategyNode root)
+    // Worst-case sort count of a materialized strategy tree, resolving Reference nodes through their
+    // target subtree (a Reference is a leaf standing in for an already-expanded state's subtree, which
+    // still needs more sorts; counting it as a 0-depth leaf undercounts -- e.g. greedy-feasible 6,2,2:
+    // true 7, naive 6). Internal so the reference-resolution logic can be locked by concrete-tree unit
+    // tests independent of any strategy.
+    //
+    // The reference graph of a VALID strategy is acyclic: a reference points to an earlier-expanded
+    // display state, and by the step arithmetic a descendant can never be display-equivalent to an
+    // ancestor. A cycle (a reference resolving back onto the current resolution path) therefore means
+    // the tree is MALFORMED -- e.g. a comparison group that fails to make display progress on some
+    // branch, yielding a non-terminating "reuse myself" reference. Such a tree is a real bug in
+    // whatever produced it, so this THROWS rather than silently returning a number the caller would
+    // trust.
+    internal static int GetMaxStep(StrategyNode root)
     {
-        // A Reference node is a leaf standing in for an already-expanded state's subtree, which still
-        // needs additional sorts to resolve. Counting it as a 0-depth leaf UNDERCOUNTS the worst case
-        // whenever a reference lies on the deepest path and its target was first expanded shallower
-        // (e.g. greedy-feasible 6,2,2: the deepest path ends in a "+1 step" reference, true worst case
-        // 7, naive count 6 -- below the proven optimum). Resolve references through their target
-        // subtree so MaxStep is the true worst-case sort count.
         var referenceTargets = new Dictionary<int, StrategyNode>();
         IndexReferenceTargets(root, referenceTargets);
         return StepsToResolve(root, referenceTargets,
@@ -94,12 +101,9 @@ sealed class StrategyPlan
     }
 
     // Worst-case additional sorts from `node` down to a resolved top set, resolving Reference nodes
-    // through their target subtree. Memoized by node identity. Display-key normalization + relabeling
-    // can make two references point at each other (A's subtree references B, B's references A) even
-    // though the underlying search is acyclic and every actual play is finite; resolving such a display
-    // cycle by naive expansion would not terminate. The `visiting` set breaks any such cycle (a
-    // re-entered node contributes 0), which is exact for the common acyclic case and guarantees
-    // termination otherwise.
+    // through their target subtree. Memoized by node identity. `visiting` tracks the current resolution
+    // path; re-entering a node on that path is a reference cycle, which cannot occur in a valid tree
+    // (see GetMaxStep) -- it signals a malformed tree, so we throw instead of masking it.
     private static int StepsToResolve(
         StrategyNode node, Dictionary<int, StrategyNode> targets, Dictionary<StrategyNode, int> memo,
         HashSet<StrategyNode> visiting)
@@ -107,7 +111,11 @@ sealed class StrategyPlan
         if (memo.TryGetValue(node, out int cached))
             return cached;
         if (!visiting.Add(node))
-            return 0; // break a reference display-cycle; this path is counted along its other branch
+            throw new InvalidOperationException(
+                $"Strategy tree is malformed: reference cycle detected at state S{node.StateId} " +
+                "(a reference resolves back onto its own resolution path). A valid strategy's reference " +
+                "graph is acyclic; a cycle indicates a comparison group that fails to make display " +
+                "progress on some branch (a non-terminating 'reuse myself' reference).");
 
         int result;
         switch (node.Kind)
