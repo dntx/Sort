@@ -90,7 +90,7 @@ public class ProofTightenPlanTests
     {
         var builder = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 2_000_000 };
         ProofTightenStageOutcome terminal = TerminalOutcome(builder, out StrategyPlan plan);
-        Assert.Equal(ProofTightenStageOutcome.NoSolution, terminal);
+        Assert.Equal(ProofTightenStageOutcome.ProvenInfeasible, terminal);
         Assert.Equal(plan.MaxStep, plan.SearchStatistics.RootProvenLowerBound);
     }
 
@@ -108,7 +108,7 @@ public class ProofTightenPlanTests
         var solvedStages = new List<string>();
 
         StrategyPlan plan = new StrategyBuilder(12, 4, 4).BuildProofTightenPlan(
-            onStage: stage => { if (stage.HasSolution) solvedStages.Add(stage.Name); },
+            onStage: stage => { if (stage.IsTightened) solvedStages.Add(stage.Name); },
             onStageStart: name => startedStages.Add(name));
 
         string edgeCompactName = $"edge-compact@{plan.MaxStep}";
@@ -144,14 +144,52 @@ public class ProofTightenPlanTests
                 $"tightening ceilings must strictly descend, saw {tightenBudgets[i - 1]} then {tightenBudgets[i]}");
     }
 
-    // Runs the greedy edge progression and returns the outcome of its final solution-less stage (the terminal
-    // NoSolution / Incomplete), or Solution if the progression never bottomed out.
+    // Strong-output contract (the interface tightening): every stage the driver ANNOUNCES via
+    // onStageStart must be completed by exactly one onStage carrying a typed {Outcome, Plan}. This locks
+    // the fix that removed the silent "guard-reject" break, which previously started a probe stage but
+    // never reported its result. Same names in the same order => no dangling and no duplicated stage.
+    [Theory]
+    [InlineData(12, 4, 4)]
+    [InlineData(9, 3, 3)]
+    [InlineData(10, 3, 6)]
+    public void ProofTighten_EveryStartedStageIsCompletedExactlyOnce(int n, int m, int k)
+    {
+        var started = new List<string>();
+        var completed = new List<string>();
+
+        new StrategyBuilder(n, m, k).BuildProofTightenPlan(
+            onStage: stage => completed.Add(stage.Name),
+            onStageStart: name => started.Add(name));
+
+        Assert.NotEmpty(started);
+        Assert.Equal(started, completed);
+    }
+
+    // Exercises the Overshot outcome: on (20,4,6) the compact feasibility proxy accepts the tighter
+    // ceiling but the realized plan overshoots it, so the terminal probe is classified Overshot. It
+    // CARRIES its realized (over-budget) plan and is reported to the caller (previously this probe broke
+    // silently), yet it must NOT close the squeeze -- an over-budget probe is not a proof of optimality.
+    [Fact]
+    public void ProofTighten_ReportsOvershotTerminalWithoutClaimingOptimal_20_4_6()
+    {
+        var stages = new List<ProofTightenStage>();
+
+        _ = new StrategyBuilder(20, 4, 6).BuildProofTightenPlan(onStage: stages.Add);
+
+        Assert.Contains(stages, s => s.Overshot);
+        Assert.All(stages.Where(s => s.Overshot), s => Assert.NotNull(s.Plan));
+        Assert.DoesNotContain(stages, s => s.ProvesOptimal);
+    }
+
+    // Runs the greedy edge progression and returns the outcome of its final non-tightening stage (the
+    // terminal ProvenInfeasible / Incomplete / Overshot), or Tightened if the progression never bottomed
+    // out.
     private static ProofTightenStageOutcome TerminalOutcome(StrategyBuilder builder, out StrategyPlan plan)
     {
-        var terminal = ProofTightenStageOutcome.Solution;
+        var terminal = ProofTightenStageOutcome.Tightened;
         plan = builder.BuildProofTightenPlan(stage =>
         {
-            if (!stage.HasSolution)
+            if (!stage.IsTightened)
                 terminal = stage.Outcome;
         });
         return terminal;

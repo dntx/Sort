@@ -446,7 +446,7 @@ partial class MainForm
         // only as a leaf note. Tightening
         // continues regardless, since the next ceiling is driven by max-steps, not edges.
         StrategyPlan incumbent = _compactPlan ?? _feasiblePlan;
-        bool improved = stage.HasSolution && stage.Plan!.IsStrictRefinementOver(incumbent);
+        bool improved = stage.HasPlan && stage.Plan!.IsStrictRefinementOver(incumbent);
 
         // A follow-up stage always lands after every emitted stage except the terminal EdgeCompact
         // pass: after a "proof-tighten<=N" stage -- whether it found a solution or proved/failed the
@@ -457,9 +457,9 @@ partial class MainForm
         bool hasFollowUp = !IsEdgeCompactStageName(stage.Name);
         string? nextStageName = !hasFollowUp
             ? null
-            : stage.HasSolution
+            : stage.IsTightened
                 ? NextProofTightenStageName(_feasiblePlan, stage.Plan!.MaxStep)
-            : StrategyBuilder.FormatEdgeCompactStageName(_feasiblePlan.MaxStep); // Phase A ended (no-solution/incomplete); only the edge-compaction pass remains
+            : StrategyBuilder.FormatEdgeCompactStageName(_feasiblePlan.MaxStep); // Phase A ended (proven-infeasible/incomplete/overshot); only the edge-compaction pass remains
         string? probeComputingLabel = nextStageName is null ? null : nextStageName + ComputingSuffix;
 
         _treeView.BeginUpdate();
@@ -475,9 +475,9 @@ partial class MainForm
         if (improved)
             _compactPlan = stage.Plan;
 
-        // A proven-infeasible terminal (NoSolution, not a timeout) proves the incumbent is optimal:
+        // A proven-infeasible terminal (ProvenInfeasible, not a timeout) proves the incumbent is optimal:
         // close its squeeze (opt = incumbent.MaxStep) so the progression detail reports proven optimal.
-        if (stage.Outcome == ProofTightenStageOutcome.NoSolution)
+        if (stage.Outcome == ProofTightenStageOutcome.ProvenInfeasible)
             MarkGreedyIncumbentProvenOptimal();
 
         StrategyPlan shown = _compactPlan ?? _feasiblePlan;
@@ -503,7 +503,7 @@ partial class MainForm
             _stageStartMs = _runStopwatch?.ElapsedMilliseconds ?? 0;
         }
 
-        if (stage.HasSolution)
+        if (stage.HasPlan)
         {
             _latestProgress = CreateSnapshotFromPlan(stage.Plan!);
             if (improved)
@@ -516,10 +516,10 @@ partial class MainForm
         // thread waiting in Invoke) until the user acknowledges the stage.
         if (_pauseEachStageCheckBox.Checked)
         {
-            string? marker = stage.HasSolution
+            string? marker = stage.HasPlan
                 ? (!improved ? "no improvement" : null)
                 : NoSolutionMarker(stage);
-            ShowStageModal(FormatStageRootLabel(stage.Name, stage.Elapsed, stage.Plan, marker), stage.HasSolution);
+            ShowStageModal(FormatStageRootLabel(stage.Name, stage.Elapsed, stage.Plan, marker), stage.HasPlan);
         }
     }
 
@@ -560,7 +560,7 @@ partial class MainForm
     private TreeNode BuildStageTreeNode(ProofTightenStage stage, string scope, bool improved)
         => improved
             ? CreatePlanTreeRoot(stage.Name, stage.Plan!, scope, stage.Elapsed)
-            : stage.HasSolution
+            : stage.HasPlan
                 ? CreateNoImprovementTreeRoot(stage.Name, stage.Plan!, stage.Elapsed)
                 : CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, NoSolutionMarker(stage));
 
@@ -571,7 +571,7 @@ partial class MainForm
                 stage.Name,
                 stage.Elapsed,
                 stage.Plan,
-                stage.HasSolution ? "no improvement" : NoSolutionMarker(stage)));
+                stage.HasPlan ? "no improvement" : NoSolutionMarker(stage)));
 
     // Leaf note for a solution-less stage: null means "no solution" (a proven-infeasible ceiling),
     // otherwise the reason the incumbent merely stands -- "search incomplete (candidate cap reached)"
@@ -580,7 +580,7 @@ partial class MainForm
         => stage.Incomplete ? "search incomplete (candidate cap reached)"
             : null;
 
-    private void ShowStageModal(string message, bool hasSolution)
+    private void ShowStageModal(string message, bool hasPlan)
     {
         // Pause the run clock while the modal is up: the time the user spends in the dialog must
         // count toward neither the total elapsed nor the current stage's clock. Stopwatch.Start()
@@ -597,7 +597,7 @@ partial class MainForm
                 message,
                 "Stage complete",
                 MessageBoxButtons.OK,
-                hasSolution ? MessageBoxIcon.Information : MessageBoxIcon.None);
+                hasPlan ? MessageBoxIcon.Information : MessageBoxIcon.None);
         }
         finally
         {

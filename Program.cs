@@ -272,9 +272,9 @@ class Program
             StrategyPlan finalPlan = feasiblePlan;
             void CollectEdgeStage(ProofTightenStage stage)
             {
-                if (!stage.HasSolution)
+                if (!stage.HasPlan)
                 {
-                    if (stage.Outcome == ProofTightenStageOutcome.NoSolution)
+                    if (stage.Outcome == ProofTightenStageOutcome.ProvenInfeasible)
                         {
                             // Proven infeasible at this ceiling (complete enumeration) => the incumbent is
                             // optimal (opt = incumbent.MaxStep). Close its squeeze so the final tree reports
