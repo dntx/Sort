@@ -505,6 +505,8 @@ greedy-feasible(U) → greedy-tighten≤N → proof-tighten≤N → edge-compact
 
 **默认轮数（已实现，实测定档）**：驱动器**默认只跑单轮**（`DefaultGreedyTightenMaxRounds = 1`）。修复同构覆写串味 bug（override/高度 memo 以规范键为键、组按具体标号存取，见 PR #216）后的重基线（`nMax=10`，320 例）显示：单轮在 305/320 例达到与无界多轮相同的收紧 `U'`，成本仅约 0.47x；多轮平均只多收紧约 1 例却成本翻倍。多轮循环与跨轮 override 持久化仍保留，通过测试/评测开关 `GreedyTightenMaxRoundsForTesting`（设更大值或 `int.MaxValue` 跑无界）驱动，供后续调优使用。
 
+**soundness 校验（独立于精确搜索）**：GreedyTighten 只保证可行上界（`U' >= opt`）。在 `n <= 10` 用精确 `opt`（`BuildStepProofPlan`）对照即可验证，但更大形状下精确搜索不可行。为此提供独立校验 `ValidateGreedyTightenPolicyDepthForTesting`：物化后从根**重放已提交策略**（不复用高度 memo），逐状态断言分组有未决对（progress）、对抗路径无环（必然终止）、每条路径都停在受信任的 top-k 终止条件，并重算最坏深度；返回深度 == 计划的 `MaxStep` 即证明该 `MaxStep` 是一棵**真实合法策略**的最坏步数（因而是 opt 的可靠上界）。这把 GreedyTighten 的正确性锁到精确搜索够不到的规模（例如 `20,4,6`：GT 给出并被验证的合法 `U'=14`，而 `ProofTighten` 的 compact probe 停在 15——后者是完备性缺口而非错误结论）。
+
 ---
 
 ## 5. 对称性约减：McKay 风格规范形

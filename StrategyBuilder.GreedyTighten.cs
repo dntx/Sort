@@ -369,6 +369,70 @@ partial class StrategyBuilder
         return translated;
     }
 
+    // Test-only independent soundness check of the committed GreedyTighten policy. Must be called after
+    // RunGreedyTighten() has populated the override map. Re-simulates the policy (CurrentGreedyTightenGroup
+    // at every state) from the root WITHOUT the shared height memo, explicitly verifying at each state
+    // that the chosen group makes progress (an unresolved pair), that no adversary path cycles (which
+    // would be a non-terminating strategy), and that every path ends at a trusted top-k terminal. Returns
+    // the recomputed reference-free worst-case depth. Throws if the policy is not a valid, terminating
+    // strategy. A returned depth equal to the plan's MaxStep confirms that MaxStep is the true worst case
+    // of a genuinely valid strategy (so it is a sound upper bound on the optimum).
+    internal int ValidateGreedyTightenPolicyDepthForTesting()
+    {
+        var memo = new Dictionary<SearchStateKey, int>();
+        var onPath = new HashSet<SearchStateKey>();
+        return ValidateGreedyTightenPolicyDepth(new ComparisonState(_n), _k, memo, onPath);
+    }
+
+    private int ValidateGreedyTightenPolicyDepth(
+        ComparisonState state, int remainingSlots,
+        Dictionary<SearchStateKey, int> memo, HashSet<SearchStateKey> onPath)
+    {
+        ThrowIfCancellationRequested();
+        ulong ignoredFixedTopMask = 0;
+        NormalizeState(state, ref ignoredFixedTopMask, ref remainingSlots);
+
+        if (remainingSlots == 0)
+            return 0;
+        if (TryGetDeterminedTopSet(state, remainingSlots, out _))
+            return 0;
+        if (state.ActiveCount <= remainingSlots)
+            return 0;
+        if (state.ActiveCount <= _m)
+            return 1;
+
+        SearchStateKey key = GetSearchStateKey(state, remainingSlots);
+        if (memo.TryGetValue(key, out int cached))
+            return cached;
+        if (!onPath.Add(key))
+            throw new InvalidOperationException("GreedyTighten policy does not terminate: adversary path cycles at a state.");
+
+        List<int> group = CurrentGreedyTightenGroup(state, remainingSlots, key);
+        if (!GroupHasUnresolvedPair(state, group))
+            throw new InvalidOperationException("GreedyTighten policy chose a group with no unresolved pair (no progress).");
+
+        int maxChild = 0;
+        int outcomeCount = 0;
+        VisitComparisonOutcomes(
+            state, fixedTopMask: 0, remainingSlots, group, currentKey: key, collectMergedBranches: false,
+            onUsefulOutcome: outcome =>
+            {
+                outcomeCount++;
+                int childDepth = ValidateGreedyTightenPolicyDepth(outcome.NextState, outcome.NextRemainingSlots, memo, onPath);
+                if (childDepth > maxChild)
+                    maxChild = childDepth;
+                return true;
+            });
+
+        onPath.Remove(key);
+        if (outcomeCount == 0)
+            throw new InvalidOperationException("GreedyTighten policy reached a non-terminal state with no outcomes.");
+
+        int result = 1 + maxChild;
+        memo[key] = result;
+        return result;
+    }
+
     private static bool SameGroupSequence(List<int> a, List<int> b)
     {
         if (a.Count != b.Count)
