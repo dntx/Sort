@@ -148,7 +148,7 @@ partial class MainForm : Form
     // Anytime greedy edge state (UI thread only): every edge stage as it arrives (baseline compact,
     // each tightening, plus a terminal no-solution stage). The current-stage name and the run-clock ms
     // at which the current stage began drive the per-stage timing/labels in the progress panel.
-    private readonly List<ProofTightenStage> _proofTightenStages = new();
+    private readonly List<StageResult> _proofTightenStages = new();
     private string _currentStageName = "-";
     private long _stageStartMs;
 

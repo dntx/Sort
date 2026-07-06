@@ -48,7 +48,7 @@ public class MaxStepReferenceDepthTests
     [Fact]
     public void GreedyFeasible_6_2_2_MaxStepCountsReferenceDepth()
     {
-        StrategyPlan feasible = new StrategyBuilder(6, 2, 2).BuildGreedyFeasiblePlan();
+        StrategyPlan feasible = new StrategyBuilder(6, 2, 2).BuildGreedyFeasibleStage();
         Assert.Equal(7, feasible.MaxStep); // deepest path ends in a "+1 step" reference; naive count is 6
     }
 
@@ -59,8 +59,8 @@ public class MaxStepReferenceDepthTests
     [InlineData(9, 2, 2)]
     public void GreedyFeasible_UpperBoundNeverBelowOptimum_LowM(int n, int m, int k)
     {
-        int optimum = new StrategyBuilder(n, m, k).BuildStepProofPlan().MaxStep;
-        int feasible = new StrategyBuilder(n, m, k).BuildGreedyFeasiblePlan().MaxStep;
+        int optimum = new StrategyBuilder(n, m, k).BuildStepProofStage().MaxStep;
+        int feasible = new StrategyBuilder(n, m, k).BuildGreedyFeasibleStage().MaxStep;
 
         Assert.True(feasible >= optimum,
             $"feasible upper bound {feasible} was below the true optimum {optimum} for ({n},{m},{k})");

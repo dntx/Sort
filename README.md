@@ -53,6 +53,21 @@ Symmetric branches are merged by canonicalizing the comparison state, so equival
 The program has three entry points that share the same input validation
 (`1 <= n <= 64`, `2 <= m <= n`, `1 <= k <= n`).
 
+### Builder API naming
+
+The in-process builder API uses a consistent naming split between
+single-stage construction and multi-stage orchestration:
+
+- `BuildGreedyFeasibleStage`, `BuildStepProofStage`, `BuildProofTightenStage`,
+  `BuildEdgeCompactStage`: build one atomic stage result or plan.
+- `RunGreedyPipeline`: greedy-mode orchestrator that emits
+  `greedy-feasible`, zero or more `proof-tighten<=N`, then a final
+  `edge-compact@S` stage.
+- `RunExactPipeline`: exact-mode orchestrator that emits `step-proof`, then
+  `edge-compact@S`.
+- `StageResult` / `StageOutcome`: the unified stage callback model used by the
+  pipelines. Terminal non-tightening stages report `StageOutcome.Completed`.
+
 ### Command-line arguments
 
 ```bash

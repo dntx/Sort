@@ -34,7 +34,7 @@ public class GreedyTightenTests
     [InlineData(12, 4, 4)]
     public void GreedyTightenPlan_StepNeverBelowOptimum(int n, int m, int k)
     {
-        int optimum = new StrategyBuilder(n, m, k).BuildStepProofPlan().MaxStep;
+        int optimum = new StrategyBuilder(n, m, k).BuildStepProofStage().MaxStep;
         int tightened = new StrategyBuilder(n, m, k).BuildGreedyTightenPlan().MaxStep;
 
         Assert.True(tightened >= optimum,
@@ -52,7 +52,7 @@ public class GreedyTightenTests
     [InlineData(12, 4, 4)]
     public void GreedyTightenPlan_NeverWorseThanFeasible(int n, int m, int k)
     {
-        int feasible = new StrategyBuilder(n, m, k).BuildGreedyFeasiblePlan().MaxStep;
+        int feasible = new StrategyBuilder(n, m, k).BuildGreedyFeasibleStage().MaxStep;
         int tightened = new StrategyBuilder(n, m, k).BuildGreedyTightenPlan().MaxStep;
 
         Assert.True(tightened <= feasible,
@@ -60,7 +60,7 @@ public class GreedyTightenTests
     }
 
     // Independent soundness lock, valid even where the exact search is intractable (unlike
-    // StepNeverBelowOptimum, which needs BuildStepProofPlan). Re-simulates the committed policy from the
+    // StepNeverBelowOptimum, which needs BuildStepProofStage). Re-simulates the committed policy from the
     // root, checking every state makes progress, no adversary path cycles, and every path ends at a
     // trusted top-k terminal; it throws on any violation. A returned depth equal to the plan's MaxStep
     // confirms MaxStep is the true worst case of a genuinely valid strategy -- so the greedy-tighten

@@ -170,26 +170,26 @@ sealed class StrategyPlan
 //   Overshot         - a probe DID materialize a plan, but its realized MaxStep overshoots the ceiling
 //                      (the compact feasibility proxy over-claimed): no improvement and no proof, so
 //                      tightening stops with the squeeze open. Plan is carried for observability.
-//   EdgeCompacted    - the terminal min-edge pass at the determined step S (not a step-tightening probe);
+//   Completed        - a non-tightening terminal stage completed with a plan attached.
 //                      it always materializes and carries the returned plan. Nothing follows it.
-enum ProofTightenStageOutcome
+enum StageOutcome
 {
     Tightened,
     ProvenInfeasible,
     Incomplete,
     Overshot,
-    EdgeCompacted,
+    Completed,
 }
 
-// One stage of the proof-tighten progression as it is produced by BuildProofTightenPlan: the final
+// One stage of the proof-tighten progression as it is produced by RunGreedyPipeline: the final
 // edge-compaction pass, each successful downward tightening, or a terminal ceiling. Name is the stage
 // label (e.g. "edge-compact@5", "proof-tighten<=4"); Plan is the materialized strategy for Tightened
 // and Overshot, or null for ProvenInfeasible/Incomplete. Elapsed is the stage's own wall time, not a
 // cumulative total. {Outcome, Plan} together are the stage's complete output.
-readonly struct ProofTightenStage
+readonly struct StageResult
 {
-    public ProofTightenStage(string name, StrategyPlan? plan, TimeSpan elapsed,
-        ProofTightenStageOutcome outcome = ProofTightenStageOutcome.Tightened)
+    public StageResult(string name, StrategyPlan? plan, TimeSpan elapsed,
+        StageOutcome outcome = StageOutcome.Tightened)
     {
         Name = name;
         Plan = plan;
@@ -200,33 +200,33 @@ readonly struct ProofTightenStage
     public string Name { get; }
     public StrategyPlan? Plan { get; }
     public TimeSpan Elapsed { get; }
-    public ProofTightenStageOutcome Outcome { get; }
+    public StageOutcome Outcome { get; }
 
-    // A materialized strategy tree is attached (true for Tightened, Overshot, and EdgeCompacted). This is
+    // A materialized strategy tree is attached (true for Tightened, Overshot, and Completed). This is
     // a DISPLAY/progress predicate only -- it does NOT imply improvement: an Overshot plan overshoots the
     // ceiling and is no better than the incumbent. Use IsTightened for the "usable improvement" decision.
     public bool HasPlan => Plan is not null;
 
     // The probe realized a strategy that meets the requested ceiling (strictly improves the incumbent).
     // The ONLY outcome under which tightening continues to a deeper ceiling.
-    public bool IsTightened => Outcome == ProofTightenStageOutcome.Tightened;
+    public bool IsTightened => Outcome == StageOutcome.Tightened;
 
     // A completed probe whose infeasibility verdict is not a proof because the greedy candidate cap
     // truncated the group enumeration: it leaves the incumbent standing without closing the squeeze to a
     // proven optimum.
-    public bool Incomplete => Outcome == ProofTightenStageOutcome.Incomplete;
+    public bool Incomplete => Outcome == StageOutcome.Incomplete;
 
     // The probe materialized a plan whose realized MaxStep overshoots the requested ceiling (the compact
     // proxy over-claimed feasibility): no improvement, no proof, tightening stops.
-    public bool Overshot => Outcome == ProofTightenStageOutcome.Overshot;
+    public bool Overshot => Outcome == StageOutcome.Overshot;
 
     // The terminal min-edge pass at the determined step S (not a tightening probe). Always carries the
     // returned plan; nothing follows it.
-    public bool IsEdgeCompacted => Outcome == ProofTightenStageOutcome.EdgeCompacted;
+    public bool IsCompleted => Outcome == StageOutcome.Completed;
 
     // True only for a completed, complete-enumeration probe that proved the ceiling infeasible: the one
     // outcome that certifies the incumbent optimal and closes the squeeze.
-    public bool ProvesOptimal => Outcome == ProofTightenStageOutcome.ProvenInfeasible;
+    public bool ProvesOptimal => Outcome == StageOutcome.ProvenInfeasible;
 }
 
 sealed class SearchMilestone
