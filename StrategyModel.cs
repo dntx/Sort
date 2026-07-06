@@ -170,12 +170,15 @@ sealed class StrategyPlan
 //   Overshot         - a probe DID materialize a plan, but its realized MaxStep overshoots the ceiling
 //                      (the compact feasibility proxy over-claimed): no improvement and no proof, so
 //                      tightening stops with the squeeze open. Plan is carried for observability.
+//   EdgeCompacted    - the terminal min-edge pass at the determined step S (not a step-tightening probe);
+//                      it always materializes and carries the returned plan. Nothing follows it.
 enum ProofTightenStageOutcome
 {
     Tightened,
     ProvenInfeasible,
     Incomplete,
     Overshot,
+    EdgeCompacted,
 }
 
 // One stage of the proof-tighten progression as it is produced by BuildProofTightenPlan: the final
@@ -199,9 +202,9 @@ readonly struct ProofTightenStage
     public TimeSpan Elapsed { get; }
     public ProofTightenStageOutcome Outcome { get; }
 
-    // A materialized strategy tree is attached (true for Tightened and Overshot). This is a DISPLAY/
-    // progress predicate only -- it does NOT imply improvement: an Overshot plan overshoots the ceiling
-    // and is no better than the incumbent. Use IsTightened for the "usable improvement" decision.
+    // A materialized strategy tree is attached (true for Tightened, Overshot, and EdgeCompacted). This is
+    // a DISPLAY/progress predicate only -- it does NOT imply improvement: an Overshot plan overshoots the
+    // ceiling and is no better than the incumbent. Use IsTightened for the "usable improvement" decision.
     public bool HasPlan => Plan is not null;
 
     // The probe realized a strategy that meets the requested ceiling (strictly improves the incumbent).
@@ -216,6 +219,10 @@ readonly struct ProofTightenStage
     // The probe materialized a plan whose realized MaxStep overshoots the requested ceiling (the compact
     // proxy over-claimed feasibility): no improvement, no proof, tightening stops.
     public bool Overshot => Outcome == ProofTightenStageOutcome.Overshot;
+
+    // The terminal min-edge pass at the determined step S (not a tightening probe). Always carries the
+    // returned plan; nothing follows it.
+    public bool IsEdgeCompacted => Outcome == ProofTightenStageOutcome.EdgeCompacted;
 
     // True only for a completed, complete-enumeration probe that proved the ceiling infeasible: the one
     // outcome that certifies the incumbent optimal and closes the squeeze.

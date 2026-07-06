@@ -108,7 +108,7 @@ public class ProofTightenPlanTests
         var solvedStages = new List<string>();
 
         StrategyPlan plan = new StrategyBuilder(12, 4, 4).BuildProofTightenPlan(
-            onStage: stage => { if (stage.IsTightened) solvedStages.Add(stage.Name); },
+            onStage: stage => { if (stage.HasPlan) solvedStages.Add(stage.Name); },
             onStageStart: name => startedStages.Add(name));
 
         string edgeCompactName = $"edge-compact@{plan.MaxStep}";
@@ -181,15 +181,36 @@ public class ProofTightenPlanTests
         Assert.DoesNotContain(stages, s => s.ProvesOptimal);
     }
 
-    // Runs the greedy edge progression and returns the outcome of its final non-tightening stage (the
-    // terminal ProvenInfeasible / Incomplete / Overshot), or Tightened if the progression never bottomed
-    // out.
+    // Item-3 strong-output lock for Phase B: the final min-edge pass ALWAYS emits exactly one
+    // EdgeCompacted stage that carries the returned plan (previously the should-not-happen fall back
+    // returned a plan without emitting any stage). EdgeCompacted is terminal and is not a tightening.
+    [Theory]
+    [InlineData(12, 4, 4)]
+    [InlineData(9, 3, 3)]
+    [InlineData(10, 3, 6)]
+    public void ProofTighten_FinalStageIsSingleEdgeCompactedCarryingPlan(int n, int m, int k)
+    {
+        var stages = new List<ProofTightenStage>();
+
+        StrategyPlan plan = new StrategyBuilder(n, m, k).BuildProofTightenPlan(onStage: stages.Add);
+
+        var edgeStages = stages.Where(s => s.Outcome == ProofTightenStageOutcome.EdgeCompacted).ToList();
+        Assert.Single(edgeStages);                                                 // exactly one, never dangling
+        Assert.Equal(ProofTightenStageOutcome.EdgeCompacted, stages[^1].Outcome);  // and it is the last stage
+        Assert.True(edgeStages[0].HasPlan);                                        // carries a plan
+        Assert.False(edgeStages[0].IsTightened);                                   // not a step tightening
+        Assert.Same(plan, edgeStages[0].Plan);                                     // it IS the returned plan
+    }
+
+    // Runs the greedy edge progression and returns the outcome of its final TIGHTENING terminal stage
+    // (ProvenInfeasible / Incomplete / Overshot); ignores the always-last EdgeCompacted pass. Returns
+    // Tightened if the progression never bottomed out.
     private static ProofTightenStageOutcome TerminalOutcome(StrategyBuilder builder, out StrategyPlan plan)
     {
         var terminal = ProofTightenStageOutcome.Tightened;
         plan = builder.BuildProofTightenPlan(stage =>
         {
-            if (!stage.IsTightened)
+            if (!stage.IsTightened && !stage.IsEdgeCompacted)
                 terminal = stage.Outcome;
         });
         return terminal;
