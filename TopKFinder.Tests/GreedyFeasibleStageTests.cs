@@ -2,9 +2,9 @@ using System;
 using System.Collections.Generic;
 using Xunit;
 
-public class GreedyFeasiblePlanTests
+public class GreedyFeasibleStageTests
 {
-    // The greedy feasible plan must be a structurally valid strategy: a true tree whose every
+    // The greedy feasible stage must be a structurally valid strategy: a true tree whose every
     // decision node carries a chosen comparison group, terminating in resolved top sets.
     [Theory]
     [InlineData(10, 5, 5)]
@@ -12,7 +12,7 @@ public class GreedyFeasiblePlanTests
     [InlineData(25, 5, 5)]
     [InlineData(12, 4, 4)]
     [InlineData(9, 3, 3)]
-    public void GreedyFeasiblePlan_IsValidStrategy(int n, int m, int k)
+    public void GreedyFeasibleStage_IsValidStrategy(int n, int m, int k)
     {
         StrategyPlan plan = new StrategyBuilder(n, m, k).BuildGreedyFeasibleStage();
 
@@ -24,7 +24,7 @@ public class GreedyFeasiblePlanTests
     // The hardest target shape (25,5,5) never resolves under the exact search, but the greedy
     // constructor must still finish near-instantly and yield a finite feasible upper bound.
     [Fact]
-    public void GreedyFeasiblePlan_HardestShape_CompletesInstantly()
+    public void GreedyFeasibleStage_HardestShape_CompletesInstantly()
     {
         var start = DateTime.UtcNow;
         StrategyPlan plan = new StrategyBuilder(25, 5, 5).BuildGreedyFeasibleStage();
@@ -32,7 +32,7 @@ public class GreedyFeasiblePlanTests
 
         Assert.True(plan.MaxStep > 0);
         Assert.True(elapsed < TimeSpan.FromSeconds(20),
-            $"greedy feasible plan for 25,5,5 took {elapsed.TotalSeconds:F1}s; expected near-instant");
+            $"greedy feasible stage for 25,5,5 took {elapsed.TotalSeconds:F1}s; expected near-instant");
     }
 
     // Regression: large shapes (here 26,10,10) produce a feasible-top-set count that exceeds the
@@ -40,7 +40,7 @@ public class GreedyFeasiblePlanTests
     // multiplies its accumulator past int.MaxValue on the second iteration. The accumulator must be
     // wide enough (long) not to throw OverflowException mid-build.
     [Fact]
-    public void FeasiblePlan_LargeShape_DoesNotOverflowLowerBound()
+    public void GreedyFeasibleStage_LargeShape_DoesNotOverflowLowerBound()
     {
         StrategyPlan plan = new StrategyBuilder(26, 10, 10).BuildGreedyFeasibleStage();
 
@@ -54,7 +54,7 @@ public class GreedyFeasiblePlanTests
     [InlineData(10, 5, 5)]
     [InlineData(16, 5, 5)]
     [InlineData(25, 5, 5)]
-    public void FeasiblePlan_SqueezeIsConsistent(int n, int m, int k)
+    public void GreedyFeasibleStage_SqueezeIsConsistent(int n, int m, int k)
     {
         StrategyPlan plan = new StrategyBuilder(n, m, k).BuildGreedyFeasibleStage();
 
@@ -71,7 +71,7 @@ public class GreedyFeasiblePlanTests
     [InlineData(12, 5, 5)]
     [InlineData(9, 3, 3)]
     [InlineData(12, 4, 4)]
-    public void FeasiblePlan_UpperBoundNeverBelowOptimum(int n, int m, int k)
+    public void GreedyFeasibleStage_UpperBoundNeverBelowOptimum(int n, int m, int k)
     {
         int optimum = new StrategyBuilder(n, m, k).BuildStepProofStage().MaxStep;
         int feasible = new StrategyBuilder(n, m, k).BuildGreedyFeasibleStage().MaxStep;
@@ -95,7 +95,7 @@ public class GreedyFeasiblePlanTests
     [InlineData(7, 4, 4, 3)]
     [InlineData(14, 4, 5, 8)]
     [InlineData(12, 6, 6, 4)]
-    public void FeasiblePlan_LookaheadPinsRawUpperBound(int n, int m, int k, int expectedRawU)
+    public void GreedyFeasibleStage_LookaheadPinsRawUpperBound(int n, int m, int k, int expectedRawU)
     {
         int feasible = new StrategyBuilder(n, m, k).BuildGreedyFeasibleStage().MaxStep;
 

@@ -5,10 +5,10 @@ using Xunit;
 
 // Guards the greedy-mode proof-tighten pipeline (RunGreedyPipeline), whose step ceiling is the
 // constructive feasible upper bound U (ConstructiveRootUpperBound). The step phase has its own
-// coverage in GreedyFeasiblePlanTests; this fixes the previously-untested edge path so the budget source
+// coverage in GreedyFeasibleStageTests; this fixes the previously-untested edge path so the budget source
 // can never silently over-constrain the compact pass (returning an unsolvable sentinel) or emit a
 // plan that violates the U/opt bounds.
-public class ProofTightenPlanTests
+public class GreedyPipelineTests
 {
     // The edge pass must always produce a valid, fully-grouped strategy under the constructive U
     // budget -- never throw "no group fits the budget" -- and stay a feasible plan.
@@ -23,7 +23,7 @@ public class ProofTightenPlanTests
     [InlineData(12, 4, 4)]
     [InlineData(12, 5, 5)]
     [InlineData(9, 3, 3)]
-    public void ProofTightenPlan_IsValidStrategy(int n, int m, int k)
+    public void GreedyPipeline_IsValidStrategy(int n, int m, int k)
     {
         StrategyPlan plan = new StrategyBuilder(n, m, k).RunGreedyPipeline();
 
@@ -41,7 +41,7 @@ public class ProofTightenPlanTests
     [InlineData(10, 5, 5)]
     [InlineData(12, 4, 4)]
     [InlineData(12, 5, 5)]
-    public void ProofTightenPlan_StepNeverExceedsFeasibleUpperBound(int n, int m, int k)
+    public void GreedyPipeline_StepNeverExceedsFeasibleUpperBound(int n, int m, int k)
     {
         var builder = new StrategyBuilder(n, m, k);
         int stepU = builder.BuildGreedyFeasibleStage().MaxStep;
@@ -60,7 +60,7 @@ public class ProofTightenPlanTests
     [InlineData(12, 5, 5)]
     [InlineData(9, 3, 3)]
     [InlineData(12, 4, 4)]
-    public void FeasibleCompactPlan_StepNeverBelowOptimum(int n, int m, int k)
+    public void GreedyPipeline_StepNeverBelowOptimum(int n, int m, int k)
     {
         int optimum = new StrategyBuilder(n, m, k).BuildStepProofStage().MaxStep;
         int edgeStep = new StrategyBuilder(n, m, k).RunGreedyPipeline().MaxStep;
@@ -76,7 +76,7 @@ public class ProofTightenPlanTests
     // the default cap the feasible<=4 probe truncates, so it is Incomplete; raising the cap enough to enumerate
     // completely flips the same probe to a genuine NoSolution proof that closes the squeeze.
     [Fact]
-    public void FeasibleCompactPlan_CappedInfeasibility_IsIncomplete_NotProvenOptimal()
+    public void GreedyPipeline_CappedInfeasibility_IsIncomplete_NotProvenOptimal()
     {
         StageOutcome cappedTerminal = TerminalOutcome(new StrategyBuilder(12, 4, 4), out StrategyPlan cappedPlan);
         Assert.Equal(StageOutcome.Incomplete, cappedTerminal);
@@ -86,7 +86,7 @@ public class ProofTightenPlanTests
     }
 
     [Fact]
-    public void FeasibleCompactPlan_CompleteInfeasibility_IsProvenOptimal()
+    public void GreedyPipeline_CompleteInfeasibility_IsProvenOptimal()
     {
         var builder = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 2_000_000 };
         StageOutcome terminal = TerminalOutcome(builder, out StrategyPlan plan);
@@ -102,7 +102,7 @@ public class ProofTightenPlanTests
     // has U > opt so its tightening probes run, exercising both the proof-tighten ceilings and the
     // terminal edge-compact stage.
     [Fact]
-    public void FeasibleCompactPlan_EmitsProofTightenAndEdgeCompactStageNames()
+    public void GreedyPipeline_EmitsProofTightenAndEdgeCompactStageNames()
     {
         var startedStages = new List<string>();
         var solvedStages = new List<string>();
