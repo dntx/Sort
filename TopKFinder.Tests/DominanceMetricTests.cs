@@ -18,7 +18,7 @@ public class DominanceMetricTests
     public void Phase1DominanceBoundsAreSound(int n, int m, int k)
     {
         var builder = new StrategyBuilder(n, m, k) { EnableDominanceMetric = true };
-        builder.BuildStepProofPlan();
+        builder.BuildStepProofStage();
 
         Assert.Equal(0, builder.DominanceUnsoundObservations);
         Assert.Equal(0, builder.DominanceBudgetExhaustions);
@@ -37,7 +37,7 @@ public class DominanceMetricTests
     public void Phase1DominanceLowerBoundPruningFires(int n, int m, int k, int minBoundRaises)
     {
         var builder = new StrategyBuilder(n, m, k);
-        builder.BuildStepProofPlan();
+        builder.BuildStepProofStage();
 
         Assert.True(
             builder.DominanceBoundRaises >= minBoundRaises,

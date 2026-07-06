@@ -73,7 +73,7 @@ public sealed class StrategyPerformanceTests
         _ = TestTimeoutHelper.RunWithTimeout(
             $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k}) warmup",
             PerfTestTimeout,
-            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildStepProofPlan());
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildStepProofStage());
 
         var samples = new List<double>(iterations);
         for (int i = 0; i < iterations; i++)
@@ -81,7 +81,7 @@ public sealed class StrategyPerformanceTests
             StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
                 $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k}) iteration {i + 1}",
                 PerfTestTimeout,
-                cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildStepProofPlan());
+                cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildStepProofStage());
             samples.Add(plan.Elapsed.TotalMilliseconds);
         }
 

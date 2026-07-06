@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Xunit;
 
-// Guards the greedy-mode proof-tighten pipeline (BuildProofTightenPlan), whose step ceiling is the
+// Guards the greedy-mode proof-tighten pipeline (RunGreedyPipeline), whose step ceiling is the
 // constructive feasible upper bound U (ConstructiveRootUpperBound). The step phase has its own
 // coverage in GreedyFeasiblePlanTests; this fixes the previously-untested edge path so the budget source
 // can never silently over-constrain the compact pass (returning an unsolvable sentinel) or emit a
@@ -25,7 +25,7 @@ public class ProofTightenPlanTests
     [InlineData(9, 3, 3)]
     public void ProofTightenPlan_IsValidStrategy(int n, int m, int k)
     {
-        StrategyPlan plan = new StrategyBuilder(n, m, k).BuildProofTightenPlan();
+        StrategyPlan plan = new StrategyBuilder(n, m, k).RunGreedyPipeline();
 
         Assert.True(plan.IsFeasibleUpperBound);
         Assert.True(plan.MaxStep > 0, "feasible compact plan should take at least one comparison");
@@ -44,8 +44,8 @@ public class ProofTightenPlanTests
     public void ProofTightenPlan_StepNeverExceedsFeasibleUpperBound(int n, int m, int k)
     {
         var builder = new StrategyBuilder(n, m, k);
-        int stepU = builder.BuildGreedyFeasiblePlan().MaxStep;
-        int edgeStep = builder.BuildProofTightenPlan().MaxStep;
+        int stepU = builder.BuildGreedyFeasibleStage().MaxStep;
+        int edgeStep = builder.RunGreedyPipeline().MaxStep;
 
         Assert.True(edgeStep <= stepU,
             $"feasible compact step {edgeStep} exceeded the feasible upper bound {stepU}");
@@ -62,8 +62,8 @@ public class ProofTightenPlanTests
     [InlineData(12, 4, 4)]
     public void FeasibleCompactPlan_StepNeverBelowOptimum(int n, int m, int k)
     {
-        int optimum = new StrategyBuilder(n, m, k).BuildStepProofPlan().MaxStep;
-        int edgeStep = new StrategyBuilder(n, m, k).BuildProofTightenPlan().MaxStep;
+        int optimum = new StrategyBuilder(n, m, k).BuildStepProofStage().MaxStep;
+        int edgeStep = new StrategyBuilder(n, m, k).RunGreedyPipeline().MaxStep;
 
         Assert.True(edgeStep >= optimum,
             $"feasible compact step {edgeStep} was below the true optimum {optimum}");
@@ -78,8 +78,8 @@ public class ProofTightenPlanTests
     [Fact]
     public void FeasibleCompactPlan_CappedInfeasibility_IsIncomplete_NotProvenOptimal()
     {
-        ProofTightenStageOutcome cappedTerminal = TerminalOutcome(new StrategyBuilder(12, 4, 4), out StrategyPlan cappedPlan);
-        Assert.Equal(ProofTightenStageOutcome.Incomplete, cappedTerminal);
+        StageOutcome cappedTerminal = TerminalOutcome(new StrategyBuilder(12, 4, 4), out StrategyPlan cappedPlan);
+        Assert.Equal(StageOutcome.Incomplete, cappedTerminal);
         Assert.True(
             cappedPlan.SearchStatistics.RootProvenLowerBound < cappedPlan.MaxStep,
             "a cap-truncated (incomplete) probe must not close the squeeze to a proven optimum");
@@ -89,12 +89,12 @@ public class ProofTightenPlanTests
     public void FeasibleCompactPlan_CompleteInfeasibility_IsProvenOptimal()
     {
         var builder = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 2_000_000 };
-        ProofTightenStageOutcome terminal = TerminalOutcome(builder, out StrategyPlan plan);
-        Assert.Equal(ProofTightenStageOutcome.ProvenInfeasible, terminal);
+        StageOutcome terminal = TerminalOutcome(builder, out StrategyPlan plan);
+        Assert.Equal(StageOutcome.ProvenInfeasible, terminal);
         Assert.Equal(plan.MaxStep, plan.SearchStatistics.RootProvenLowerBound);
     }
 
-    // Pins the user-facing stage-name contract emitted by BuildProofTightenPlan: each downward
+    // Pins the user-facing stage-name contract emitted by RunGreedyPipeline: each downward
     // tightening ceiling is announced as "proof-tighten\u2264N" and the final edge pass as
     // "edge-compact@S" (S = the resulting plan's MaxStep). These labels are shared verbatim by the CLI
     // headers, GUI tree roots, and the progress panel, so renaming them is a real behavior change --
@@ -107,8 +107,8 @@ public class ProofTightenPlanTests
         var startedStages = new List<string>();
         var solvedStages = new List<string>();
 
-        StrategyPlan plan = new StrategyBuilder(12, 4, 4).BuildProofTightenPlan(
-            onStage: stage => { if (stage.HasPlan) solvedStages.Add(stage.Name); },
+        StrategyPlan plan = new StrategyBuilder(12, 4, 4).RunGreedyPipeline(
+            onStageCompleted: stage => { if (stage.HasPlan) solvedStages.Add(stage.Name); },
             onStageStart: name => startedStages.Add(name));
 
         string edgeCompactName = $"edge-compact@{plan.MaxStep}";
@@ -145,7 +145,7 @@ public class ProofTightenPlanTests
     }
 
     // Strong-output contract (the interface tightening): every stage the driver ANNOUNCES via
-    // onStageStart must be completed by exactly one onStage carrying a typed {Outcome, Plan}. This locks
+    // onStageStart must be completed by exactly one onStageCompleted carrying a typed {Outcome, Plan}. This locks
     // the fix that removed the silent "guard-reject" break, which previously started a probe stage but
     // never reported its result. Same names in the same order => no dangling and no duplicated stage.
     [Theory]
@@ -157,8 +157,8 @@ public class ProofTightenPlanTests
         var started = new List<string>();
         var completed = new List<string>();
 
-        new StrategyBuilder(n, m, k).BuildProofTightenPlan(
-            onStage: stage => completed.Add(stage.Name),
+        new StrategyBuilder(n, m, k).RunGreedyPipeline(
+            onStageCompleted: stage => completed.Add(stage.Name),
             onStageStart: name => started.Add(name));
 
         Assert.NotEmpty(started);
@@ -172,9 +172,9 @@ public class ProofTightenPlanTests
     [Fact]
     public void ProofTighten_ReportsOvershotTerminalWithoutClaimingOptimal_20_4_6()
     {
-        var stages = new List<ProofTightenStage>();
+        var stages = new List<StageResult>();
 
-        _ = new StrategyBuilder(20, 4, 6).BuildProofTightenPlan(onStage: stages.Add);
+        _ = new StrategyBuilder(20, 4, 6).RunGreedyPipeline(onStageCompleted: stages.Add);
 
         Assert.Contains(stages, s => s.Overshot);
         Assert.All(stages.Where(s => s.Overshot), s => Assert.NotNull(s.Plan));
@@ -182,35 +182,35 @@ public class ProofTightenPlanTests
     }
 
     // Item-3 strong-output lock for Phase B: the final min-edge pass ALWAYS emits exactly one
-    // EdgeCompacted stage that carries the returned plan (previously the should-not-happen fall back
-    // returned a plan without emitting any stage). EdgeCompacted is terminal and is not a tightening.
+    // Completed stage that carries the returned plan (previously the should-not-happen fall back
+    // returned a plan without emitting any stage). Completed is terminal and is not a tightening.
     [Theory]
     [InlineData(12, 4, 4)]
     [InlineData(9, 3, 3)]
     [InlineData(10, 3, 6)]
-    public void ProofTighten_FinalStageIsSingleEdgeCompactedCarryingPlan(int n, int m, int k)
+    public void ProofTighten_FinalStageIsSingleCompletedCarryingPlan(int n, int m, int k)
     {
-        var stages = new List<ProofTightenStage>();
+        var stages = new List<StageResult>();
 
-        StrategyPlan plan = new StrategyBuilder(n, m, k).BuildProofTightenPlan(onStage: stages.Add);
+        StrategyPlan plan = new StrategyBuilder(n, m, k).RunGreedyPipeline(onStageCompleted: stages.Add);
 
-        var edgeStages = stages.Where(s => s.Outcome == ProofTightenStageOutcome.EdgeCompacted).ToList();
+        var edgeStages = stages.Where(s => s.Outcome == StageOutcome.Completed).ToList();
         Assert.Single(edgeStages);                                                 // exactly one, never dangling
-        Assert.Equal(ProofTightenStageOutcome.EdgeCompacted, stages[^1].Outcome);  // and it is the last stage
+        Assert.Equal(StageOutcome.Completed, stages[^1].Outcome);  // and it is the last stage
         Assert.True(edgeStages[0].HasPlan);                                        // carries a plan
         Assert.False(edgeStages[0].IsTightened);                                   // not a step tightening
         Assert.Same(plan, edgeStages[0].Plan);                                     // it IS the returned plan
     }
 
     // Runs the greedy edge progression and returns the outcome of its final TIGHTENING terminal stage
-    // (ProvenInfeasible / Incomplete / Overshot); ignores the always-last EdgeCompacted pass. Returns
+    // (ProvenInfeasible / Incomplete / Overshot); ignores the always-last Completed pass. Returns
     // Tightened if the progression never bottomed out.
-    private static ProofTightenStageOutcome TerminalOutcome(StrategyBuilder builder, out StrategyPlan plan)
+    private static StageOutcome TerminalOutcome(StrategyBuilder builder, out StrategyPlan plan)
     {
-        var terminal = ProofTightenStageOutcome.Tightened;
-        plan = builder.BuildProofTightenPlan(stage =>
+        var terminal = StageOutcome.Tightened;
+        plan = builder.RunGreedyPipeline(stage =>
         {
-            if (!stage.IsTightened && !stage.IsEdgeCompacted)
+            if (!stage.IsTightened && !stage.IsCompleted)
                 terminal = stage.Outcome;
         });
         return terminal;

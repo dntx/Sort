@@ -60,7 +60,7 @@ public sealed class AnomalyScanTests
             StrategyPlan? def;
             try
             {
-                def = RunWithTimeout(caseTimeout, ct => new StrategyBuilder(n, m, k, ct).BuildStepProofPlan());
+                def = RunWithTimeout(caseTimeout, ct => new StrategyBuilder(n, m, k, ct).BuildStepProofStage());
             }
             catch (TimeoutException)
             {
@@ -80,7 +80,7 @@ public sealed class AnomalyScanTests
             StrategyPlan? compact = null;
             try
             {
-                compact = RunWithTimeout(caseTimeout, ct => new StrategyBuilder(n, m, k, ct).BuildEdgeCompactPlan());
+                compact = RunWithTimeout(caseTimeout, ct => new StrategyBuilder(n, m, k, ct).BuildEdgeCompactStage());
             }
             catch (TimeoutException)
             {

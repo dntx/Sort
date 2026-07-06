@@ -14,7 +14,7 @@ public class GreedyFeasiblePlanTests
     [InlineData(9, 3, 3)]
     public void GreedyFeasiblePlan_IsValidStrategy(int n, int m, int k)
     {
-        StrategyPlan plan = new StrategyBuilder(n, m, k).BuildGreedyFeasiblePlan();
+        StrategyPlan plan = new StrategyBuilder(n, m, k).BuildGreedyFeasibleStage();
 
         Assert.True(plan.IsFeasibleUpperBound);
         Assert.True(plan.MaxStep > 0, "feasible plan should take at least one comparison");
@@ -27,7 +27,7 @@ public class GreedyFeasiblePlanTests
     public void GreedyFeasiblePlan_HardestShape_CompletesInstantly()
     {
         var start = DateTime.UtcNow;
-        StrategyPlan plan = new StrategyBuilder(25, 5, 5).BuildGreedyFeasiblePlan();
+        StrategyPlan plan = new StrategyBuilder(25, 5, 5).BuildGreedyFeasibleStage();
         var elapsed = DateTime.UtcNow - start;
 
         Assert.True(plan.MaxStep > 0);
@@ -42,7 +42,7 @@ public class GreedyFeasiblePlanTests
     [Fact]
     public void FeasiblePlan_LargeShape_DoesNotOverflowLowerBound()
     {
-        StrategyPlan plan = new StrategyBuilder(26, 10, 10).BuildGreedyFeasiblePlan();
+        StrategyPlan plan = new StrategyBuilder(26, 10, 10).BuildGreedyFeasibleStage();
 
         Assert.True(plan.IsFeasibleUpperBound);
         Assert.True(plan.MaxStep > 0, "feasible plan should take at least one comparison");
@@ -56,7 +56,7 @@ public class GreedyFeasiblePlanTests
     [InlineData(25, 5, 5)]
     public void FeasiblePlan_SqueezeIsConsistent(int n, int m, int k)
     {
-        StrategyPlan plan = new StrategyBuilder(n, m, k).BuildGreedyFeasiblePlan();
+        StrategyPlan plan = new StrategyBuilder(n, m, k).BuildGreedyFeasibleStage();
 
         int lower = plan.SearchStatistics.RootProvenLowerBound;
         Assert.True(lower >= 1, $"expected a positive proven lower bound, got {lower}");
@@ -73,8 +73,8 @@ public class GreedyFeasiblePlanTests
     [InlineData(12, 4, 4)]
     public void FeasiblePlan_UpperBoundNeverBelowOptimum(int n, int m, int k)
     {
-        int optimum = new StrategyBuilder(n, m, k).BuildStepProofPlan().MaxStep;
-        int feasible = new StrategyBuilder(n, m, k).BuildGreedyFeasiblePlan().MaxStep;
+        int optimum = new StrategyBuilder(n, m, k).BuildStepProofStage().MaxStep;
+        int feasible = new StrategyBuilder(n, m, k).BuildGreedyFeasibleStage().MaxStep;
 
         Assert.True(feasible >= optimum,
             $"feasible upper bound {feasible} was below the true optimum {optimum}");
@@ -97,7 +97,7 @@ public class GreedyFeasiblePlanTests
     [InlineData(12, 6, 6, 4)]
     public void FeasiblePlan_LookaheadPinsRawUpperBound(int n, int m, int k, int expectedRawU)
     {
-        int feasible = new StrategyBuilder(n, m, k).BuildGreedyFeasiblePlan().MaxStep;
+        int feasible = new StrategyBuilder(n, m, k).BuildGreedyFeasibleStage().MaxStep;
 
         Assert.Equal(expectedRawU, feasible);
     }

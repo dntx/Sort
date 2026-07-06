@@ -33,7 +33,7 @@ namespace TopKFinder.Tests
             var cts = new System.Threading.CancellationTokenSource(TimeSpan.FromSeconds(300));
             var builder = new StrategyBuilder(n, m, k, cts.Token);
             
-            var plan = builder.BuildProofTightenPlan();
+            var plan = builder.RunGreedyPipeline();
             
             Assert.NotNull(plan);
             Assert.True(plan.MaxStep > 0, $"Solution for ({n},{m},{k}) should have positive steps");
@@ -54,7 +54,7 @@ namespace TopKFinder.Tests
             var cts = new System.Threading.CancellationTokenSource(timeout);
             
             var builder = new StrategyBuilder(n, m, k, cts.Token);
-            var plan = builder.BuildProofTightenPlan();
+            var plan = builder.RunGreedyPipeline();
             
             sw.Stop();
             Assert.True(sw.Elapsed <= timeout.Add(TimeSpan.FromSeconds(5)), 
@@ -63,7 +63,7 @@ namespace TopKFinder.Tests
 
         /// <summary>
         /// Basic sanity check for the greedy build pipeline.
-        /// Verifies that BuildProofTightenPlan completes end-to-end.
+        /// Verifies that RunGreedyPipeline completes end-to-end.
         /// </summary>
         [Fact]
         public void Greedy_BuildPipelineCompletes()
@@ -72,7 +72,7 @@ namespace TopKFinder.Tests
             var builder = new StrategyBuilder(8, 3, 3, cts.Token);
             
             // Main entry point for greedy compact solving.
-            var plan = builder.BuildProofTightenPlan();
+            var plan = builder.RunGreedyPipeline();
             
             Assert.NotNull(plan);
             Assert.Equal(8, plan.N);

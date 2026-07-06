@@ -120,7 +120,7 @@ partial class StrategyBuilder
         _progressScope = ProgressScope.DefaultStandalone;
     }
 
-    public StrategyPlan BuildStepProofPlan()
+    public StrategyPlan BuildStepProofStage()
     {
         _progressScope = _reportCombinedRunProgress
             ? ProgressScope.DefaultInCombinedRun
@@ -128,7 +128,28 @@ partial class StrategyBuilder
         return BuildPlan(useCompactSelection: false);
     }
 
-    public StrategyPlan BuildEdgeCompactPlan()
+    public StrategyPlan RunExactPipeline(
+        Action<StageResult>? onStageCompleted = null,
+        Action<string>? onStageStart = null)
+    {
+        const string stepStageName = "step-proof";
+        onStageStart?.Invoke(stepStageName);
+        var stepStopwatch = Stopwatch.StartNew();
+        StrategyPlan stepPlan = BuildStepProofStage();
+        stepStopwatch.Stop();
+        onStageCompleted?.Invoke(new StageResult(stepStageName, stepPlan, stepStopwatch.Elapsed, StageOutcome.Completed));
+
+        string edgeStageName = FormatEdgeCompactStageName(stepPlan.MaxStep);
+        onStageStart?.Invoke(edgeStageName);
+        var edgeStopwatch = Stopwatch.StartNew();
+        StrategyPlan edgePlan = BuildEdgeCompactStage();
+        edgeStopwatch.Stop();
+        onStageCompleted?.Invoke(new StageResult(edgeStageName, edgePlan, edgeStopwatch.Elapsed, StageOutcome.Completed));
+
+        return edgePlan;
+    }
+
+    public StrategyPlan BuildEdgeCompactStage()
     {
         // Returns the raw compact candidate: the compact DP keeps the optimal worst-case step count
         // (so MaxStep always matches default) and, among equally-optimal groups, minimizes a per-state
@@ -156,15 +177,15 @@ partial class StrategyBuilder
     //   Phase B (EdgeCompact): run ONE min-edge compact pass at the determined step S to produce the
     //     final edge-minimized tree.
     //
-    // Fast and interruptible, not proven optimal. onStage, when supplied, is invoked synchronously on
+    // Fast and interruptible, not proven optimal. onStageCompleted, when supplied, is invoked synchronously on
     // this thread each time a downstream stage becomes available: once per successful tightening ceiling
     // ("proof-tighten≤N", carrying the smaller plan), once for the terminal ceiling that stops tightening
     // (a no-solution/incomplete stage whose plan is null), and finally once for the edge-compaction pass
     // ("edge-compact@S"). This drives an anytime UI/CLI that surfaces the full progression as it is found; a
     // user who no longer wants to wait cancels (GUI Stop / CLI Ctrl+C), which propagates out with the
-    // best plan found so far already surfaced via onStage.
-    public StrategyPlan BuildProofTightenPlan(
-        Action<ProofTightenStage>? onStage = null,
+    // best plan found so far already surfaced via onStageCompleted.
+    public StrategyPlan RunGreedyPipeline(
+        Action<StageResult>? onStageCompleted = null,
         Action<string>? onStageStart = null)
     {
         _progressScope = _reportCombinedRunProgress
@@ -173,11 +194,11 @@ partial class StrategyBuilder
 
         // The step ceiling U comes from the greedy feasible plan. Production callers (Program.cs /
         // MainForm.cs) build it first and reuse this builder, so _feasibleRootBudget is already set;
-        // standalone callers (e.g. tests invoking BuildProofTightenPlan directly) have not, so
-        // establish it here. BuildGreedyFeasiblePlan deliberately does not clear _feasibleRootBudget, so this
+        // standalone callers (e.g. tests invoking RunGreedyPipeline directly) have not, so
+        // establish it here. BuildGreedyFeasibleStage deliberately does not clear _feasibleRootBudget, so this
         // never double-builds when the caller already ran the step phase.
         if (_feasibleRootBudget < 0)
-            BuildGreedyFeasiblePlan();
+            BuildGreedyFeasibleStage();
 
         int U = _feasibleRootBudget;
         int provenLowerBound = Math.Max(1, _rootProvenLowerBound);
@@ -193,25 +214,19 @@ partial class StrategyBuilder
                 _cancellationToken.ThrowIfCancellationRequested();
                 string stageName = FormatProofTightenStageName(budget);
                 onStageStart?.Invoke(stageName);
-                var probeStopwatch = Stopwatch.StartNew();
-                (ProofTightenStageOutcome outcome, StrategyPlan? candidate) = ProbeAndClassify(budget);
-                probeStopwatch.Stop();
+                StageResult stage = BuildProofTightenStage(budget);
+                onStageCompleted?.Invoke(stage);
 
-                // Every probe emits EXACTLY ONE stage carrying {outcome, plan} -- no branch stops
-                // without reporting a typed result. Tightened/Overshot carry the realized plan;
-                // ProvenInfeasible/Incomplete carry null.
-                onStage?.Invoke(new ProofTightenStage(stageName, candidate, probeStopwatch.Elapsed, outcome));
-
-                if (outcome == ProofTightenStageOutcome.Tightened)
+                if (stage.Outcome == StageOutcome.Tightened)
                 {
-                    bestStep = candidate!.MaxStep;
+                    bestStep = stage.Plan!.MaxStep;
                     budget = bestStep - 1; // realized max-step may already be below the attempted ceiling
                     continue;
                 }
 
                 // ProvenInfeasible / Incomplete / Overshot all stop tightening. Only a complete-
                 // enumeration infeasibility proof closes the squeeze to a proven optimum.
-                if (outcome == ProofTightenStageOutcome.ProvenInfeasible)
+                if (stage.Outcome == StageOutcome.ProvenInfeasible)
                     RecordRootProvenLowerBound(budget + 1);
                 break;
             }
@@ -233,8 +248,8 @@ partial class StrategyBuilder
                 ?? BuildPlan(useCompactSelection: true, useFeasibleBudget: true))
             .WithRootProvenLowerBound(_rootProvenLowerBound);
         edgeStopwatch.Stop();
-        onStage?.Invoke(new ProofTightenStage(
-            edgeCompactStageName, finalPlan, edgeStopwatch.Elapsed, ProofTightenStageOutcome.EdgeCompacted));
+        onStageCompleted?.Invoke(new StageResult(
+            edgeCompactStageName, finalPlan, edgeStopwatch.Elapsed, StageOutcome.Completed));
         return finalPlan;
     }
 
@@ -243,6 +258,27 @@ partial class StrategyBuilder
 
     internal static string FormatEdgeCompactStageName(int step)
         => $"edge-compact@{step}";
+
+    public StageResult BuildProofTightenStage(int budget)
+    {
+        _progressScope = _reportCombinedRunProgress
+            ? ProgressScope.CompactFeasibleInCombinedRun
+            : ProgressScope.DefaultStandalone;
+
+        _compactFeasibilityOnly = true;
+        try
+        {
+            string stageName = FormatProofTightenStageName(budget);
+            var stopwatch = Stopwatch.StartNew();
+            (StageOutcome outcome, StrategyPlan? candidate) = ProbeAndClassify(budget);
+            stopwatch.Stop();
+            return new StageResult(stageName, candidate, stopwatch.Elapsed, outcome);
+        }
+        finally
+        {
+            _compactFeasibilityOnly = false;
+        }
+    }
 
     // Runs one feasibility probe at the given step ceiling and classifies it into the single typed
     // outcome the tightening driver consumes. Keeping this classification here (separate from the
@@ -254,19 +290,19 @@ partial class StrategyBuilder
     //
     // budget == bestStep - 1 at every call site, so `MaxStep <= budget` is exactly `MaxStep < bestStep`
     // (a strict improvement over the incumbent); anything else overshoots.
-    private (ProofTightenStageOutcome Outcome, StrategyPlan? Plan) ProbeAndClassify(int budget)
+    private (StageOutcome Outcome, StrategyPlan? Plan) ProbeAndClassify(int budget)
     {
         StrategyPlan? candidate = ProbeFeasibleCompact(budget);
         if (candidate is null)
         {
             return (_lastProbeEnumerationCapped
-                ? ProofTightenStageOutcome.Incomplete
-                : ProofTightenStageOutcome.ProvenInfeasible, null);
+                ? StageOutcome.Incomplete
+                : StageOutcome.ProvenInfeasible, null);
         }
 
         return candidate.MaxStep <= budget
-            ? (ProofTightenStageOutcome.Tightened, candidate)
-            : (ProofTightenStageOutcome.Overshot, candidate);
+            ? (StageOutcome.Tightened, candidate)
+            : (StageOutcome.Overshot, candidate);
     }
 
     // Runs a single compact pass at a fixed root ceiling, returning the materialized plan or null if the

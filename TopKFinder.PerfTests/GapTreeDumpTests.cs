@@ -25,14 +25,14 @@ public sealed class GapTreeDumpTests
         string[] f = caseSpec.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         int n = int.Parse(f[0]), m = int.Parse(f[1]), k = int.Parse(f[2]);
 
-        StrategyPlan def = new StrategyBuilder(n, m, k).BuildStepProofPlan();
-        StrategyPlan compact = new StrategyBuilder(n, m, k).BuildEdgeCompactPlan();
+        StrategyPlan def = new StrategyBuilder(n, m, k).BuildStepProofStage();
+        StrategyPlan compact = new StrategyBuilder(n, m, k).BuildEdgeCompactStage();
         var optimalBuilder = new StrategyBuilder(n, m, k);
         StrategyPlan? optimal = optimalBuilder.BuildEdgeOptimalPlan(cap);
 
         // Honesty audit of the compact plan: forward (false-split) + reverse (false-merge).
         var compactAuditBuilder = new StrategyBuilder(n, m, k);
-        StrategyPlan compactForAudit = compactAuditBuilder.BuildEdgeCompactPlan();
+        StrategyPlan compactForAudit = compactAuditBuilder.BuildEdgeCompactStage();
         List<string> compactFalseSplits = compactAuditBuilder.CheckPlanFalseSplits(compactForAudit);
         string compactOrbitDiag = compactAuditBuilder.DiagnoseOrbitPartition(compactForAudit.Root);
 
