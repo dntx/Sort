@@ -194,35 +194,26 @@ partial class StrategyBuilder
                 string stageName = FormatProofTightenStageName(budget);
                 onStageStart?.Invoke(stageName);
                 var probeStopwatch = Stopwatch.StartNew();
-                StrategyPlan? candidate = ProbeFeasibleCompact(budget);
+                (ProofTightenStageOutcome outcome, StrategyPlan? candidate) = ProbeAndClassify(budget);
                 probeStopwatch.Stop();
 
-                if (candidate is null)
+                // Every probe emits EXACTLY ONE stage carrying {outcome, plan} -- no branch stops
+                // without reporting a typed result. Tightened/Overshot carry the realized plan;
+                // ProvenInfeasible/Incomplete carry null.
+                onStage?.Invoke(new ProofTightenStage(stageName, candidate, probeStopwatch.Elapsed, outcome));
+
+                if (outcome == ProofTightenStageOutcome.Tightened)
                 {
-                    // The probe ran out of feasible groups. If the greedy candidate cap truncated any
-                    // state's enumeration the "no solution" is not a proof (an untried group might have
-                    // fit) -- surface it as incomplete and stop without closing the squeeze. Otherwise
-                    // the ceiling is proven infeasible, so bestStep is optimal: raise the proven lower
-                    // bound to budget+1 (== bestStep) to close the L <= opt <= U squeeze.
-                    var outcome = _lastProbeEnumerationCapped
-                        ? ProofTightenStageOutcome.Incomplete
-                        : ProofTightenStageOutcome.NoSolution;
-                    if (outcome == ProofTightenStageOutcome.NoSolution)
-                        RecordRootProvenLowerBound(budget + 1);
-                    onStage?.Invoke(new ProofTightenStage(stageName, null, probeStopwatch.Elapsed, outcome));
-                    break;
+                    bestStep = candidate!.MaxStep;
+                    budget = bestStep - 1; // realized max-step may already be below the attempted ceiling
+                    continue;
                 }
 
-                // Ground-truth guard: trust the materialized MaxStep, not the budget-agnostic compact
-                // group cache that produced it (a group picked under a looser budget can leak into a
-                // tighter path and deepen the subtree). A probe that does not strictly lower the step is
-                // rejected; accepting it would re-derive budget = MaxStep - 1 above the ceiling and loop.
-                if (candidate.MaxStep >= bestStep)
-                    break;
-
-                bestStep = candidate.MaxStep;
-                onStage?.Invoke(new ProofTightenStage(stageName, candidate, probeStopwatch.Elapsed));
-                budget = bestStep - 1; // realized max-step may already be below the attempted ceiling
+                // ProvenInfeasible / Incomplete / Overshot all stop tightening. Only a complete-
+                // enumeration infeasibility proof closes the squeeze to a proven optimum.
+                if (outcome == ProofTightenStageOutcome.ProvenInfeasible)
+                    RecordRootProvenLowerBound(budget + 1);
+                break;
             }
         }
         finally
@@ -254,6 +245,31 @@ partial class StrategyBuilder
 
     internal static string FormatEdgeCompactStageName(int step)
         => $"edge-compact@{step}";
+
+    // Runs one feasibility probe at the given step ceiling and classifies it into the single typed
+    // outcome the tightening driver consumes. Keeping this classification here (separate from the
+    // driver's control flow) guarantees every probe yields exactly one {outcome, plan} result, so the
+    // driver can never stop without emitting a stage. The realized plan is carried for Tightened (meets
+    // the ceiling, an improvement) and Overshot (materialized but its MaxStep overshoots the ceiling --
+    // the compact proxy claimed feasible but the realized tree did not meet the budget); it is null for
+    // the plan-less ProvenInfeasible / Incomplete outcomes.
+    //
+    // budget == bestStep - 1 at every call site, so `MaxStep <= budget` is exactly `MaxStep < bestStep`
+    // (a strict improvement over the incumbent); anything else overshoots.
+    private (ProofTightenStageOutcome Outcome, StrategyPlan? Plan) ProbeAndClassify(int budget)
+    {
+        StrategyPlan? candidate = ProbeFeasibleCompact(budget);
+        if (candidate is null)
+        {
+            return (_lastProbeEnumerationCapped
+                ? ProofTightenStageOutcome.Incomplete
+                : ProofTightenStageOutcome.ProvenInfeasible, null);
+        }
+
+        return candidate.MaxStep <= budget
+            ? (ProofTightenStageOutcome.Tightened, candidate)
+            : (ProofTightenStageOutcome.Overshot, candidate);
+    }
 
     // Runs a single compact pass at a fixed root ceiling, returning the materialized plan or null if the
     // ceiling is infeasible (root solve yields the unsolvable sentinel). Resets the per-budget compact
