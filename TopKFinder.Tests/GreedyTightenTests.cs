@@ -59,6 +59,32 @@ public class GreedyTightenTests
             $"greedy-tighten step {tightened} was worse than the greedy-feasible upper bound {feasible}");
     }
 
+    // Independent soundness lock, valid even where the exact search is intractable (unlike
+    // StepNeverBelowOptimum, which needs BuildStepProofPlan). Re-simulates the committed policy from the
+    // root, checking every state makes progress, no adversary path cycles, and every path ends at a
+    // trusted top-k terminal; it throws on any violation. A returned depth equal to the plan's MaxStep
+    // confirms MaxStep is the true worst case of a genuinely valid strategy -- so the greedy-tighten
+    // upper bound is sound. Includes hard shapes (e.g. 15,4,4; 10,2,5) beyond the exact-checkable range.
+    [Theory]
+    [InlineData(8, 3, 3)]
+    [InlineData(9, 2, 4)]
+    [InlineData(10, 2, 5)]
+    [InlineData(10, 5, 5)]
+    [InlineData(12, 4, 4)]
+    [InlineData(12, 5, 5)]
+    [InlineData(14, 4, 4)]
+    [InlineData(15, 4, 4)]
+    public void GreedyTightenPlan_PolicyIsValidAndDepthMatchesMaxStep(int n, int m, int k)
+    {
+        var builder = new StrategyBuilder(n, m, k);
+        int maxStep = builder.BuildGreedyTightenPlan().MaxStep;
+
+        // Throws if the committed policy is not a valid terminating strategy.
+        int validatedDepth = builder.ValidateGreedyTightenPolicyDepthForTesting();
+
+        Assert.Equal(maxStep, validatedDepth);
+    }
+
     // Regression lock for the previously observed back-edge-prone region: materialization must not
     // create reference cycles in the rendered strategy graph.
     [Theory]
