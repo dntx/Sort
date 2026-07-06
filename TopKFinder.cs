@@ -221,23 +221,21 @@ partial class StrategyBuilder
             _compactFeasibilityOnly = false;
         }
 
-        // Phase B: one edge-compaction pass at the determined step S.
+        // Phase B: one edge-compaction pass at the determined step S. Both the direct probe and the
+        // (should-not-happen) fall back produce a plan, so this ALWAYS emits exactly one edge-compact
+        // stage -- the strong-output contract holds for Phase B just as for the Phase A loop.
         string edgeCompactStageName = FormatEdgeCompactStageName(bestStep);
         onStageStart?.Invoke(edgeCompactStageName);
         var edgeStopwatch = Stopwatch.StartNew();
-        StrategyPlan? edgePlan = ProbeFeasibleCompact(bestStep);
-        edgeStopwatch.Stop();
-        if (edgePlan is not null)
-        {
-            edgePlan = edgePlan.WithRootProvenLowerBound(_rootProvenLowerBound);
-            onStage?.Invoke(new ProofTightenStage(edgeCompactStageName, edgePlan, edgeStopwatch.Elapsed));
-            return edgePlan;
-        }
-
-        // Should not happen (bestStep is a proven-feasible ceiling), but fall back to a min-edge pass at
-        // the feasible budget U so a valid plan is always returned.
-        return BuildPlan(useCompactSelection: true, useFeasibleBudget: true)
+        // bestStep is a proven-feasible ceiling, so the probe should realize a plan; the fall back to a
+        // min-edge pass at the feasible budget U is a defensive guarantee that a valid plan always exists.
+        StrategyPlan finalPlan = (ProbeFeasibleCompact(bestStep)
+                ?? BuildPlan(useCompactSelection: true, useFeasibleBudget: true))
             .WithRootProvenLowerBound(_rootProvenLowerBound);
+        edgeStopwatch.Stop();
+        onStage?.Invoke(new ProofTightenStage(
+            edgeCompactStageName, finalPlan, edgeStopwatch.Elapsed, ProofTightenStageOutcome.EdgeCompacted));
+        return finalPlan;
     }
 
     private static string FormatProofTightenStageName(int budget)
