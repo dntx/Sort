@@ -38,8 +38,9 @@ public class ProofTightenBudgetReuseTests
 
         StageResult probe = builder.BuildProofTightenStage(budget);
 
-        // Only a Tightened probe promises a within-budget realized plan; Overshot/ProvenInfeasible/
-        // Incomplete are all valid terminal outcomes for a given ceiling and are covered elsewhere.
+        // Only a Tightened probe promises a within-budget realized plan; ProvenInfeasible /
+        // Incomplete are the other valid terminal outcomes for a given ceiling and are covered elsewhere.
+        // (An over-budget materialized plan is no longer an outcome -- it throws in ProbeAndClassify.)
         if (probe.Outcome != StageOutcome.Tightened)
             return;
 
@@ -86,6 +87,29 @@ public class ProofTightenBudgetReuseTests
 
         Assert.Equal(first.Outcome, second.Outcome);
         Assert.Equal(first.Plan?.MaxStep, second.Plan?.MaxStep);
+    }
+
+    // No-overshoot invariant (the point of the tightest-budget-keep fix): at EVERY budget b in
+    // [1, U-1], a probe that materializes a plan must honor the ceiling (MaxStep <= b). Since PR #223,
+    // an over-budget materialized plan is an internal invariant violation that throws in
+    // ProbeAndClassify, so this sweep would fail loudly (via the exception) if any probe overshot.
+    // Kept to the shared small shape set so the all-budgets sweep stays well within the per-PR budget.
+    [Theory]
+    [MemberData(nameof(TighteningCases))]
+    public void ProofTightenProbe_NeverOvershootsAcrossBudgets(int n, int m, int k)
+    {
+        int u = new StrategyBuilder(n, m, k).BuildGreedyFeasibleStage().MaxStep;
+
+        for (int b = 1; b < u; b++)
+        {
+            StageResult probe = new StrategyBuilder(n, m, k).BuildProofTightenStage(b);
+            if (!probe.HasPlan)
+                continue;
+
+            Assert.Equal(StageOutcome.Tightened, probe.Outcome);
+            Assert.True(probe.Plan!.MaxStep <= b,
+                $"({n},{m},{k}): probe at budget {b} realized step {probe.Plan.MaxStep} above the ceiling");
+        }
     }
 
     private static void AssertEveryDecisionHasGroup(StrategyNode node)

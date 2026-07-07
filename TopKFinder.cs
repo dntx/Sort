@@ -224,7 +224,7 @@ partial class StrategyBuilder
                     continue;
                 }
 
-                // ProvenInfeasible / Incomplete / Overshot all stop tightening. Only a complete-
+                // ProvenInfeasible / Incomplete both stop tightening. Only a complete-
                 // enumeration infeasibility proof closes the squeeze to a proven optimum.
                 if (stage.Outcome == StageOutcome.ProvenInfeasible)
                     RecordRootProvenLowerBound(budget + 1);
@@ -284,12 +284,12 @@ partial class StrategyBuilder
     // outcome the tightening driver consumes. Keeping this classification here (separate from the
     // driver's control flow) guarantees every probe yields exactly one {outcome, plan} result, so the
     // driver can never stop without emitting a stage. The realized plan is carried for Tightened (meets
-    // the ceiling, an improvement) and Overshot (materialized but its MaxStep overshoots the ceiling --
-    // the compact proxy claimed feasible but the realized tree did not meet the budget); it is null for
-    // the plan-less ProvenInfeasible / Incomplete outcomes.
+    // the ceiling, an improvement); it is null for the plan-less ProvenInfeasible / Incomplete outcomes.
     //
     // budget == bestStep - 1 at every call site, so `MaxStep <= budget` is exactly `MaxStep < bestStep`
-    // (a strict improvement over the incumbent); anything else overshoots.
+    // (a strict improvement over the incumbent). A returned plan whose MaxStep exceeds the budget would be
+    // an overshoot; since the tighter-budget-keep fix (PR #223) the compact proxy and the materialized
+    // tree agree, so that case is an internal invariant violation and throws rather than being reported.
     private (StageOutcome Outcome, StrategyPlan? Plan) ProbeAndClassify(int budget)
     {
         StrategyPlan? candidate = ProbeFeasibleCompact(budget);
@@ -300,9 +300,17 @@ partial class StrategyBuilder
                 : StageOutcome.ProvenInfeasible, null);
         }
 
-        return candidate.MaxStep <= budget
-            ? (StageOutcome.Tightened, candidate)
-            : (StageOutcome.Overshot, candidate);
+        // A complete probe that materializes a plan must honor the ceiling: the feasibility proxy proves
+        // a within-budget strategy exists and, with the tightest-budget pattern kept, materialization
+        // renders exactly that strategy. An overshoot means the proxy diverged from materialization -- a
+        // broken invariant we surface loudly instead of silently reporting an over-budget plan.
+        if (candidate.MaxStep > budget)
+            throw new InvalidOperationException(
+                $"Compact feasibility probe at budget {budget} materialized a plan whose realized MaxStep " +
+                $"{candidate.MaxStep} overshoots the ceiling. The tighter-budget-keep invariant should make " +
+                $"this unreachable; an overshoot indicates the feasibility proxy diverged from materialization.");
+
+        return (StageOutcome.Tightened, candidate);
     }
 
     // Runs a single compact pass at a fixed root ceiling, returning the materialized plan or null if the
