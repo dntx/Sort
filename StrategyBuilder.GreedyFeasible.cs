@@ -80,7 +80,7 @@ partial class StrategyBuilder
         RecordRootProvenLowerBound(GetMinWorstCaseLowerBound(new ComparisonState(_n), _k));
         _phase1bMilliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds;
 
-        _useCompactSelection = false;
+        _useCompact = false;
         _useConstructiveSelection = true;
         var root = BuildState(new ComparisonState(_n), 0, _k, 1);
         _useConstructiveSelection = false;
@@ -545,3 +545,4 @@ partial class StrategyBuilder
             group[worstIndex] = item;
     }
 }
+

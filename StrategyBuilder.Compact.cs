@@ -10,7 +10,7 @@ partial class StrategyBuilder
     // edges (the count of branch lines the renderer draws across the whole subtree). This
     // lets us measure whether a global "prefer the fewest-edges equally-optimal solution"
     // rule shrinks the trees.
-    private bool _useCompactSelection;
+    private bool _useCompact;
     private bool _compactUsesFeasibleBudget;
     // When true, the feasible-budget compact solve only proves feasibility at the threaded step
     // ceiling (children.Count-proxy sort is kept -- it is load-bearing for feasibility at tight
@@ -71,7 +71,7 @@ partial class StrategyBuilder
     // Clears the per-budget compact caches so a tightening retry re-solves from scratch at the new
     // (tighter) ceiling. The cross-phase step budget/estimate fields are intentionally left untouched.
     // This resets the compact selection caches, ensuring subsequent phases start with clean state.
-    private void ResetCompactSelectionState()
+    private void ResetCompactState()
     {
         _compactGroupPatternCache.Clear();
         _compactCostMemo.Clear();
@@ -87,7 +87,7 @@ partial class StrategyBuilder
     // root upper bound U, decremented one per level, so the tree can never exceed U. The cost memo is
     // keyed by (state, budget) because the same state reached with a looser budget may pick a wider
     // group; in exact mode the budget equals the state's opt so the key reduces to state-only.
-    private int SolveCompactSelection(ComparisonState state, int remainingSlots, int feasibleBudget = int.MaxValue)
+    private int SolveCompact(ComparisonState state, int remainingSlots, int feasibleBudget = int.MaxValue)
     {
         ThrowIfCancellationRequested();
         ulong ignoredFixedTopMask = 0;
@@ -129,8 +129,8 @@ partial class StrategyBuilder
         // is a fast next-best, not the proven minimum.
         if (_compactUsesFeasibleBudget)
             return _compactFeasibilityOnly
-                ? SolveCompactSelectionFeasibleOnly(state, remainingSlots, optimalSteps, key, memoKey)
-                : SolveCompactSelectionGreedy(state, remainingSlots, optimalSteps, key, memoKey);
+                ? SolveBudgetFeasibility(state, remainingSlots, optimalSteps, key, memoKey)
+                : SolveEdgeCompactGreedy(state, remainingSlots, optimalSteps, key, memoKey);
 
         var candidates = state.GetActiveItemsOrdered();
         int groupSize = Math.Min(_m, candidates.Count);
@@ -210,7 +210,7 @@ partial class StrategyBuilder
             int branchBudget = optimalSteps - 1;
             for (int i = 0; i < children.Count; i++)
             {
-                int childCost = SolveCompactSelection(children[i].State, children[i].RemainingSlots, branchBudget);
+                int childCost = SolveCompact(children[i].State, children[i].RemainingSlots, branchBudget);
                 // Feasible mode: a child that cannot be resolved within the budget returns the
                 // unsolvable sentinel; reject the whole group rather than throwing.
                 if (childCost == int.MaxValue)
@@ -271,7 +271,7 @@ partial class StrategyBuilder
     // children (a cheap edge proxy) and recurses once. Linear in reachable states, fast and
     // interruptible; edge count is a next-best, not proven minimal. MaxStep is still bounded by the
     // threaded budget, and free pickup may realize fewer real steps.
-    private int SolveCompactSelectionGreedy(
+    private int SolveEdgeCompactGreedy(
         ComparisonState state, int remainingSlots, int budget, SearchStateKey key, (SearchStateKey, int) memoKey)
     {
         var candidates = state.GetActiveItemsOrdered();
@@ -351,7 +351,7 @@ partial class StrategyBuilder
             bool solvable = true;
             foreach (var (childState, childRemaining) in children)
             {
-                int childCost = SolveCompactSelection(childState, childRemaining, branchBudget);
+                int childCost = SolveCompact(childState, childRemaining, branchBudget);
                 if (childCost == int.MaxValue)
                 {
                     solvable = false;
@@ -378,7 +378,7 @@ partial class StrategyBuilder
         return int.MaxValue;
     }
 
-    // Feasibility-only variant of SolveCompactSelectionGreedy. Proves a state is solvable within the
+    // Feasibility-only variant of SolveEdgeCompactGreedy. Proves a state is solvable within the
     // threaded step ceiling using the first solvable group in children-count-proxy order, and returns
     // as soon as one is found. It mirrors the min-edge greedy's candidate gathering and children.Count
     // sort (that ordering is load-bearing for feasibility at tight budgets, not just an edge
@@ -387,7 +387,7 @@ partial class StrategyBuilder
     // pattern (so BuildState can materialize) and the realized step count (so the plan's MaxStep is
     // correct). Returns 1 + maxChildRealSteps as a finite "cost" (callers only compare against
     // int.MaxValue), or int.MaxValue if no group fits the ceiling.
-    private int SolveCompactSelectionFeasibleOnly(
+    private int SolveBudgetFeasibility(
         ComparisonState state, int remainingSlots, int budget, SearchStateKey key, (SearchStateKey, int) memoKey)
     {
         var candidates = state.GetActiveItemsOrdered();
@@ -413,7 +413,7 @@ partial class StrategyBuilder
             return rejected || !traversal.IsUseful ? null : children;
         }
 
-        // Mirror SolveCompactSelectionGreedy's candidate gathering and children-count proxy sort, but
+        // Mirror SolveEdgeCompactGreedy's candidate gathering and children-count proxy sort, but
         // DEFER all exact edge counting (CountDisplayBranches) to the final min-edge pass.
         var fits = new List<(List<int> Group, List<(ComparisonState State, int RemainingSlots)> Children)>();
         List<int> constructiveGroup = ChooseConstructiveGroup(state, remainingSlots);
@@ -446,7 +446,7 @@ partial class StrategyBuilder
             int realSteps = 0;
             foreach (var (childState, childRemaining) in children)
             {
-                int childCost = SolveCompactSelection(childState, childRemaining, branchBudget);
+                int childCost = SolveCompact(childState, childRemaining, branchBudget);
                 if (childCost == int.MaxValue)
                 {
                     solvable = false;
@@ -507,3 +507,4 @@ partial class StrategyBuilder
         return count;
     }
 }
+
