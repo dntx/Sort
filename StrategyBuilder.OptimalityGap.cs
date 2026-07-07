@@ -125,6 +125,7 @@ partial class StrategyBuilder
 
         _useCompact = true;
         _compactGroupPatternCache.Clear();
+        _compactGroupPatternTightestBudget.Clear();
         foreach (KeyValuePair<SearchStateKey, BestGroupPattern> kv in best!)
             _compactGroupPatternCache[kv.Key] = kv.Value;
 
@@ -194,6 +195,7 @@ partial class StrategyBuilder
     {
         _useCompact = true;
         _compactGroupPatternCache.Clear();
+        _compactGroupPatternTightestBudget.Clear();
         foreach (KeyValuePair<SearchStateKey, BestGroupPattern> kv in assignment)
             _compactGroupPatternCache[kv.Key] = kv.Value;
 
