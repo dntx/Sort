@@ -181,6 +181,35 @@ public class GreedyPipelineTests
         Assert.DoesNotContain(stages, s => s.ProvesOptimal);
     }
 
+    // Single-probe API contract: a direct BuildProofTightenStage(U-1) call must report the same
+    // first tightening-stage outcome as RunGreedyPipeline (which internally drives the same probe).
+    // This guards the budget-probe wiring after compact-cluster naming refactors: the standalone and
+    // pipeline paths must stay behaviorally aligned.
+    [Fact]
+    public void ProofTighten_SingleProbeMatchesPipelineFirstStage_20_4_6()
+    {
+        var probeBuilder = new StrategyBuilder(20, 4, 6);
+        int feasibleUpper = probeBuilder.BuildGreedyFeasibleStage().MaxStep;
+        int budget = feasibleUpper - 1;
+
+        StageResult probe = probeBuilder.BuildProofTightenStage(budget);
+
+        Assert.Equal($"proof-tighten\u2264{budget}", probe.Name);
+        Assert.Equal(StageOutcome.Overshot, probe.Outcome);
+        Assert.NotNull(probe.Plan);
+        Assert.True(probe.Plan!.MaxStep > budget,
+            $"overshot probe must realize a step above budget {budget}, got {probe.Plan.MaxStep}");
+
+        var pipelineStages = new List<StageResult>();
+        _ = new StrategyBuilder(20, 4, 6).RunGreedyPipeline(onStageCompleted: pipelineStages.Add);
+        StageResult firstTighten = pipelineStages.First(s => s.Name.StartsWith("proof-tighten\u2264", StringComparison.Ordinal));
+
+        Assert.Equal(probe.Name, firstTighten.Name);
+        Assert.Equal(probe.Outcome, firstTighten.Outcome);
+        Assert.NotNull(firstTighten.Plan);
+        Assert.Equal(probe.Plan.MaxStep, firstTighten.Plan!.MaxStep);
+    }
+
     // Item-3 strong-output lock for Phase B: the final min-edge pass ALWAYS emits exactly one
     // Completed stage that carries the returned plan (previously the should-not-happen fall back
     // returned a plan without emitting any stage). Completed is terminal and is not a tightening.
