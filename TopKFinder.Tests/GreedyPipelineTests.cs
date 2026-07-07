@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using Xunit;
 
 // Guards the greedy-mode proof-tighten pipeline (RunGreedyPipeline), whose step ceiling is the
@@ -165,49 +166,71 @@ public class GreedyPipelineTests
         Assert.Equal(started, completed);
     }
 
-    // Exercises the Overshot outcome: on (20,4,6) the compact feasibility proxy accepts the tighter
-    // ceiling but the realized plan overshoots it, so the terminal probe is classified Overshot. It
-    // CARRIES its realized (over-budget) plan and is reported to the caller (previously this probe broke
-    // silently), yet it must NOT close the squeeze -- an over-budget probe is not a proof of optimality.
+    // Regression guard for the tighter-budget keep/reuse fix in this change. Previously, on (20,4,6) a
+    // looser-budget pattern overwrote the tighter-feasible one, so the materialized plan OVERSHOT the
+    // proof-tighten<=14 ceiling (realized step 16) and the probe was classified Overshot. Keeping the
+    // tightest-budget pattern makes materialization honor the ceiling: the probe now TIGHTENS to a
+    // within-budget plan (realized step 14). Being a single feasibility probe it still does not prove
+    // optimality. Only the <=14 probe is exercised: with the overshoot gone the full pipeline keeps
+    // tightening toward the true optimum, a deliberately separate (and much longer) computation.
     [Fact]
-    public void ProofTighten_ReportsOvershotTerminalWithoutClaimingOptimal_20_4_6()
+    public void ProofTighten_Budget14TightensInsteadOfOvershooting_20_4_6()
     {
-        var stages = new List<StageResult>();
+        var builder = new StrategyBuilder(20, 4, 6);
+        int budget = builder.BuildGreedyFeasibleStage().MaxStep - 1;
 
-        _ = new StrategyBuilder(20, 4, 6).RunGreedyPipeline(onStageCompleted: stages.Add);
+        StageResult probe = builder.BuildProofTightenStage(budget);
 
-        Assert.Contains(stages, s => s.Overshot);
-        Assert.All(stages.Where(s => s.Overshot), s => Assert.NotNull(s.Plan));
-        Assert.DoesNotContain(stages, s => s.ProvesOptimal);
+        Assert.Equal($"proof-tighten\u2264{budget}", probe.Name);
+        Assert.Equal(StageOutcome.Tightened, probe.Outcome);
+        Assert.NotNull(probe.Plan);
+        Assert.True(probe.Plan!.MaxStep <= budget,
+            $"tightened probe must realize a step within budget {budget}, got {probe.Plan.MaxStep}");
+        Assert.Equal(14, probe.Plan.MaxStep);
+        Assert.False(probe.ProvesOptimal);
     }
 
-    // Single-probe API contract: a direct BuildProofTightenStage(U-1) call must report the same
-    // first tightening-stage outcome as RunGreedyPipeline (which internally drives the same probe).
-    // This guards the budget-probe wiring after compact-cluster naming refactors: the standalone and
-    // pipeline paths must stay behaviorally aligned.
+    // Single-probe API contract: a direct BuildProofTightenStage(U-1) call must report the same first
+    // tightening-stage result as RunGreedyPipeline (which internally drives the same probe). The pipeline
+    // is cancelled as soon as that first stage is observed: with the overshoot fixed the pipeline no
+    // longer stops early at <=14 but keeps tightening toward the optimum, so running it to completion
+    // would be a much longer computation irrelevant to this wiring check.
     [Fact]
     public void ProofTighten_SingleProbeMatchesPipelineFirstStage_20_4_6()
     {
         var probeBuilder = new StrategyBuilder(20, 4, 6);
-        int feasibleUpper = probeBuilder.BuildGreedyFeasibleStage().MaxStep;
-        int budget = feasibleUpper - 1;
+        int budget = probeBuilder.BuildGreedyFeasibleStage().MaxStep - 1;
 
         StageResult probe = probeBuilder.BuildProofTightenStage(budget);
 
         Assert.Equal($"proof-tighten\u2264{budget}", probe.Name);
-        Assert.Equal(StageOutcome.Overshot, probe.Outcome);
+        Assert.Equal(StageOutcome.Tightened, probe.Outcome);
         Assert.NotNull(probe.Plan);
-        Assert.True(probe.Plan!.MaxStep > budget,
-            $"overshot probe must realize a step above budget {budget}, got {probe.Plan.MaxStep}");
 
-        var pipelineStages = new List<StageResult>();
-        _ = new StrategyBuilder(20, 4, 6).RunGreedyPipeline(onStageCompleted: pipelineStages.Add);
-        StageResult firstTighten = pipelineStages.First(s => s.Name.StartsWith("proof-tighten\u2264", StringComparison.Ordinal));
+        // Capture only the pipeline's FIRST proof-tighten stage, then cancel to avoid the deeper rounds.
+        using var cts = new CancellationTokenSource();
+        StageResult? firstTighten = null;
+        try
+        {
+            _ = new StrategyBuilder(20, 4, 6, cts.Token).RunGreedyPipeline(onStageCompleted: stage =>
+            {
+                if (firstTighten is null
+                    && stage.Name.StartsWith("proof-tighten\u2264", StringComparison.Ordinal))
+                {
+                    firstTighten = stage;
+                    cts.Cancel();
+                }
+            });
+        }
+        catch (OperationCanceledException)
+        {
+        }
 
-        Assert.Equal(probe.Name, firstTighten.Name);
-        Assert.Equal(probe.Outcome, firstTighten.Outcome);
-        Assert.NotNull(firstTighten.Plan);
-        Assert.Equal(probe.Plan.MaxStep, firstTighten.Plan!.MaxStep);
+        Assert.NotNull(firstTighten);
+        Assert.Equal(probe.Name, firstTighten!.Value.Name);
+        Assert.Equal(probe.Outcome, firstTighten.Value.Outcome);
+        Assert.NotNull(firstTighten.Value.Plan);
+        Assert.Equal(probe.Plan!.MaxStep, firstTighten.Value.Plan!.MaxStep);
     }
 
     // Item-3 strong-output lock for Phase B: the final min-edge pass ALWAYS emits exactly one
