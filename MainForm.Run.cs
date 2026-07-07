@@ -459,7 +459,7 @@ partial class MainForm
             ? null
             : stage.IsTightened
                 ? NextProofTightenStageName(_feasiblePlan, stage.Plan!.MaxStep)
-            : StrategyBuilder.FormatEdgeCompactStageName(_feasiblePlan.MaxStep); // Phase A ended (proven-infeasible/incomplete/overshot); only the edge-compaction pass remains
+            : StrategyBuilder.FormatEdgeCompactStageName(_feasiblePlan.MaxStep); // Phase A ended (proven-infeasible/incomplete); only the edge-compaction pass remains
         string? probeComputingLabel = nextStageName is null ? null : nextStageName + ComputingSuffix;
 
         _treeView.BeginUpdate();
