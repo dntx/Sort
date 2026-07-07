@@ -413,17 +413,19 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
   - **Anytime 呈现**：`RunGreedyPipeline(onStageCompleted)` 接受一个回调，在**每次**产出一个阶段结果时**同步**触发——
     回调参数是 `StageResult`（阶段名 + 该阶段**自身**耗时 + 可空的计划 + `Outcome` 枚举）。**强输出契约**：每个被
     `onStageStart` 宣布的探测都**恰好**由一次 `onStageCompleted` 完成、携带一个 `{Outcome, Plan}` 整体——driver 任何分支都不会
-    「有 candidate 却不发结果」。`Outcome` 区分**五种**互斥结局：
+    「有 candidate 却不发结果」。`Outcome` 区分**四种**互斥结局：
     `Tightened`（realize 出满足天花板的计划、严格优于 incumbent，是唯一会继续收紧的结局）、
     `ProvenInfeasible`（探测在**完整枚举**下跑完、证明该天花板无解 ⇒ incumbent 即最优、闭合挤压）、
     `Incomplete`（探测跑完但**贪心候选帽子 `CompactGreedyCandidateCap` 截断了某状态的分组枚举**，「没有分组能塞进预算」
     因此**并非无解的证明**——可能存在没被枚举到的分组其实可行；incumbent 照常保留、**不**闭合挤压）、
-    `Overshot`（compact 可行性 proxy 判为可行、但**物化出来的 `MaxStep` 越过了天花板**：proxy 乐观了，既非改进也非无解证明，
-    收紧就此停止、挤压保持开区间；`(20,4,6)` 是实测样例）、
     `Completed`（在收紧确定的最小可行步数 `S` 上的**最终 min-edge 阶段**，并非步数收紧探测；总是物化并携带最终返回的计划，
-    是终止阶段、其后再无阶段）。便捷属性：`IsTightened`＝是否可继续收紧（仅 `Tightened`）；
-    `HasPlan`＝是否附带物化树（`Tightened`、`Overshot` 与 `Completed` 均为真，仅供显示，**不**代表改进）；`ProvesOptimal`＝`ProvenInfeasible`；
-    `IsCompleted`＝`Completed`。`Tightened`/`Overshot`/`Completed` 携带计划，`ProvenInfeasible`/`Incomplete` 计划为 `null`。先是若干 `proof-tighten≤N` 收紧阶段（每次成功各一个），
+    是终止阶段、其后再无阶段）。**关于 overshoot**：曾经有第五种结局 `Overshot`（compact 可行性 proxy 判为可行、但物化出的
+    `MaxStep` 越过天花板）。自 PR #223「保留最紧 budget 的 pattern」修复后，proxy 与物化不再背离——完整（未被帽子截断）探测
+    只要 realize 出计划就必然满足天花板，因此 overshoot 已降级为**内部不变量被破坏**：`ProbeAndClassify` 在遇到越界计划时
+    直接抛 `InvalidOperationException`，而非作为结局上报（`(20,4,6)` 曾是它的实测样例，现已收紧至步数 14）。便捷属性：
+    `IsTightened`＝是否可继续收紧（仅 `Tightened`）；
+    `HasPlan`＝是否附带物化树（`Tightened` 与 `Completed` 均为真，仅供显示，**不**代表改进）；`ProvesOptimal`＝`ProvenInfeasible`；
+    `IsCompleted`＝`Completed`。`Tightened`/`Completed` 携带计划，`ProvenInfeasible`/`Incomplete` 计划为 `null`。先是若干 `proof-tighten≤N` 收紧阶段（每次成功各一个），
     随后是在最小可行步数 `S` 上的**唯一一遍 min-edge** `edge-compact@S` 阶段，中途可能穿插一个 `no solution` 或 `search incomplete` 终止阶段。
     **呈现以「是否
     严格优于当前 incumbent」为准**（incumbent 初值为 `greedy-feasible` 可行解，按 `IsStrictRefinementOver`＝先比步数再比边数）：

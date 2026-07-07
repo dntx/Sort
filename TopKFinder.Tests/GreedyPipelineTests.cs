@@ -255,7 +255,7 @@ public class GreedyPipelineTests
     }
 
     // Runs the greedy edge progression and returns the outcome of its final TIGHTENING terminal stage
-    // (ProvenInfeasible / Incomplete / Overshot); ignores the always-last Completed pass. Returns
+    // (ProvenInfeasible / Incomplete); ignores the always-last Completed pass. Returns
     // Tightened if the progression never bottomed out.
     private static StageOutcome TerminalOutcome(StrategyBuilder builder, out StrategyPlan plan)
     {

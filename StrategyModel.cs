@@ -167,24 +167,25 @@ sealed class StrategyPlan
 //                      strategy at that ceiling, so the previous best is optimal (closes the squeeze).
 //   Incomplete       - a probe found no strategy but the greedy candidate cap truncated the enumeration,
 //                      so "no group fit" is NOT a proof; the squeeze stays open.
-//   Overshot         - a probe DID materialize a plan, but its realized MaxStep overshoots the ceiling
-//                      (the compact feasibility proxy over-claimed): no improvement and no proof, so
-//                      tightening stops with the squeeze open. Plan is carried for observability.
 //   Completed        - a non-tightening terminal stage completed with a plan attached.
 //                      it always materializes and carries the returned plan. Nothing follows it.
+// A probe that materializes a plan whose realized MaxStep OVERSHOOTS the ceiling is deliberately NOT an
+// outcome: since the tighter-budget-keep fix (PR #223) the compact feasibility proxy and the materialized
+// tree agree, so a complete (non-cap-truncated) probe that returns a plan always meets the ceiling. An
+// overshoot is therefore an internal invariant violation that throws in ProbeAndClassify, not a
+// classified/reported result.
 enum StageOutcome
 {
     Tightened,
     ProvenInfeasible,
     Incomplete,
-    Overshot,
     Completed,
 }
 
 // One stage of the proof-tighten progression as it is produced by RunGreedyPipeline: the final
 // edge-compaction pass, each successful downward tightening, or a terminal ceiling. Name is the stage
 // label (e.g. "edge-compact@5", "proof-tighten<=4"); Plan is the materialized strategy for Tightened
-// and Overshot, or null for ProvenInfeasible/Incomplete. Elapsed is the stage's own wall time, not a
+// and Completed, or null for ProvenInfeasible/Incomplete. Elapsed is the stage's own wall time, not a
 // cumulative total. {Outcome, Plan} together are the stage's complete output.
 readonly struct StageResult
 {
@@ -202,9 +203,9 @@ readonly struct StageResult
     public TimeSpan Elapsed { get; }
     public StageOutcome Outcome { get; }
 
-    // A materialized strategy tree is attached (true for Tightened, Overshot, and Completed). This is
-    // a DISPLAY/progress predicate only -- it does NOT imply improvement: an Overshot plan overshoots the
-    // ceiling and is no better than the incumbent. Use IsTightened for the "usable improvement" decision.
+    // A materialized strategy tree is attached (true for Tightened and Completed). This is a
+    // DISPLAY/progress predicate only -- it does NOT imply improvement: a Completed plan is the terminal
+    // min-edge pass and is no better than the incumbent. Use IsTightened for the "usable improvement" decision.
     public bool HasPlan => Plan is not null;
 
     // The probe realized a strategy that meets the requested ceiling (strictly improves the incumbent).
@@ -215,10 +216,6 @@ readonly struct StageResult
     // truncated the group enumeration: it leaves the incumbent standing without closing the squeeze to a
     // proven optimum.
     public bool Incomplete => Outcome == StageOutcome.Incomplete;
-
-    // The probe materialized a plan whose realized MaxStep overshoots the requested ceiling (the compact
-    // proxy over-claimed feasibility): no improvement, no proof, tightening stops.
-    public bool Overshot => Outcome == StageOutcome.Overshot;
 
     // The terminal min-edge pass at the determined step S (not a tightening probe). Always carries the
     // returned plan; nothing follows it.
