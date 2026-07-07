@@ -311,7 +311,7 @@ partial class StrategyBuilder
     private StrategyPlan? ProbeFeasibleCompact(int rootBudget)
     {
         ResetPerBuildTransientState();
-        ResetCompactSelectionState();
+        ResetCompactState();
         _compactEnumerationCapped = false;
         _lastProbeEnumerationCapped = false;
 
@@ -320,7 +320,7 @@ partial class StrategyBuilder
         _feasibleRootBudgetActive = rootBudget;
         try
         {
-            EnsureCompactSelectionSolved();
+            EnsureCompactSolved();
             _phase1bMilliseconds = stopwatch.ElapsedMilliseconds;
             if (_compactRootCost == int.MaxValue)
             {
@@ -331,7 +331,7 @@ partial class StrategyBuilder
                 return null;
             }
 
-            _useCompactSelection = true;
+            _useCompact = true;
             var root = BuildState(new ComparisonState(_n), 0, _k, 1);
             _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1bMilliseconds;
             stopwatch.Stop();
@@ -357,11 +357,11 @@ partial class StrategyBuilder
         _phase1Milliseconds = stopwatch.ElapsedMilliseconds;
 
         if (useCompactSelection)
-            EnsureCompactSelectionSolved();
+            EnsureCompactSolved();
         _phase1bMilliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds;
 
         // Phase 2: materialize the strategy tree, reusing the cached group patterns.
-        _useCompactSelection = useCompactSelection;
+        _useCompact = useCompactSelection;
         var root = BuildState(new ComparisonState(_n), 0, _k, 1);
         _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds - _phase1bMilliseconds;
         stopwatch.Stop();
@@ -482,7 +482,7 @@ partial class StrategyBuilder
         // chosen comparison-group pattern, so phase 2 always finds a populated entry here.
         // The compact PoC overrides the choice with its size-minimizing pattern when enabled.
         BestGroupPattern cachedPattern;
-        if (_useCompactSelection && _compactGroupPatternCache.TryGetValue(currentKey, out BestGroupPattern compactPattern))
+        if (_useCompact && _compactGroupPatternCache.TryGetValue(currentKey, out BestGroupPattern compactPattern))
         {
             cachedPattern = compactPattern;
         }
@@ -1288,7 +1288,7 @@ partial class StrategyBuilder
         _phase1Solved = true;
     }
 
-    private void EnsureCompactSelectionSolved()
+    private void EnsureCompactSolved()
     {
         if (_phase1bSolved)
             return;
@@ -1303,7 +1303,7 @@ partial class StrategyBuilder
                 ? _feasibleRootBudgetActive
                 : (_feasibleRootBudget >= 0 ? _feasibleRootBudget : ConstructiveRootUpperBound()))
             : int.MaxValue;
-        _compactRootCost = SolveCompactSelection(new ComparisonState(_n), _k, rootBudget);
+        _compactRootCost = SolveCompact(new ComparisonState(_n), _k, rootBudget);
         _phase1bSolved = true;
     }
 
@@ -1428,3 +1428,4 @@ partial class StrategyBuilder
     }
 
 }
+

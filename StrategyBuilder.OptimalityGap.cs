@@ -123,7 +123,7 @@ partial class StrategyBuilder
 
         _ = ExhaustiveMinEdges(orderedKeys, choiceSets, out _, out Dictionary<SearchStateKey, BestGroupPattern>? best);
 
-        _useCompactSelection = true;
+        _useCompact = true;
         _compactGroupPatternCache.Clear();
         foreach (KeyValuePair<SearchStateKey, BestGroupPattern> kv in best!)
             _compactGroupPatternCache[kv.Key] = kv.Value;
@@ -192,7 +192,7 @@ partial class StrategyBuilder
     // emits the tree's MaxStep so callers can confirm the selection stays at the optimal depth.
     private int MaterializeEdgeCountWithAssignment(Dictionary<SearchStateKey, BestGroupPattern> assignment, out int maxStep)
     {
-        _useCompactSelection = true;
+        _useCompact = true;
         _compactGroupPatternCache.Clear();
         foreach (KeyValuePair<SearchStateKey, BestGroupPattern> kv in assignment)
             _compactGroupPatternCache[kv.Key] = kv.Value;
@@ -724,3 +724,4 @@ partial class StrategyBuilder
             VisitOrbitPartition(branch.Next, idToSnapshot, sb, ref mergeNodes, ref falseMerges);
     }
 }
+
