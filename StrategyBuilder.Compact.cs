@@ -47,6 +47,7 @@ partial class StrategyBuilder
     // (complete search) from a merely-incomplete one (cap truncated some state's enumeration).
     private bool _lastProbeEnumerationCapped;
     private readonly Dictionary<SearchStateKey, BestGroupPattern> _compactGroupPatternCache = new();
+    private readonly Dictionary<SearchStateKey, int> _compactGroupPatternTightestBudget = new();
     private readonly Dictionary<(SearchStateKey Key, int Budget), int> _compactCostMemo = new();
     private readonly Dictionary<SearchStateKey, int> _compactRealStepsMemo = new();
 
@@ -74,10 +75,23 @@ partial class StrategyBuilder
     private void ResetCompactState()
     {
         _compactGroupPatternCache.Clear();
+        _compactGroupPatternTightestBudget.Clear();
         _compactCostMemo.Clear();
         _compactRealStepsMemo.Clear();
         _phase1bSolved = false;
         _compactRootCost = int.MaxValue;
+    }
+
+    // Greedy min-edge mode (non-feasibility-only) still materializes from a single per-state pattern
+    // cache; keep the pattern found under the tightest seen budget so a later looser visit cannot
+    // overwrite a tighter-feasible choice.
+    private void CacheCompactPatternForBudget(SearchStateKey key, ComparisonState state, IReadOnlyList<int> group, int budget)
+    {
+        if (_compactGroupPatternTightestBudget.TryGetValue(key, out int existingBudget) && budget >= existingBudget)
+            return;
+
+        _compactGroupPatternCache[key] = MakeGroupPattern(state, group);
+        _compactGroupPatternTightestBudget[key] = budget;
     }
 
     // Returns the proxy subtree cost (number of displayed branch edges) under the
@@ -115,6 +129,37 @@ partial class StrategyBuilder
         var memoKey = (key, optimalSteps);
         if (_compactCostMemo.TryGetValue(memoKey, out int cachedCost))
             return cachedCost;
+
+        // Feasibility-only probes: if this state was already solved under a tighter budget B<=budget,
+        // feasibility is monotone, so reuse that solved result directly and skip recomputation.
+        if (_compactUsesFeasibleBudget
+            && _compactFeasibilityOnly
+            && _compactGroupPatternTightestBudget.TryGetValue(key, out int existingBudget)
+            && existingBudget <= optimalSteps
+            && _compactGroupPatternCache.ContainsKey(key))
+        {
+            int reusedCost;
+            if (_compactCostMemo.TryGetValue((key, existingBudget), out int tighterCost)
+                && tighterCost != int.MaxValue)
+            {
+                reusedCost = tighterCost;
+            }
+            else if (_compactRealStepsMemo.TryGetValue(key, out int cachedRealSteps)
+                     && cachedRealSteps <= optimalSteps)
+            {
+                reusedCost = cachedRealSteps;
+            }
+            else
+            {
+                reusedCost = -1;
+            }
+
+            if (reusedCost >= 0)
+            {
+                _compactCostMemo[memoKey] = reusedCost;
+                return reusedCost;
+            }
+        }
 
         // Sentinel guards against revisiting this state while it is being solved.
         // The search space is acyclic (children are strictly more resolved), so this
@@ -362,7 +407,7 @@ partial class StrategyBuilder
             if (!solvable)
                 continue;
 
-            _compactGroupPatternCache[key] = MakeGroupPattern(state, group);
+            CacheCompactPatternForBudget(key, state, group, budget);
             int cost = CountDisplayBranches(state, remainingSlots, group) + branchCostSum;
             _compactCostMemo[memoKey] = cost;
 
@@ -458,6 +503,7 @@ partial class StrategyBuilder
                 continue;
 
             _compactGroupPatternCache[key] = MakeGroupPattern(state, group);
+            _compactGroupPatternTightestBudget[key] = budget;
             int cost = 1 + realSteps;   // steps-as-cost; callers only test against int.MaxValue
             _compactCostMemo[memoKey] = cost;
             _compactRealStepsMemo[key] = cost;
