@@ -17,41 +17,30 @@ Instead of printing one concrete run on random data, the program now prints the 
 
 ## Algorithm
 
-The implementation uses a **transitivity-aware elimination strategy**.
+At a high level, the solver builds a decision tree over partial-order states:
 
-When a sort returns:
+- each sort contributes a full local order and transitive implications,
+- elements proven unable to enter top-k are eliminated,
+- recursive minimax search chooses comparisons that minimize worst-case depth,
+- equivalent branches are merged by symmetry-aware canonicalization.
 
-```text
-a > b > c
-```
-
-the program records all implied relations:
-
-- `a > b`
-- `a > c`
-- `b > c`
-
-and then keeps propagating them transitively. For example, if we already know `x > a`, then after sorting `[a, b, c]` we also learn `x > b` and `x > c` without paying for another sort.
-
-An element is eliminated as soon as there are at least `k` elements proven to be larger than it, because it can no longer belong to the top-k set.
-
-### Group selection heuristic
-
-Each round, the program chooses up to `m` active candidates and prefers:
-
-1. **Unseen elements**, so every sort adds new information.
-2. **Strong leaders**, which already dominate many others.
-3. **Almost eliminated elements**, which need just one more proven larger element to be removed.
-
-This usually beats the earlier batch/tournament approach because it reuses previously learned order relations instead of restarting from scratch.
-
-To print the strategy tree, the program symbolically enumerates all sort outcomes consistent with the currently known partial order, then recursively prints the next comparison for each branch.
-Symmetric branches are merged by canonicalizing the comparison state, so equivalent cases are not repeated.
+Detailed search design and optimality boundaries are in `docs/core-algorithm.md`.
+Pattern/equivalence rendering rules are in `docs/output-rendering.md`.
 
 ## Usage
 
 The program has three entry points that share the same input validation
 (`1 <= n <= 64`, `2 <= m <= n`, `1 <= k <= n`).
+
+### Documentation map
+
+- `docs/core-algorithm.md`: search/minimax design, lower bounds, exact/greedy
+  stage semantics, and optimality boundaries.
+- `docs/output-rendering.md`: branch/pattern rendering and equivalence folding
+  rules.
+- `docs/test-strategy.md`: regression/perf testing strategy and guardrails.
+- `docs/ui-explorer.md`: WinForms explorer behavior, stage timeline UI, and
+  cancellation/progress semantics.
 
 ### Builder API naming
 
@@ -61,7 +50,7 @@ single-stage construction and multi-stage orchestration:
 - `BuildGreedyFeasibleStage`, `BuildStepProofStage`, `BuildProofTightenStage`,
   `BuildEdgeCompactStage`: build one atomic stage result or plan.
 - `RunGreedyPipeline`: greedy-mode orchestrator that emits
-  `greedy-feasible`, zero or more `proof-tighten<=N`, then a final
+  `greedy-feasible`, zero or more `proof-tighten≤N`, then a final
   `edge-compact@S` stage.
 - `RunExactPipeline`: exact-mode orchestrator that emits `step-proof`, then
   `edge-compact@S`.
@@ -103,7 +92,7 @@ printf "10\n4\n3\n" | dotnet run
 ### Desktop UI
 
 Running with no arguments and no redirected input opens the WinForms explorer
-(see below).
+(see `docs/ui-explorer.md`).
 
 ### Example
 
@@ -149,23 +138,10 @@ printed.
 
 ### Desktop UI details
 
-Running without redirected input opens the WinForms explorer. A mode dropdown
-selects **exact (proven)** or **greedy (fast)**, matching the CLI `--mode exact / greedy`.
-During a run it shows live:
-
-- searched / pending / output state counts
-- the current best root worst-case bound as incumbents improve
-- lower-bound pruning and cache-hit counters
-- two-stage timing (step, then edge), each counting from zero
-
-You can press **Stop** at any time to cancel a running search. For parameter
-combinations that are known to be expensive (large `n` with a mid-range sort
-size), the UI shows a confirmation dialog before starting so a long search is
-never launched by accident.
-
-After the run finishes, the details pane also includes a root-incumbent timeline
-so you can see when the search first found `x` steps, then improved to a smaller
-bound.
+The WinForms explorer shares the same stage model as the CLI (`step-proof` /
+`greedy-feasible` / `proof-tighten≤N` / `edge-compact@S`) and shows live
+progress, search counters, and per-stage timing. For full UI behavior and
+diagnostic panes, see `docs/ui-explorer.md`.
 
 ## Requirements
 
@@ -174,13 +150,18 @@ bound.
 ## Greedy Mode: Min-Step Optimization
 
 ### Overview
-Greedy mode is feasibility-first: it finds a valid solution fast, tightens its worst-case step count, then minimizes edges once at the final step. It never proves optimality by exhaustive search, but is fast and interruptible (Ctrl+C in the CLI, Stop in the GUI) — cancelling always surfaces the best plan found so far.
+Greedy mode is feasibility-first: it finds a valid plan quickly, tightens the
+step bound when possible, then runs one edge-compaction pass at the final step.
+It is fast and interruptible (Ctrl+C in CLI, Stop in GUI), and cancellation
+keeps the best plan found so far.
 
-- **Greedy-feasible**: a constructive greedy pass finds an initial feasible solution and its step upper bound `U` (emitted as the `greedy-feasible` stage).
-- **Cheap lookahead selector (`m>=3`)**: each greedy step scores a bounded set of constructive candidate groups by a cheap immediate-outcome heuristic (lower worst-case lower bound first, then smaller active-set spread, then fewer distinct immediate successors), rather than by recursive rollout. Candidate templates include antichain/frontier/boundary forms plus an unresolved-density group template, and score ties are broken by immediate displayed branch-line count.
-- **Tightening (proof-tighten≤N)**: feasibility-only compact probes at ceilings `U-1, U-2, …` drive the worst-case step count down to the smallest feasible step `S`. These probes skip edge counting entirely; each successful one is reported as a `proof-tighten≤N` stage.
-- **Edge-compact (min-edge)**: a single min-edge compact pass runs at the determined step `S`, minimizing edge count without changing the step count (emitted as the `edge-compact@S` stage).
+- `greedy-feasible`: build an initial feasible upper bound `U`.
+- `proof-tighten≤N`: probe lower ceilings (`U-1`, `U-2`, ...) with feasibility-only compact search.
+- `edge-compact@S`: one min-edge pass at the final feasible step `S`.
 
-Doing min-edge only once, at the final step, avoids repeatedly computing edge counts at intermediate ceilings that tightening later discards. If a ceiling is *proven* infeasible (complete enumeration, no candidate cap truncation), the incumbent is proven optimal and the squeeze closes to `max steps = S (proven optimal)`.
+For algorithmic details, proofs, and edge-case semantics, see
+`docs/core-algorithm.md` (sections on greedy pipeline and compact stage).
 
-Regression coverage lives in `TopKFinder.Tests/GreedyTightenTests.cs` and `TopKFinder.Tests/GreedyTightenPlanTests.cs`.
+Regression coverage lives in `TopKFinder.Tests/GreedyFeasibleStageTests.cs`,
+`TopKFinder.Tests/GreedyPipelineTests.cs`, `TopKFinder.Tests/GreedyTightenTests.cs`,
+and `TopKFinder.Tests/ProofTightenTests.cs`.

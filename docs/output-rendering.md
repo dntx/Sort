@@ -14,6 +14,12 @@
 > **严格细化**（`CheckDisplaySearchParity` 处处无残差）、`MaxStep` 不变、搜索统计不变，只有**显示的边数**
 > 会下降。该开关连同其下的 merge-OFF 旧分支会在功能完全落定后整体移除。
 
+相关文档：
+
+- [`core-algorithm.md`](./core-algorithm.md)：搜索/剪枝/阶段语义（`step-proof`、`greedy-feasible`、`proof-tighten≤N`、`edge-compact@S`）。
+- [`test-strategy.md`](./test-strategy.md)：渲染相关回归与性能护栏测试策略。
+- [`ui-explorer.md`](./ui-explorer.md)：UI 中阶段占位、进度展示与停止语义。
+
 ---
 
 ## 1. 为什么需要「pattern」

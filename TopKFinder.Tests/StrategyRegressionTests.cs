@@ -77,7 +77,7 @@ public sealed class StrategyRegressionTests
     // dominant outcome-construction cost lives in Default_OutcomesConstructedStaysWithinBaseline.
     //
     // The proven-optimal MaxStep values pinned here (and in the ID baseline theory below) are also
-    // catalogued in docs/known-optimal-max-steps.md as a quick reference for research/verification,
+    // catalogued in docs/optimal-max-steps.md as a quick reference for research/verification,
     // so future work can look up the optimum without re-running exact.
     [Theory]
     [InlineData(9, 3, 3, 6, 3, 7, 5)]
