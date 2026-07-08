@@ -316,7 +316,6 @@ readonly struct SearchProgressSnapshot
         int compactStepOptimalGroups,
         int compactStateEstimate,
         double estimatedProgress01,
-        long estimatedRemainingMilliseconds,
         int rootProvenLowerBound)
     {
         ElapsedMilliseconds = elapsedMilliseconds;
@@ -342,7 +341,6 @@ readonly struct SearchProgressSnapshot
         CompactStepOptimalGroups = compactStepOptimalGroups;
         CompactStateEstimate = compactStateEstimate;
         EstimatedProgress01 = estimatedProgress01;
-        EstimatedRemainingMilliseconds = estimatedRemainingMilliseconds;
         RootProvenLowerBound = rootProvenLowerBound;
     }
 
@@ -373,7 +371,6 @@ readonly struct SearchProgressSnapshot
     // Lets the GUI show the live "solved / ~estimate" denominator during the edge phase.
     public int CompactStateEstimate { get; }
     public double EstimatedProgress01 { get; }
-    public long EstimatedRemainingMilliseconds { get; }
 
     // Best PROVEN lower bound on the root optimum so far (opt >= this). In the iterative-deepening
     // regime it is the current global budget, which each failed pass lifts; outside that regime it

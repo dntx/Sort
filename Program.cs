@@ -207,8 +207,8 @@ class Program
 
             lastEmitMs = snapshot.ElapsedMilliseconds;
             string progressText = $"{snapshot.EstimatedProgress01 * 100.0:F1}%";
-            string etaText = snapshot.EstimatedRemainingMilliseconds >= 0
-                ? $"{snapshot.EstimatedRemainingMilliseconds / 1000.0:F1}s"
+            string etaText = snapshot.EstimatedProgress01 > 0.0
+                ? $"{snapshot.ElapsedMilliseconds * (1.0 - snapshot.EstimatedProgress01) / snapshot.EstimatedProgress01 / 1000.0:F1}s"
                 : "-";
             string line = $"searching... elapsed={snapshot.ElapsedMilliseconds / 1000.0:F1}s " +
                 $"searched={snapshot.SearchedStates} pending={snapshot.PendingStates} output={snapshot.OutputStates} " +
