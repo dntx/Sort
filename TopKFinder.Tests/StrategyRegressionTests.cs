@@ -388,6 +388,31 @@ public sealed class StrategyRegressionTests
         Assert.Equal(plan.SearchStatistics.Diagnostics.RootIncumbents.Count, finalSnapshot.RootIncumbentCount);
         Assert.NotNull(finalSnapshot.LatestRootIncumbent);
         Assert.Equal(plan.MaxStep, finalSnapshot.LatestRootIncumbent!.BestWorstCaseSteps);
+        Assert.Contains(snapshots, snapshot => snapshot.EstimatedProgress01 > 0.0);
+        Assert.All(snapshots, snapshot => Assert.InRange(snapshot.EstimatedProgress01, 0.0, 1.0));
+    }
+
+    [Fact]
+    public void GreedyFeasibleStage_CombinedRunProgress_StaysInFirstBand()
+    {
+        var snapshots = new List<SearchProgressSnapshot>();
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.BuildGreedyFeasibleStage(12, 4, 4) with combined-run progress",
+            RegressionTestTimeout,
+            cancellationToken => new StrategyBuilder(
+                12,
+                4,
+                4,
+                cancellationToken,
+                snapshot => snapshots.Add(snapshot),
+                reportCombinedRunProgress: true).BuildGreedyFeasibleStage());
+
+        Assert.NotEmpty(snapshots);
+        Assert.All(snapshots, snapshot => Assert.Equal(0.10, snapshot.EstimatedProgress01, precision: 6));
+
+        SearchProgressSnapshot finalSnapshot = snapshots[^1];
+        Assert.Equal(plan.SearchStatistics.SearchedStates, finalSnapshot.SearchedStates);
+        Assert.Equal(plan.SearchStatistics.OutputStates, finalSnapshot.OutputStates);
     }
 
     [Fact]
