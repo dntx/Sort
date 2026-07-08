@@ -362,11 +362,50 @@ partial class StrategyBuilder
             return false;
 
         if (commonDrop == 0)
+        {
+            int[] activeColors = state.GetActiveItemColors();
+            if (!OrdersHaveMatchingActiveColorSequence(activeColors, orderA, orderB))
+            {
+                if (EnableProjectionPairingProbe)
+                    _projectionOrbitColorPrefilterSkips++;
+                return false;
+            }
+
+            if (EnableProjectionPairingProbe)
+                _projectionOrbitAutomorphismChecks++;
+
             return state.TryMapOrderByAutomorphism(0, orderA, orderB);
+        }
 
         ComparisonState projected = state.Clone();
         projected.Deactivate(commonDrop);
+
+        int[] projectedColors = projected.GetActiveItemColors();
+        if (!OrdersHaveMatchingActiveColorSequence(projectedColors, orderA, orderB))
+        {
+            if (EnableProjectionPairingProbe)
+                _projectionOrbitColorPrefilterSkips++;
+            return false;
+        }
+
+        if (EnableProjectionPairingProbe)
+            _projectionOrbitAutomorphismChecks++;
+
         return projected.TryMapOrderByAutomorphism(0, orderA, orderB);
+    }
+
+    private static bool OrdersHaveMatchingActiveColorSequence(
+        int[] activeColors,
+        IReadOnlyList<int> orderA,
+        IReadOnlyList<int> orderB)
+    {
+        for (int i = 0; i < orderA.Count; i++)
+        {
+            if (activeColors[orderA[i]] != activeColors[orderB[i]])
+                return false;
+        }
+
+        return true;
     }
 
     // Items active in the parent state that this ordering's outcome neither kept active nor promoted

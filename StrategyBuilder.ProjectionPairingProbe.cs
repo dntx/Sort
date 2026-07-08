@@ -30,6 +30,8 @@ partial class StrategyBuilder
     private int _probeMaxComponentOrbits;
     private int _probeComponentsGe3;          // merged components spanning >=3 parent orbits
     private int _probeComponentsLeak;         // components that are NOT one global-drop orbit
+    private int _projectionOrbitAutomorphismChecks;
+    private int _projectionOrbitColorPrefilterSkips;
     private readonly List<string> _probeWinSamples = new();
     private readonly List<string> _probeLeakSamples = new();
     private readonly List<string> _probeGe3Samples = new();
@@ -43,6 +45,8 @@ partial class StrategyBuilder
     internal int ProbeMaxComponentOrbits => _probeMaxComponentOrbits;
     internal int ProbeComponentsGe3 => _probeComponentsGe3;
     internal int ProbeComponentsLeak => _probeComponentsLeak;
+    internal int ProjectionOrbitAutomorphismChecks => _projectionOrbitAutomorphismChecks;
+    internal int ProjectionOrbitColorPrefilterSkips => _projectionOrbitColorPrefilterSkips;
     internal IReadOnlyList<string> ProbeWinSamples => _probeWinSamples;
     internal IReadOnlyList<string> ProbeLeakSamples => _probeLeakSamples;
     internal IReadOnlyList<string> ProbeGe3Samples => _probeGe3Samples;

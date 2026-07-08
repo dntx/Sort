@@ -104,4 +104,58 @@ public sealed class ProjectionPairingProbeTests
         // Probe sanity: the scan actually materialized display buckets.
         Assert.NotEmpty(Cases);
     }
+
+    // Formal regression for the larger gated (m=5, k=5) frontier cases. These are the ones that
+    // matter for the 25,5,5 path, and they show the 1-WL prefilter becoming materially effective:
+    // the probe still sees the same projection savings and no leak components, while the number of
+    // expensive projection-automorphism checks is frozen to the observed deterministic counts.
+    [Theory]
+    [InlineData(12, 5, 5, 14, 0, 32, 18, 14, 12, 2, 0)]
+    [InlineData(13, 5, 5, 42, 119, 92, 50, 42, 3, 11, 0)]
+    [InlineData(14, 5, 5, 32, 73, 97, 65, 32, 6, 2, 0)]
+    [InlineData(15, 5, 5, 95, 131, 207, 112, 95, 26, 12, 0)]
+    [InlineData(16, 5, 5, 86, 223, 163, 77, 86, 3, 26, 0)]
+    [InlineData(17, 5, 5, 100, 235, 173, 73, 100, 11, 27, 0)]
+    [InlineData(18, 5, 5, 247, 769, 458, 211, 247, 20, 31, 0)]
+    public void GatedM55ProjectionPairingProbe_StaysAtObservedCounts(
+        int n, int m, int k,
+        int expectedChecks,
+        int expectedSkips,
+        int expectedParentOrbitLines,
+        int expectedProjectionLines,
+        int expectedLineSavings,
+        int expectedMultiFamilyComponents,
+        int expectedGe3Components,
+        int expectedLeakComponents)
+    {
+        StrategyBuilder builder = RunProjectionPairingProbeCase(n, m, k);
+
+        Assert.Equal(expectedChecks, builder.ProjectionOrbitAutomorphismChecks);
+        Assert.Equal(expectedSkips, builder.ProjectionOrbitColorPrefilterSkips);
+        Assert.Equal(expectedParentOrbitLines, builder.ProbeParentOrbitLines);
+        Assert.Equal(expectedProjectionLines, builder.ProbeProjectionLines);
+        Assert.Equal(expectedLineSavings, builder.ProbeLineSavings);
+        Assert.Equal(expectedMultiFamilyComponents, builder.ProbeMultiFamilyComponents);
+        Assert.Equal(expectedGe3Components, builder.ProbeComponentsGe3);
+        Assert.Equal(expectedLeakComponents, builder.ProbeComponentsLeak);
+    }
+
+    private static StrategyBuilder RunProjectionPairingProbeCase(int n, int m, int k)
+    {
+        StrategyBuilder builder = null!;
+        TestTimeoutHelper.RunWithTimeout(
+            $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k}) gated projection probe",
+            Timeout,
+            cancellationToken =>
+            {
+                builder = new StrategyBuilder(n, m, k, cancellationToken)
+                {
+                    EnableProjectionOrbitMerging = false,
+                    EnableProjectionPairingProbe = true,
+                };
+                return builder.BuildStepProofStage();
+            });
+
+        return builder;
+    }
 }
