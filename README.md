@@ -177,7 +177,7 @@ bound.
 Greedy mode is feasibility-first: it finds a valid solution fast, tightens its worst-case step count, then minimizes edges once at the final step. It never proves optimality by exhaustive search, but is fast and interruptible (Ctrl+C in the CLI, Stop in the GUI) — cancelling always surfaces the best plan found so far.
 
 - **Greedy-feasible**: a constructive greedy pass finds an initial feasible solution and its step upper bound `U` (emitted as the `greedy-feasible` stage).
-- **Cheap lookahead selector**: each greedy step scores a bounded set of constructive candidate groups by a cheap immediate-outcome heuristic (lower worst-case lower bound first, then smaller active-set spread), rather than by recursive rollout.
+- **Cheap lookahead selector (`m>=3`)**: each greedy step scores a bounded set of constructive candidate groups by a cheap immediate-outcome heuristic (lower worst-case lower bound first, then smaller active-set spread, then fewer distinct immediate successors), rather than by recursive rollout. Candidate templates include antichain/frontier/boundary forms plus an unresolved-density group template, and score ties are broken by immediate displayed branch-line count.
 - **Tightening (proof-tighten≤N)**: feasibility-only compact probes at ceilings `U-1, U-2, …` drive the worst-case step count down to the smallest feasible step `S`. These probes skip edge counting entirely; each successful one is reported as a `proof-tighten≤N` stage.
 - **Edge-compact (min-edge)**: a single min-edge compact pass runs at the determined step `S`, minimizing edge count without changing the step count (emitted as the `edge-compact@S` stage).
 
