@@ -30,6 +30,9 @@ partial class StrategyBuilder
     // pattern cache / closure pre-solve is needed (the chooser is cheap and deterministic).
     private bool _useConstructiveSelection;
     private Dictionary<SearchStateKey, int>? _constructiveDepthMemo;
+    private int _greedyScoreLowerBoundCacheReuseHits;
+
+    internal int GreedyScoreLowerBoundCacheReuseHits => _greedyScoreLowerBoundCacheReuseHits;
 
     // Feasible step budget U threaded from the step phase to the edge phase within one combined run.
     // BuildGreedyFeasibleStage sets it to the MATERIALIZED MaxStep of the just-built step tree (the tightest
@@ -405,7 +408,20 @@ partial class StrategyBuilder
             collectMergedBranches: false,
             onUsefulOutcome: outcome =>
             {
-                int childLowerBound = GetMinWorstCaseLowerBound(outcome.NextState, outcome.NextRemainingSlots);
+                int childLowerBound;
+                // Outcome construction already computed NextSearchKey. Reusing it for the lower-bound
+                // cache avoids recomputing the key path in hot 1-ply candidate scoring loops.
+                if (_lowerBoundStepsCache.TryGetValue(outcome.NextSearchKey, out int cachedLowerBound))
+                {
+                    _lowerBoundCacheHits++;
+                    _greedyScoreLowerBoundCacheReuseHits++;
+                    childLowerBound = cachedLowerBound;
+                }
+                else
+                {
+                    childLowerBound = GetMinWorstCaseLowerBound(outcome.NextState, outcome.NextRemainingSlots);
+                }
+
                 if (childLowerBound > maxChildLowerBound)
                     maxChildLowerBound = childLowerBound;
 
