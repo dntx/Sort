@@ -119,6 +119,29 @@ compact 是一个跑在 phase 1 之上的**二级 DP**（`StrategyBuilder.Compac
 `StrategyPerformanceTests.cs`：对 6,2,2 / 10,9,9 / 9,3,3 / 12,5,5 / 12,3,3 等少数算例跑中位数计时，
 预算宽松。它**仅用于诊断**数量级爆炸或卡死，文件头注释已明确把真正的拦截职责指回 A 层计数器。
 
+### 4.1 本地中位数基准脚本（推荐用于优化前后对比）
+
+仓库提供了一个固定 case 集合的本地基准脚本：
+
+- `scripts/benchmark-greedy-stage1.ps1`
+
+用途：
+
+- 固定 warmup + 重复次数；
+- 输出每个 case 的 steps/edges/states 与 `stage greedy-feasible` 的中位数时间；
+- 标记结构量是否在重复运行中保持稳定（`StableStructure`）；
+- 可选导出 CSV 便于做 PR 前后对比。
+
+示例：
+
+```powershell
+pwsh ./scripts/benchmark-greedy-stage1.ps1
+pwsh ./scripts/benchmark-greedy-stage1.ps1 -WarmupRuns 1 -MeasuredRuns 7 -AsCsv
+```
+
+注意：墙钟时间仍会受机器负载影响，请优先使用「同机、同会话、同参数」的中位数做对比，
+并继续以 A 层确定性计数器作为最终回归准绳。
+
 ---
 
 ## 5. 其它正确性 / 单元测试
