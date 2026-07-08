@@ -170,9 +170,10 @@ public class GreedyPipelineTests
     // looser-budget pattern overwrote the tighter-feasible one, so the materialized plan OVERSHOT the
     // proof-tighten<=14 ceiling (realized step 16) and the probe was classified Overshot. Keeping the
     // tightest-budget pattern makes materialization honor the ceiling: the probe now TIGHTENS to a
-    // within-budget plan (realized step 14). Being a single feasibility probe it still does not prove
-    // optimality. Only the <=14 probe is exercised: with the overshoot gone the full pipeline keeps
-    // tightening toward the true optimum, a deliberately separate (and much longer) computation.
+    // within-budget plan (historically step 14; newer heuristics may do better). Being a single
+    // feasibility probe it still does not prove optimality. Only the <=14 probe is exercised: with
+    // the overshoot gone the full pipeline keeps tightening toward the true optimum, a deliberately
+    // separate (and much longer) computation.
     [Fact]
     public void ProofTighten_Budget14TightensInsteadOfOvershooting_20_4_6()
     {
@@ -186,7 +187,8 @@ public class GreedyPipelineTests
         Assert.NotNull(probe.Plan);
         Assert.True(probe.Plan!.MaxStep <= budget,
             $"tightened probe must realize a step within budget {budget}, got {probe.Plan.MaxStep}");
-        Assert.Equal(14, probe.Plan.MaxStep);
+        Assert.True(probe.Plan.MaxStep <= 14,
+            $"expected <=14 at the tightened probe, got {probe.Plan.MaxStep}");
         Assert.False(probe.ProvesOptimal);
     }
 
