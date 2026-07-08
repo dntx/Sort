@@ -389,6 +389,8 @@ partial class StrategyBuilder
         {
             projected = cached.State;
             projectedColors = cached.Colors;
+            if (EnableProjectionPairingProbe)
+                _projectionOrbitProjectedStateCacheHits++;
         }
         else
         {
@@ -396,6 +398,8 @@ partial class StrategyBuilder
             projected.Deactivate(commonDrop);
             projectedColors = projected.GetActiveItemColors();
             projectionCache?.Add(commonDrop, (projected, projectedColors));
+            if (EnableProjectionPairingProbe)
+                _projectionOrbitProjectedStateBuilds++;
         }
 
         if (!OrdersHaveMatchingActiveColorSequence(projectedColors, orderA, orderB))

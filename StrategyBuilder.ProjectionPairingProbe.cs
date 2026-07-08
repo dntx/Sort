@@ -32,6 +32,8 @@ partial class StrategyBuilder
     private int _probeComponentsLeak;         // components that are NOT one global-drop orbit
     private int _projectionOrbitAutomorphismChecks;
     private int _projectionOrbitColorPrefilterSkips;
+    private int _projectionOrbitProjectedStateBuilds;
+    private int _projectionOrbitProjectedStateCacheHits;
     private readonly List<string> _probeWinSamples = new();
     private readonly List<string> _probeLeakSamples = new();
     private readonly List<string> _probeGe3Samples = new();
@@ -47,6 +49,8 @@ partial class StrategyBuilder
     internal int ProbeComponentsLeak => _probeComponentsLeak;
     internal int ProjectionOrbitAutomorphismChecks => _projectionOrbitAutomorphismChecks;
     internal int ProjectionOrbitColorPrefilterSkips => _projectionOrbitColorPrefilterSkips;
+    internal int ProjectionOrbitProjectedStateBuilds => _projectionOrbitProjectedStateBuilds;
+    internal int ProjectionOrbitProjectedStateCacheHits => _projectionOrbitProjectedStateCacheHits;
     internal IReadOnlyList<string> ProbeWinSamples => _probeWinSamples;
     internal IReadOnlyList<string> ProbeLeakSamples => _probeLeakSamples;
     internal IReadOnlyList<string> ProbeGe3Samples => _probeGe3Samples;
