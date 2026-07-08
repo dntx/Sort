@@ -3,7 +3,7 @@ using System.Windows.Forms;
 
 class Program
 {
-    public enum CliMode
+    public enum Mode
     {
         Exact,
         Greedy,
@@ -57,7 +57,7 @@ class Program
                 return;
             }
 
-            if (!TryParseCliArgs(args, out string? nText, out string? mText, out string? kText, out CliMode mode, out int? stageLimit, out string? argError))
+            if (!TryParseCliArgs(args, out string? nText, out string? mText, out string? kText, out Mode mode, out int? stageLimit, out string? argError))
             {
                 Console.WriteLine(argError);
                 Console.WriteLine(UsageText);
@@ -96,7 +96,7 @@ class Program
             return;
         }
 
-        RunHeadless(n, m, k, CliMode.Exact, stageLimit: null);
+        RunHeadless(n, m, k, Mode.Exact, stageLimit: null);
     }
 
     public static bool IsHelpRequested(string[] args)
@@ -109,14 +109,14 @@ class Program
         out string? nText,
         out string? mText,
         out string? kText,
-        out CliMode mode,
+        out Mode mode,
         out int? stageLimit,
         out string? error)
     {
         nText = null;
         mText = null;
         kText = null;
-        mode = CliMode.Exact;
+        mode = Mode.Exact;
         stageLimit = null;
         error = null;
 
@@ -134,9 +134,9 @@ class Program
                 }
                 string value = args[++i];
                 if (string.Equals(value, "greedy", StringComparison.OrdinalIgnoreCase))
-                    mode = CliMode.Greedy;
+                    mode = Mode.Greedy;
                 else if (string.Equals(value, "exact", StringComparison.OrdinalIgnoreCase))
-                    mode = CliMode.Exact;
+                    mode = Mode.Exact;
                 else
                 {
                     error = $"Error: unknown mode '{value}' (expected exact or greedy)";
@@ -183,7 +183,7 @@ class Program
         return true;
     }
 
-    private static void RunHeadless(int n, int m, int k, CliMode mode, int? stageLimit)
+    private static void RunHeadless(int n, int m, int k, Mode mode, int? stageLimit)
     {
         int canonicalK = Math.Min(k, n - k);
         if (canonicalK != k)
@@ -265,7 +265,7 @@ class Program
         }
     }
 
-    private static void RunHeadlessCore(StrategyBuilder builder, CliMode mode, int? stageLimit, Action clearProgressLine)
+    private static void RunHeadlessCore(StrategyBuilder builder, Mode mode, int? stageLimit, Action clearProgressLine)
     {
         void ClearProgressLine() => clearProgressLine();
 
@@ -278,7 +278,7 @@ class Program
             Console.Error.WriteLine(text);
         }
 
-        if (mode == CliMode.Greedy)
+        if (mode == Mode.Greedy)
         {
             // Greedy mode: GreedyFeasible gives a valid upper bound, then ProofTighten lowers the
             // step ceiling when it can, and EdgeCompact minimizes edges at the final step.

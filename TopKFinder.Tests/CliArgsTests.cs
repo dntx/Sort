@@ -7,13 +7,13 @@ public sealed class CliArgsTests
     {
         bool ok = Program.TryParseCliArgs(
             new[] { "9", "3", "3" },
-            out string? n, out string? m, out string? k, out Program.CliMode mode, out int? stageLimit, out string? error);
+            out string? n, out string? m, out string? k, out Program.Mode mode, out int? stageLimit, out string? error);
 
         Assert.True(ok);
         Assert.Equal("9", n);
         Assert.Equal("3", m);
         Assert.Equal("3", k);
-        Assert.Equal(Program.CliMode.Exact, mode);
+        Assert.Equal(Program.Mode.Exact, mode);
         Assert.Null(stageLimit);
         Assert.Null(error);
     }
@@ -27,7 +27,7 @@ public sealed class CliArgsTests
     {
         bool ok = Program.TryParseCliArgs(
             new[] { "9", "3", "3", "--mode", value },
-            out _, out _, out _, out Program.CliMode mode, out int? stageLimit, out string? error);
+            out _, out _, out _, out Program.Mode mode, out int? stageLimit, out string? error);
 
         Assert.True(ok);
         Assert.Equal(expected, mode.ToString());
@@ -40,10 +40,10 @@ public sealed class CliArgsTests
     {
         bool ok = Program.TryParseCliArgs(
             new[] { "9", "3", "3", "--stage", "2" },
-            out _, out _, out _, out Program.CliMode mode, out int? stageLimit, out string? error);
+            out _, out _, out _, out Program.Mode mode, out int? stageLimit, out string? error);
 
         Assert.True(ok);
-        Assert.Equal(Program.CliMode.Exact, mode);
+        Assert.Equal(Program.Mode.Exact, mode);
         Assert.Equal(2, stageLimit);
         Assert.Null(error);
     }
@@ -53,10 +53,10 @@ public sealed class CliArgsTests
     {
         bool ok = Program.TryParseCliArgs(
             new[] { "9", "3", "3", "--mode", "greedy", "--stage", "1" },
-            out _, out _, out _, out Program.CliMode mode, out int? stageLimit, out string? error);
+            out _, out _, out _, out Program.Mode mode, out int? stageLimit, out string? error);
 
         Assert.True(ok);
-        Assert.Equal(Program.CliMode.Greedy, mode);
+        Assert.Equal(Program.Mode.Greedy, mode);
         Assert.Equal(1, stageLimit);
         Assert.Null(error);
     }
