@@ -39,6 +39,7 @@ jobs:
           fi
           data=$(gh api "repos/${{ github.repository }}/pulls/$number")
           echo "number=$number" >> "$GITHUB_OUTPUT"
+          echo "base_ref=$(echo "$data" | jq -r .base.ref)" >> "$GITHUB_OUTPUT"
           echo "base_sha=$(echo "$data" | jq -r .base.sha)" >> "$GITHUB_OUTPUT"
           echo "head_sha=$(echo "$data" | jq -r .head.sha)" >> "$GITHUB_OUTPUT"
           # Export title/body via $GITHUB_ENV so they are populated for both
@@ -60,7 +61,7 @@ jobs:
 
       - name: Build diff
         run: |
-          git fetch --no-tags origin "${{ steps.pr.outputs.base_sha }}" "${{ steps.pr.outputs.head_sha }}"
+          git fetch --no-tags origin "${{ steps.pr.outputs.base_ref }}" "${{ steps.pr.outputs.base_sha }}" "${{ steps.pr.outputs.head_sha }}"
           git diff "${{ steps.pr.outputs.base_sha }}...${{ steps.pr.outputs.head_sha }}" > pr.diff
           echo "Diff size: $(wc -c < pr.diff) bytes"
 
@@ -76,6 +77,8 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ steps.pr.outputs.number }}
           DIFF_FILE: pr.diff
+          PR_BASE_REF: ${{ steps.pr.outputs.base_ref }}
+          PR_HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
           # Comma-separated fallback chain. Each model has its own GitHub Models
           # quota, so the reviewer rotates to the next one on HTTP 429. The most
           # capable (high rate-limit tier) models are tried first for review
