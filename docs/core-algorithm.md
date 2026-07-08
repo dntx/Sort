@@ -5,7 +5,13 @@ minimax 搜索、对称性约减，以及三种剪枝下界（信息论下界、
 下界与 Dilworth 定理部分配有具体例子，面向没有相关理论背景的读者。
 
 > 本文聚焦**搜索与剪枝**（决定策略树的形状与最优性）。输出层「如何把每条分支渲染成易读的
-> `pattern: ...`」是一块正交的逻辑，单独见 [`strategy-output.md`](./strategy-output.md)。
+> `pattern: ...`」是一块正交的逻辑，单独见 [`output-rendering.md`](./output-rendering.md)。
+
+相关文档：
+
+- [`output-rendering.md`](./output-rendering.md)：分支等价折叠与 `pattern:` 渲染规则（输出层）。
+- [`test-strategy.md`](./test-strategy.md)：回归基线、性能护栏与测试方法。
+- [`ui-explorer.md`](./ui-explorer.md)：桌面 UI 阶段时间线、占位与取消语义。
 
 ---
 
