@@ -110,15 +110,17 @@ public sealed class ProjectionPairingProbeTests
     // the probe still sees the same projection savings and no leak components, while the number of
     // expensive projection-automorphism checks is frozen to the observed deterministic counts.
     [Theory]
-    [InlineData(12, 5, 5, 14, 0, 12, 2, 32, 18, 14, 12, 2, 0)]
-    [InlineData(13, 5, 5, 42, 119, 46, 115, 92, 50, 42, 3, 11, 0)]
-    [InlineData(14, 5, 5, 32, 73, 53, 52, 97, 65, 32, 6, 2, 0)]
-    [InlineData(15, 5, 5, 95, 131, 102, 124, 207, 112, 95, 26, 12, 0)]
-    [InlineData(16, 5, 5, 86, 223, 100, 209, 163, 77, 86, 3, 26, 0)]
-    [InlineData(17, 5, 5, 100, 235, 82, 253, 173, 73, 100, 11, 27, 0)]
-    [InlineData(18, 5, 5, 247, 769, 254, 762, 458, 211, 247, 20, 31, 0)]
+    [InlineData(12, 5, 5, 0, 32, 14, 0, 12, 2, 32, 18, 14, 12, 2, 0)]
+    [InlineData(13, 5, 5, 10, 375, 42, 119, 46, 115, 92, 50, 42, 3, 11, 0)]
+    [InlineData(14, 5, 5, 6, 196, 32, 73, 53, 52, 97, 65, 32, 6, 2, 0)]
+    [InlineData(15, 5, 5, 0, 514, 95, 131, 102, 124, 207, 112, 95, 26, 12, 0)]
+    [InlineData(16, 5, 5, 16, 802, 86, 223, 100, 209, 163, 77, 86, 3, 26, 0)]
+    [InlineData(17, 5, 5, 10, 860, 100, 235, 82, 253, 173, 73, 100, 11, 27, 0)]
+    [InlineData(18, 5, 5, 0, 2531, 247, 769, 254, 762, 458, 211, 247, 20, 31, 0)]
     public void GatedM55ProjectionPairingProbe_StaysAtObservedCounts(
         int n, int m, int k,
+        int expectedParentChecks,
+        int expectedParentSkips,
         int expectedChecks,
         int expectedSkips,
         int expectedProjectedStateBuilds,
@@ -132,6 +134,8 @@ public sealed class ProjectionPairingProbeTests
     {
         StrategyBuilder builder = RunProjectionPairingProbeCase(n, m, k);
 
+        Assert.Equal(expectedParentChecks, builder.ParentOrbitAutomorphismChecks);
+        Assert.Equal(expectedParentSkips, builder.ParentOrbitColorPrefilterSkips);
         Assert.Equal(expectedChecks, builder.ProjectionOrbitAutomorphismChecks);
         Assert.Equal(expectedSkips, builder.ProjectionOrbitColorPrefilterSkips);
         Assert.Equal(expectedProjectedStateBuilds, builder.ProjectionOrbitProjectedStateBuilds);

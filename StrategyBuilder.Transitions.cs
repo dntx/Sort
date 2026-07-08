@@ -233,6 +233,8 @@ partial class StrategyBuilder
         ComparisonState state, List<MergedFamilyOutcome> families)
     {
         int n = families.Count;
+        int[] activeColors = state.GetActiveItemColors();
+
         var parent = new int[n];
         for (int i = 0; i < n; i++)
             parent[i] = i;
@@ -249,14 +251,27 @@ partial class StrategyBuilder
 
         for (int i = 0; i < n; i++)
         {
+            IReadOnlyList<int> orderI = families[i].Family.RepresentativeOrderItems;
             for (int j = i + 1; j < n; j++)
             {
                 if (Find(i) == Find(j))
                     continue;
+
+                IReadOnlyList<int> orderJ = families[j].Family.RepresentativeOrderItems;
+                if (!OrdersHaveMatchingActiveColorSequence(activeColors, orderI, orderJ))
+                {
+                    if (EnableProjectionPairingProbe)
+                        _parentOrbitColorPrefilterSkips++;
+                    continue;
+                }
+
+                if (EnableProjectionPairingProbe)
+                    _parentOrbitAutomorphismChecks++;
+
                 if (state.TryMapOrderByAutomorphism(
                         0,
-                        families[i].Family.RepresentativeOrderItems,
-                        families[j].Family.RepresentativeOrderItems))
+                        orderI,
+                        orderJ))
                 {
                     parent[Find(i)] = Find(j);
                 }
