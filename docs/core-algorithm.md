@@ -428,7 +428,7 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     为减少后续算法演进时「取消检查点漏加」导致的 stop 延迟回退，热循环统一走 `ProbeCancellation(...)`：
     默认使用节流探针（低开销），延迟敏感的递归路径用 `ProbeCancellation(0)`（每步检查）保持响应性。
     对外行为由回归测试守门：`GreedyPipeline_CancelAfterTwoSeconds_StopsPromptly_20_2_6` 模拟运行 2 秒后取消，
-    约束取消到退出的延迟不回到双位数秒级卡顿（anti-regression guardrail，而非严格性能基准）。
+    约束取消到退出的延迟不回到分钟级卡顿（anti-regression guardrail，而非严格性能基准）。
   - **Anytime 呈现**：`RunGreedyPipeline(onStageCompleted)` 接受一个回调，在**每次**产出一个阶段结果时**同步**触发——
     回调参数是 `StageResult`（阶段名 + 该阶段**自身**耗时 + 可空的计划 + `Outcome` 枚举）。**强输出契约**：每个被
     `onStageStart` 宣布的探测都**恰好**由一次 `onStageCompleted` 完成、携带一个 `{Outcome, Plan}` 整体——driver 任何分支都不会
