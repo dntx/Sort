@@ -166,6 +166,23 @@ public class GreedyFeasibleStageTests
             $"expected output states <= {maxAllowedOutputStates} for ({n},{m},{k}), got {plan.SearchStatistics.OutputStates}");
     }
 
+    // Regression guard for internal candidate-membership data-structure refactors: constructive
+    // selection is deterministic for a fixed (n,m,k), so repeated builds must produce identical
+    // strategy shape metrics.
+    [Theory]
+    [InlineData(20, 3, 6)]
+    [InlineData(12, 4, 4)]
+    [InlineData(16, 5, 5)]
+    public void GreedyFeasibleStage_RepeatedBuildsRemainDeterministic(int n, int m, int k)
+    {
+        StrategyPlan first = new StrategyBuilder(n, m, k).BuildGreedyFeasibleStage();
+        StrategyPlan second = new StrategyBuilder(n, m, k).BuildGreedyFeasibleStage();
+
+        Assert.Equal(first.MaxStep, second.MaxStep);
+        Assert.Equal(first.TotalBranchEdges, second.TotalBranchEdges);
+        Assert.Equal(first.SearchStatistics.OutputStates, second.SearchStatistics.OutputStates);
+    }
+
     private static void AssertEveryDecisionHasGroup(StrategyNode node)
     {
         if (node.Branches.Count > 0)

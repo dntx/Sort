@@ -800,6 +800,80 @@ def validate_pr_metadata_language(pr_title: str, pr_body: str) -> tuple[bool, st
     return False, review
 
 
+def validate_pr_description_format(pr_body: str) -> tuple[bool, str]:
+    """Validate PR description formatting for common broken JSON-escaped bodies.
+
+    A frequent formatting mistake is posting a JSON-escaped string as-is, which
+    leaves literal "\\n" tokens in the description instead of real newlines.
+    That makes Markdown sections/bullets render as one long line and should
+    block until corrected.
+    """
+    body = pr_body or ""
+    escaped_newlines = body.count("\\n")
+    has_real_newline = "\n" in body
+    # Treat this as malformed only when the description appears broadly escaped,
+    # not when it contains an occasional literal "\\n" inside prose/code.
+    looks_json_escaped = escaped_newlines >= 2 and not has_real_newline
+    if not looks_json_escaped:
+        return True, ""
+
+    review = (
+        "## Summary\n"
+        "This PR is blocked by description formatting policy.\n\n"
+        "## Findings\n"
+        "- **[BLOCK]** Pull request description appears to contain literal escaped "
+        "newlines (`\\n`) instead of real line breaks. This usually means the "
+        "description was pasted as a JSON-escaped string and Markdown sections/"
+        "lists will not render correctly. Please rewrite the description with "
+        "actual newlines.\n\n"
+        "VERDICT: BLOCK"
+    )
+    return False, review
+
+
+def validate_branch_is_based_on_latest_base(pr_base_ref: str, pr_head_sha: str) -> tuple[bool, str]:
+    """Validate that the PR head already contains the latest base-branch tip."""
+    base_ref = (pr_base_ref or "").strip()
+    head_sha = (pr_head_sha or "").strip()
+    if not base_ref or not head_sha:
+        return True, ""
+
+    remote_ref = f"origin/{base_ref}"
+    base_proc = subprocess.run(
+        ["git", "rev-parse", remote_ref],
+        text=True,
+        capture_output=True,
+    )
+    if base_proc.returncode != 0:
+        raise RuntimeError(
+            f"Could not resolve {remote_ref}: {base_proc.stderr.strip() or base_proc.stdout.strip()}"
+        )
+    latest_base_sha = base_proc.stdout.strip()
+
+    merge_base_proc = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", latest_base_sha, head_sha],
+        text=True,
+        capture_output=True,
+    )
+    if merge_base_proc.returncode == 0:
+        return True, ""
+    if merge_base_proc.returncode != 1:
+        raise RuntimeError(
+            "Could not compare PR head against latest base branch: "
+            f"{merge_base_proc.stderr.strip() or merge_base_proc.stdout.strip()}"
+        )
+
+    review = (
+        "## Summary\n"
+        f"This PR is blocked because it is not based on the latest `{base_ref}` branch head.\n\n"
+        "## Findings\n"
+        f"- **[BLOCK]** PR head `{head_sha}` does not contain the current `{base_ref}` tip `{latest_base_sha}`. "
+        f"Rebase or merge the latest `{base_ref}` into this branch, then rerun the review.\n\n"
+        "VERDICT: BLOCK"
+    )
+    return False, review
+
+
 
 def filtered_review_diff(diff: str, max_chars: int = MAX_DIFF_CHARS) -> str:
     """Concatenate reviewable (non-infra, non-data) diff sections, truncated for the model."""
@@ -1434,6 +1508,16 @@ def post_review(review_body: str, verdict: str) -> None:
 def main() -> int:
     pr_title = os.environ.get("PR_TITLE", "")
     pr_body = os.environ.get("PR_BODY", "")
+    pr_base_ref = os.environ.get("PR_BASE_REF", "")
+    pr_head_sha = os.environ.get("PR_HEAD_SHA", "")
+
+    format_ok, format_review = validate_pr_description_format(pr_body)
+    if not format_ok:
+        print("Verdict: BLOCK")
+        print("----- Review -----")
+        print(format_review)
+        post_review(format_review, "BLOCK")
+        return 1
 
     language_ok, language_review = validate_pr_metadata_language(pr_title, pr_body)
     if not language_ok:
@@ -1441,6 +1525,14 @@ def main() -> int:
         print("----- Review -----")
         print(language_review)
         post_review(language_review, "BLOCK")
+        return 1
+
+    branch_ok, branch_review = validate_branch_is_based_on_latest_base(pr_base_ref, pr_head_sha)
+    if not branch_ok:
+        print("Verdict: BLOCK")
+        print("----- Review -----")
+        print(branch_review)
+        post_review(branch_review, "BLOCK")
         return 1
 
     diff = read_diff()

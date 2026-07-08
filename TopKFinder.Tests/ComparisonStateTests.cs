@@ -98,6 +98,41 @@ public sealed class ComparisonStateTests
     }
 
     [Fact]
+    public void ActiveItemColors_AreStableAcrossEquivalentRelationInsertionOrders()
+    {
+        var first = new ComparisonState(6);
+        first.AddRelation(0, 1);
+        first.AddRelation(1, 2);
+        first.AddRelation(3, 4);
+        first.AddRelation(0, 5);
+
+        var second = new ComparisonState(6);
+        second.AddRelation(3, 4);
+        second.AddRelation(0, 5);
+        second.AddRelation(1, 2);
+        second.AddRelation(0, 1);
+
+        Assert.Equal(first.GetActiveItemColors(), second.GetActiveItemColors());
+    }
+
+    [Fact]
+    public void ActiveItemColors_RepeatedReadsStayStable_AndDoNotAffectCanonicalKey()
+    {
+        var state = new ComparisonState(6);
+        state.AddRelation(0, 1);
+        state.AddRelation(0, 2);
+        state.AddRelation(3, 4);
+
+        IntSequenceKey before = state.GetCanonicalKey();
+        int[] first = state.GetActiveItemColors();
+        int[] second = state.GetActiveItemColors();
+        IntSequenceKey after = state.GetCanonicalKey();
+
+        Assert.Equal(first, second);
+        Assert.Equal(before, after);
+    }
+
+    [Fact]
     public void GuaranteedTopMask_IdentifiesForcedTopCandidates()
     {
         var builder = new StrategyBuilder(4, 2, 2);
