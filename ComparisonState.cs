@@ -516,6 +516,30 @@ class ComparisonState
     private static int[] RefineCanonicalColoring(int a, ulong[] anc, ulong[] desc, int[] colors)
     {
         var labels = (int[])colors.Clone();
+
+        int maxLabel = 0;
+        for (int i = 0; i < a; i++)
+            if (labels[i] > maxLabel)
+                maxLabel = labels[i];
+
+        if (maxLabel + 1 > a)
+        {
+            var present = new bool[maxLabel + 1];
+            for (int i = 0; i < a; i++)
+                present[labels[i]] = true;
+
+            var map = new int[maxLabel + 1];
+            int next = 0;
+            for (int v = 0; v <= maxLabel; v++)
+            {
+                if (present[v])
+                    map[v] = next++;
+            }
+
+            for (int i = 0; i < a; i++)
+                labels[i] = map[labels[i]];
+        }
+
         var perm = new int[a];
         var nextLabels = new int[a];
         int maxWidth = 1 + (4 * a);
@@ -535,7 +559,7 @@ class ComparisonState
             classCount++;
 
             int width = 1 + 2 * classCount;
-                Array.Clear(sig, 0, a * width);
+            Array.Clear(sig, 0, a * width);
             for (int i = 0; i < a; i++)
             {
                 ThrowIfThreadCancellationRequested();

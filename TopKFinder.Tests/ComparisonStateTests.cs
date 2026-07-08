@@ -43,6 +43,30 @@ public sealed class ComparisonStateTests
     }
 
     [Fact]
+    public void CanonicalKey_IsStableAcrossDenseIsomorphicStates()
+    {
+        var first = new ComparisonState(7);
+        first.AddRelation(0, 2);
+        first.AddRelation(0, 3);
+        first.AddRelation(1, 3);
+        first.AddRelation(1, 4);
+        first.AddRelation(2, 5);
+        first.AddRelation(3, 5);
+        first.AddRelation(4, 6);
+
+        var second = new ComparisonState(7);
+        second.AddRelation(1, 4);
+        second.AddRelation(1, 3);
+        second.AddRelation(0, 3);
+        second.AddRelation(0, 2);
+        second.AddRelation(4, 6);
+        second.AddRelation(3, 5);
+        second.AddRelation(2, 5);
+
+        Assert.Equal(first.GetCanonicalKey(), second.GetCanonicalKey());
+    }
+
+    [Fact]
     public void CanonicalKey_DiffersForNonIsomorphicStates()
     {
         var chain = new ComparisonState(4);
