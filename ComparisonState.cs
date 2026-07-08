@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using System.Threading;
 
 readonly struct IntSequenceKey : IEquatable<IntSequenceKey>, IComparable<IntSequenceKey>
 {
@@ -159,6 +160,8 @@ readonly struct BuildStateKey : IEquatable<BuildStateKey>
 
 class ComparisonState
 {
+    [ThreadStatic] private static CancellationToken _threadCancellationToken;
+
     private readonly int _n;
     private readonly ulong _allMask;
     private readonly ulong[] _ancestors;
@@ -169,6 +172,17 @@ class ComparisonState
     private IntSequenceKey? _canonicalKeyCache;
     private Dictionary<ulong, IntSequenceKey>? _displayCanonicalKeyCache;
     private Dictionary<ulong, IntSequenceKey>? _groupCanonicalKeyCache;
+
+    internal static void SetThreadCancellationToken(CancellationToken cancellationToken)
+    {
+        _threadCancellationToken = cancellationToken;
+    }
+
+    private static void ThrowIfThreadCancellationRequested()
+    {
+        if (_threadCancellationToken.IsCancellationRequested)
+            _threadCancellationToken.ThrowIfCancellationRequested();
+    }
 
     public ComparisonState(int n)
     {
@@ -210,6 +224,7 @@ class ComparisonState
 
     public void AddRelation(int greater, int lesser)
     {
+        ThrowIfThreadCancellationRequested();
         ulong greaterBit = Bit(greater);
         ulong lesserBit = Bit(lesser);
         if ((_ancestors[lesser] & greaterBit) != 0)
@@ -221,14 +236,20 @@ class ComparisonState
         if (newAncestorsForLesser != 0)
         {
             foreach (int below in EnumerateBits(_descendants[lesser] | lesserBit))
+            {
+                ThrowIfThreadCancellationRequested();
                 _ancestors[below] |= newAncestorsForLesser;
+            }
         }
 
         ulong newDescendantsForGreater = (_descendants[lesser] | lesserBit) & ~_descendants[greater] & _allMask;
         if (newDescendantsForGreater != 0)
         {
             foreach (int above in EnumerateBits(_ancestors[greater] | greaterBit))
+            {
+                ThrowIfThreadCancellationRequested();
                 _descendants[above] |= newDescendantsForGreater;
+            }
         }
     }
 
@@ -236,16 +257,22 @@ class ComparisonState
     {
         for (int i = 0; i < sorted.Count - 1; i++)
         {
+            ThrowIfThreadCancellationRequested();
             for (int j = i + 1; j < sorted.Count; j++)
+            {
+                ThrowIfThreadCancellationRequested();
                 AddRelation(sorted[i], sorted[j]);
+            }
         }
     }
 
     public void Eliminate(int k)
     {
+        ThrowIfThreadCancellationRequested();
         ulong removedMask = 0;
         foreach (int item in EnumerateBits(ActiveMask))
         {
+            ThrowIfThreadCancellationRequested();
             if (BitOperations.PopCount(_ancestors[item] & ActiveMask) >= k)
                 removedMask |= Bit(item);
         }
@@ -349,6 +376,7 @@ class ComparisonState
     // expensive canonical-key computation for groups that cannot match a target pattern.
     public int[] GetActiveItemColors()
     {
+        ThrowIfThreadCancellationRequested();
         int n = _n;
         var colors = new int[n];
         for (int i = 0; i < n; i++)
@@ -359,6 +387,7 @@ class ComparisonState
         ulong remaining = ActiveMask;
         while (remaining != 0)
         {
+            ThrowIfThreadCancellationRequested();
             int i = BitOperations.TrailingZeroCount(remaining);
             remaining &= remaining - 1;
             verts[a++] = i;
@@ -375,9 +404,11 @@ class ComparisonState
         var desc = new ulong[a];
         for (int p = 0; p < a; p++)
         {
+            ThrowIfThreadCancellationRequested();
             ulong upMask = _ancestors[verts[p]] & ActiveMask;
             while (upMask != 0)
             {
+                ThrowIfThreadCancellationRequested();
                 int b = BitOperations.TrailingZeroCount(upMask);
                 upMask &= upMask - 1;
                 desc[p] |= 1UL << pos[b];
@@ -386,6 +417,7 @@ class ComparisonState
             ulong downMask = _descendants[verts[p]] & ActiveMask;
             while (downMask != 0)
             {
+                ThrowIfThreadCancellationRequested();
                 int b = BitOperations.TrailingZeroCount(downMask);
                 downMask &= downMask - 1;
                 anc[p] |= 1UL << pos[b];
@@ -395,7 +427,10 @@ class ComparisonState
         var seed = new int[a];
         int[] refined = RefineCanonicalColoring(a, anc, desc, seed);
         for (int p = 0; p < a; p++)
+        {
+            ThrowIfThreadCancellationRequested();
             colors[verts[p]] = refined[p];
+        }
 
         return colors;
     }
@@ -414,6 +449,7 @@ class ComparisonState
         var verts = new int[n];
         int a = 0;
         ulong remaining = includedMask;
+        ThrowIfThreadCancellationRequested();
         while (remaining != 0)
         {
             int i = BitOperations.TrailingZeroCount(remaining);
@@ -434,9 +470,11 @@ class ComparisonState
         var desc = new ulong[a];
         for (int p = 0; p < a; p++)
         {
+                ThrowIfThreadCancellationRequested();
             ulong upMask = _ancestors[verts[p]] & includedMask;
             while (upMask != 0)
             {
+                    ThrowIfThreadCancellationRequested();
                 int b = BitOperations.TrailingZeroCount(upMask);
                 upMask &= upMask - 1;
                 // verts[p]'s ancestor b means b > verts[p]; record as desc edge b->p.
@@ -446,6 +484,7 @@ class ComparisonState
             ulong downMask = _descendants[verts[p]] & includedMask;
             while (downMask != 0)
             {
+                    ThrowIfThreadCancellationRequested();
                 int b = BitOperations.TrailingZeroCount(downMask);
                 downMask &= downMask - 1;
                 anc[p] |= 1UL << pos[b];
@@ -483,22 +522,28 @@ class ComparisonState
         bool changed;
         do
         {
+            ThrowIfThreadCancellationRequested();
             int classCount = 0;
             for (int i = 0; i < a; i++)
+            {
+                ThrowIfThreadCancellationRequested();
                 if (labels[i] > classCount)
                     classCount = labels[i];
+            }
             classCount++;
 
             int width = 1 + 2 * classCount;
             var sig = new int[a * width];
             for (int i = 0; i < a; i++)
             {
+                ThrowIfThreadCancellationRequested();
                 int baseIdx = i * width;
                 sig[baseIdx] = labels[i];
 
                 ulong up = desc[i];
                 while (up != 0)
                 {
+                    ThrowIfThreadCancellationRequested();
                     int b = BitOperations.TrailingZeroCount(up);
                     up &= up - 1;
                     sig[baseIdx + 1 + labels[b]]++;
@@ -507,6 +552,7 @@ class ComparisonState
                 ulong down = anc[i];
                 while (down != 0)
                 {
+                    ThrowIfThreadCancellationRequested();
                     int b = BitOperations.TrailingZeroCount(down);
                     down &= down - 1;
                     sig[baseIdx + 1 + classCount + labels[b]]++;
@@ -571,10 +617,14 @@ class ComparisonState
 
     private static void CanonicalizeRecursive(int a, ulong[] anc, ulong[] desc, int[] seed, int[] colors, ref int[]? best)
     {
+        ThrowIfThreadCancellationRequested();
         int classCount = 0;
         for (int i = 0; i < a; i++)
+        {
+            ThrowIfThreadCancellationRequested();
             if (colors[i] + 1 > classCount)
                 classCount = colors[i] + 1;
+        }
 
         // Find the smallest color value owning more than one vertex (the target cell).
         var cellSize = new int[classCount];
@@ -602,6 +652,7 @@ class ComparisonState
 
         for (int p = 0; p < a; p++)
         {
+            ThrowIfThreadCancellationRequested();
             if (colors[p] != targetColor)
                 continue;
 
@@ -614,6 +665,7 @@ class ComparisonState
             bool redundant = false;
             for (int q = 0; q < p; q++)
             {
+                ThrowIfThreadCancellationRequested();
                 if (colors[q] == targetColor && AreInterchangeable(p, q, anc, desc))
                 {
                     redundant = true;
@@ -730,6 +782,7 @@ class ComparisonState
         IReadOnlyList<int> orderB,
         out Dictionary<int, int>? automorphism)
     {
+        ThrowIfThreadCancellationRequested();
         automorphism = null;
         if (orderA.Count != orderB.Count)
             return false;
@@ -742,10 +795,12 @@ class ComparisonState
 
         bool Consistent(int from, int to)
         {
+            ThrowIfThreadCancellationRequested();
             if (((fixedTopMask >> from) & 1UL) != ((fixedTopMask >> to) & 1UL))
                 return false;
             foreach (KeyValuePair<int, int> pair in assignment)
             {
+                ThrowIfThreadCancellationRequested();
                 int of = pair.Key, ot = pair.Value;
                 if (((_ancestors[of] >> from) & 1UL) != ((_ancestors[ot] >> to) & 1UL))
                     return false;
@@ -757,6 +812,7 @@ class ComparisonState
 
         for (int i = 0; i < orderA.Count; i++)
         {
+            ThrowIfThreadCancellationRequested();
             int from = orderA[i], to = orderB[i];
             if ((used & (1UL << to)) != 0)
             {
@@ -772,16 +828,21 @@ class ComparisonState
 
         var unassigned = new List<int>();
         foreach (int item in items)
+        {
+            ThrowIfThreadCancellationRequested();
             if (!assignment.ContainsKey(item))
                 unassigned.Add(item);
+        }
 
         bool Search(int idx)
         {
+            ThrowIfThreadCancellationRequested();
             if (idx == unassigned.Count)
                 return true;
             int from = unassigned[idx];
             foreach (int to in items)
             {
+                ThrowIfThreadCancellationRequested();
                 if ((used & (1UL << to)) != 0 || !Consistent(from, to))
                     continue;
                 assignment[from] = to;
