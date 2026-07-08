@@ -65,6 +65,8 @@ partial class StrategyBuilder
         List<List<MergedFamilyOutcome>> orbits = PartitionFamiliesIntoOrbits(state, bucket);
         _probeParentOrbitLines += orbits.Count;
 
+        var projectionCache = new Dictionary<ulong, (ComparisonState State, int[] Colors)>();
+
         int n = orbits.Count;
         var parent = Enumerable.Range(0, n).ToArray();
         int Find(int x)
@@ -83,7 +85,7 @@ partial class StrategyBuilder
             {
                 if (Find(i) == Find(j))
                     continue;
-                if (TryProjectionAutomorphism(state, orbits[i][0], orbits[j][0]))
+                if (TryProjectionAutomorphism(state, orbits[i][0], orbits[j][0], projectionCache))
                     parent[Find(i)] = Find(j);
             }
         }

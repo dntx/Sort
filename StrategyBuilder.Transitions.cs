@@ -295,6 +295,8 @@ partial class StrategyBuilder
         if (n < 2)
             return orbits.Select(orbit => (orbit, false)).ToList();
 
+        var projectionCache = new Dictionary<ulong, (ComparisonState State, int[] Colors)>();
+
         var parent = new int[n];
         for (int i = 0; i < n; i++)
             parent[i] = i;
@@ -320,7 +322,7 @@ partial class StrategyBuilder
             {
                 if (!IsSingleton(orbits[j]) || Find(i) == Find(j))
                     continue;
-                if (TryProjectionAutomorphism(state, orbits[i][0], orbits[j][0]))
+                if (TryProjectionAutomorphism(state, orbits[i][0], orbits[j][0], projectionCache))
                     parent[Find(i)] = Find(j);
             }
         }
@@ -353,7 +355,11 @@ partial class StrategyBuilder
     // eliminate this step (the common drop set, which this step's comparisons determine uniquely),
     // then ask whether an automorphism of the projected parent poset maps one surviving ordering
     // onto the other. With an empty drop set this is exactly the parent-state automorphism test.
-    private bool TryProjectionAutomorphism(ComparisonState state, MergedFamilyOutcome a, MergedFamilyOutcome b)
+    private bool TryProjectionAutomorphism(
+        ComparisonState state,
+        MergedFamilyOutcome a,
+        MergedFamilyOutcome b,
+        Dictionary<ulong, (ComparisonState State, int[] Colors)>? projectionCache = null)
     {
         ulong commonDrop = EliminatedMask(state, a) & EliminatedMask(state, b);
         List<int> orderA = RestrictOrder(a.Family.RepresentativeOrderItems, commonDrop);
@@ -377,10 +383,21 @@ partial class StrategyBuilder
             return state.TryMapOrderByAutomorphism(0, orderA, orderB);
         }
 
-        ComparisonState projected = state.Clone();
-        projected.Deactivate(commonDrop);
+        ComparisonState projected;
+        int[] projectedColors;
+        if (projectionCache is not null && projectionCache.TryGetValue(commonDrop, out var cached))
+        {
+            projected = cached.State;
+            projectedColors = cached.Colors;
+        }
+        else
+        {
+            projected = state.Clone();
+            projected.Deactivate(commonDrop);
+            projectedColors = projected.GetActiveItemColors();
+            projectionCache?.Add(commonDrop, (projected, projectedColors));
+        }
 
-        int[] projectedColors = projected.GetActiveItemColors();
         if (!OrdersHaveMatchingActiveColorSequence(projectedColors, orderA, orderB))
         {
             if (EnableProjectionPairingProbe)

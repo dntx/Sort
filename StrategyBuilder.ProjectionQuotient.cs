@@ -32,6 +32,8 @@ partial class StrategyBuilder
         if (n < 2)
             return orbits.Select(orbit => (orbit, false)).ToList();
 
+        var projectionCache = new Dictionary<ulong, (ComparisonState State, int[] Colors)>();
+
         var parent = new int[n];
         for (int i = 0; i < n; i++)
             parent[i] = i;
@@ -52,7 +54,7 @@ partial class StrategyBuilder
             {
                 if (Find(i) == Find(j))
                     continue;
-                if (TryProjectionAutomorphism(state, orbits[i][0], orbits[j][0]))
+                if (TryProjectionAutomorphism(state, orbits[i][0], orbits[j][0], projectionCache))
                     parent[Find(i)] = Find(j);
             }
         }
