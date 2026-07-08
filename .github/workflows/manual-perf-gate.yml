@@ -1,0 +1,42 @@
+name: manual-perf-gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      warmup_runs:
+        description: Warmup runs for benchmark script
+        type: number
+        default: 1
+      measured_runs:
+        description: Measured runs for benchmark script
+        type: number
+        default: 5
+      regression_tolerance_percent:
+        description: Allowed median slowdown percent vs baseline
+        type: number
+        default: 5
+
+permissions:
+  contents: read
+
+jobs:
+  perf-gate:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Run greedy stage-1 baseline gate
+        shell: pwsh
+        run: |
+          pwsh .\scripts\benchmark-greedy-stage1.ps1 `
+            -WarmupRuns ${{ inputs.warmup_runs }} `
+            -MeasuredRuns ${{ inputs.measured_runs }} `
+            -RegressionTolerancePercent ${{ inputs.regression_tolerance_percent }} `
+            -EnforceBaseline
