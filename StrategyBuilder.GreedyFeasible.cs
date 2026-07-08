@@ -330,7 +330,7 @@ partial class StrategyBuilder
         }
 
         var group = new List<int>(size);
-        var inGroup = new HashSet<int>();
+        var inGroup = new bool[_n];
 
         while (group.Count < size)
         {
@@ -342,7 +342,7 @@ partial class StrategyBuilder
 
             foreach (int item in active)
             {
-                if (inGroup.Contains(item))
+                if (inGroup[item])
                     continue;
 
                 int unresolvedToGroup = 0;
@@ -373,7 +373,7 @@ partial class StrategyBuilder
             }
 
             group.Add(best);
-            inGroup.Add(best);
+            inGroup[best] = true;
         }
 
         return group;
@@ -444,7 +444,7 @@ partial class StrategyBuilder
         });
 
         var group = new List<int>(size);
-        var chosen = new HashSet<int>();
+        var chosen = new bool[_n];
         int bi = 0, ai = 0;
         bool takeBelow = true;
 
@@ -453,26 +453,38 @@ partial class StrategyBuilder
             if (takeBelow && bi < below.Count)
             {
                 int item = below[bi++];
-                if (chosen.Add(item))
+                if (!chosen[item])
+                {
+                    chosen[item] = true;
                     group.Add(item);
+                }
             }
             else if (!takeBelow && ai < above.Count)
             {
                 int item = above[ai++];
-                if (chosen.Add(item))
+                if (!chosen[item])
+                {
+                    chosen[item] = true;
                     group.Add(item);
+                }
             }
             else if (bi < below.Count)
             {
                 int item = below[bi++];
-                if (chosen.Add(item))
+                if (!chosen[item])
+                {
+                    chosen[item] = true;
                     group.Add(item);
+                }
             }
             else if (ai < above.Count)
             {
                 int item = above[ai++];
-                if (chosen.Add(item))
+                if (!chosen[item])
+                {
+                    chosen[item] = true;
                     group.Add(item);
+                }
             }
 
             takeBelow = !takeBelow;
@@ -494,8 +506,11 @@ partial class StrategyBuilder
             {
                 if (group.Count >= size)
                     break;
-                if (chosen.Add(item))
+                if (!chosen[item])
+                {
+                    chosen[item] = true;
                     group.Add(item);
+                }
             }
         }
 
@@ -617,12 +632,12 @@ partial class StrategyBuilder
         int size = Math.Min(_m, active.Count);
 
         var group = new List<int>(size);
-        var inGroup = new HashSet<int>();
+        var inGroup = new bool[_n];
 
         if (forcedSeed >= 0)
         {
             group.Add(forcedSeed);
-            inGroup.Add(forcedSeed);
+            inGroup[forcedSeed] = true;
         }
 
         while (group.Count < size)
@@ -631,7 +646,7 @@ partial class StrategyBuilder
             int bestUnrelated = -1, bestAnc = 0, bestRel = 0;
             foreach (int item in active)
             {
-                if (inGroup.Contains(item))
+                if (inGroup[item])
                     continue;
 
                 int unrelated = 0;
@@ -656,7 +671,7 @@ partial class StrategyBuilder
             }
 
             group.Add(best);
-            inGroup.Add(best);
+            inGroup[best] = true;
         }
 
         return group;
