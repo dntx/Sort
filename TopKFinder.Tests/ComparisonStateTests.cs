@@ -57,6 +57,47 @@ public sealed class ComparisonStateTests
     }
 
     [Fact]
+    public void DisplayCanonicalKey_WithZeroMask_EqualsCanonicalKey()
+    {
+        var state = new ComparisonState(4);
+        state.AddRelation(0, 1);
+        state.AddRelation(2, 3);
+
+        Assert.Equal(state.GetCanonicalKey(), state.GetDisplayCanonicalKey(fixedTopMask: 0));
+    }
+
+    [Fact]
+    public void DisplayCanonicalKey_RepeatedCallsStayStable_AndMutationChangesKey()
+    {
+        var state = new ComparisonState(5);
+        state.AddRelation(0, 1);
+        ulong fixedTopMask = CreateMask(2);
+
+        IntSequenceKey before = state.GetDisplayCanonicalKey(fixedTopMask);
+        IntSequenceKey repeat = state.GetDisplayCanonicalKey(fixedTopMask);
+        Assert.Equal(before, repeat);
+
+        state.AddRelation(0, 2);
+        IntSequenceKey after = state.GetDisplayCanonicalKey(fixedTopMask);
+        Assert.NotEqual(before, after);
+    }
+
+    [Fact]
+    public void GroupCanonicalKey_RepeatedCallsStayStable_AndMutationChangesKey()
+    {
+        var state = new ComparisonState(4);
+        ulong groupMask = CreateMask(0, 1);
+
+        IntSequenceKey before = state.GetGroupCanonicalKey(groupMask);
+        IntSequenceKey repeat = state.GetGroupCanonicalKey(groupMask);
+        Assert.Equal(before, repeat);
+
+        state.AddRelation(0, 1);
+        IntSequenceKey after = state.GetGroupCanonicalKey(groupMask);
+        Assert.NotEqual(before, after);
+    }
+
+    [Fact]
     public void GuaranteedTopMask_IdentifiesForcedTopCandidates()
     {
         var builder = new StrategyBuilder(4, 2, 2);
