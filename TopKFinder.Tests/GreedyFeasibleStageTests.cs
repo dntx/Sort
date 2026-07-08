@@ -118,6 +118,24 @@ public class GreedyFeasibleStageTests
         Assert.Equal(expectedRawU, feasible);
     }
 
+    // Regression for the greedy 1-ply scoring hot path optimization: the scorer now reuses each
+    // outcome's already-computed NextSearchKey to hit the lower-bound cache directly. These cases
+    // should exercise that path and produce at least one direct reuse hit in a normal feasible build.
+    [Theory]
+    [InlineData(9, 3, 3)]
+    [InlineData(12, 4, 4)]
+    [InlineData(16, 5, 5)]
+    public void GreedyFeasibleStage_ReusesLowerBoundCacheKeyInScoring(int n, int m, int k)
+    {
+        var builder = new StrategyBuilder(n, m, k);
+
+        _ = builder.BuildGreedyFeasibleStage();
+
+        Assert.True(
+            builder.GreedyScoreLowerBoundCacheReuseHits > 0,
+            $"expected direct lower-bound cache key reuse hits in greedy scoring for ({n},{m},{k})");
+    }
+
     private static void AssertEveryDecisionHasGroup(StrategyNode node)
     {
         if (node.Branches.Count > 0)

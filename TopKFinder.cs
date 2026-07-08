@@ -1334,6 +1334,7 @@ partial class StrategyBuilder
         _lowerBoundCacheHits = 0;
         _feasibleTopSetCacheHits = 0;
         _bestGroupPatternCacheHits = 0;
+        _greedyScoreLowerBoundCacheReuseHits = 0;
         _outcomesConstructed = 0;
         _candidateGroupsEnumerated = 0;
         _compactStatesSolved = 0;

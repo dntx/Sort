@@ -30,6 +30,9 @@ partial class StrategyBuilder
     // pattern cache / closure pre-solve is needed (the chooser is cheap and deterministic).
     private bool _useConstructiveSelection;
     private Dictionary<SearchStateKey, int>? _constructiveDepthMemo;
+    private int _greedyScoreLowerBoundCacheReuseHits;
+
+    internal int GreedyScoreLowerBoundCacheReuseHits => _greedyScoreLowerBoundCacheReuseHits;
 
     // Feasible step budget U threaded from the step phase to the edge phase within one combined run.
     // BuildGreedyFeasibleStage sets it to the MATERIALIZED MaxStep of the just-built step tree (the tightest
@@ -411,6 +414,7 @@ partial class StrategyBuilder
                 if (_lowerBoundStepsCache.TryGetValue(outcome.NextSearchKey, out int cachedLowerBound))
                 {
                     _lowerBoundCacheHits++;
+                    _greedyScoreLowerBoundCacheReuseHits++;
                     childLowerBound = cachedLowerBound;
                 }
                 else
