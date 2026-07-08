@@ -831,6 +831,49 @@ def validate_pr_description_format(pr_body: str) -> tuple[bool, str]:
     return False, review
 
 
+def validate_branch_is_based_on_latest_base(pr_base_ref: str, pr_head_sha: str) -> tuple[bool, str]:
+    """Validate that the PR head already contains the latest base-branch tip."""
+    base_ref = (pr_base_ref or "").strip()
+    head_sha = (pr_head_sha or "").strip()
+    if not base_ref or not head_sha:
+        return True, ""
+
+    remote_ref = f"origin/{base_ref}"
+    base_proc = subprocess.run(
+        ["git", "rev-parse", remote_ref],
+        text=True,
+        capture_output=True,
+    )
+    if base_proc.returncode != 0:
+        raise RuntimeError(
+            f"Could not resolve {remote_ref}: {base_proc.stderr.strip() or base_proc.stdout.strip()}"
+        )
+    latest_base_sha = base_proc.stdout.strip()
+
+    merge_base_proc = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", latest_base_sha, head_sha],
+        text=True,
+        capture_output=True,
+    )
+    if merge_base_proc.returncode == 0:
+        return True, ""
+    if merge_base_proc.returncode != 1:
+        raise RuntimeError(
+            "Could not compare PR head against latest base branch: "
+            f"{merge_base_proc.stderr.strip() or merge_base_proc.stdout.strip()}"
+        )
+
+    review = (
+        "## Summary\n"
+        f"This PR is blocked because it is not based on the latest `{base_ref}` branch head.\n\n"
+        "## Findings\n"
+        f"- **[BLOCK]** PR head `{head_sha}` does not contain the current `{base_ref}` tip `{latest_base_sha}`. "
+        f"Rebase or merge the latest `{base_ref}` into this branch, then rerun the review.\n\n"
+        "VERDICT: BLOCK"
+    )
+    return False, review
+
+
 
 def filtered_review_diff(diff: str, max_chars: int = MAX_DIFF_CHARS) -> str:
     """Concatenate reviewable (non-infra, non-data) diff sections, truncated for the model."""
@@ -1465,6 +1508,8 @@ def post_review(review_body: str, verdict: str) -> None:
 def main() -> int:
     pr_title = os.environ.get("PR_TITLE", "")
     pr_body = os.environ.get("PR_BODY", "")
+    pr_base_ref = os.environ.get("PR_BASE_REF", "")
+    pr_head_sha = os.environ.get("PR_HEAD_SHA", "")
 
     format_ok, format_review = validate_pr_description_format(pr_body)
     if not format_ok:
@@ -1480,6 +1525,14 @@ def main() -> int:
         print("----- Review -----")
         print(language_review)
         post_review(language_review, "BLOCK")
+        return 1
+
+    branch_ok, branch_review = validate_branch_is_based_on_latest_base(pr_base_ref, pr_head_sha)
+    if not branch_ok:
+        print("Verdict: BLOCK")
+        print("----- Review -----")
+        print(branch_review)
+        post_review(branch_review, "BLOCK")
         return 1
 
     diff = read_diff()
