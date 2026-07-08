@@ -60,22 +60,21 @@ static class StrategyOverviewRenderer
 
         var rows = new List<OverviewRow>();
         int roundNo = 0;
-        var seen = new HashSet<int>();
         int i = 0;
         while (i < spineNodes.Count)
         {
-            bool fresh = spineNodes[i].Group.All(x => !seen.Contains(x));
             bool single = spineNodes[i].Branches.Count == 1;
             int size = spineNodes[i].Group.Count;
 
-            if (fresh && single)
+            if (single)
             {
-                // Accumulate a maximal run of fresh, single-branch, same-size sorts on disjoint
-                // items -- the "split into groups" pattern -- and fold it into one round.
+                // Accumulate a maximal run of single-branch, same-size sorts on disjoint items.
+                // This catches both the first "split all items" wave and later regular waves
+                // (for example winners-only rounds) in one concise overview row.
                 int j = i;
                 var groups = new List<IReadOnlyList<int>>();
                 var drops = new List<int>();
-                var roundSeen = new HashSet<int>(seen);
+                var roundSeen = new HashSet<int>();
                 while (j < spineNodes.Count
                        && spineNodes[j].Group.Count == size
                        && spineNodes[j].Branches.Count == 1
@@ -87,8 +86,6 @@ static class StrategyOverviewRenderer
                         roundSeen.Add(x);
                     j++;
                 }
-                foreach (int x in roundSeen)
-                    seen.Add(x);
 
                 roundNo++;
                 int stepLo = i + 1;
@@ -115,8 +112,6 @@ static class StrategyOverviewRenderer
                 StrategyBranch rep = spineBranches[i];
                 StrategyEffect eff = rep.Effect;
                 int stepNo = i + 1;
-                foreach (int x in spineNodes[i].Group)
-                    seen.Add(x);
 
                 string headline = $"Round {roundNo} \u00b7 step {stepNo}: sort {StrategyTextRenderer.FormatOptionalSet(spineNodes[i].Group)}";
                 var details = new List<string>();
