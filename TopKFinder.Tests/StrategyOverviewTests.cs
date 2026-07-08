@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Xunit;
 
@@ -56,6 +57,61 @@ public sealed class StrategyOverviewTests
     }
 
     [Fact]
+    public void FoldsSecondPairingWaveIntoOneRound_WhenItemsWereSeenEarlier()
+    {
+        // Synthetic representative spine mirroring the greedy 20,2,6 rhythm:
+        // steps 1-10 pairwise over 20 items, then a second disjoint pairing wave on survivors.
+        int[][] firstWave =
+        {
+            new[] { 0, 1 }, new[] { 2, 3 }, new[] { 4, 5 }, new[] { 6, 7 }, new[] { 8, 9 },
+            new[] { 10, 11 }, new[] { 12, 13 }, new[] { 14, 15 }, new[] { 16, 17 }, new[] { 18, 19 }
+        };
+        int[][] secondWave =
+        {
+            new[] { 0, 2 }, new[] { 4, 6 }, new[] { 8, 10 }, new[] { 12, 14 }, new[] { 16, 18 }
+        };
+
+        StrategyNode tail = StrategyNode.Terminal(17, new[] { 0, 2, 4, 8, 12, 16 });
+        var waves = new List<IReadOnlyList<int>>(firstWave);
+        waves.AddRange(secondWave);
+        waves.Add(new[] { 0, 4 }); // break the 11-15 run with a new phase
+
+        for (int step = waves.Count; step >= 1; step--)
+        {
+            IReadOnlyList<int> group = waves[step - 1];
+            var effect = new StrategyEffect(
+                Array.Empty<int>(),
+                new[] { (step * 2 + 1) % 20 },
+                Array.Empty<int>(),
+                Enumerable.Range(0, Math.Max(0, 20 - step)).ToArray());
+            tail = StrategyNode.Decision(
+                step,
+                step,
+                group,
+                new[] { new StrategyBranch($"g{step}", null, effect, tail) });
+        }
+
+        StrategyPlan plan = new(
+            n: 20,
+            m: 2,
+            requestedK: 6,
+            k: 6,
+            root: tail,
+            elapsed: TimeSpan.Zero,
+            searchStatistics: CreateEmptySearchStatistics());
+
+        StrategyOverview overview = StrategyOverviewRenderer.Build(plan);
+
+        Assert.Contains(
+            overview.Rows,
+            row => row.Headline.Contains("steps 1\u201310") && row.Headline.Contains("disjoint groups of 2"));
+
+        Assert.Contains(
+            overview.Rows,
+            row => row.Headline.Contains("steps 11\u201315") && row.Headline.Contains("disjoint groups of 2"));
+    }
+
+    [Fact]
     public void N12M4K4_EndsOnASolvedTerminal()
     {
         StrategyOverview overview = BuildOverview(12, 4, 4);
@@ -92,5 +148,35 @@ public sealed class StrategyOverviewTests
                 yield return branch.Next.StateId;
             }
         }
+    }
+
+    private static SearchStatistics CreateEmptySearchStatistics()
+    {
+        return new SearchStatistics(
+            searchedStates: 0,
+            pendingStates: 0,
+            peakPendingStates: 0,
+            outputStates: 0,
+            expandedOutputStates: 0,
+            lowerBoundStates: 0,
+            feasibleTopSetStates: 0,
+            diagnostics: new SearchDiagnostics(
+                rootIncumbents: Array.Empty<SearchMilestone>(),
+                lowerBoundPrunes: 0,
+                duplicateOutcomeSkips: 0,
+                mergedOutcomeCollisions: 0,
+                exactCacheHits: 0,
+                lowerBoundCacheHits: 0,
+                feasibleTopSetCacheHits: 0,
+                bestGroupPatternCacheHits: 0),
+            phase1Milliseconds: 0,
+            phase1bMilliseconds: 0,
+            phase2Milliseconds: 0,
+            outcomesConstructed: 0,
+            candidateGroupsEnumerated: 0,
+            compactStatesSolved: 0,
+            compactGroupsEnumerated: 0,
+            compactStepOptimalGroups: 0,
+            rootProvenLowerBound: 0);
     }
 }

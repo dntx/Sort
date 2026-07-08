@@ -474,6 +474,8 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     树形区域的**总根节点**以最优挤压（`FormatPlanSqueeze`）打头——`n=…, m=…, k=…, <squeeze>, total elapsed=…`——
     其中 `<squeeze>` 在最终 `no solution` 终止后闭合为 **`max steps = S (proven optimal)`**（最显眼的「搜索完成、步数已证明最优」信号），
     收紧途中则为 `L <= max steps <= U`；旧的 `(compact lowered from N)` 注记已移除（用处不大）。total elapsed 也用秒（3 位小数）。
+    overview 的 round 折叠规则按「连续、单分支、同组大小、且各步分组彼此不重叠」聚合；因此除首轮
+    `steps 1–X` 的全量分组外，后续复用旧元素但仍呈现规则分块的波次（如 `20,2,6` 的 `steps 11–15`）也会被折叠成单个 round。
     GUI 的「`<stage>: computing...`」占位提示在实现上统一为一套生命周期（生成 / 识别 / 替换 / stop 改写）：不仅用于
     `proof-tighten≤N` 与 `edge-compact@S` 之间的探测过渡，也用于首阶段（`greedy-feasible` / `step-proof`）尚未产出首棵树时的
     初始占位，保证树区与 overview 在整个运行期都不会出现空白且文案行为一致。
