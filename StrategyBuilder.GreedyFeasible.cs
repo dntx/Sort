@@ -510,8 +510,8 @@ partial class StrategyBuilder
     }
 
     // Fast heuristic score based on immediate outcomes only.
-    // Priority: lower max lower-bound, then lower max active count, then lower average active count,
-    // then fewer distinct immediate successors (a subtree-width proxy).
+    // Priority: lower max lower-bound, then lower max active count, then fewer distinct immediate
+    // successors (a subtree-width proxy), then lower average active count.
     private ConstructiveCandidateScore ScoreCandidateGroupCheap(ComparisonState state, int remainingSlots, SearchStateKey key, List<int> group)
     {
         int maxChildLowerBound = 0;
@@ -581,11 +581,15 @@ partial class StrategyBuilder
             if (cmp != 0)
                 return cmp;
 
+            cmp = DistinctSuccessorCount.CompareTo(other.DistinctSuccessorCount);
+            if (cmp != 0)
+                return cmp;
+
             cmp = AverageChildActiveCount.CompareTo(other.AverageChildActiveCount);
             if (cmp != 0)
                 return cmp;
 
-            return DistinctSuccessorCount.CompareTo(other.DistinctSuccessorCount);
+            return 0;
         }
     }
 
