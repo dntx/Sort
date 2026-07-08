@@ -436,7 +436,7 @@ partial class MainForm
 
     private static SearchProgressSnapshot CreateInitialProgressSnapshot()
     {
-        return new SearchProgressSnapshot(0, 0, 0, 0, 0, null, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1, 0.0, -1, 0);
+        return new SearchProgressSnapshot(0, 0, 0, 0, 0, null, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1, 0.0, 0);
     }
 
     private static SearchProgressSnapshot CreateSnapshotFromPlan(StrategyPlan plan)
@@ -465,7 +465,6 @@ partial class MainForm
             plan.SearchStatistics.CompactStepOptimalGroups,
             plan.SearchStatistics.CompactStatesSolved,
             1.0,
-            0,
             plan.SearchStatistics.RootProvenLowerBound);
     }
 
@@ -666,17 +665,13 @@ partial class MainForm
         return _runStopwatch?.Elapsed.TotalSeconds ?? 0;
     }
 
-    // ETA derived from the live elapsed clock and the latest reported progress, in seconds, or -1
-    // when no usable estimate exists yet. Recomputing from the live clock (instead of echoing the
-    // snapshot's frozen remaining estimate) keeps the three displayed quantities -- elapsed,
-    // progress, eta -- mutually consistent and lets eta count down on every elapsed tick rather than
-    // only when a new progress snapshot arrives. Assuming roughly linear progress, total =
-    // elapsed / progress, so remaining = elapsed * (1 - progress) / progress. The engine's own
-    // remaining estimate still gates visibility: a negative value means "no usable estimate yet".
+    // ETA derived directly from the live elapsed clock and the displayed progress, in seconds, or -1
+    // until progress rises above zero. This keeps the displayed elapsed/progress/eta trio
+    // mathematically self-consistent and lets ETA count down on every elapsed tick rather than only
+    // when a new progress snapshot arrives. Assuming roughly linear progress, total =
+    // elapsed / progress, so remaining = elapsed * (1 - progress) / progress.
     private double EstimateLiveEtaSeconds(long liveElapsedMs)
     {
-        if (_latestProgress.EstimatedRemainingMilliseconds < 0)
-            return -1;
         double progress = _latestProgress.EstimatedProgress01;
         if (progress <= 0.0)
             return -1;

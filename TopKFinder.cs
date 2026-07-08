@@ -994,9 +994,8 @@ partial class StrategyBuilder
             return;
 
         _lastProgressReportMs = elapsedMs;
-        (double localProgress01, long localRemainingMs) = EstimateProgress(elapsedMs);
-        (double estimatedProgress01, long estimatedRemainingMs) =
-            MapToReportedProgress(elapsedMs, localProgress01, localRemainingMs);
+        double localProgress01 = EstimateProgress(elapsedMs);
+        double estimatedProgress01 = MapToReportedProgress(localProgress01);
         _progressCallback(new SearchProgressSnapshot(
             elapsedMs,
             _searchedStates,
@@ -1021,14 +1020,13 @@ partial class StrategyBuilder
             _compactStepOptimalGroups,
             _feasibleCompactStateEstimate,
             estimatedProgress01,
-            estimatedRemainingMs,
             _rootProvenLowerBound));
     }
 
-    private (double Progress01, long RemainingMs) MapToReportedProgress(long elapsedMs, double localProgress01, long localRemainingMs)
+    private double MapToReportedProgress(double localProgress01)
     {
         if (!_reportCombinedRunProgress)
-            return (localProgress01, localRemainingMs);
+            return localProgress01;
 
         // The combined-run bar is split into two visible stages: step then edge. The ratio differs
         // per mode. Exact mode: step (exact solve) gets 60%, edge (compact) gets 40%. Greedy mode:
@@ -1048,29 +1046,22 @@ partial class StrategyBuilder
         double localFraction = _progressScope == ProgressScope.FeasibleInCombinedRun
             ? 1.0
             : Math.Clamp(localProgress01, 0.0, 1.0);
-        double progress = Math.Clamp(progressBase + (localFraction * progressSpan), 0.0, 1.0);
-        if (progress <= 0.0 || elapsedMs <= 0)
-            return (progress, -1);
-
-        long remaining = progress >= 1.0
-            ? 0
-            : Math.Max(0, (long)(elapsedMs * ((1.0 / progress) - 1.0)));
-        return (progress, remaining);
+        return Math.Clamp(progressBase + (localFraction * progressSpan), 0.0, 1.0);
     }
 
-    private (double Progress01, long RemainingMs) EstimateProgress(long elapsedMs)
+    private double EstimateProgress(long elapsedMs)
     {
         // Greedy-mode edge phase: the compact solve has no pending/searched signal (those counters are
         // reset and never touched here), so drive progress off _compactStatesSolved. Once the solve
         // finishes (_phase1bSolved) the remaining phase-2 materialization is effectively instant, so
         // report a full local fraction. MapToReportedProgress bands this into the edge stage's
-        // 10%..100% slice and derives the remaining-time estimate.
+        // 10%..100% slice for the displayed progress.
         if (_progressScope == ProgressScope.CompactFeasibleInCombinedRun)
         {
             if (_phase1bSolved)
-                return (1.0, -1);
+                return 1.0;
             if (_feasibleCompactStateEstimate <= 0)
-                return (0.0, -1);
+                return 0.0;
 
             // The step-phase state count is only a rough SCALE for the edge phase's work -- measured
             // ratios of edge-solved to step-states span ~0.3x..27x across shapes, mostly because the
@@ -1083,11 +1074,11 @@ partial class StrategyBuilder
             // ~1 and only snaps to 100% when the solve actually completes above.
             double scale = _feasibleCompactStateEstimate;
             double fraction = _compactStatesSolved / (_compactStatesSolved + scale);
-            return (Math.Min(fraction, 0.999), -1);
+            return Math.Min(fraction, 0.999);
         }
 
         if (_searchedStates <= 0)
-            return (0.0, -1);
+            return 0.0;
 
         if (_lastProgressSampleElapsedMs >= 0)
         {
@@ -1191,7 +1182,7 @@ partial class StrategyBuilder
             {
                 _progressEstimateInitialized = true;
                 _progressEstimateEma01 = 1.0;
-                return (1.0, 0);
+                return 1.0;
             }
 
             // Avoid instant "100%" spikes when pending briefly touches zero mid-search.
@@ -1218,7 +1209,7 @@ partial class StrategyBuilder
         double estimatedRemainingSearchStates = effectivePending * costPerPending;
         double estimatedTotal = _searchedStates + estimatedRemainingSearchStates;
         if (estimatedTotal <= 0)
-            return (0.0, -1);
+            return 0.0;
 
         double rawProgress = Math.Clamp(_searchedStates / estimatedTotal, 0.0, 1.0);
         if (effectivePending > 0)
@@ -1238,25 +1229,7 @@ partial class StrategyBuilder
         }
 
         double progress = Math.Clamp(_progressEstimateEma01, 0.0, 1.0);
-
-        if (progress <= 0)
-            return (progress, -1);
-
-        long remaining;
-        if (effectivePending == 0)
-        {
-            remaining = 0;
-        }
-        else if (_searchRateEstimateInitialized && _searchRateStatesPerMs > 0)
-        {
-            remaining = Math.Max(0, (long)(estimatedRemainingSearchStates / _searchRateStatesPerMs));
-        }
-        else
-        {
-            remaining = -1;
-        }
-
-        return (progress, remaining);
+        return progress;
     }
 
     private void ObserveSearchState(ComparisonState state, int remainingSlots)

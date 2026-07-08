@@ -478,7 +478,8 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     `proof-tighten≤N` 与 `edge-compact@S` 之间的探测过渡，也用于首阶段（`greedy-feasible` / `step-proof`）尚未产出首棵树时的
     初始占位，保证树区与 overview 在整个运行期都不会出现空白且文案行为一致。
     进度面板恒为四行：总 `elapsed` 秒数、
-    `阶段名: 本阶段秒数`、`progress: 本阶段百分数`、第四行 **`eta`**（基于进度估算的剩余时间）。早先版本在 `proof-tighten≤N`
+    `阶段名: 本阶段秒数`、`progress: 本阶段百分数`、第四行 **`eta`**（UI 直接由 `elapsed` 与 `progress` 按
+    `remaining = elapsed * (1-progress) / progress` 推导的剩余时间）。早先版本在 `proof-tighten≤N`
     收紧阶段把第四行改标 `time remaining`、显示「距离软时间预算 timeout 还有多久」；软预算移除后该行统一为 `eta`。
     GUI 的各开关 / 参数（n/m/k、模式、主题、
     pause each stage）持久化到 `%APPDATA%/Sort/settings.json`，下次启动沿用上次设置。
