@@ -102,6 +102,22 @@ public class GreedyFeasibleStageTests
         Assert.Equal(expectedRawU, feasible);
     }
 
+    // m=2 is intentionally routed around the generic 1-ply group lookahead. In the pairwise regime
+    // each step has only two outcomes and the current immediate-outcome scorer is too low-signal for
+    // its lower-bound cost, so greedy-feasible falls back to the base antichain heuristic. These raw
+    // U pins lock that special-case behavior and fail loudly if m=2 is accidentally sent back through
+    // the generic lookahead path.
+    [Theory]
+    [InlineData(6, 2, 2, 7)]
+    [InlineData(7, 2, 3, 10)]
+    [InlineData(8, 2, 3, 11)]
+    public void GreedyFeasibleStage_M2SpecialCasePinsRawUpperBound(int n, int m, int k, int expectedRawU)
+    {
+        int feasible = new StrategyBuilder(n, m, k).BuildGreedyFeasibleStage().MaxStep;
+
+        Assert.Equal(expectedRawU, feasible);
+    }
+
     private static void AssertEveryDecisionHasGroup(StrategyNode node)
     {
         if (node.Branches.Count > 0)

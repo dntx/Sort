@@ -166,6 +166,13 @@ partial class StrategyBuilder
     // Delegates to the 1-ply lookahead chooser, which refines the base antichain policy.
     private List<int> ChooseConstructiveGroup(ComparisonState state, int remainingSlots)
     {
+        // m=2 is a qualitatively different regime: each step has only two outcomes and can shrink the
+        // active antichain width by at most one, so the immediate-outcome scorer has much weaker signal
+        // than for true group sorts (m>=3) while still paying the same heavy lower-bound cost. Treat it
+        // as a pairwise edge-selection problem and use the base antichain heuristic directly.
+        if (_m == 2)
+            return ChooseConstructiveGroupBase(state, remainingSlots);
+
         List<int>? group = ChooseConstructiveGroupLookahead(state, remainingSlots);
         return group ?? ChooseConstructiveGroupBase(state, remainingSlots);
     }
