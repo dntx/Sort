@@ -425,6 +425,10 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     抛出 `OperationCanceledException` 向上传播，最优计划已通过 `onStage` 逐阶段呈现、不会丢失。这样小/中形状几乎瞬间把
     `U` 收到最优（如 `8,3,3: 6→5`、`14,5,5: 6→5`、`13,4,4: 7→6`），大形状（如 `25,10,10`）会一直收紧直到证明或被取消；
     少数 `U−1` 可行但极慢的形状会持续运行，用户可随时停止（无回退、无正确性风险）。`EnableFeasibleTightening = false` 可整体关闭。
+    为减少后续算法演进时「取消检查点漏加」导致的 stop 延迟回退，热循环统一走 `ProbeCancellation(...)`：
+    默认使用节流探针（低开销），延迟敏感的递归路径用 `ProbeCancellation(0)`（每步检查）保持响应性。
+    对外行为由回归测试守门：`GreedyPipeline_CancelAfterTwoSeconds_StopsPromptly_20_2_6` 模拟运行 2 秒后取消，
+    约束取消到退出的延迟不回到分钟级卡顿（anti-regression guardrail，而非严格性能基准）。
   - **Anytime 呈现**：`RunGreedyPipeline(onStageCompleted)` 接受一个回调，在**每次**产出一个阶段结果时**同步**触发——
     回调参数是 `StageResult`（阶段名 + 该阶段**自身**耗时 + 可空的计划 + `Outcome` 枚举）。**强输出契约**：每个被
     `onStageStart` 宣布的探测都**恰好**由一次 `onStageCompleted` 完成、携带一个 `{Outcome, Plan}` 整体——driver 任何分支都不会

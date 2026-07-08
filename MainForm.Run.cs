@@ -36,6 +36,9 @@ partial class MainForm
 
         _runCancellationSource?.Dispose();
         _runCancellationSource = new CancellationTokenSource();
+        _stopEscalationSource?.Cancel();
+        _stopEscalationSource?.Dispose();
+        _stopEscalationSource = null;
         bool feasibleMode = _modeComboBox.SelectedIndex == 1;
         _feasibleMode = feasibleMode;
         CancellationToken cancellationToken = _runCancellationSource.Token;
@@ -72,6 +75,7 @@ partial class MainForm
             cancellationToken,
             snapshot => progress.Report(snapshot),
             reportCombinedRunProgress: true);
+        _activeBuilder = builder;
         try
         {
             if (feasibleMode)
@@ -171,8 +175,12 @@ partial class MainForm
             _elapsedTimer.Stop();
             UpdateElapsedLabel();
             SetRunningState(isRunning: false);
+            _stopEscalationSource?.Cancel();
+            _stopEscalationSource?.Dispose();
+            _stopEscalationSource = null;
             _runCancellationSource?.Dispose();
             _runCancellationSource = null;
+            _activeBuilder = null;
         }
     }
 

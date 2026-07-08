@@ -64,6 +64,9 @@ partial class StrategyBuilder
     // phase-1 closure / pattern cache: the policy is computed on the fly during materialization.
     public StrategyPlan BuildGreedyFeasibleStage()
     {
+        ComparisonState.SetThreadCancellationToken(_cancellationToken);
+        try
+        {
         // The feasible phase is effectively instant. In a combined run it occupies the first band of
         // the unified progress bar (a single indivisible slice).
         _progressScope = _reportCombinedRunProgress
@@ -104,6 +107,11 @@ partial class StrategyBuilder
         // canonical states this step pass touched approximate the compact solve's total work.
         _feasibleCompactStateEstimate = _visitedSearchStates.Count;
         return plan;
+        }
+        finally
+        {
+            ComparisonState.SetThreadCancellationToken(default);
+        }
     }
 
     // Lean worst-case step count of the constructive strategy from the root: a sound but looser
@@ -185,6 +193,7 @@ partial class StrategyBuilder
     // it must not itself look ahead.
     private List<int> ChooseConstructiveGroupBase(ComparisonState state, int remainingSlots)
     {
+        ProbeCancellation(0);
         List<int> active = state.GetActiveItemsOrdered();
 
         List<int> group = ProposeAntichainGroup(state, active, remainingSlots) ?? new List<int>();
@@ -192,7 +201,10 @@ partial class StrategyBuilder
         {
             int fallbackCount = Math.Min(_m, active.Count);
             for (int i = 0; i < fallbackCount; i++)
+            {
+                ProbeCancellation(0);
                 group.Add(active[i]);
+            }
         }
 
         // Progress guarantee: if the picked group is a total chain (all pairs already resolved), force
@@ -629,6 +641,7 @@ partial class StrategyBuilder
     // chooser to generate one candidate group per possible seed).
     private List<int> ProposeAntichainGroup(ComparisonState state, List<int> active, int remainingSlots, int forcedSeed = -1)
     {
+        ProbeCancellation(0);
         int size = Math.Min(_m, active.Count);
 
         var group = new List<int>(size);
@@ -642,17 +655,22 @@ partial class StrategyBuilder
 
         while (group.Count < size)
         {
+            ProbeCancellation(0);
             int best = -1;
             int bestUnrelated = -1, bestAnc = 0, bestRel = 0;
             foreach (int item in active)
             {
+                ProbeCancellation();
                 if (inGroup[item])
                     continue;
 
                 int unrelated = 0;
                 foreach (int g in group)
+                {
+                    ProbeCancellation();
                     if (!state.HasAncestor(item, g) && !state.HasAncestor(g, item))
                         unrelated++;
+                }
 
                 int anc = state.GetAncestorCount(item);
                 int rel = anc + state.GetDescendantCount(item);

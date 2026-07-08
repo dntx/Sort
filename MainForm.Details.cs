@@ -263,7 +263,41 @@ partial class MainForm
     private void StopStrategy()
     {
         _stopButton.Enabled = false;
-        _runCancellationSource?.Cancel();
+        if (_runCancellationSource is null)
+            return;
+
+        _runCancellationSource.Cancel();
+
+        _stopEscalationSource?.Cancel();
+        _stopEscalationSource?.Dispose();
+        _stopEscalationSource = new CancellationTokenSource();
+        _ = EscalateStopIfStillRunningAsync(_stopEscalationSource.Token);
+    }
+
+    private async Task EscalateStopIfStillRunningAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(3), cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        if (cancellationToken.IsCancellationRequested || _runCancellationSource is null)
+            return;
+
+        _activeBuilder?.EscalateCancellationChecks();
+
+        if (!IsHandleCreated)
+            return;
+
+        BeginInvoke(new Action(() =>
+        {
+            if (_runCancellationSource is not null)
+                _statusLabel.Text = "Stopping... still running after 3.0 s, escalating cancellation checks.";
+        }));
     }
 
     private enum RunUiState

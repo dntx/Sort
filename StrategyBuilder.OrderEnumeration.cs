@@ -8,7 +8,7 @@ partial class StrategyBuilder
 {
     private IEnumerable<OrderFamilyDescriptor> EnumerateFeasibleOrderFamilies(ComparisonState state, IReadOnlyList<int> group)
     {
-        ThrowIfCancellationRequested();
+        ProbeCancellation(0);
         GroupSymmetryInfo symmetryInfo = BuildGroupSymmetryInfo(state, group);
         if (symmetryInfo.Classes.All(@class => @class.Items.Length == 1))
         {
@@ -32,7 +32,7 @@ partial class StrategyBuilder
         int total,
         List<int> current)
     {
-        ThrowIfCancellationRequested();
+        ProbeCancellation(0);
         if (current.Count == total)
         {
             yield return new List<int>(current);
@@ -78,7 +78,7 @@ partial class StrategyBuilder
         IReadOnlyList<int> group,
         int eliminationThreshold)
     {
-        ThrowIfCancellationRequested();
+        ProbeCancellation(0);
         ulong groupMask = 0;
         foreach (int item in group)
             groupMask |= 1UL << item;
@@ -110,7 +110,7 @@ partial class StrategyBuilder
         int[] previousInClass,
         int eliminationThreshold)
     {
-        ThrowIfCancellationRequested();
+        ProbeCancellation(0);
         if (current.Count == total)
         {
             yield return current;
@@ -200,6 +200,7 @@ partial class StrategyBuilder
     // shared scratch parent array; callers must consume it before any other call reuses the scratch.
     private int[] BuildGroupSymmetryParents(ComparisonState state, IReadOnlyList<int> group, ulong activeMask)
     {
+        ThrowIfCancellationRequested();
         int[] parent = _classParentScratch is { Length: var len } buffer && len >= _n
             ? buffer
             : (_classParentScratch = new int[_n]);
@@ -210,6 +211,7 @@ partial class StrategyBuilder
         // (i j) is already an automorphism, so these items are interchangeable in every context.
         for (int a = 0; a < group.Count; a++)
         {
+            ThrowIfCancellationRequested();
             int i = group[a];
             ulong iAnc = state.GetAncestorMask(i) & activeMask;
             ulong iDesc = state.GetDescendantMask(i) & activeMask;
@@ -232,6 +234,7 @@ partial class StrategyBuilder
         int[] labels = state.GetStructuralLabels();
         for (int a = 0; a < group.Count; a++)
         {
+            ThrowIfCancellationRequested();
             int i = group[a];
             for (int b = a + 1; b < group.Count; b++)
             {
@@ -382,12 +385,14 @@ partial class StrategyBuilder
             ulong items = activeMask;
             while (items != 0)
             {
+                ProbeCancellation();
                 int x = BitOperations.TrailingZeroCount(items);
                 items &= items - 1;
                 int sx = map[x] >= 0 ? map[x] : x;
                 ulong inner = activeMask;
                 while (inner != 0)
                 {
+                    ProbeCancellation();
                     int y = BitOperations.TrailingZeroCount(inner);
                     inner &= inner - 1;
                     int sy = map[y] >= 0 ? map[y] : y;
@@ -401,6 +406,7 @@ partial class StrategyBuilder
 
         bool Extend(int index)
         {
+            ProbeCancellation();
             if (--budget < 0)
                 return false;
 
@@ -414,6 +420,7 @@ partial class StrategyBuilder
             ulong candidates = relatedMask;
             while (candidates != 0)
             {
+                ProbeCancellation();
                 int y = BitOperations.TrailingZeroCount(candidates);
                 candidates &= candidates - 1;
                 if (TryAssign(x, y))
@@ -467,7 +474,7 @@ partial class StrategyBuilder
 
     private IEnumerable<OrderFamilyDescriptor> EnumerateSymmetricOrderFamilies(GroupSymmetryInfo symmetryInfo)
     {
-        ThrowIfCancellationRequested();
+        ProbeCancellation(0);
         BigInteger multiplicity = BigInteger.One;
         foreach (var @class in symmetryInfo.Classes)
             multiplicity *= Factorial(@class.Items.Length);
@@ -506,7 +513,7 @@ partial class StrategyBuilder
         List<int> representativeOrder,
         BigInteger multiplicity)
     {
-        ThrowIfCancellationRequested();
+        ProbeCancellation(0);
         if (remainingMask == 0)
         {
             yield return OrderFamilyDescriptor.CreateSymmetric(

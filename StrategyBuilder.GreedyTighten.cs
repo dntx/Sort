@@ -126,7 +126,7 @@ partial class StrategyBuilder
 
         while (true)
         {
-            _cancellationToken.ThrowIfCancellationRequested();
+            ProbeCancellation(0);
             _greedyTightenRounds++;
             int round = _greedyTightenRounds;
             int statesVisitedBefore = _greedyTightenStatesVisited;
