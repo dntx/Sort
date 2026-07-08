@@ -71,6 +71,7 @@ public sealed class StrategyPerformanceTests
     // Heavy greedy-feasible smoke check for the case that previously sat at roughly the 30-second
     // mark. This keeps the current scratch-buffer / hot-path collection / progress-throttling gains
     // from silently sliding back while staying loose enough for normal local variance.
+    // The single-iteration budget keeps the sentinel practical in CI and local runs.
     [Fact]
     public void N28M3K6_GreedyFeasibleCompletesWithinBudget()
     {
