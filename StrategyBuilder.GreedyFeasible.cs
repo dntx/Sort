@@ -222,8 +222,23 @@ partial class StrategyBuilder
         SearchStateKey key = GetSearchStateKey(state, remainingSlots);
 
         List<int>? bestGroup = null;
-        int bestScore = int.MaxValue;
+        ConstructiveCandidateScore bestScore = ConstructiveCandidateScore.Worst;
+        string? bestSig = null;
         var seenCandidates = new HashSet<string>();
+        Dictionary<string, int>? displayLineCountCache = _m >= 3 ? new Dictionary<string, int>() : null;
+
+        int GetDisplayLineCountCached(string sig, List<int> candidate)
+        {
+            if (displayLineCountCache is null)
+                return int.MaxValue;
+
+            if (displayLineCountCache.TryGetValue(sig, out int cached))
+                return cached;
+
+            int count = CountDisplayBranches(state, remainingSlots, candidate);
+            displayLineCountCache[sig] = count;
+            return count;
+        }
 
         void Consider(List<int> proposed)
         {
@@ -236,12 +251,41 @@ partial class StrategyBuilder
             if (!seenCandidates.Add(sig))
                 return;
 
-            int score = ScoreCandidateGroup(state, remainingSlots, key, group);
-            if (score < bestScore ||
-                (score == bestScore && bestGroup != null && LexLess(group, bestGroup)))
+            ConstructiveCandidateScore score = ScoreCandidateGroup(state, remainingSlots, key, group);
+            bool choose = false;
+            int scoreCmp = score.CompareTo(bestScore);
+            if (bestGroup is null || scoreCmp < 0)
+            {
+                choose = true;
+            }
+            else if (scoreCmp == 0 && bestGroup is not null)
+            {
+                // Use exact immediate display-branch lines as an additional tie-break. This only
+                // runs on score ties, so clear winners stay on the cheap path.
+                if (displayLineCountCache is not null && bestSig is not null)
+                {
+                    int candidateLines = GetDisplayLineCountCached(sig, group);
+                    int bestLines = GetDisplayLineCountCached(bestSig, bestGroup);
+                    if (candidateLines < bestLines)
+                    {
+                        choose = true;
+                    }
+                    else if (candidateLines == bestLines && LexLess(group, bestGroup))
+                    {
+                        choose = true;
+                    }
+                }
+                else if (LexLess(group, bestGroup))
+                {
+                    choose = true;
+                }
+            }
+
+            if (choose)
             {
                 bestScore = score;
                 bestGroup = group;
+                bestSig = sig;
             }
         }
 
@@ -256,8 +300,83 @@ partial class StrategyBuilder
         Consider(ProposeFrontierLayerGroup(state, active));
         // Feature template B: boundary-straddling around the current top-k cut.
         Consider(ProposeBoundaryStraddlingGroup(state, active, remainingSlots));
+        // Feature template C: maximize unresolved-pair density inside the chosen group.
+        Consider(ProposeUnresolvedDensityGroup(state, active, remainingSlots));
 
         return bestGroup ?? primary;
+    }
+
+    // Density template: choose a group rich in unresolved pairs. First maximize each item's
+    // unresolved degree in the active set, then while filling the group maximize unresolved links to
+    // already-picked members; boundary distance and relation count only break ties.
+    private List<int> ProposeUnresolvedDensityGroup(ComparisonState state, List<int> active, int remainingSlots)
+    {
+        int size = Math.Min(_m, active.Count);
+        int boundary = Math.Max(0, remainingSlots - 1);
+
+        var unresolvedDegree = new Dictionary<int, int>(active.Count);
+        foreach (int item in active)
+        {
+            int degree = 0;
+            foreach (int other in active)
+            {
+                if (other == item)
+                    continue;
+                if (!state.HasAncestor(item, other) && !state.HasAncestor(other, item))
+                    degree++;
+            }
+
+            unresolvedDegree[item] = degree;
+        }
+
+        var group = new List<int>(size);
+        var inGroup = new HashSet<int>();
+
+        while (group.Count < size)
+        {
+            int best = -1;
+            int bestUnresolvedToGroup = -1;
+            int bestDegree = -1;
+            int bestBoundaryDistance = int.MaxValue;
+            int bestRelationScore = int.MaxValue;
+
+            foreach (int item in active)
+            {
+                if (inGroup.Contains(item))
+                    continue;
+
+                int unresolvedToGroup = 0;
+                foreach (int picked in group)
+                {
+                    if (!state.HasAncestor(item, picked) && !state.HasAncestor(picked, item))
+                        unresolvedToGroup++;
+                }
+
+                int degree = unresolvedDegree[item];
+                int anc = state.GetAncestorCount(item);
+                int boundaryDistance = Math.Abs(anc - boundary);
+                int relationScore = anc + state.GetDescendantCount(item);
+
+                if (best < 0 ||
+                    unresolvedToGroup > bestUnresolvedToGroup ||
+                    (unresolvedToGroup == bestUnresolvedToGroup && degree > bestDegree) ||
+                    (unresolvedToGroup == bestUnresolvedToGroup && degree == bestDegree && boundaryDistance < bestBoundaryDistance) ||
+                    (unresolvedToGroup == bestUnresolvedToGroup && degree == bestDegree && boundaryDistance == bestBoundaryDistance && relationScore < bestRelationScore) ||
+                    (unresolvedToGroup == bestUnresolvedToGroup && degree == bestDegree && boundaryDistance == bestBoundaryDistance && relationScore == bestRelationScore && item < best))
+                {
+                    best = item;
+                    bestUnresolvedToGroup = unresolvedToGroup;
+                    bestDegree = degree;
+                    bestBoundaryDistance = boundaryDistance;
+                    bestRelationScore = relationScore;
+                }
+            }
+
+            group.Add(best);
+            inGroup.Add(best);
+        }
+
+        return group;
     }
 
     // Feature template: fill the group from frontier layers first (fewest active ancestors),
@@ -385,14 +504,15 @@ partial class StrategyBuilder
 
     // Candidate score used by constructive lookahead: a cheap one-step heuristic over immediate
     // outcomes only.
-    private int ScoreCandidateGroup(ComparisonState state, int remainingSlots, SearchStateKey key, List<int> group)
+    private ConstructiveCandidateScore ScoreCandidateGroup(ComparisonState state, int remainingSlots, SearchStateKey key, List<int> group)
     {
         return ScoreCandidateGroupCheap(state, remainingSlots, key, group);
     }
 
     // Fast heuristic score based on immediate outcomes only.
-    // Priority: lower max lower-bound, then lower max active count, then lower average active count.
-    private int ScoreCandidateGroupCheap(ComparisonState state, int remainingSlots, SearchStateKey key, List<int> group)
+    // Priority: lower max lower-bound, then lower max active count, then fewer distinct immediate
+    // successors (a subtree-width proxy), then lower average active count.
+    private ConstructiveCandidateScore ScoreCandidateGroupCheap(ComparisonState state, int remainingSlots, SearchStateKey key, List<int> group)
     {
         int maxChildLowerBound = 0;
         int maxChildActiveCount = 0;
@@ -435,7 +555,42 @@ partial class StrategyBuilder
             });
 
         int averageChildActiveCount = outcomeCount == 0 ? 0 : sumChildActiveCount / outcomeCount;
-        return (maxChildLowerBound * 1_000_000) + (maxChildActiveCount * 1_000) + averageChildActiveCount;
+        return new ConstructiveCandidateScore(
+            maxChildLowerBound,
+            maxChildActiveCount,
+            averageChildActiveCount,
+            outcomeCount);
+    }
+
+    private readonly record struct ConstructiveCandidateScore(
+        int MaxChildLowerBound,
+        int MaxChildActiveCount,
+        int AverageChildActiveCount,
+        int DistinctSuccessorCount) : IComparable<ConstructiveCandidateScore>
+    {
+        public static ConstructiveCandidateScore Worst =>
+            new(int.MaxValue, int.MaxValue, int.MaxValue, int.MaxValue);
+
+        public int CompareTo(ConstructiveCandidateScore other)
+        {
+            int cmp = MaxChildLowerBound.CompareTo(other.MaxChildLowerBound);
+            if (cmp != 0)
+                return cmp;
+
+            cmp = MaxChildActiveCount.CompareTo(other.MaxChildActiveCount);
+            if (cmp != 0)
+                return cmp;
+
+            cmp = DistinctSuccessorCount.CompareTo(other.DistinctSuccessorCount);
+            if (cmp != 0)
+                return cmp;
+
+            cmp = AverageChildActiveCount.CompareTo(other.AverageChildActiveCount);
+            if (cmp != 0)
+                return cmp;
+
+            return 0;
+        }
     }
 
     private static bool LexLess(List<int> a, List<int> b)

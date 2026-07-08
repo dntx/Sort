@@ -136,6 +136,36 @@ public class GreedyFeasibleStageTests
             $"expected direct lower-bound cache key reuse hits in greedy scoring for ({n},{m},{k})");
     }
 
+    // Regression guard for the m>=3 lookahead generalization and successor-width-first scoring:
+    // unresolved-density candidates and tie-break behavior now run broadly on m>=3, and we lock in
+    // the resulting tree-size gains with relaxed upper envelopes (not exact pins) to tolerate small
+    // tie-order drift while preventing large backslides.
+    [Theory]
+    [InlineData(20, 3, 6, 23, 9000, 4000)]
+    [InlineData(22, 3, 6, 28, 13000, 5000)]
+    [InlineData(16, 5, 5, 6, 1200, 260)]
+    [InlineData(12, 4, 4, 6, 200, 90)]
+    public void GreedyFeasibleStage_MGe3GeneralizedLookahead_StaysWithinTreeSizeEnvelope(
+        int n,
+        int m,
+        int k,
+        int maxAllowedSteps,
+        int maxAllowedEdges,
+        int maxAllowedOutputStates)
+    {
+        StrategyPlan plan = new StrategyBuilder(n, m, k).BuildGreedyFeasibleStage();
+
+        Assert.True(
+            plan.MaxStep <= maxAllowedSteps,
+            $"expected max steps <= {maxAllowedSteps} for ({n},{m},{k}), got {plan.MaxStep}");
+        Assert.True(
+            plan.TotalBranchEdges <= maxAllowedEdges,
+            $"expected edges <= {maxAllowedEdges} for ({n},{m},{k}), got {plan.TotalBranchEdges}");
+        Assert.True(
+            plan.SearchStatistics.OutputStates <= maxAllowedOutputStates,
+            $"expected output states <= {maxAllowedOutputStates} for ({n},{m},{k}), got {plan.SearchStatistics.OutputStates}");
+    }
+
     private static void AssertEveryDecisionHasGroup(StrategyNode node)
     {
         if (node.Branches.Count > 0)
