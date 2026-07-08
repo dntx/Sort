@@ -137,7 +137,26 @@ compact 是一个跑在 phase 1 之上的**二级 DP**（`StrategyBuilder.Compac
 ```powershell
 pwsh ./scripts/benchmark-greedy-stage1.ps1
 pwsh ./scripts/benchmark-greedy-stage1.ps1 -WarmupRuns 1 -MeasuredRuns 7 -AsCsv
+pwsh ./scripts/benchmark-greedy-stage1.ps1 -BaselineOnly
+pwsh ./scripts/benchmark-greedy-stage1.ps1 -BaselineCsvPath ./scripts/benchmark-greedy-stage1-baseline.csv
+pwsh ./scripts/benchmark-greedy-stage1.ps1 -BaselineCsvPath ./scripts/benchmark-greedy-stage1-baseline.csv -RegressionTolerancePercent 3 -EnforceBaseline
 ```
+
+新增能力：
+
+- 基线固化：`-BaselineOnly` 会把当前结果写入 `scripts/benchmark-greedy-stage1-baseline.csv`（可用
+  `-BaselineOutputPath` 改路径），写完即退出，不做 compare；
+- 基线对比：传入 `-BaselineCsvPath`（或在仓库存在 `scripts/benchmark-greedy-stage1-baseline.csv` 时自动使用）后，
+  脚本会输出每个 case 的 `BaselineMedianSeconds / CurrentMedianSeconds / DeltaSeconds / DeltaPercent / Status`；
+- 回归判定：
+  - 结构量（`Steps/Edges/States`）发生变化，直接标记 `FAIL_STRUCTURE_CHANGED`；
+  - 结构不变但中位数变慢且超过 `-RegressionTolerancePercent`，标记 `FAIL_TIME_REGRESSION`；
+- 门槛退出：加 `-EnforceBaseline` 时，只要存在失败 case，脚本会非零退出，便于本地 pre-PR gate。
+
+GitHub Actions 侧提供了手动门槛工作流：
+
+- `.github/workflows/manual-perf-gate.yml`（`workflow_dispatch`），可在 Actions 页面按需触发；
+- 输入参数与脚本一致（warmup / measured / tolerance），并默认启用 `-EnforceBaseline`。
 
 注意：墙钟时间仍会受机器负载影响，请优先使用「同机、同会话、同参数」的中位数做对比，
 并继续以 A 层确定性计数器作为最终回归准绳。

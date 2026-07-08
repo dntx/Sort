@@ -2,7 +2,12 @@ param(
     [int]$WarmupRuns = 1,
     [int]$MeasuredRuns = 5,
     [switch]$AsCsv,
-    [string]$CsvPath = ""
+    [string]$CsvPath = "",
+    [string]$BaselineCsvPath = "",
+    [switch]$BaselineOnly,
+    [string]$BaselineOutputPath = ".\\scripts\\benchmark-greedy-stage1-baseline.csv",
+    [double]$RegressionTolerancePercent = 0,
+    [switch]$EnforceBaseline
 )
 
 Set-StrictMode -Version Latest
@@ -13,6 +18,21 @@ if ($WarmupRuns -lt 0) {
 }
 if ($MeasuredRuns -lt 1) {
     throw "MeasuredRuns must be >= 1."
+}
+if ($RegressionTolerancePercent -lt 0) {
+    throw "RegressionTolerancePercent must be >= 0."
+}
+if ($BaselineOnly -and $EnforceBaseline) {
+    throw "BaselineOnly cannot be combined with EnforceBaseline."
+}
+if ($BaselineOnly -and $AsCsv) {
+    throw "BaselineOnly cannot be combined with AsCsv. Use BaselineOutputPath."
+}
+if ($BaselineOnly -and -not [string]::IsNullOrWhiteSpace($BaselineCsvPath)) {
+    throw "BaselineOnly cannot be combined with BaselineCsvPath."
+}
+if ($BaselineOnly -and [string]::IsNullOrWhiteSpace($BaselineOutputPath)) {
+    throw "BaselineOutputPath must be non-empty when BaselineOnly is set."
 }
 
 function Get-Median {
@@ -59,6 +79,32 @@ function Invoke-CaseRun {
         States = [int]$statesMatch.Groups[1].Value
         Seconds = $seconds
     }
+}
+
+function Convert-ToDoubleInvariant {
+    param([object]$Value)
+
+    if ($null -eq $Value) {
+        throw "Cannot convert null to double."
+    }
+
+    return [double]::Parse(
+        [string]$Value,
+        [System.Globalization.NumberStyles]::Float,
+        [System.Globalization.CultureInfo]::InvariantCulture)
+}
+
+function Convert-ToIntInvariant {
+    param([object]$Value)
+
+    if ($null -eq $Value) {
+        throw "Cannot convert null to int."
+    }
+
+    return [int]::Parse(
+        [string]$Value,
+        [System.Globalization.NumberStyles]::Integer,
+        [System.Globalization.CultureInfo]::InvariantCulture)
 }
 
 $cases = @(
@@ -116,6 +162,107 @@ foreach ($case in $cases) {
 }
 
 $results | Format-Table -AutoSize
+
+if ($BaselineOnly) {
+    $results | Export-Csv -Path $BaselineOutputPath -NoTypeInformation
+    Write-Host "Baseline CSV written to: $BaselineOutputPath" -ForegroundColor Green
+    return
+}
+
+$resolvedBaselinePath = ""
+if ([string]::IsNullOrWhiteSpace($BaselineCsvPath)) {
+    $defaultBaselinePath = ".\\scripts\\benchmark-greedy-stage1-baseline.csv"
+    if (Test-Path $defaultBaselinePath) {
+        $resolvedBaselinePath = $defaultBaselinePath
+    }
+}
+else {
+    $resolvedBaselinePath = $BaselineCsvPath
+}
+
+if (-not [string]::IsNullOrWhiteSpace($resolvedBaselinePath)) {
+    if (-not (Test-Path $resolvedBaselinePath)) {
+        throw "Baseline CSV not found: $resolvedBaselinePath"
+    }
+
+    Write-Host "" 
+    Write-Host "Comparing against baseline: $resolvedBaselinePath" -ForegroundColor Cyan
+
+    $baselineRows = Import-Csv -Path $resolvedBaselinePath
+    $baselineByCase = @{}
+    foreach ($row in $baselineRows) {
+        if (-not [string]::IsNullOrWhiteSpace($row.Case)) {
+            $baselineByCase[$row.Case] = $row
+        }
+    }
+
+    $comparison = New-Object System.Collections.Generic.List[object]
+    $regressionCount = 0
+
+    foreach ($result in $results) {
+        $caseKey = [string]$result.Case
+        if (-not $baselineByCase.ContainsKey($caseKey)) {
+            $comparison.Add([pscustomobject]@{
+                Case = $caseKey
+                BaselineMedianSeconds = [double]::NaN
+                CurrentMedianSeconds = $result.MedianSeconds
+                DeltaSeconds = [double]::NaN
+                DeltaPercent = [double]::NaN
+                StructureMatch = $false
+                Status = "MISSING_BASELINE_CASE"
+            })
+            $regressionCount++
+            continue
+        }
+
+        $baseline = $baselineByCase[$caseKey]
+        $baselineMedian = Convert-ToDoubleInvariant $baseline.MedianSeconds
+        $baselineSteps = Convert-ToIntInvariant $baseline.Steps
+        $baselineEdges = Convert-ToIntInvariant $baseline.Edges
+        $baselineStates = Convert-ToIntInvariant $baseline.States
+
+        $deltaSeconds = [double]$result.MedianSeconds - $baselineMedian
+        $deltaPercent = if ($baselineMedian -gt 0) { ($deltaSeconds / $baselineMedian) * 100.0 } else { [double]::NaN }
+
+        $structureMatch = (
+            ([int]$result.Steps -eq $baselineSteps) -and
+            ([int]$result.Edges -eq $baselineEdges) -and
+            ([int]$result.States -eq $baselineStates)
+        )
+
+        $isRegression = $false
+        $status = "PASS"
+        if (-not $structureMatch) {
+            $isRegression = $true
+            $status = "FAIL_STRUCTURE_CHANGED"
+        }
+        elseif ($deltaSeconds -gt 0 -and ($deltaPercent -gt $RegressionTolerancePercent)) {
+            $isRegression = $true
+            $status = "FAIL_TIME_REGRESSION"
+        }
+
+        if ($isRegression) {
+            $regressionCount++
+        }
+
+        $comparison.Add([pscustomobject]@{
+            Case = $caseKey
+            BaselineMedianSeconds = [math]::Round($baselineMedian, 3)
+            CurrentMedianSeconds = [double]$result.MedianSeconds
+            DeltaSeconds = [math]::Round($deltaSeconds, 3)
+            DeltaPercent = if ([double]::IsNaN($deltaPercent)) { [double]::NaN } else { [math]::Round($deltaPercent, 2) }
+            StructureMatch = $structureMatch
+            Status = $status
+        })
+    }
+
+    $comparison | Format-Table -AutoSize
+
+    Write-Host "Baseline comparison summary: regressions=$regressionCount, tolerance=${RegressionTolerancePercent}%" -ForegroundColor Cyan
+    if ($EnforceBaseline -and $regressionCount -gt 0) {
+        throw "Baseline comparison failed with $regressionCount regression case(s)."
+    }
+}
 
 if ($AsCsv) {
     if ([string]::IsNullOrWhiteSpace($CsvPath)) {
