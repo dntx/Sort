@@ -16,14 +16,27 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for code changes
+        id: changes
+        run: |
+          $changed = git diff --name-only origin/main...HEAD
+          $hasCode = $changed | Where-Object { $_ -match '\.(cs|csproj|sln)$' }
+          $result = if ($hasCode.Count -gt 0) { 'true' } else { 'false' }
+          echo "has_code=$result" >> $env:GITHUB_OUTPUT
 
       - name: Setup .NET
+        if: steps.changes.outputs.has_code == 'true'
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
 
       - name: Run structural regression tests
+        if: steps.changes.outputs.has_code == 'true'
         run: dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --configuration Release --nologo
 
       - name: Run lightweight performance tests
+        if: steps.changes.outputs.has_code == 'true'
         run: dotnet test .\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --configuration Release --nologo
