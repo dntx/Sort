@@ -349,6 +349,15 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
   的候选，而不是做递归 rollout。这个评分保持了选择器的多项式成本，同时把基础反链经常漏掉的跨边界桥接带了回来；
   其效果由 `FeasiblePlan_LookaheadPinsRawUpperBound` 等回归测试固定。
 
+- **`m == 2` 视为单独的 pairwise regime，不走上述 lookahead**：当前 1-ply 前瞻是为**真正的组排序**（`m >= 3`）设计的，
+  依赖「一步能产生很多 outcome、一次能把一个反链压成更长的链」这一结构。`m=2` 时这些前提同时退化：
+  一步只有 **2 个** outcome，本质上就是一次二元比较；反链宽度每步最多只降 **1**（宽度下界为
+  `ceil((w - 1) / (m - 1))`，故 `m=2` 时每步只能把 `w` 减一）；动作空间也从“选一个 group”退化成“选一条未决边”。
+  于是 lookahead 的**即时信号**明显变弱，但每个候选仍要支付完整的下界评估成本（`GetMinWorstCaseLowerBound`），性价比很差。
+  实测上这不仅体现在速度：把 lookahead 全关后按 `m` 分桶扫描小算例，退化率呈现明显分界：`m=2` 约 **68%**、`m=3` 约 **47%**、
+  `m=4` 约 **26%**、`m=5` 约 **21%**，说明 `m=2` 的确是一个**定性不同**的 regime，而 `m=3` 起 lookahead 仍有稳定收益。
+  因此实现里明确在 `m==2` 时直接回退到基础反链启发式，把它视作 pairwise edge-selection 问题；`m>=3` 仍保留现有的 group-level lookahead。
+
 - **夹逼**：`L = GetMinWorstCaseLowerBound(root, k)`（解析下界，与精确搜索**无关**、极便宜；`25,5,5 → 6`），经
   `RecordRootProvenLowerBound` 写入；`U = ` 构造树的 `MaxStep`。于是 `L ≤ opt ≤ U`。若 `L == U` 则该可行解
   **恰好达到了已证明下界**，即**已证明最优**（显示 `max steps = U (proven optimal)`）。
