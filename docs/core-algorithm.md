@@ -349,6 +349,15 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
   的候选，而不是做递归 rollout。这个评分保持了选择器的多项式成本，同时把基础反链经常漏掉的跨边界桥接带了回来；
   其效果由 `FeasiblePlan_LookaheadPinsRawUpperBound` 等回归测试固定。
 
+- **`m == 2` 视为单独的 pairwise regime，不走上述 lookahead**：当前 1-ply 前瞻是为**真正的组排序**（`m >= 3`）设计的，
+  依赖「一步能产生很多 outcome、一次能把一个反链压成更长的链」这一结构。`m=2` 时这些前提同时退化：
+  一步只有 **2 个** outcome，本质上就是一次二元比较；反链宽度每步最多只降 **1**（宽度下界为
+  `ceil((w - 1) / (m - 1))`，故 `m=2` 时每步只能把 `w` 减一）；动作空间也从“选一个 group”退化成“选一条未决边”。
+  于是 lookahead 的**即时信号**明显变弱，但每个候选仍要支付完整的下界评估成本（`GetMinWorstCaseLowerBound`），性价比很差。
+  实测上这不仅体现在速度：把 lookahead 全关后按 `m` 分桶扫描小算例，退化率呈现明显分界：`m=2` 约 **68%**、`m=3` 约 **47%**、
+  `m=4` 约 **26%**、`m=5` 约 **21%**，说明 `m=2` 的确是一个**定性不同**的 regime，而 `m=3` 起 lookahead 仍有稳定收益。
+  因此实现里明确在 `m==2` 时直接回退到基础反链启发式，把它视作 pairwise edge-selection 问题；`m>=3` 仍保留现有的 group-level lookahead。
+
 - **夹逼**：`L = GetMinWorstCaseLowerBound(root, k)`（解析下界，与精确搜索**无关**、极便宜；`25,5,5 → 6`），经
   `RecordRootProvenLowerBound` 写入；`U = ` 构造树的 `MaxStep`。于是 `L ≤ opt ≤ U`。若 `L == U` 则该可行解
   **恰好达到了已证明下界**，即**已证明最优**（显示 `max steps = U (proven optimal)`）。
@@ -463,10 +472,9 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
 - `StrategyPlan.IsFeasibleUpperBound == true` 标记这棵树是「可行上界」而非「精确最优」，CLI / GUI 据此渲染相应的
   首阶段（`greedy-feasible`）区域。
 
-### 4.7 GreedyTighten（Phase 0）：可行树的局部改造收紧（设计草案，未实现）
+### 4.7 GreedyTighten（Phase 0）：可行树的局部改造收紧（已实现，test-only；实测定档：不接入生产管线）
 
-> ⚠️ **状态：设计草案，尚未实现。** 本节记录 `GreedyTighten` 阶段的目标、反证条件与 v1.1 机制，作为实现前的规格钉子；
-> 代码落地后再把本节改写为「已实现」的行为描述。命名已定稿（见阶段命名：主名 `GreedyTighten`、显示名
+> ⚠️ **状态：已实现，但仅作 test-only 实验/回归资产（`BuildGreedyTightenPlan`）；经实测定档不接入生产管线，详见本节末「最终定位」。** 本节记录 `GreedyTighten` 阶段的目标、反证条件与机制。命名已定稿（见阶段命名：主名 `GreedyTighten`、显示名
 > `greedy-tighten≤N`、plan 变量 `greedyTightenPlan`），且该阶段**无证明语义**（只有 `ProofTighten` 的完整枚举 no-solution
 > 才证明最优）。
 
@@ -515,7 +523,9 @@ greedy-feasible(U) → greedy-tighten≤N → proof-tighten≤N → edge-compact
 
 **默认轮数（已实现，实测定档）**：驱动器**默认只跑单轮**（`DefaultGreedyTightenMaxRounds = 1`）。修复同构覆写串味 bug（override/高度 memo 以规范键为键、组按具体标号存取，见 PR #216）后的重基线（`nMax=10`，320 例）显示：单轮在 305/320 例达到与无界多轮相同的收紧 `U'`，成本仅约 0.47x；多轮平均只多收紧约 1 例却成本翻倍。多轮循环与跨轮 override 持久化仍保留，通过测试/评测开关 `GreedyTightenMaxRoundsForTesting`（设更大值或 `int.MaxValue` 跑无界）驱动，供后续调优使用。
 
-**soundness 校验（独立于精确搜索）**：GreedyTighten 只保证可行上界（`U' >= opt`）。在 `n <= 10` 用精确 `opt`（`BuildStepProofStage`）对照即可验证，但更大形状下精确搜索不可行。为此提供独立校验 `ValidateGreedyTightenPolicyDepthForTesting`：物化后从根**重放已提交策略**（不复用高度 memo），逐状态断言分组有未决对（progress）、对抗路径无环（必然终止）、每条路径都停在受信任的 top-k 终止条件，并重算最坏深度；返回深度 == 计划的 `MaxStep` 即证明该 `MaxStep` 是一棵**真实合法策略**的最坏步数（因而是 opt 的可靠上界）。这把 GreedyTighten 的正确性锁到精确搜索够不到的规模（例如 `20,4,6`：GT 给出并被验证的合法 `U'=14`，而 `ProofTighten` 的 compact probe 停在 15——后者是完备性缺口而非错误结论）。
+**soundness 校验（独立于精确搜索）**：GreedyTighten 只保证可行上界（`U' >= opt`）。在 `n <= 10` 用精确 `opt`（`BuildStepProofStage`）对照即可验证，但更大形状下精确搜索不可行。为此提供独立校验 `ValidateGreedyTightenPolicyDepthForTesting`：物化后从根**重放已提交策略**（不复用高度 memo），逐状态断言分组有未决对（progress）、对抗路径无环（必然终止）、每条路径都停在受信任的 top-k 终止条件，并重算最坏深度；返回深度 == 计划的 `MaxStep` 即证明该 `MaxStep` 是一棵**真实合法策略**的最坏步数（因而是 opt 的可靠上界）。这把 GreedyTighten 的正确性锁到精确搜索够不到的规模（例如 `20,4,6`：GT 给出并被验证的合法 `U'=14`）。
+
+**最终定位（2026-07-07，实测定档）：维持 test-only，不接入 `RunGreedyPipeline`。** PR #223 修复了 compact 可行性探针的 overshoot（松预算 pattern 覆盖紧预算 pattern 致物化溢出）后，`GreedyTighten` 赖以立论的「独立收益」（上文目标 3）消失：其招牌硬算例 `20,4,6` 曾因 compact probe 停在 15、错过 GT 的 14 树；#223 后 compact probe 已能收到 14 并继续更深（15s 内到 10）。据此做**公平赛跑**——同一套 ProofTighten，基线 B 从 `U0` 起、方案 A 先插一步 GreedyTighten 再从 `U'` 起，在同一墙钟限时下比较（三条判定：都结束 → 界应相等、比谁早停；一方结束 → 其界应 ≤ 另一方当前最优、结束者胜；都没结束 → 当前最优更好者胜、平则比达到该最优的时间）。实测 17 例 @30s：**每例最终界 A==B（GreedyTighten 从不改善界）**，胜负仅由时间决定，`B(基线) 13 : A(+GT) 4`（A 的少数胜局多为「每例先跑 B」造成的首例冷 JIT 假象或毫秒级噪声，已连跑复现验证）。即命中上文反证条件 3（净变慢）与 4（两头不讨好）。结论：`GreedyTighten` 无质量收益、无可靠速度收益，仅当其成本近乎为零时才勉强省下上端便宜探针——**不并入生产管线**；`BuildGreedyTightenPlan` 及其 soundness/正确性测试仅作实验与回归资产保留。
 
 ---
 
