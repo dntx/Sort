@@ -800,6 +800,37 @@ def validate_pr_metadata_language(pr_title: str, pr_body: str) -> tuple[bool, st
     return False, review
 
 
+def validate_pr_description_format(pr_body: str) -> tuple[bool, str]:
+    """Validate PR description formatting for common broken JSON-escaped bodies.
+
+    A frequent formatting mistake is posting a JSON-escaped string as-is, which
+    leaves literal "\\n" tokens in the description instead of real newlines.
+    That makes Markdown sections/bullets render as one long line and should
+    block until corrected.
+    """
+    body = pr_body or ""
+    escaped_newlines = body.count("\\n")
+    has_real_newline = "\n" in body
+    # Treat this as malformed only when the description appears broadly escaped,
+    # not when it contains an occasional literal "\\n" inside prose/code.
+    looks_json_escaped = escaped_newlines >= 2 and not has_real_newline
+    if not looks_json_escaped:
+        return True, ""
+
+    review = (
+        "## Summary\n"
+        "This PR is blocked by description formatting policy.\n\n"
+        "## Findings\n"
+        "- **[BLOCK]** Pull request description appears to contain literal escaped "
+        "newlines (`\\n`) instead of real line breaks. This usually means the "
+        "description was pasted as a JSON-escaped string and Markdown sections/"
+        "lists will not render correctly. Please rewrite the description with "
+        "actual newlines.\n\n"
+        "VERDICT: BLOCK"
+    )
+    return False, review
+
+
 
 def filtered_review_diff(diff: str, max_chars: int = MAX_DIFF_CHARS) -> str:
     """Concatenate reviewable (non-infra, non-data) diff sections, truncated for the model."""
@@ -1434,6 +1465,14 @@ def post_review(review_body: str, verdict: str) -> None:
 def main() -> int:
     pr_title = os.environ.get("PR_TITLE", "")
     pr_body = os.environ.get("PR_BODY", "")
+
+    format_ok, format_review = validate_pr_description_format(pr_body)
+    if not format_ok:
+        print("Verdict: BLOCK")
+        print("----- Review -----")
+        print(format_review)
+        post_review(format_review, "BLOCK")
+        return 1
 
     language_ok, language_review = validate_pr_metadata_language(pr_title, pr_body)
     if not language_ok:
