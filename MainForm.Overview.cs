@@ -73,7 +73,7 @@ partial class MainForm
             string firstStageName = defaultPlan is null
                 ? NextProofTightenStageName(feasiblePlan, feasiblePlan.MaxStep)
                 : StrategyBuilder.FormatEdgeCompactStageName(feasiblePlan.MaxStep);
-            _overviewTree.Nodes.Add(BuildOverviewNoteNode(firstStageName + ComputingSuffix));
+            _overviewTree.Nodes.Add(BuildOverviewNoteNode(FormatComputingPlaceholderText(firstStageName)));
         }
         else if (compactImproved)
             _overviewTree.Nodes.Add(BuildOverviewSectionNode(compactPlan, "compact", StrategyBuilder.FormatEdgeCompactStageName(compactPlan.MaxStep), compactPlan.Elapsed));
