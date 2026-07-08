@@ -136,14 +136,15 @@ public class GreedyFeasibleStageTests
             $"expected direct lower-bound cache key reuse hits in greedy scoring for ({n},{m},{k})");
     }
 
-    // Regression guard for the m>=3 lookahead generalization: the unresolved-density candidate
-    // template and the immediate display-line tie-break now run on all m>=3 (not just m=3). These
-    // envelopes keep that broadening from regressing tree size on representative shapes while keeping
-    // assertions loose enough for harmless tie-order drift.
+    // Regression guard for the m>=3 lookahead generalization and successor-width-first scoring:
+    // unresolved-density candidates and tie-break behavior now run broadly on m>=3, and we lock in
+    // the resulting tree-size gains with relaxed upper envelopes (not exact pins) to tolerate small
+    // tie-order drift while preventing large backslides.
     [Theory]
-    [InlineData(20, 3, 6, 24, 30000, 10000)]
-    [InlineData(16, 5, 5, 6, 1500, 300)]
-    [InlineData(12, 4, 4, 6, 250, 120)]
+    [InlineData(20, 3, 6, 23, 9000, 4000)]
+    [InlineData(22, 3, 6, 28, 13000, 5000)]
+    [InlineData(16, 5, 5, 6, 1200, 260)]
+    [InlineData(12, 4, 4, 6, 200, 90)]
     public void GreedyFeasibleStage_MGe3GeneralizedLookahead_StaysWithinTreeSizeEnvelope(
         int n,
         int m,
