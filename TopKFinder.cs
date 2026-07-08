@@ -994,8 +994,8 @@ partial class StrategyBuilder
             return;
 
         _lastProgressReportMs = elapsedMs;
-        double localProgress01 = EstimateProgress(elapsedMs);
-        double estimatedProgress01 = MapToReportedProgress(localProgress01);
+            double localProgress = EstimateProgress(elapsedMs);
+            double estimatedProgress01 = MapToReportedProgress(localProgress);
         _progressCallback(new SearchProgressSnapshot(
             elapsedMs,
             _searchedStates,
