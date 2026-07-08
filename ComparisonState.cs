@@ -477,7 +477,6 @@ class ComparisonState
     private static int[] RefineCanonicalColoring(int a, ulong[] anc, ulong[] desc, int[] colors)
     {
         var labels = (int[])colors.Clone();
-        var order = new int[a];
         var perm = new int[a];
 
         bool changed;
@@ -512,7 +511,6 @@ class ComparisonState
                     sig[baseIdx + 1 + classCount + labels[b]]++;
                 }
 
-                order[i] = i;
                 perm[i] = i;
             }
 
@@ -535,7 +533,7 @@ class ComparisonState
             {
                 if (r > 0 && CompareCanonicalSignatures(sig, perm[r - 1], perm[r], width) != 0)
                     color++;
-                nextLabels[order[perm[r]]] = color;
+                nextLabels[perm[r]] = color;
             }
 
             changed = false;
