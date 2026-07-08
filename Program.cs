@@ -200,7 +200,7 @@ class Program
                 return;
             }
 
-            if (lastEmitMs >= 0 && snapshot.ElapsedMilliseconds - lastEmitMs < 250)
+            if (lastEmitMs >= 0 && snapshot.ElapsedMilliseconds - lastEmitMs < 1000)
             {
                 return;
             }
