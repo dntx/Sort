@@ -71,7 +71,7 @@ single-stage construction and multi-stage orchestration:
 ### Command-line arguments
 
 ```bash
-dotnet run -- <n> <m> <k> [--mode exact|greedy]
+dotnet run -- <n> <m> <k> [--mode exact|greedy] [--stage <n>]
 ```
 
 - Prints the strategy tree for `n`, `m`, `k` to **stdout**.
@@ -82,6 +82,9 @@ dotnet run -- <n> <m> <k> [--mode exact|greedy]
     refinement for edge.
   - **greedy**: a fast greedy feasible strategy for step, then a budget-bounded
     compact pass for edge. Fast and interruptible, but not proven optimal.
+- `--stage <n>` stops after stage `n` (1-based):
+  - exact: `1` = step-proof, `2` = edge-compact
+  - greedy: `1` = greedy-feasible, `2+` continues along tightening progression
 - If the edge stage does not reduce output states, only the step strategy is
   printed; otherwise both step and edge strategies are printed.
 - Search progress is written to **stderr**, so you can redirect the result on its

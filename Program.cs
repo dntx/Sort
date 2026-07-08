@@ -3,6 +3,16 @@ using System.Windows.Forms;
 
 class Program
 {
+    public enum Mode
+    {
+        Exact,
+        Greedy,
+    }
+
+    private sealed class StageLimitReachedException : Exception
+    {
+    }
+
     private const string UsageText = "Usage: TopKFinder <n> <m> <k>";
 
     private const string HelpText =
@@ -18,6 +28,9 @@ class Program
         "  -h, --help      Show this help and exit.\n" +
         "  --mode <mode>   Search mode. exact (default) = exact + compact (proven optimal).\n" +
         "                  greedy = feasible bound, then min-step tightening, then one min-edge pass (interruptible with Ctrl+C).\n" +
+        "  --stage <n>     Stop after stage n (1-based).\n" +
+        "                  exact: 1=step-proof, 2=edge-compact.\n" +
+        "                  greedy: 1=greedy-feasible, 2+=continue along tightening progression.\n" +
         "\n" +
         "Arguments:\n" +
         "  n   total number of elements   (1 <= n <= 64)\n" +
@@ -44,7 +57,7 @@ class Program
                 return;
             }
 
-            if (!TryParseCliArgs(args, out string? nText, out string? mText, out string? kText, out bool feasibleMode, out string? argError))
+            if (!TryParseCliArgs(args, out string? nText, out string? mText, out string? kText, out Mode mode, out int? stageLimit, out string? argError))
             {
                 Console.WriteLine(argError);
                 Console.WriteLine(UsageText);
@@ -57,7 +70,7 @@ class Program
                 return;
             }
 
-            RunHeadless(nFromArgs, mFromArgs, kFromArgs, feasibleMode);
+            RunHeadless(nFromArgs, mFromArgs, kFromArgs, mode, stageLimit);
             return;
         }
 
@@ -83,7 +96,7 @@ class Program
             return;
         }
 
-        RunHeadless(n, m, k, feasibleMode: false);
+        RunHeadless(n, m, k, Mode.Exact, stageLimit: null);
     }
 
     public static bool IsHelpRequested(string[] args)
@@ -96,13 +109,15 @@ class Program
         out string? nText,
         out string? mText,
         out string? kText,
-        out bool feasibleMode,
+        out Mode mode,
+        out int? stageLimit,
         out string? error)
     {
         nText = null;
         mText = null;
         kText = null;
-        feasibleMode = false;
+        mode = Mode.Exact;
+        stageLimit = null;
         error = null;
 
         var positionals = new System.Collections.Generic.List<string>();
@@ -119,14 +134,31 @@ class Program
                 }
                 string value = args[++i];
                 if (string.Equals(value, "greedy", StringComparison.OrdinalIgnoreCase))
-                    feasibleMode = true;
+                    mode = Mode.Greedy;
                 else if (string.Equals(value, "exact", StringComparison.OrdinalIgnoreCase))
-                    feasibleMode = false;
+                    mode = Mode.Exact;
                 else
                 {
                     error = $"Error: unknown mode '{value}' (expected exact or greedy)";
                     return false;
                 }
+            }
+            else if (arg == "--stage")
+            {
+                if (i + 1 >= args.Length)
+                {
+                    error = "Error: --stage requires a positive integer value";
+                    return false;
+                }
+
+                string value = args[++i];
+                if (!int.TryParse(value, out int parsed) || parsed <= 0)
+                {
+                    error = $"Error: invalid stage '{value}' (expected a positive integer)";
+                    return false;
+                }
+
+                stageLimit = parsed;
             }
             else if (arg.StartsWith("-", StringComparison.Ordinal))
             {
@@ -151,7 +183,7 @@ class Program
         return true;
     }
 
-    private static void RunHeadless(int n, int m, int k, bool feasibleMode)
+    private static void RunHeadless(int n, int m, int k, Mode mode, int? stageLimit)
     {
         int canonicalK = Math.Min(k, n - k);
         if (canonicalK != k)
@@ -218,7 +250,7 @@ class Program
 
         try
         {
-            RunHeadlessCore(builder, feasibleMode, ClearProgressLine);
+            RunHeadlessCore(builder, mode, stageLimit, ClearProgressLine);
         }
         catch (OperationCanceledException)
         {
@@ -233,7 +265,7 @@ class Program
         }
     }
 
-    private static void RunHeadlessCore(StrategyBuilder builder, bool feasibleMode, Action clearProgressLine)
+    private static void RunHeadlessCore(StrategyBuilder builder, Mode mode, int? stageLimit, Action clearProgressLine)
     {
         void ClearProgressLine() => clearProgressLine();
 
@@ -246,7 +278,7 @@ class Program
             Console.Error.WriteLine(text);
         }
 
-        if (feasibleMode)
+        if (mode == Mode.Greedy)
         {
             // Greedy mode: GreedyFeasible gives a valid upper bound, then ProofTighten lowers the
             // step ceiling when it can, and EdgeCompact minimizes edges at the final step.
@@ -267,11 +299,28 @@ class Program
             {
                 FormatStageSummary("greedy-feasible", feasiblePlan),
             };
+            int emittedStages = 1;
             StrategyPlan incumbentPlan = feasiblePlan;
             string finalName = "greedy-feasible";
             StrategyPlan finalPlan = feasiblePlan;
+
+            if (stageLimit.HasValue && emittedStages >= stageLimit.Value)
+            {
+                ClearProgressLine();
+                Console.WriteLine($"progression: {string.Join(" -> ", stageSummaries)}");
+                Console.WriteLine();
+                Console.WriteLine($"==================== {finalName} ({FormatSqueeze(finalPlan)}) ====================");
+                Console.WriteLine("(a valid strategy that achieves the upper bound; not proven optimal)");
+                Console.Write(StrategyOverviewRenderer.RenderText(finalPlan));
+                Console.WriteLine();
+                Console.Write(StrategyTextRenderer.Render(finalPlan));
+                return;
+            }
+
             void CollectEdgeStage(StageResult stage)
             {
+                emittedStages++;
+
                 if (!stage.HasPlan)
                 {
                     if (stage.Outcome == StageOutcome.ProvenInfeasible)
@@ -294,6 +343,10 @@ class Program
                             WriteStageStatus($"stage {stage.Name}: search incomplete, candidate cap reached " +
                                 $"({stage.Elapsed.TotalSeconds:F2}s)");
                         }
+
+                        if (stageLimit.HasValue && emittedStages >= stageLimit.Value)
+                            throw new StageLimitReachedException();
+
                         return;
                 }
 
@@ -312,14 +365,22 @@ class Program
                     WriteStageStatus($"stage {stage.Name}: steps={stage.Plan.MaxStep}, " +
                         $"edges={stage.Plan.TotalBranchEdges} ({stage.Elapsed.TotalSeconds:F2}s), no improvement");
                 }
+
+                if (stageLimit.HasValue && emittedStages >= stageLimit.Value)
+                    throw new StageLimitReachedException();
             }
 
             void StartEdgeStage(string name) => WriteStageStatus($"stage {name}: started");
 
             bool interrupted = false;
+            bool stageLimited = false;
             try
             {
                 builder.RunGreedyPipeline(CollectEdgeStage, StartEdgeStage);
+            }
+            catch (StageLimitReachedException)
+            {
+                stageLimited = true;
             }
             catch (OperationCanceledException)
             {
@@ -332,6 +393,8 @@ class Program
 
             if (interrupted)
                 stageSummaries.Add("interrupted");
+            else if (stageLimited)
+                stageSummaries.Add("stage limit reached");
 
             Console.WriteLine($"progression: {string.Join(" -> ", stageSummaries)}");
             Console.WriteLine();
@@ -369,6 +432,9 @@ class Program
         Console.Write(StrategyOverviewRenderer.RenderText(defaultPlan));
         Console.WriteLine();
         Console.Write(StrategyTextRenderer.Render(defaultPlan));
+
+        if (stageLimit.HasValue && stageLimit.Value <= 1)
+            return;
 
         StrategyPlan incumbent = defaultPlan;
         StrategyPlan compactPlan;
