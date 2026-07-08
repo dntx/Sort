@@ -405,7 +405,19 @@ partial class StrategyBuilder
             collectMergedBranches: false,
             onUsefulOutcome: outcome =>
             {
-                int childLowerBound = GetMinWorstCaseLowerBound(outcome.NextState, outcome.NextRemainingSlots);
+                int childLowerBound;
+                // Outcome construction already computed NextSearchKey. Reusing it for the lower-bound
+                // cache avoids recomputing the key path in hot 1-ply candidate scoring loops.
+                if (_lowerBoundStepsCache.TryGetValue(outcome.NextSearchKey, out int cachedLowerBound))
+                {
+                    _lowerBoundCacheHits++;
+                    childLowerBound = cachedLowerBound;
+                }
+                else
+                {
+                    childLowerBound = GetMinWorstCaseLowerBound(outcome.NextState, outcome.NextRemainingSlots);
+                }
+
                 if (childLowerBound > maxChildLowerBound)
                     maxChildLowerBound = childLowerBound;
 
