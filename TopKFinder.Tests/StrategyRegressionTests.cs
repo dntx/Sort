@@ -1309,6 +1309,36 @@ public sealed class StrategyRegressionTests
         Assert.Equal(expectedLine, StrategyTextRenderer.FormatEquivalentPatternLine(branch.EquivalentOrders));
     }
 
+    // Regression for the doomed-prefix orbit partition: these two orders differ only by swapping
+    // symmetric doomed-prefix buckets under a parent automorphism, so they must collapse to ONE
+    // displayed branch. The canonical representative stays (#7 > #13 > #19 > #1 > #2 > #25), while
+    // the sibling (#13 > #7 > #19 > #1 > #2 > #25) must not appear as a separate edge.
+    [Fact]
+    public void N25M6K3_DoomedTailParentAutomorphismOrbitCollapsesToSingleRepresentative()
+    {
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.BuildDefaultPlan(25, 6, 3)",
+            RegressionTestTimeout,
+            cancellationToken => new StrategyBuilder(25, 6, 3, cancellationToken).BuildStepProofStage());
+
+        StrategyNode s5 = StrategyTestHelpers.FollowBranchPath(
+            plan.Root,
+            "#1 > #2 > #3 > #4 > #5 > #6",
+            "#7 > #8 > #9 > #10 > #11 > #12",
+            "#13 > #14 > #15 > #16 > #17 > #18",
+            "#19 > #20 > #21 > #22 > #23 > #24");
+
+        StrategyBranch representative = StrategyTestHelpers.FindChildBranch(s5, "#7 > #13 > #19 > #1 > #2 > #25");
+        Assert.NotNull(representative.EquivalentOrders);
+        Assert.Equal(18, representative.EquivalentOrders!.Count);
+        Assert.Equal("3! sym x 3!/2! tail", representative.EquivalentOrders.CountFormula);
+        Assert.Equal("{#7, #13, #19} > {#1, #2, #25} ; #1 > #2", representative.EquivalentOrders.PatternText);
+
+        Assert.DoesNotContain(
+            s5.Branches,
+            branch => branch.OrderText == "#13 > #7 > #19 > #1 > #2 > #25");
+    }
+
     // A doomed-tail item that is FORCED to come first within the tail (it dominates every other
     // tail item) is peeled out of the any-order brace and rendered as a leading chain link, instead
     // of being buried in the brace with its order re-stated as a residual cover. In 12,4,3 compact,

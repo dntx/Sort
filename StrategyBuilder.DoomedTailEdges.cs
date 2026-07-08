@@ -160,11 +160,34 @@ partial class StrategyBuilder
             return x;
         }
 
+        // Cheap necessary-condition prefilter for the O(buckets^2) automorphism test below. Any
+        // automorphism of the parent active poset preserves its 1-WL coloring, so an automorphism can
+        // map prefix i onto prefix j (position by position) only if the two prefixes carry identical
+        // per-position color sequences. Grouping prefixes by that signature lets the loop skip the
+        // (comparatively expensive) TryMapOrderByAutomorphism call for every cross-signature pair,
+        // which is the vast majority, without changing the resulting orbit partition.
+        int[] activeColors = state.GetActiveItemColors();
+        var signatureToId = new Dictionary<string, int>();
+        var signatureId = new int[n];
+        for (int i = 0; i < n; i++)
+        {
+            var sb = new StringBuilder(prefixes[i].Count * 3);
+            foreach (int item in prefixes[i])
+                sb.Append(activeColors[item]).Append(',');
+            string signature = sb.ToString();
+            if (!signatureToId.TryGetValue(signature, out int id))
+            {
+                id = signatureToId.Count;
+                signatureToId[signature] = id;
+            }
+            signatureId[i] = id;
+        }
+
         for (int i = 0; i < n; i++)
         {
             for (int j = i + 1; j < n; j++)
             {
-                if (Find(i) == Find(j) || prefixes[i].Count != prefixes[j].Count)
+                if (signatureId[i] != signatureId[j] || Find(i) == Find(j) || prefixes[i].Count != prefixes[j].Count)
                     continue;
                 if (state.TryMapOrderByAutomorphism(0, prefixes[i], prefixes[j]))
                     parent[Find(i)] = Find(j);
