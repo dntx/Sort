@@ -167,6 +167,8 @@ class ComparisonState
     public int ActiveCount { get; private set; }
     private int[]? _structuralLabelsCache;
     private IntSequenceKey? _canonicalKeyCache;
+    private Dictionary<ulong, IntSequenceKey>? _displayCanonicalKeyCache;
+    private Dictionary<ulong, IntSequenceKey>? _groupCanonicalKeyCache;
 
     public ComparisonState(int n)
     {
@@ -202,6 +204,8 @@ class ComparisonState
     {
         _structuralLabelsCache = null;
         _canonicalKeyCache = null;
+        _displayCanonicalKeyCache = null;
+        _groupCanonicalKeyCache = null;
     }
 
     public void AddRelation(int greater, int lesser)
@@ -304,7 +308,16 @@ class ComparisonState
 
     public IntSequenceKey GetDisplayCanonicalKey(ulong fixedTopMask)
     {
-        return ComputeCanonicalForm(ActiveMask | fixedTopMask, fixedTopMask, highlightMask: 0);
+        if (fixedTopMask == 0)
+            return GetCanonicalKey();
+
+        _displayCanonicalKeyCache ??= new Dictionary<ulong, IntSequenceKey>();
+        if (_displayCanonicalKeyCache.TryGetValue(fixedTopMask, out IntSequenceKey cached))
+            return cached;
+
+        IntSequenceKey key = ComputeCanonicalForm(ActiveMask | fixedTopMask, fixedTopMask, highlightMask: 0);
+        _displayCanonicalKeyCache[fixedTopMask] = key;
+        return key;
     }
 
     // Produces a COMPLETE isomorphism invariant of a comparison group within the active
@@ -315,7 +328,16 @@ class ComparisonState
     // drop a uniquely optimal group and over-estimate the worst-case step count.
     public IntSequenceKey GetGroupCanonicalKey(ulong groupMask)
     {
-        return ComputeCanonicalForm(ActiveMask, fixedTopMask: 0, highlightMask: groupMask);
+        if (groupMask == 0)
+            return GetCanonicalKey();
+
+        _groupCanonicalKeyCache ??= new Dictionary<ulong, IntSequenceKey>();
+        if (_groupCanonicalKeyCache.TryGetValue(groupMask, out IntSequenceKey cached))
+            return cached;
+
+        IntSequenceKey key = ComputeCanonicalForm(ActiveMask, fixedTopMask: 0, highlightMask: groupMask);
+        _groupCanonicalKeyCache[groupMask] = key;
+        return key;
     }
 
     // Per-item 1-WL color of the active sub-poset (no group highlighted), matching the coloring
