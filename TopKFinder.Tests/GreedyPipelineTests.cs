@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using Xunit;
 
 // Guards the greedy-mode proof-tighten pipeline (RunGreedyPipeline), whose step ceiling is the
@@ -233,6 +235,33 @@ public class GreedyPipelineTests
         Assert.Equal(probe.Outcome, firstTighten.Value.Outcome);
         Assert.NotNull(firstTighten.Value.Plan);
         Assert.Equal(probe.Plan!.MaxStep, firstTighten.Value.Plan!.MaxStep);
+    }
+
+    // Regression guard for Stop responsiveness on the reported long-running shape (20,2,6).
+    // Simulates the UI behavior by cancelling from another thread after ~2s and asserts the
+    // pipeline exits promptly once cancellation is requested.
+    [Fact]
+    public async Task GreedyPipeline_CancelAfterTwoSeconds_StopsPromptly_20_2_6()
+    {
+        using var cts = new CancellationTokenSource();
+        var builder = new StrategyBuilder(20, 2, 6, cts.Token);
+
+        Task run = Task.Run(() => builder.RunGreedyPipeline());
+
+        // Match the user flow: let the run proceed for a while, then request Stop.
+        await Task.Delay(TimeSpan.FromSeconds(2));
+        long cancelAt = Stopwatch.GetTimestamp();
+        cts.Cancel();
+
+        Exception? thrown = await Record.ExceptionAsync(async () => await run);
+        Assert.IsType<OperationCanceledException>(thrown);
+
+        double cancelToExitMs = (Stopwatch.GetTimestamp() - cancelAt) * 1000.0 / Stopwatch.Frequency;
+        // This is an anti-regression guardrail (preventing a return to double-digit-second Stop
+        // latency), not a strict performance benchmark. CI and local machine load can vary a lot.
+        Assert.True(
+            cancelToExitMs <= 9000,
+            $"cancellation took too long to surface (cancel->exit {cancelToExitMs:F0} ms)");
     }
 
     // Item-3 strong-output lock for Phase B: the final min-edge pass ALWAYS emits exactly one

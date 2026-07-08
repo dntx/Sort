@@ -99,6 +99,7 @@ partial class StrategyBuilder
     private bool _pendingZeroSettling;
     private long _pendingZeroSinceMs;
     private int _pendingZeroSearchedAtStart;
+    private int _cancellationProbeCounter;
     private ProgressScope _progressScope;
 
     public StrategyBuilder(
@@ -654,6 +655,7 @@ partial class StrategyBuilder
         var buckets = new Dictionary<IntSequenceKey, List<List<int>>>();
         foreach (var group in collected)
         {
+            ProbeCancellation();
             IntSequenceKey cheap = CheapGroupSignature(labels, group);
             if (!buckets.TryGetValue(cheap, out List<List<int>>? bucket))
             {
@@ -667,6 +669,7 @@ partial class StrategyBuilder
         var ordered = new List<List<int>>(buckets.Count);
         foreach (List<List<int>> bucket in buckets.Values)
         {
+            ProbeCancellation();
             if (bucket.Count == 1)
             {
                 ordered.Add(bucket[0]);
@@ -676,6 +679,7 @@ partial class StrategyBuilder
             var representatives = new Dictionary<IntSequenceKey, List<int>>();
             foreach (List<int> group in bucket)
             {
+                ProbeCancellation();
                 IntSequenceKey pattern = GetGroupPattern(state, group);
                 if (!representatives.TryGetValue(pattern, out List<int>? existing) ||
                     CompareGroupsLexicographically(group, existing) < 0)
@@ -710,6 +714,8 @@ partial class StrategyBuilder
         List<List<int>> collected,
         int generationCap = int.MaxValue)
     {
+        ProbeCancellation();
+
         if (collected.Count >= generationCap)
             return;
 
@@ -842,7 +848,7 @@ partial class StrategyBuilder
 
     private IEnumerable<List<int>> EnumerateCombinations(IReadOnlyList<int> items, int count)
     {
-        ThrowIfCancellationRequested();
+        ProbeCancellation(0);
         var current = new List<int>(count);
         foreach (var combination in EnumerateCombinations(items, count, 0, current))
             yield return combination;
@@ -854,7 +860,7 @@ partial class StrategyBuilder
         int start,
         List<int> current)
     {
-        ThrowIfCancellationRequested();
+        ProbeCancellation(0);
         if (current.Count == count)
         {
             yield return new List<int>(current);
@@ -863,7 +869,7 @@ partial class StrategyBuilder
 
         for (int i = start; i <= items.Count - (count - current.Count); i++)
         {
-            ThrowIfCancellationRequested();
+            ProbeCancellation(0);
             current.Add(items[i]);
             foreach (var combination in EnumerateCombinations(items, count, i + 1, current))
                 yield return combination;
@@ -873,7 +879,7 @@ partial class StrategyBuilder
 
     private int GetStateId(IntSequenceKey key)
     {
-        ThrowIfCancellationRequested();
+        ProbeCancellation(0);
         if (_stateIds.TryGetValue(key, out int id))
             return id;
 
@@ -1277,6 +1283,20 @@ partial class StrategyBuilder
         _cancellationToken.ThrowIfCancellationRequested();
     }
 
+    // Shared throttled cancellation probe for hot loops. Call this in frequently-executed paths
+    // instead of open-coding per-loop counters so probe cadence stays consistent as algorithms evolve.
+    private void ProbeCancellation(int throttleMask = 63)
+    {
+        if (throttleMask <= 0)
+        {
+            _cancellationToken.ThrowIfCancellationRequested();
+            return;
+        }
+
+        if ((++_cancellationProbeCounter & throttleMask) == 0)
+            _cancellationToken.ThrowIfCancellationRequested();
+    }
+
     private void EnsurePhase1Solved()
     {
         if (_phase1Solved)
@@ -1354,6 +1374,7 @@ partial class StrategyBuilder
         _pendingZeroSettling = false;
         _pendingZeroSinceMs = 0;
         _pendingZeroSearchedAtStart = 0;
+        _cancellationProbeCounter = 0;
     }
 
     private sealed class SelectedComparisonGroup
