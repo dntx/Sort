@@ -464,6 +464,9 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     树形区域的**总根节点**以最优挤压（`FormatPlanSqueeze`）打头——`n=…, m=…, k=…, <squeeze>, total elapsed=…`——
     其中 `<squeeze>` 在最终 `no solution` 终止后闭合为 **`max steps = S (proven optimal)`**（最显眼的「搜索完成、步数已证明最优」信号），
     收紧途中则为 `L <= max steps <= U`；旧的 `(compact lowered from N)` 注记已移除（用处不大）。total elapsed 也用秒（3 位小数）。
+    GUI 的「`<stage>: computing...`」占位提示在实现上统一为一套生命周期（生成 / 识别 / 替换 / stop 改写）：不仅用于
+    `proof-tighten≤N` 与 `edge-compact@S` 之间的探测过渡，也用于首阶段（`greedy-feasible` / `step-proof`）尚未产出首棵树时的
+    初始占位，保证树区与 overview 在整个运行期都不会出现空白且文案行为一致。
     进度面板恒为四行：总 `elapsed` 秒数、
     `阶段名: 本阶段秒数`、`progress: 本阶段百分数`、第四行 **`eta`**（基于进度估算的剩余时间）。早先版本在 `proof-tighten≤N`
     收紧阶段把第四行改标 `time remaining`、显示「距离软时间预算 timeout 还有多久」；软预算移除后该行统一为 `eta`。

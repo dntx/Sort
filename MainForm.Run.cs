@@ -54,6 +54,7 @@ partial class MainForm
         _currentStageName = feasibleMode ? "greedy-feasible" : "step-proof";
         _stageStartMs = 0;
         ClearResultsView();
+        ShowInitialStagePlaceholder(n, m, k, feasibleMode);
         _runStopwatch = Stopwatch.StartNew();
         UpdateElapsedLabel();
         UpdateStatsPanels();
@@ -177,6 +178,34 @@ partial class MainForm
 
     private const string ComputingSuffix = ": computing...";
 
+    private static string FormatComputingPlaceholderText(string stageName)
+        => stageName + ComputingSuffix;
+
+    private TreeNode CreateComputingPlaceholderNode(string stageName)
+        => new(FormatComputingPlaceholderText(stageName)) { ForeColor = _palette.MutedForeColor };
+
+    private static bool TryRemoveTrailingComputingPlaceholder(TreeNodeCollection nodes)
+    {
+        if (nodes.Count == 0 || !IsComputingPlaceholderText(nodes[nodes.Count - 1].Text))
+            return false;
+
+        nodes.RemoveAt(nodes.Count - 1);
+        return true;
+    }
+
+    private static bool TryMarkTrailingComputingPlaceholderStopped(TreeNodeCollection nodes)
+    {
+        if (nodes.Count == 0)
+            return false;
+
+        TreeNode tail = nodes[nodes.Count - 1];
+        if (!IsComputingPlaceholderText(tail.Text))
+            return false;
+
+        tail.Text = MarkComputingPlaceholderStopped(tail.Text);
+        return true;
+    }
+
     // A trailing tree/overview node ending in ": computing..." is a transient in-progress placeholder
     // (the initial second-stage slot, or a live "proof-tighten<=N: computing..." probe appended between
     // greedy tightening stages). Both are replaced in place once the stage they announce lands.
@@ -200,23 +229,23 @@ partial class MainForm
             return;
 
         TreeNode root = _treeView.Nodes[0];
-        bool hasResidue = root.Nodes.Count > 0
-            && IsComputingPlaceholderText(root.Nodes[root.Nodes.Count - 1].Text);
-        if (!hasResidue)
-            return;
-
         _treeView.BeginUpdate();
-        root.Text = MarkLabelStopped(root.Text);
-        root.Nodes[root.Nodes.Count - 1].Text = MarkComputingPlaceholderStopped(root.Nodes[root.Nodes.Count - 1].Text);
-        if (root.Tag is string tag)
-            root.Tag = MarkDetailsStopped(tag);
+        bool markedTreePlaceholder = TryMarkTrailingComputingPlaceholderStopped(root.Nodes);
+        if (markedTreePlaceholder)
+        {
+            root.Text = MarkLabelStopped(root.Text);
+            if (root.Tag is string tag)
+                root.Tag = MarkDetailsStopped(tag);
+        }
         _treeView.EndUpdate();
 
-        if (_overviewTree.Nodes.Count > 0
-            && IsComputingPlaceholderText(_overviewTree.Nodes[_overviewTree.Nodes.Count - 1].Text))
+        if (!markedTreePlaceholder)
+            return;
+
+        if (_overviewTree.Nodes.Count > 0)
         {
             _overviewTree.BeginUpdate();
-            _overviewTree.Nodes[_overviewTree.Nodes.Count - 1].Text = MarkComputingPlaceholderStopped(_overviewTree.Nodes[_overviewTree.Nodes.Count - 1].Text);
+            TryMarkTrailingComputingPlaceholderStopped(_overviewTree.Nodes);
             _overviewTree.EndUpdate();
         }
     }
@@ -231,19 +260,18 @@ partial class MainForm
         if (_treeView.Nodes.Count > 0)
         {
             TreeNode root = _treeView.Nodes[0];
-            if (root.Nodes.Count > 0 && IsComputingPlaceholderText(root.Nodes[root.Nodes.Count - 1].Text))
+            if (root.Nodes.Count > 0)
             {
                 _treeView.BeginUpdate();
-                root.Nodes.RemoveAt(root.Nodes.Count - 1);
+                TryRemoveTrailingComputingPlaceholder(root.Nodes);
                 _treeView.EndUpdate();
             }
         }
 
-        if (_overviewTree.Nodes.Count > 0
-            && IsComputingPlaceholderText(_overviewTree.Nodes[_overviewTree.Nodes.Count - 1].Text))
+        if (_overviewTree.Nodes.Count > 0)
         {
             _overviewTree.BeginUpdate();
-            _overviewTree.Nodes.RemoveAt(_overviewTree.Nodes.Count - 1);
+            TryRemoveTrailingComputingPlaceholder(_overviewTree.Nodes);
             _overviewTree.EndUpdate();
         }
     }
@@ -258,6 +286,38 @@ partial class MainForm
         => details
             .Replace("next stage in progress", "next stage not run (stopped)")
             .Replace("edge-compact stage in progress", "edge-compact stage not run (stopped)");
+
+    // Before the first stage returns a real plan, show an explicit in-progress placeholder so the tree
+    // region is never visually empty during the initial compute.
+    private void ShowInitialStagePlaceholder(int n, int m, int k, bool feasibleMode)
+    {
+        string stageName = feasibleMode ? "greedy-feasible" : "step-proof";
+        string rootLabel = feasibleMode
+            ? $"n={n}, m={m}, k={k} (computing greedy-feasible stage...)"
+            : $"n={n}, m={m}, k={k} (computing step-proof stage...)";
+        string rootDetails = feasibleMode
+            ? "Greedy-feasible stage in progress."
+            : "Step-proof stage in progress.";
+
+        _treeView.BeginUpdate();
+        _treeView.Nodes.Clear();
+        var root = new TreeNode(rootLabel)
+        {
+            Tag = rootDetails,
+            NodeFont = new Font(_treeView.Font, FontStyle.Bold),
+            ForeColor = _palette.ForeColor,
+        };
+        root.Nodes.Add(CreateComputingPlaceholderNode(stageName));
+        _treeView.Nodes.Add(root);
+        root.Expand();
+        _treeView.EndUpdate();
+        _treeView.SelectedNode = root;
+
+        _overviewTree.BeginUpdate();
+        _overviewTree.Nodes.Clear();
+        _overviewTree.Nodes.Add(BuildOverviewNoteNode(FormatComputingPlaceholderText(stageName)));
+        _overviewTree.EndUpdate();
+    }
 
     private void PopulateTree(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool exactImproved, bool compactImproved)
     {
@@ -296,7 +356,7 @@ partial class MainForm
             string firstStageName = defaultPlan is null
                 ? NextProofTightenStageName(feasiblePlan, feasiblePlan.MaxStep)
                 : StrategyBuilder.FormatEdgeCompactStageName(feasiblePlan.MaxStep);
-            root.Nodes.Add(new TreeNode(firstStageName + ComputingSuffix) { ForeColor = _palette.MutedForeColor });
+            root.Nodes.Add(CreateComputingPlaceholderNode(firstStageName));
         }
         else if (compactImproved)
             root.Nodes.Add(CreatePlanTreeRoot(StrategyBuilder.FormatEdgeCompactStageName(compactPlan.MaxStep), compactPlan, "compact", compactPlan.Elapsed));
@@ -460,17 +520,15 @@ partial class MainForm
             : stage.IsTightened
                 ? NextProofTightenStageName(_feasiblePlan, stage.Plan!.MaxStep)
             : StrategyBuilder.FormatEdgeCompactStageName(_feasiblePlan.MaxStep); // Phase A ended (proven-infeasible/incomplete); only the edge-compaction pass remains
-        string? probeComputingLabel = nextStageName is null ? null : nextStageName + ComputingSuffix;
 
         _treeView.BeginUpdate();
         TreeNode root = _treeView.Nodes[0];
         // Replace the trailing in-progress placeholder (the initial second-stage slot, or the previous
         // probe's "proof-tighten<=N: computing..." note) with the landed stage.
-        if (root.Nodes.Count > 1 && IsComputingPlaceholderText(root.Nodes[root.Nodes.Count - 1].Text))
-            root.Nodes.RemoveAt(root.Nodes.Count - 1);
+        TryRemoveTrailingComputingPlaceholder(root.Nodes);
         root.Nodes.Add(BuildStageTreeNode(stage, scope, improved));
-        if (probeComputingLabel is not null)
-            root.Nodes.Add(new TreeNode(probeComputingLabel) { ForeColor = _palette.MutedForeColor });
+        if (nextStageName is not null)
+            root.Nodes.Add(CreateComputingPlaceholderNode(nextStageName));
 
         if (improved)
             _compactPlan = stage.Plan;
@@ -486,12 +544,10 @@ partial class MainForm
         _treeView.EndUpdate();
 
         _overviewTree.BeginUpdate();
-        if (_overviewTree.Nodes.Count > 0
-            && IsComputingPlaceholderText(_overviewTree.Nodes[_overviewTree.Nodes.Count - 1].Text))
-            _overviewTree.Nodes.RemoveAt(_overviewTree.Nodes.Count - 1);
+        TryRemoveTrailingComputingPlaceholder(_overviewTree.Nodes);
         _overviewTree.Nodes.Add(BuildStageOverviewNode(stage, scope, improved));
-        if (probeComputingLabel is not null)
-            _overviewTree.Nodes.Add(BuildOverviewNoteNode(probeComputingLabel));
+        if (nextStageName is not null)
+            _overviewTree.Nodes.Add(BuildOverviewNoteNode(FormatComputingPlaceholderText(nextStageName)));
         _overviewTree.EndUpdate();
 
         // Reset the per-stage clock so the progress panel times the upcoming probe from zero, and label
