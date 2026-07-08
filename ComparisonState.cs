@@ -478,6 +478,9 @@ class ComparisonState
     {
         var labels = (int[])colors.Clone();
         var perm = new int[a];
+        var nextLabels = new int[a];
+        int maxWidth = 1 + (4 * a);
+        var sig = new int[a * maxWidth];
 
         bool changed;
         do
@@ -489,7 +492,7 @@ class ComparisonState
             classCount++;
 
             int width = 1 + 2 * classCount;
-            var sig = new int[a * width];
+                Array.Clear(sig, 0, a * width);
             for (int i = 0; i < a; i++)
             {
                 int baseIdx = i * width;
@@ -527,7 +530,6 @@ class ComparisonState
                 perm[y + 1] = keyPos;
             }
 
-            var nextLabels = new int[a];
             int color = 0;
             for (int r = 0; r < a; r++)
             {
@@ -546,7 +548,12 @@ class ComparisonState
                 }
             }
 
-            labels = nextLabels;
+            if (changed)
+            {
+                var tmp = labels;
+                labels = nextLabels;
+                nextLabels = tmp;
+            }
         }
         while (changed);
 
