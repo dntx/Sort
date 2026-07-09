@@ -629,7 +629,7 @@ public sealed class StrategyRegressionTests
 
         var depthIndex = StrategyDepthIndex.Build(plan.Root);
 
-        // The root's subtree height (references not followed) equals the reported max step.
+        // The root's displayed subtree height is reference-aware and must match the reported max step.
         Assert.Equal(plan.MaxStep, depthIndex.SubtreeMaxStep(plan.Root));
 
         StrategyNode referenceTarget = StrategyTestHelpers.FollowBranchPath(
@@ -658,6 +658,7 @@ public sealed class StrategyRegressionTests
         Assert.Equal(expectedRemaining, remaining);
 
         string rendered = StrategyTextRenderer.Render(plan);
+        Assert.Contains($"S{plan.Root.StateId} [step {plan.Root.Step}/{plan.MaxStep}] sort(", rendered);
         Assert.Contains($"→S{referenceTarget.StateId} {StrategyTextRenderer.FormatRemainingSteps(expectedRemaining)}", rendered);
     }
 
