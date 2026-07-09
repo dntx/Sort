@@ -1,6 +1,8 @@
 param(
     [int]$WarmupRuns = 1,
     [int]$MeasuredRuns = 5,
+    [string]$CaseSpecs = "20,3,6;22,3,6;24,3,6;16,5,5",
+    [int]$PerRunTimeoutSeconds = 0,
     [switch]$AsCsv,
     [string]$CsvPath = "",
     [string]$BaselineCsvPath = "",
@@ -18,6 +20,9 @@ if ($WarmupRuns -lt 0) {
 }
 if ($MeasuredRuns -lt 1) {
     throw "MeasuredRuns must be >= 1."
+}
+if ($PerRunTimeoutSeconds -lt 0) {
+    throw "PerRunTimeoutSeconds must be >= 0."
 }
 if ($RegressionTolerancePercent -lt 0) {
     throw "RegressionTolerancePercent must be >= 0."
@@ -38,7 +43,7 @@ if ($BaselineOnly -and [string]::IsNullOrWhiteSpace($BaselineOutputPath)) {
 function Get-Median {
     param([double[]]$Values)
 
-    $sorted = $Values | Sort-Object
+    $sorted = @(@($Values) | Sort-Object)
     $n = $sorted.Count
     if ($n % 2 -eq 1) {
         return [double]$sorted[[int]($n / 2)]
@@ -51,10 +56,38 @@ function Invoke-CaseRun {
     param(
         [int]$N,
         [int]$M,
-        [int]$K
+        [int]$K,
+        [int]$TimeoutSeconds = 0
     )
 
-    $cmdOutput = dotnet run --project .\TopKFinder.csproj -- $N $M $K --mode greedy --stage 1 2>&1 | Out-String
+    $stdoutFile = [System.IO.Path]::GetTempFileName()
+    $stderrFile = [System.IO.Path]::GetTempFileName()
+    try {
+        $process = Start-Process -FilePath dotnet -ArgumentList @(
+            'run',
+            '--project',
+            '.\TopKFinder.csproj',
+            '--',
+            $N,
+            $M,
+            $K,
+            '--mode',
+            'greedy',
+            '--stage',
+            '1'
+        ) -NoNewWindow -PassThru -RedirectStandardOutput $stdoutFile -RedirectStandardError $stderrFile
+
+        $timeoutMs = if ($TimeoutSeconds -gt 0) { $TimeoutSeconds * 1000 } else { [int]::MaxValue }
+        if (-not $process.WaitForExit($timeoutMs)) {
+            try { $process.Kill() } catch { }
+            throw "Timed out after $TimeoutSeconds seconds for case ($N,$M,$K)."
+        }
+
+        $cmdOutput = (Get-Content -Path $stdoutFile -Raw) + (Get-Content -Path $stderrFile -Raw)
+    }
+    finally {
+        Remove-Item $stdoutFile, $stderrFile -ErrorAction SilentlyContinue
+    }
 
     $stageMatch = [regex]::Match($cmdOutput, 'stage greedy-feasible: steps=(\d+), edges=(\d+) \(([0-9.]+)s\)')
     $stepsMatch = [regex]::Match($cmdOutput, 'worst-case steps =\s*(\d+)')
@@ -107,25 +140,44 @@ function Convert-ToIntInvariant {
         [System.Globalization.CultureInfo]::InvariantCulture)
 }
 
-$cases = @(
-    @{ N = 20; M = 3; K = 6 },
-    @{ N = 22; M = 3; K = 6 },
-    @{ N = 24; M = 3; K = 6 },
-    @{ N = 16; M = 5; K = 5 }
-)
+function Parse-Cases {
+    param([string]$CaseText)
+
+    $parsed = @()
+    foreach ($item in $CaseText -split ';') {
+        if ([string]::IsNullOrWhiteSpace($item)) {
+            continue
+        }
+
+        $parts = $item.Split(',')
+        if ($parts.Count -ne 3) {
+            throw "Invalid case '$item'. Expected format n,m,k."
+        }
+
+        $parsed += [pscustomobject]@{
+            N = [int]$parts[0].Trim()
+            M = [int]$parts[1].Trim()
+            K = [int]$parts[2].Trim()
+        }
+    }
+
+    return $parsed
+}
+
+$caseList = Parse-Cases -CaseText $CaseSpecs
 
 Write-Host "Benchmarking greedy stage 1 (median across runs)" -ForegroundColor Cyan
 Write-Host "WarmupRuns=$WarmupRuns MeasuredRuns=$MeasuredRuns" -ForegroundColor Cyan
 
 $results = New-Object System.Collections.Generic.List[object]
 
-foreach ($case in $cases) {
+foreach ($case in $caseList) {
     $n = [int]$case.N
     $m = [int]$case.M
     $k = [int]$case.K
 
     for ($i = 0; $i -lt $WarmupRuns; $i++) {
-        [void](Invoke-CaseRun -N $n -M $m -K $k)
+        [void](Invoke-CaseRun -N $n -M $m -K $k -TimeoutSeconds $PerRunTimeoutSeconds)
     }
 
     $sampleTimes = New-Object System.Collections.Generic.List[double]
@@ -134,7 +186,7 @@ foreach ($case in $cases) {
     $sampleStates = New-Object System.Collections.Generic.List[int]
 
     for ($i = 0; $i -lt $MeasuredRuns; $i++) {
-        $run = Invoke-CaseRun -N $n -M $m -K $k
+        $run = Invoke-CaseRun -N $n -M $m -K $k -TimeoutSeconds $PerRunTimeoutSeconds
         $sampleTimes.Add($run.Seconds)
         $sampleSteps.Add($run.Steps)
         $sampleEdges.Add($run.Edges)
