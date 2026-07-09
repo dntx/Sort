@@ -238,6 +238,10 @@ partial class StrategyBuilder
             _compactFeasibilityOnly = false;
         }
 
+        // Phase B uses a different objective (min-edge cost) than Phase A feasibility probes
+        // (steps-as-cost sentinel). Do not reuse Phase A compact caches here.
+        ResetCompactState();
+
         // Phase B: one edge-compaction pass at the determined step S. Both the direct probe and the
         // (should-not-happen) fall back produce a plan, so this ALWAYS emits exactly one edge-compact
         // stage -- the strong-output contract holds for Phase B just as for the Phase A loop.
@@ -356,7 +360,18 @@ partial class StrategyBuilder
     {
         ComparisonState.SetThreadCancellationToken(_cancellationToken);
         ResetPerBuildTransientState();
-        ResetCompactState();
+        // Reuse feasibility-only compact caches across tightening probes: memo keys include budget,
+        // so a tighter probe can safely reuse any already-solved descendants at the same budget while
+        // still re-solving the root at the new ceiling.
+        if (_compactFeasibilityOnly)
+        {
+            _phase1bSolved = false;
+            _compactRootCost = int.MaxValue;
+        }
+        else
+        {
+            ResetCompactState();
+        }
         _compactEnumerationCapped = false;
         _lastProbeEnumerationCapped = false;
 

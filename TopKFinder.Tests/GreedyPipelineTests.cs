@@ -272,6 +272,33 @@ public class GreedyPipelineTests
         Assert.Equal(probe.Plan!.MaxStep, firstTighten.Value.Plan!.MaxStep);
     }
 
+    // Stats-only lock for the proof-tighten cache reuse optimization: probing the SAME ceiling twice
+    // on one builder should let the second probe hit the persisted compact memo and avoid re-solving
+    // compact states. This guards the cross-probe reuse path without relying on wall-time.
+    [Fact]
+    public void ProofTighten_RepeatedSameBudgetProbe_ReusesCompactMemo_20_4_6()
+    {
+        var builder = new StrategyBuilder(20, 4, 6);
+        int budget = builder.BuildGreedyFeasibleStage().MaxStep - 1;
+
+        StageResult first = builder.BuildProofTightenStage(budget);
+        StageResult second = builder.BuildProofTightenStage(budget);
+
+        Assert.Equal(StageOutcome.Tightened, first.Outcome);
+        Assert.Equal(StageOutcome.Tightened, second.Outcome);
+        Assert.NotNull(first.Plan);
+        Assert.NotNull(second.Plan);
+        Assert.Equal(first.Plan!.MaxStep, second.Plan!.MaxStep);
+
+        int firstSolved = first.Plan.SearchStatistics.CompactStatesSolved;
+        int secondSolved = second.Plan.SearchStatistics.CompactStatesSolved;
+
+        Assert.True(firstSolved > 0,
+            $"first probe should solve compact states, got {firstSolved}");
+        Assert.True(secondSolved < firstSolved,
+            $"expected second same-budget probe to reuse compact memo: first solved {firstSolved}, second solved {secondSolved}");
+    }
+
     // Item-3 strong-output lock for Phase B: the final min-edge pass ALWAYS emits exactly one
     // Completed stage that carries the returned plan (previously the should-not-happen fall back
     // returned a plan without emitting any stage). Completed is terminal and is not a tightening.
