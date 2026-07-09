@@ -340,6 +340,9 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
 > 再累加剩余步数，而不是把它当 0 深度叶子——否则当某条最深路径以 Reference 收尾、且其目标在更浅处首次展开时，`MaxStep`
 > 会**少算**真实最坏步数（例如 greedy-feasible `6,2,2`：真实 7、少算成 6，使可行上界假性低于最优）。这条对所有计划
 > （exact / compact / feasible）都成立，回归见 `MaxStepReferenceDepthTests`。
+>
+> 同一口径也用于展示层：树节点标题 `Sx [step a/b]` 的 `b` 现在按 Reference 递归解析计算，
+> 与 `MaxStep` 保持一致，避免出现根节点显示步数小于阶段 `max-step` 的不一致。
 
 > **显示树结构异常时会 fail-fast**：`Reference` 本应只指向一个已展开的无环子树；若因显示 key 复用/重标号等异常导致出现
 > `Reference` 解析环（例如 A 的引用链又回到 A），`GetMaxStep` 会抛 `InvalidOperationException`（malformed strategy tree），
