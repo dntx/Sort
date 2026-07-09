@@ -4,6 +4,7 @@ using System.Collections.Generic;
 sealed class StrategyDepthIndex
 {
     private readonly Dictionary<StrategyNode, int> _subtreeMaxStep = new(ReferenceEqualityComparer.Instance);
+    private readonly Dictionary<StrategyNode, int> _remainingSorts = new(ReferenceEqualityComparer.Instance);
     private readonly Dictionary<int, StrategyNode> _referenceTargets = new();
 
     public static StrategyDepthIndex Build(StrategyNode root)
@@ -22,7 +23,9 @@ sealed class StrategyDepthIndex
     {
         if (_referenceTargets.TryGetValue(stateId, out StrategyNode? target))
         {
-            remainingSteps = _subtreeMaxStep[target] - (target.Step ?? 0);
+            remainingSteps = _remainingSorts.TryGetValue(target, out int remaining)
+                ? remaining
+                : 0;
             return true;
         }
 
@@ -52,28 +55,38 @@ sealed class StrategyDepthIndex
                 $"Strategy tree is malformed: reference cycle detected at state S{node.StateId}. " +
                 "A valid strategy tree's reference graph must be acyclic.");
 
-        int max;
+        int remaining;
         switch (node.Kind)
         {
             case StrategyNodeKind.Terminal:
-                max = 0;
+                remaining = 0;
                 break;
             case StrategyNodeKind.Reference:
-                max = _referenceTargets.TryGetValue(node.StateId, out StrategyNode? target)
+                remaining = _referenceTargets.TryGetValue(node.StateId, out StrategyNode? target)
                     ? ResolveSubtreeMaxStep(target, memo, visiting)
                     : 0;
                 break;
             default:
-                max = node.Step ?? 0;
+                if (node.Branches.Count == 0)
+                {
+                    remaining = 1;
+                    break;
+                }
+
+                int maxChild = 0;
                 foreach (var branch in node.Branches)
-                    max = Math.Max(max, ResolveSubtreeMaxStep(branch.Next, memo, visiting));
+                    maxChild = Math.Max(maxChild, ResolveSubtreeMaxStep(branch.Next, memo, visiting));
+                remaining = 1 + maxChild;
                 break;
         }
 
         visiting.Remove(node);
-        memo[node] = max;
+        memo[node] = remaining;
         if (node.Kind == StrategyNodeKind.Decision)
-            _subtreeMaxStep[node] = max;
-        return max;
+        {
+            _remainingSorts[node] = remaining;
+            _subtreeMaxStep[node] = Math.Max(node.Step ?? 0, (node.Step ?? 0) - 1 + remaining);
+        }
+        return remaining;
     }
 }

@@ -31,6 +31,23 @@ public class MaxStepReferenceDepthTests
         Assert.Equal(5, StrategyPlan.GetMaxStep(s1));
     }
 
+    [Fact]
+    public void DepthIndex_IsReferenceResolvedForDisplayedStepDenominator()
+    {
+        StrategyNode s3 = FinalChoice(3, step: 3);
+        StrategyNode s2 = Decision(2, step: 2, Branch(s3));
+        StrategyNode s5 = Decision(5, step: 3, Branch(StrategyNode.Reference(2)));
+        StrategyNode s4 = Decision(4, step: 2, Branch(s5));
+        StrategyNode s1 = Decision(1, step: 1, Branch(s2), Branch(s4));
+
+        StrategyDepthIndex index = StrategyDepthIndex.Build(s1);
+
+        // Root denominator should match the true resolved worst-case depth, not the max explicit step label.
+        Assert.Equal(5, index.SubtreeMaxStep(s1));
+        Assert.True(index.TryGetReferenceRemaining(2, out int remaining));
+        Assert.Equal(2, remaining);
+    }
+
     // A reference that resolves back onto its own resolution path (here S1 references S1) is a
     // malformed, non-terminating tree; MaxStep must surface it as an error rather than a silent value.
     [Fact]
