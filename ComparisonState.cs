@@ -1,8 +1,8 @@
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using System.Threading;
+using System.Collections.Generic;
 
 readonly struct IntSequenceKey : IEquatable<IntSequenceKey>, IComparable<IntSequenceKey>
 {
@@ -173,6 +173,24 @@ class ComparisonState
     private Dictionary<ulong, IntSequenceKey>? _displayCanonicalKeyCache;
     private Dictionary<ulong, IntSequenceKey>? _groupCanonicalKeyCache;
 
+    private sealed class CanonicalizationWorkspace
+    {
+        public CanonicalizationWorkspace(int vertexCount)
+        {
+            Labels = new int[vertexCount];
+            NextLabels = new int[vertexCount];
+            Perm = new int[vertexCount];
+            Individualized = new int[vertexCount];
+            Signature = new int[vertexCount * (1 + 4 * vertexCount)];
+        }
+
+        public int[] Labels { get; }
+        public int[] NextLabels { get; }
+        public int[] Perm { get; }
+        public int[] Individualized { get; }
+        public int[] Signature { get; }
+    }
+
     internal static void SetThreadCancellationToken(CancellationToken cancellationToken)
     {
         _threadCancellationToken = cancellationToken;
@@ -235,8 +253,11 @@ class ComparisonState
         ulong newAncestorsForLesser = (_ancestors[greater] | greaterBit) & ~_ancestors[lesser] & _allMask;
         if (newAncestorsForLesser != 0)
         {
-            foreach (int below in EnumerateBits(_descendants[lesser] | lesserBit))
+            ulong belowMask = _descendants[lesser] | lesserBit;
+            while (belowMask != 0)
             {
+                int below = BitOperations.TrailingZeroCount(belowMask);
+                belowMask &= belowMask - 1;
                 ThrowIfThreadCancellationRequested();
                 _ancestors[below] |= newAncestorsForLesser;
             }
@@ -245,8 +266,11 @@ class ComparisonState
         ulong newDescendantsForGreater = (_descendants[lesser] | lesserBit) & ~_descendants[greater] & _allMask;
         if (newDescendantsForGreater != 0)
         {
-            foreach (int above in EnumerateBits(_ancestors[greater] | greaterBit))
+            ulong aboveMask = _ancestors[greater] | greaterBit;
+            while (aboveMask != 0)
             {
+                int above = BitOperations.TrailingZeroCount(aboveMask);
+                aboveMask &= aboveMask - 1;
                 ThrowIfThreadCancellationRequested();
                 _descendants[above] |= newDescendantsForGreater;
             }
@@ -270,8 +294,11 @@ class ComparisonState
     {
         ThrowIfThreadCancellationRequested();
         ulong removedMask = 0;
-        foreach (int item in EnumerateBits(ActiveMask))
+        ulong itemMask = ActiveMask;
+        while (itemMask != 0)
         {
+            int item = BitOperations.TrailingZeroCount(itemMask);
+            itemMask &= itemMask - 1;
             ThrowIfThreadCancellationRequested();
             if (BitOperations.PopCount(_ancestors[item] & ActiveMask) >= k)
                 removedMask |= Bit(item);
@@ -425,7 +452,8 @@ class ComparisonState
         }
 
         var seed = new int[a];
-        int[] refined = RefineCanonicalColoring(a, anc, desc, seed);
+        var workspace = new CanonicalizationWorkspace(a);
+        int[] refined = RefineCanonicalColoring(a, anc, desc, seed, workspace);
         for (int p = 0; p < a; p++)
         {
             ThrowIfThreadCancellationRequested();
@@ -505,17 +533,23 @@ class ComparisonState
             seed[p] = s;
         }
 
-        var refined = RefineCanonicalColoring(a, anc, desc, seed);
+        var workspace = new CanonicalizationWorkspace(a);
+        var refined = RefineCanonicalColoring(a, anc, desc, seed, workspace);
 
         int[]? best = null;
-        CanonicalizeRecursive(a, anc, desc, seed, refined, ref best);
+        CanonicalizeRecursive(a, anc, desc, seed, refined, workspace, ref best);
         return new IntSequenceKey(best!);
     }
 
     // Refines a coloring to the 1-WL fixed point using ancestor/descendant color multisets.
-    private static int[] RefineCanonicalColoring(int a, ulong[] anc, ulong[] desc, int[] colors)
+    private static int[] RefineCanonicalColoring(int a, ulong[] anc, ulong[] desc, int[] colors, CanonicalizationWorkspace workspace)
     {
-        var labels = (int[])colors.Clone();
+        var labels = workspace.Labels;
+        var nextLabels = workspace.NextLabels;
+        var perm = workspace.Perm;
+        var sig = workspace.Signature;
+
+        Array.Copy(colors, labels, a);
 
         int maxLabel = 0;
         for (int i = 0; i < a; i++)
@@ -539,11 +573,6 @@ class ComparisonState
             for (int i = 0; i < a; i++)
                 labels[i] = map[labels[i]];
         }
-
-        int[] perm = EnsureScratch(ref _scratchPerm, a);
-        int[] nextLabels = EnsureScratch(ref _scratchNextLabels, a);
-        int maxWidth = 1 + (4 * a);
-        int[] sig = EnsureScratch(ref _scratchSig, a * maxWidth);
 
         bool changed;
         do
@@ -627,7 +656,7 @@ class ComparisonState
         }
         while (changed);
 
-        return labels;
+        return (int[])labels.Clone();
     }
 
     private static int CompareCanonicalSignatures(int[] sig, int posLeft, int posRight, int width)
@@ -644,7 +673,7 @@ class ComparisonState
         return 0;
     }
 
-    private static void CanonicalizeRecursive(int a, ulong[] anc, ulong[] desc, int[] seed, int[] colors, ref int[]? best)
+    private static void CanonicalizeRecursive(int a, ulong[] anc, ulong[] desc, int[] seed, int[] colors, CanonicalizationWorkspace workspace, ref int[]? best)
     {
         ThrowIfThreadCancellationRequested();
         int classCount = 0;
@@ -679,6 +708,10 @@ class ComparisonState
             return;
         }
 
+        // Reuse one individualized buffer for all branches in this recursive cell.
+        for (int i = 0; i < a; i++)
+            workspace.Individualized[i] = 2 * colors[i] + (colors[i] == targetColor ? 1 : 0);
+
         for (int p = 0; p < a; p++)
         {
             ThrowIfThreadCancellationRequested();
@@ -707,12 +740,10 @@ class ComparisonState
 
             // Individualize p: it sorts ahead of its former cell-mates; all other cells keep
             // their relative order. Re-refine, then recurse.
-            var individualized = new int[a];
-            for (int i = 0; i < a; i++)
-                individualized[i] = 2 * colors[i] + (colors[i] == targetColor && i != p ? 1 : 0);
-
-            var refined = RefineCanonicalColoring(a, anc, desc, individualized);
-            CanonicalizeRecursive(a, anc, desc, seed, refined, ref best);
+            workspace.Individualized[p] = 2 * colors[p];
+            var refined = RefineCanonicalColoring(a, anc, desc, workspace.Individualized, workspace);
+            CanonicalizeRecursive(a, anc, desc, seed, refined, workspace, ref best);
+            workspace.Individualized[p] = 2 * colors[p] + 1;
         }
     }
 
@@ -1067,8 +1098,11 @@ class ComparisonState
     {
         var classes = new List<List<int>>();
         var keyToIndex = new Dictionary<(ulong Ancestors, ulong Descendants), int>();
-        foreach (int item in EnumerateBits(ActiveMask))
+        ulong itemMask = ActiveMask;
+        while (itemMask != 0)
         {
+            int item = BitOperations.TrailingZeroCount(itemMask);
+            itemMask &= itemMask - 1;
             var key = (_ancestors[item] & ActiveMask, _descendants[item] & ActiveMask);
             if (!keyToIndex.TryGetValue(key, out int index))
             {
@@ -1085,7 +1119,15 @@ class ComparisonState
 
     public static List<int> MaskToOrderedList(ulong mask)
     {
-        return EnumerateBits(mask).ToList();
+        var items = new List<int>(BitOperations.PopCount(mask));
+        while (mask != 0)
+        {
+            int item = BitOperations.TrailingZeroCount(mask);
+            mask &= mask - 1;
+            items.Add(item);
+        }
+
+        return items;
     }
 
     // Builds a relabeling from this state's items (the referenced/original numbering) onto the

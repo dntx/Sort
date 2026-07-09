@@ -351,6 +351,42 @@ public sealed class ComparisonStateTests
         }
     }
 
+    // Regression guard for the canonicalization workspace reuse change: a batch of branchy but
+    // structurally distinct states should stay within a modest allocation budget when computing
+    // canonical keys. Before the workspace reuse, the recursive canonicalizer allocated scratch
+    // arrays repeatedly inside the search tree; this test fails if that behavior comes back.
+    [Fact]
+    public void CanonicalKey_BranchyStates_StayUnderAllocationBudget()
+    {
+        var warmup = BuildBranchyState(0, 2, 3);
+        _ = warmup.GetCanonicalKey();
+
+        var states = new List<ComparisonState>
+        {
+            BuildBranchyState(2, 3, 4),
+            BuildBranchyState(2, 3, 5),
+            BuildBranchyState(2, 3, 6),
+            BuildBranchyState(2, 4, 5),
+            BuildBranchyState(2, 4, 6),
+            BuildBranchyState(2, 5, 6),
+            BuildBranchyState(1, 3, 4),
+            BuildBranchyState(1, 3, 5),
+        };
+
+        GC.Collect();
+        GC.WaitForPendingFinalizers();
+        GC.Collect();
+
+        long before = GC.GetAllocatedBytesForCurrentThread();
+        foreach (ComparisonState state in states)
+            _ = state.GetCanonicalKey();
+        long allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        Assert.True(
+            allocated <= 1_500_000,
+            $"expected branchy canonicalization batch to stay under 1.5 MB of allocations, got {allocated:n0} bytes");
+    }
+
     private static ComparisonState NearChainWithFreeItems()
     {
         var state = new ComparisonState(5);
@@ -365,5 +401,14 @@ public sealed class ComparisonStateTests
         foreach (int item in items)
             mask |= 1UL << item;
         return mask;
+    }
+
+    private static ComparisonState BuildBranchyState(int first, int second, int third)
+    {
+        var state = new ComparisonState(7);
+        state.AddRelation(0, 1);
+        state.AddRelation(first, second);
+        state.AddRelation(second, third);
+        return state;
     }
 }

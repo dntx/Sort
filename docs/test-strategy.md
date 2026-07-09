@@ -132,11 +132,20 @@ compact 是一个跑在 phase 1 之上的**二级 DP**（`StrategyBuilder.Compac
 - 标记结构量是否在重复运行中保持稳定（`StableStructure`）；
 - 可选导出 CSV 便于做 PR 前后对比。
 
+脚本支持通过参数定制 case 集合与回归门槛：
+
+- `-CaseSpecs`: 用 `n,m,k;n,m,k` 的形式指定 case 集合，便于把慢 band 单独拿出来测。
+- `-PerRunTimeoutSeconds`: 给每个 case 的单次运行设置硬超时，避免慢例把整批基准拖死。
+- `-BaselineCsvPath`: 指定要对比的基线 CSV；不传时可以走仓库默认基线文件。
+- `-BaselineOnly`: 只导出当前结果，不做 compare，适合先量 baseline 再锁定。
+- `-RegressionTolerancePercent`: 允许的时间回退容忍度；配合 `-EnforceBaseline` 可让脚本在本地直接失败。
+
 示例：
 
 ```powershell
 pwsh ./scripts/benchmark-greedy-stage1.ps1
 pwsh ./scripts/benchmark-greedy-stage1.ps1 -WarmupRuns 1 -MeasuredRuns 7 -AsCsv
+pwsh ./scripts/benchmark-greedy-stage1.ps1 -CaseSpecs "24,7,7;25,7,7;26,7,7;27,7,7;28,7,6" -PerRunTimeoutSeconds 120
 pwsh ./scripts/benchmark-greedy-stage1.ps1 -BaselineOnly
 pwsh ./scripts/benchmark-greedy-stage1.ps1 -BaselineCsvPath ./scripts/benchmark-greedy-stage1-baseline.csv
 pwsh ./scripts/benchmark-greedy-stage1.ps1 -BaselineCsvPath ./scripts/benchmark-greedy-stage1-baseline.csv -RegressionTolerancePercent 3 -EnforceBaseline
