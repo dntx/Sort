@@ -294,25 +294,59 @@ partial class StrategyBuilder
     // tree agree, so that case is an internal invariant violation and throws rather than being reported.
     private (StageOutcome Outcome, StrategyPlan? Plan) ProbeAndClassify(int budget)
     {
-        StrategyPlan? candidate = ProbeFeasibleCompact(budget);
-        if (candidate is null)
+        int configuredCap = CompactGreedyCandidateCap;
+        int attemptCap = NormalizeGreedyCandidateCap(configuredCap);
+        try
         {
-            return (_lastProbeEnumerationCapped
-                ? StageOutcome.Incomplete
-                : StageOutcome.ProvenInfeasible, null);
+            while (true)
+            {
+                // Keep one user-facing knob (CompactGreedyCandidateCap) as the starting point, but
+                // internally escalate capped incomplete probes on the same budget until they either
+                // resolve conclusively or reach full enumeration.
+                CompactGreedyCandidateCap = attemptCap;
+
+                StrategyPlan? candidate = ProbeFeasibleCompact(budget);
+                if (candidate is null)
+                {
+                    if (!_lastProbeEnumerationCapped)
+                        return (StageOutcome.ProvenInfeasible, null);
+
+                    if (attemptCap == int.MaxValue)
+                        return (StageOutcome.Incomplete, null);
+
+                    attemptCap = NextGreedyCandidateCap(attemptCap);
+                    continue;
+                }
+
+                // A complete probe that materializes a plan must honor the ceiling: the feasibility proxy proves
+                // a within-budget strategy exists and, with the tightest-budget pattern kept, materialization
+                // renders exactly that strategy. An overshoot means the proxy diverged from materialization -- a
+                // broken invariant we surface loudly instead of silently reporting an over-budget plan.
+                if (candidate.MaxStep > budget)
+                    throw new InvalidOperationException(
+                        $"Compact feasibility probe at budget {budget} materialized a plan whose realized MaxStep " +
+                        $"{candidate.MaxStep} overshoots the ceiling. The tighter-budget-keep invariant should make " +
+                        $"this unreachable; an overshoot indicates the feasibility proxy diverged from materialization.");
+
+                return (StageOutcome.Tightened, candidate);
+            }
         }
+        finally
+        {
+            CompactGreedyCandidateCap = configuredCap;
+        }
+    }
 
-        // A complete probe that materializes a plan must honor the ceiling: the feasibility proxy proves
-        // a within-budget strategy exists and, with the tightest-budget pattern kept, materialization
-        // renders exactly that strategy. An overshoot means the proxy diverged from materialization -- a
-        // broken invariant we surface loudly instead of silently reporting an over-budget plan.
-        if (candidate.MaxStep > budget)
-            throw new InvalidOperationException(
-                $"Compact feasibility probe at budget {budget} materialized a plan whose realized MaxStep " +
-                $"{candidate.MaxStep} overshoots the ceiling. The tighter-budget-keep invariant should make " +
-                $"this unreachable; an overshoot indicates the feasibility proxy diverged from materialization.");
+    private static int NormalizeGreedyCandidateCap(int cap)
+        => cap <= 0 ? 1 : cap;
 
-        return (StageOutcome.Tightened, candidate);
+    private static int NextGreedyCandidateCap(int current)
+    {
+        if (current >= int.MaxValue)
+            return int.MaxValue;
+
+        long grown = (long)current * 4L;
+        return grown >= int.MaxValue ? int.MaxValue : (int)grown;
     }
 
     // Runs a single compact pass at a fixed root ceiling, returning the materialized plan or null if the

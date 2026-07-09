@@ -413,12 +413,12 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     **⚠️ 可靠性（soundness）前提**：上述「不可行 ⇒ 证明最优」**仅在可行性探测是完备预言机时才是严格证明**。而 feasibility-only 探测的
     `SolveBudgetFeasibility` 每个状态最多枚举 `CompactGreedyCandidateCap` 个分组（不完备的带帽贪心）；一旦帽子**真的截断**了
     某状态的枚举，「没有分组塞得进预算」就**并非**「不存在 ≤N 的策略」的证明——某个没被试到的分组可能其实可行。因此
-    `ProbeFeasibleCompact` 在判负（根 `SolveCompact` 返回 `int.MaxValue`）时记录本趟是否发生过截断
-    （`_compactEnumerationCapped`，由 `GenerateClassRepresentatives` 在因帽子提前返回时置位）：**从未截断**才发出真正的
-    `NoSolution`、提升 `L`、闭合挤压；**发生过截断**则改发 `Incomplete` 终止阶段——像超时一样保留 incumbent、**不**提升 `L`、
-    **不**声称已证明最优（挤压保持 `L <= max steps <= S` 开区间）。误差方向是单边保守的：截断只会导致 `Incomplete`（漏证最优），
-    绝不会假性宣称最优；incumbent 计划本身始终是合法可达的策略。实测 `12,4,4` / `13,4,4` 在默认帽子下于 `proof-tighten≤(opt-1)` 处
-    截断而报 `Incomplete`，把帽子放大到完整枚举则翻回 `NoSolution` 证明（见 `ProofTightenPlanTests`）。
+    `ProbeAndClassify` 会在同一个预算 `N` 上自动扩容重试（起始于 `CompactGreedyCandidateCap`，按固定倍率 `x4` 递增直到
+    `int.MaxValue`）：只要本轮判负且检测到截断（`_lastProbeEnumerationCapped = true`）就继续放大帽子重跑，直到得到
+    **未截断**的结论。于是常见场景会从“帽子截断的未定”收敛到真正的 `NoSolution`（可提升 `L`、闭合挤压）或 `Tightened`。
+    只有在已经扩到 `int.MaxValue` 仍保持截断（理论极端）时才会发 `Incomplete` 终止阶段——像超时一样保留 incumbent、**不**提升 `L`、
+    **不**声称已证明最优（挤压保持 `L <= max steps <= S` 开区间）。误差方向仍是单边保守：截断最多导致漏证最优，绝不会假性宣称最优；
+    incumbent 计划本身始终是合法可达策略。
     **无时间上限**：收紧循环只在触达 `L`、证明 `NoSolution`、遇到 `Incomplete`、候选未变优、或**用户取消**时停止。
     早先版本设过一个「软时间预算」（`max(2000ms, 基线×4)`）让 CLI 能自行停下，但其唯一目的就是「到点停」，不如让搜索
     跑到底、由用户在等够时手动停（GUI 的 Stop / CLI 的 Ctrl+C），故已整体移除。用户取消经由 `ThrowIfCancellationRequested`

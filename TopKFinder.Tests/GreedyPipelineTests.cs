@@ -70,29 +70,66 @@ public class GreedyPipelineTests
             $"feasible compact step {edgeStep} was below the true optimum {optimum}");
     }
 
-    // Soundness guard for the greedy compact tightening: when the candidate cap (CompactGreedyCandidateCap)
-    // truncates a state's group enumeration, a probe that finds no feasible group has NOT proven the ceiling
-    // infeasible -- an untried group might have fit. Such a terminal stage must be reported as Incomplete
-    // (not NoSolution) and must leave the squeeze open (no proven-optimal claim). 12,4,4 exercises this: at
-    // the default cap the feasible<=4 probe truncates, so it is Incomplete; raising the cap enough to enumerate
-    // completely flips the same probe to a genuine NoSolution proof that closes the squeeze.
+    // Proof-tighten now auto-expands capped probes on the SAME budget (starting from
+    // CompactGreedyCandidateCap, then x4 until complete), so a cap-truncated inconclusive infeasibility
+    // should converge to a genuine proof when full enumeration is tractable. 12,4,4 exercises this.
     [Fact]
-    public void GreedyPipeline_CappedInfeasibility_IsIncomplete_NotProvenOptimal()
+    public void GreedyPipeline_DefaultCap_AutoExpandsToProvenInfeasible()
     {
-        StageOutcome cappedTerminal = TerminalOutcome(new StrategyBuilder(12, 4, 4), out StrategyPlan cappedPlan);
-        Assert.Equal(StageOutcome.Incomplete, cappedTerminal);
+        StageOutcome terminal = TerminalOutcome(new StrategyBuilder(12, 4, 4), out StrategyPlan plan);
+        Assert.Equal(StageOutcome.ProvenInfeasible, terminal);
         Assert.True(
-            cappedPlan.SearchStatistics.RootProvenLowerBound < cappedPlan.MaxStep,
-            "a cap-truncated (incomplete) probe must not close the squeeze to a proven optimum");
+            plan.SearchStatistics.RootProvenLowerBound == plan.MaxStep,
+            "auto-expanded capped probes should close the squeeze when infeasibility is proven");
     }
 
     [Fact]
-    public void GreedyPipeline_CompleteInfeasibility_IsProvenOptimal()
+    public void GreedyPipeline_ExplicitCompleteEnumeration_IsProvenOptimal()
     {
         var builder = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 2_000_000 };
         StageOutcome terminal = TerminalOutcome(builder, out StrategyPlan plan);
         Assert.Equal(StageOutcome.ProvenInfeasible, terminal);
         Assert.Equal(plan.MaxStep, plan.SearchStatistics.RootProvenLowerBound);
+    }
+
+    // Locks the new per-probe auto-expansion behavior: even with a tiny starting cap, a single
+    // proof-tighten probe at U-1 should internally widen caps on the same budget until it reaches a
+    // conclusive answer (Tightened or ProvenInfeasible), rather than stopping at Incomplete.
+    [Fact]
+    public void ProofTightenProbe_TinyStartingCap_AutoExpandsToConclusiveOutcome()
+    {
+        var builder = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 1 };
+        int budget = builder.BuildGreedyFeasibleStage().MaxStep - 1;
+
+        StageResult stage = builder.BuildProofTightenStage(budget);
+
+        Assert.Equal($"proof-tighten\u2264{budget}", stage.Name);
+        Assert.NotEqual(StageOutcome.Incomplete, stage.Outcome);
+        if (stage.Outcome == StageOutcome.Tightened)
+        {
+            Assert.True(stage.HasPlan);
+            Assert.True(stage.Plan!.MaxStep <= budget,
+                $"tightened probe must realize a step within budget {budget}, got {stage.Plan.MaxStep}");
+        }
+        else
+        {
+            Assert.Equal(StageOutcome.ProvenInfeasible, stage.Outcome);
+            Assert.False(stage.HasPlan);
+        }
+    }
+
+    // ProbeAndClassify temporarily overrides CompactGreedyCandidateCap while retrying higher caps.
+    // This locks the restoration contract so callers' configured cap survives each probe unchanged.
+    [Fact]
+    public void ProofTightenProbe_RestoresConfiguredCandidateCap_AfterAutoExpansion()
+    {
+        var builder = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 1 };
+        int originalCap = builder.CompactGreedyCandidateCap;
+        int budget = builder.BuildGreedyFeasibleStage().MaxStep - 1;
+
+        _ = builder.BuildProofTightenStage(budget);
+
+        Assert.Equal(originalCap, builder.CompactGreedyCandidateCap);
     }
 
     // Pins the user-facing stage-name contract emitted by RunGreedyPipeline: each downward
