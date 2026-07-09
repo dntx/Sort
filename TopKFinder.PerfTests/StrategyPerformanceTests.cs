@@ -68,20 +68,44 @@ public sealed class StrategyPerformanceTests
         Assert.True(medianMs <= 6000, $"Median elapsed regressed to {medianMs:F1} ms.");
     }
 
+    // Heavy greedy-feasible smoke check for the case that previously sat at roughly the 30-second
+    // mark. This keeps the current scratch-buffer / hot-path collection / progress-throttling gains
+    // from silently sliding back while staying loose enough for normal local variance.
+    // The single-iteration budget keeps the sentinel practical in CI and local runs.
+    [Fact]
+    public void N28M3K6_GreedyFeasibleCompletesWithinBudget()
+    {
+        double medianMs = MeasureMedianElapsedMilliseconds(
+            "StrategyBuilder.BuildGreedyFeasibleStage(28, 3, 6)",
+            iterations: 1,
+            cancellationToken => new StrategyBuilder(28, 3, 6, cancellationToken).BuildGreedyFeasibleStage());
+
+        Assert.True(medianMs <= 15000, $"Median elapsed regressed to {medianMs:F1} ms.");
+    }
+
     private static double MeasureMedianElapsedMilliseconds(int n, int m, int k, int iterations)
+        => MeasureMedianElapsedMilliseconds(
+            $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k})",
+            iterations,
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildStepProofStage());
+
+    private static double MeasureMedianElapsedMilliseconds(
+        string description,
+        int iterations,
+        Func<CancellationToken, StrategyPlan> buildPlan)
     {
         _ = TestTimeoutHelper.RunWithTimeout(
-            $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k}) warmup",
+            $"{description} warmup",
             PerfTestTimeout,
-            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildStepProofStage());
+            buildPlan);
 
         var samples = new List<double>(iterations);
         for (int i = 0; i < iterations; i++)
         {
             StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-                $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k}) iteration {i + 1}",
+                $"{description} iteration {i + 1}",
                 PerfTestTimeout,
-                cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildStepProofStage());
+                buildPlan);
             samples.Add(plan.Elapsed.TotalMilliseconds);
         }
 

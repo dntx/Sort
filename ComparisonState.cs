@@ -540,10 +540,10 @@ class ComparisonState
                 labels[i] = map[labels[i]];
         }
 
-        var perm = new int[a];
-        var nextLabels = new int[a];
+        int[] perm = EnsureScratch(ref _scratchPerm, a);
+        int[] nextLabels = EnsureScratch(ref _scratchNextLabels, a);
         int maxWidth = 1 + (4 * a);
-        var sig = new int[a * maxWidth];
+        int[] sig = EnsureScratch(ref _scratchSig, a * maxWidth);
 
         bool changed;
         do

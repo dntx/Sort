@@ -548,7 +548,7 @@ partial class StrategyBuilder
         Func<ComparisonOutcome, bool> onUsefulOutcome)
     {
         ThrowIfCancellationRequested();
-        var evaluatedStateKeys = new HashSet<SearchStateKey>();
+        var evaluatedStateKeys = new HashSet<SearchStateKey>(GetMaxOutcomesPerStep(state));
         var groupedBranches = collectMergedBranches ? new Dictionary<IntSequenceKey, MergedBranch>() : null;
         bool isUseful = false;
 
