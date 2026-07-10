@@ -404,7 +404,7 @@ public sealed class StrategyMatrixTests
         Array.Sort(values);
         int n = values.Length;
         if (n == 0)
-            return double.NaN;
+            throw new InvalidOperationException("Cannot compute median for an empty sample set.");
         return n % 2 == 1 ? values[n / 2] : (values[n / 2 - 1] + values[n / 2]) / 2.0;
     }
 
