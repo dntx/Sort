@@ -641,9 +641,10 @@ def _has_reasonable_no_test_explanation(pr_body: str) -> bool:
         return False
 
     section_text = _extract_no_test_section(raw)
+    has_explicit_no_test_section = bool(section_text)
     candidate = section_text if section_text else raw
     normalized = " ".join(candidate.lower().split())
-    if not _NO_TEST_DECLARATION_RE.search(normalized):
+    if not (has_explicit_no_test_section or _NO_TEST_DECLARATION_RE.search(normalized)):
         return False
 
     has_reason = any(hint in normalized for hint in _NO_TEST_REASON_HINTS)
