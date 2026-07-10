@@ -48,6 +48,18 @@ public class GreedyFeasibleStageTests
         Assert.True(plan.MaxStep > 0, "feasible plan should take at least one comparison");
     }
 
+    // Regression: on (20,19,19) the dualized case (20,19,1) creates a symmetric order family
+    // with multiplicity 19!, which does not fit in Int32. The displayed equivalent-order count
+    // must saturate instead of throwing OverflowException.
+    [Fact]
+    public void GreedyFeasibleStage_20_19_19_DoesNotOverflowEquivalentOrderCount()
+    {
+        StrategyPlan plan = new StrategyBuilder(20, 19, 19).BuildGreedyFeasibleStage();
+
+        Assert.True(plan.IsFeasibleUpperBound);
+        Assert.True(plan.MaxStep > 0, "feasible plan should take at least one comparison");
+    }
+
     // The plan exposes a proven lower bound (the L side of the squeeze) that never exceeds the
     // feasible upper bound U it achieves. L <= opt <= U must hold.
     [Theory]

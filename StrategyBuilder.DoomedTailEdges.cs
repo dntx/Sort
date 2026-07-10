@@ -588,7 +588,7 @@ partial class StrategyBuilder
 
         public void Add(MergedFamilyOutcome outcome)
         {
-            TotalCount += outcome.Family.Count;
+            TotalCount = SaturatingAdd(TotalCount, outcome.Family.Count);
             if (!ReferenceEquals(outcome, Representative))
                 Families.Add(outcome);
         }

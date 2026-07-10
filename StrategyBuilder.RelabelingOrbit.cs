@@ -287,7 +287,9 @@ partial class StrategyBuilder
         if (orderFamilies.Count == 0)
             return null;
 
-        int totalCount = orderFamilies.Sum(family => family.Count);
+        int totalCount = 0;
+        foreach (OrderFamilyDescriptor family in orderFamilies)
+            totalCount = SaturatingAdd(totalCount, family.Count);
         if (totalCount <= 1)
             return null;
 
