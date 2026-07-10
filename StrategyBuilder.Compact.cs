@@ -3,12 +3,6 @@ using System.Collections.Generic;
 
 partial class StrategyBuilder
 {
-    // Feasible proof-tighten pruning: for small states, ask the exact step solver whether a branch can
-    // fit the remaining budget. This is stronger than the analytic lower bound and can collapse large
-    // infeasible subtrees (notably in m=2 second-tighten probes) while staying bounded by a small-state
-    // gate so we do not pay exact-search cost on wide states.
-    private const int FeasibleExactPruneActiveCountThreshold = 12;
-
     // EXPERIMENTAL (PoC): when enabled, phase 2 reads comparison groups from a
     // "compact" pattern cache produced by a secondary two-level DP. The DP keeps the
     // optimal worst-case step count (computed by phase 1) as the primary objective and,
@@ -337,10 +331,7 @@ partial class StrategyBuilder
                 state, fixedTopMask: 0, remainingSlots, group, currentKey: key, collectMergedBranches: false,
                 onUsefulOutcome: outcome =>
                 {
-                    bool overBudget = GetMinWorstCaseLowerBound(outcome.NextState, outcome.NextRemainingSlots) > branchBudget;
-                    if (!overBudget && ShouldUseExactFeasibilityPrune(outcome.NextState, outcome.NextRemainingSlots))
-                        overBudget = GetMinWorstCaseSteps(outcome.NextState, outcome.NextRemainingSlots) > branchBudget;
-                    if (overBudget)
+                    if (GetMinWorstCaseLowerBound(outcome.NextState, outcome.NextRemainingSlots) > branchBudget)
                     {
                         rejected = true;
                         return false;
@@ -456,10 +447,7 @@ partial class StrategyBuilder
                 state, fixedTopMask: 0, remainingSlots, group, currentKey: key, collectMergedBranches: false,
                 onUsefulOutcome: outcome =>
                 {
-                    bool overBudget = GetMinWorstCaseLowerBound(outcome.NextState, outcome.NextRemainingSlots) > branchBudget;
-                    if (!overBudget && ShouldUseExactFeasibilityPrune(outcome.NextState, outcome.NextRemainingSlots))
-                        overBudget = GetMinWorstCaseSteps(outcome.NextState, outcome.NextRemainingSlots) > branchBudget;
-                    if (overBudget)
+                    if (GetMinWorstCaseLowerBound(outcome.NextState, outcome.NextRemainingSlots) > branchBudget)
                     {
                         rejected = true;
                         return false;
@@ -523,19 +511,6 @@ partial class StrategyBuilder
         }
 
         return int.MaxValue;
-    }
-
-    private bool ShouldUseExactFeasibilityPrune(ComparisonState state, int remainingSlots)
-    {
-        if (!_compactUsesFeasibleBudget)
-            return false;
-        if (_m != 2)
-            return false;
-        if (state.ActiveCount > FeasibleExactPruneActiveCountThreshold)
-            return false;
-        if (remainingSlots <= 0)
-            return false;
-        return true;
     }
 
     // Actual worst-case steps realized by the compact selection for a state: 0 for the

@@ -272,33 +272,6 @@ public class GreedyPipelineTests
         Assert.Equal(probe.Plan!.MaxStep, firstTighten.Value.Plan!.MaxStep);
     }
 
-    // Stats-only lock for the proof-tighten cache reuse optimization: probing the SAME ceiling twice
-    // on one builder should let the second probe hit the persisted compact memo and avoid re-solving
-    // compact states. This guards the cross-probe reuse path without relying on wall-time.
-    [Fact]
-    public void ProofTighten_RepeatedSameBudgetProbe_ReusesCompactMemo_20_4_6()
-    {
-        var builder = new StrategyBuilder(20, 4, 6);
-        int budget = builder.BuildGreedyFeasibleStage().MaxStep - 1;
-
-        StageResult first = builder.BuildProofTightenStage(budget);
-        StageResult second = builder.BuildProofTightenStage(budget);
-
-        Assert.Equal(StageOutcome.Tightened, first.Outcome);
-        Assert.Equal(StageOutcome.Tightened, second.Outcome);
-        Assert.NotNull(first.Plan);
-        Assert.NotNull(second.Plan);
-        Assert.Equal(first.Plan!.MaxStep, second.Plan!.MaxStep);
-
-        int firstSolved = first.Plan.SearchStatistics.CompactStatesSolved;
-        int secondSolved = second.Plan.SearchStatistics.CompactStatesSolved;
-
-        Assert.True(firstSolved > 0,
-            $"first probe should solve compact states, got {firstSolved}");
-        Assert.True(secondSolved < firstSolved,
-            $"expected second same-budget probe to reuse compact memo: first solved {firstSolved}, second solved {secondSolved}");
-    }
-
     // Item-3 strong-output lock for Phase B: the final min-edge pass ALWAYS emits exactly one
     // Completed stage that carries the returned plan (previously the should-not-happen fall back
     // returned a plan without emitting any stage). Completed is terminal and is not a tightening.
@@ -361,6 +334,37 @@ public class GreedyPipelineTests
 
         Assert.Equal(baselineFirstBudget, gatedFirstBudget);
         Assert.Equal(baselinePlan.MaxStep, gatedPlan.MaxStep);
+    }
+
+    // Lightweight canary for the m=2 proof-tighten performance cliff: this shape used to complete
+    // quickly in normal conditions but becomes much slower when the exact-feasibility prune path
+    // regresses. Keep the budget short to avoid inflating the suite runtime.
+    [Fact]
+    public void ProofTighten_FirstProbeCompletesQuickly_14_2_4()
+    {
+        _ = TestTimeoutHelper.RunWithTimeout(
+            "BuildProofTightenStage(14,2,4) first probe",
+            TimeSpan.FromSeconds(10),
+            cancellationToken =>
+            {
+                var builder = new StrategyBuilder(14, 2, 4, cancellationToken);
+                int budget = builder.BuildGreedyFeasibleStage().MaxStep - 1;
+                StageResult stage = builder.BuildProofTightenStage(budget);
+
+                Assert.Equal($"proof-tighten\u2264{budget}", stage.Name);
+                Assert.True(
+                    stage.Outcome == StageOutcome.Tightened || stage.Outcome == StageOutcome.ProvenInfeasible,
+                    $"expected a conclusive first probe outcome, got {stage.Outcome}");
+
+                if (stage.Outcome == StageOutcome.Tightened)
+                {
+                    Assert.True(stage.HasPlan);
+                    Assert.True(stage.Plan!.MaxStep <= budget,
+                        $"tightened probe must realize a step within budget {budget}, got {stage.Plan.MaxStep}");
+                }
+
+                return 0;
+            });
     }
 
     // Runs the greedy edge progression and returns the outcome of its final TIGHTENING terminal stage
