@@ -3,6 +3,13 @@ name: manual-seed-full-strategy-baseline
 on:
   workflow_dispatch:
     inputs:
+      case_set:
+        description: Strategy matrix case set
+        type: choice
+        default: full-no-greedy-full-20-2-6
+        options:
+          - full-no-greedy-full-20-2-6
+          - full
       timeout_seconds:
         description: Per-row timeout for StrategyMatrixTests full baseline seed
         type: number
@@ -26,7 +33,7 @@ jobs:
     timeout-minutes: 360
     env:
       RUN_STRATEGY_MATRIX: "1"
-      STRATEGY_MATRIX_CASE_SET: "full"
+      STRATEGY_MATRIX_CASE_SET: ${{ inputs.case_set }}
       STRATEGY_MATRIX_BASELINE_ONLY: "1"
       STRATEGY_MATRIX_BASELINE_PATH: ".\\scripts\\strategy-matrix-baseline-full.csv"
       STRATEGY_MATRIX_TIMEOUT_SECONDS: ${{ inputs.timeout_seconds }}
@@ -56,7 +63,7 @@ jobs:
             Seed `scripts/strategy-matrix-baseline-full.csv` from workflow run.
 
             - Workflow run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-            - Case set: full
+            - Case set: ${{ inputs.case_set }}
             - Baseline only: true
           labels: |
             perf-gate

@@ -20,7 +20,7 @@ jobs:
     timeout-minutes: 360
     env:
       RUN_STRATEGY_MATRIX: "1"
-      STRATEGY_MATRIX_CASE_SET: "full"
+      STRATEGY_MATRIX_CASE_SET: "full-no-greedy-full-20-2-6"
       STRATEGY_MATRIX_BASELINE_PATH: ".\\scripts\\strategy-matrix-baseline-full.csv"
       STRATEGY_MATRIX_TIMEOUT_SECONDS: "240"
       STRATEGY_MATRIX_WARMUP_RUNS: "0"
@@ -63,6 +63,7 @@ jobs:
               `- Workflow run: ${runUrl}`,
               `- Commit: ${context.sha}`,
               `- Trigger: ${context.eventName}`,
+              `- Case set: full-no-greedy-full-20-2-6`,
               `- Baseline: scripts/strategy-matrix-baseline-full.csv`,
               "",
               "Please inspect StrategyMatrixTests output for FAIL_TIME_REGRESSION / FAIL_STRUCTURE_CHANGED rows."

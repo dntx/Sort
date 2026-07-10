@@ -231,14 +231,15 @@ full nightly 报警（一步一步）:
 
 1. 先跑一次 full baseline seed（只需要第一次，之后按需重做）
   - 在 GitHub Actions 手动运行 `.github/workflows/manual-seed-full-strategy-baseline.yml`
-  - 默认参数可直接用：`timeout_seconds=240`、`warmup_runs=0`、`measured_runs=1`
+  - 默认参数可直接用：`case_set=full-no-greedy-full-20-2-6`、`timeout_seconds=240`、`warmup_runs=0`、`measured_runs=1`
+  - 说明：该 case set 仅排除 `greedy-full:20,2,6` 这一行，保留其余 full 行（包括 `20,2,6` 的 `greedy-feasible / greedy-tighten / proof-tighten-first`）
   - 该 workflow 会自动生成并提交 `scripts/strategy-matrix-baseline-full.csv`，并自动创建 PR
   - 合并该 PR 后，full nightly 才有可比较的基线
 
 2. 启用 full nightly compare + 报警
   - 工作流：`.github/workflows/nightly-full-strategy-matrix.yml`
   - 触发：每天 `18:00 UTC`（中国时区 `02:00`）+ 支持手动触发
-  - 行为：运行 `StrategyMatrixTests` 的 `full` case-set，并与 `scripts/strategy-matrix-baseline-full.csv` 比较
+  - 行为：运行 `StrategyMatrixTests` 的 `full-no-greedy-full-20-2-6` case-set，并与 `scripts/strategy-matrix-baseline-full.csv` 比较
   - 报警：失败时自动创建/更新标签 `perf-gate,nightly-full-matrix` 的 issue（标题包含日期，便于按天追踪）
 
 3. 后续维护（推荐）
