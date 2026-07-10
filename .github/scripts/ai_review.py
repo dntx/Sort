@@ -573,6 +573,12 @@ _NO_TEST_REASON_HINTS = {
     "mechanical",
     "non-functional",
     "no behavior change",
+    "does not change behavior",
+    "doesn't change behavior",
+    "does not introduce or modify algorithm behavior",
+    "does not modify algorithm behavior",
+    "no algorithmic decision path",
+    "timing-only",
     "behaviour-preserving",
     "existing test",
     "already covered",
@@ -584,6 +590,9 @@ _NO_TEST_REASON_HINTS = {
 _NO_TEST_EVIDENCE_HINTS = {
     "existing test",
     "existing tests",
+    "existing regression tests",
+    "regression tests",
+    "remain applicable",
     "already covered",
     "covered by",
     "coverage",
@@ -598,7 +607,7 @@ _NO_TEST_EVIDENCE_HINTS = {
     "rename only",
 }
 _NO_TEST_SECTION_HEADER_RE = re.compile(
-    r"^\s{0,3}#{1,6}\s*(why\s+no\s+tests?|test\s+rationale|no-?test\s+rationale)\b",
+    r"^\s{0,3}#{1,6}\s*(why\s+no(?:\s+new|\s+additional)?\s+tests?|test\s+rationale|no-?test\s+rationale)\b",
     re.IGNORECASE,
 )
 
