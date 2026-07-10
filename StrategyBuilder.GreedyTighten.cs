@@ -69,6 +69,52 @@ partial class StrategyBuilder
     internal IReadOnlyDictionary<int, int> GreedyTightenCommitDepthHistogram => _greedyTightenCommitDepthHistogram;
     internal IReadOnlyList<GreedyTightenRoundDiagnostics> GreedyTightenRoundTrace => _greedyTightenRoundDiagnostics;
 
+    // Fast pre-check for whether running single-round GreedyTighten is worthwhile: only probe the
+    // root state's immediate group alternatives and see whether any can lower the root lean height.
+    // This is intentionally cheaper than a full round (no descendant edit propagation).
+    internal bool ShouldRunGreedyTightenByRootProbe()
+    {
+        ThrowIfCancellationRequested();
+
+        _greedyTightenOverrides.Clear();
+        _greedyTightenOverrideAnchors.Clear();
+        _greedyTightenSharedHeightMemo.Clear();
+
+        var root = new ComparisonState(_n);
+        int remainingSlots = _k;
+        ulong ignoredFixedTopMask = 0;
+        NormalizeState(root, ref ignoredFixedTopMask, ref remainingSlots);
+
+        if (remainingSlots == 0)
+            return false;
+        if (TryGetDeterminedTopSet(root, remainingSlots, out _))
+            return false;
+        if (root.ActiveCount <= remainingSlots)
+            return false;
+        if (root.ActiveCount <= _m)
+            return false;
+
+        SearchStateKey key = GetSearchStateKey(root, remainingSlots);
+        int rootHeight = GreedyTightenHeight(root, remainingSlots, _greedyTightenSharedHeightMemo);
+        List<int> baselineGroup = CurrentGreedyTightenGroup(root, remainingSlots, key);
+
+        var candidates = root.GetActiveItemsOrdered();
+        int groupSize = Math.Min(_m, candidates.Count);
+        foreach (List<int> candidate in EnumerateDistinctGroups(root, candidates, groupSize, GreedyTightenCandidateCap))
+        {
+            if (!GroupHasUnresolvedPair(root, candidate))
+                continue;
+            if (SameGroupSequence(candidate, baselineGroup))
+                continue;
+
+            int candidateHeight = GreedyTightenHeightUnderGroup(root, remainingSlots, candidate, _greedyTightenSharedHeightMemo);
+            if (candidateHeight < rootHeight)
+                return true;
+        }
+
+        return false;
+    }
+
     // Builds the GreedyTighten stage plan: runs the local restructuring to tighten the upper bound,
     // then materializes the tightened tree once. Returns a feasible-upper-bound plan (never proven).
     public StrategyPlan BuildGreedyTightenPlan()

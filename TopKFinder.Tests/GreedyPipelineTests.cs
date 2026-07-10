@@ -320,6 +320,49 @@ public class GreedyPipelineTests
         Assert.Same(plan, edgeStages[0].Plan);                                     // it IS the returned plan
     }
 
+    // End-to-end value lock for the GT pre-step integration: on this case GT tightens the feasible
+    // bound first, so seeding proof-tighten with that tighter U must start probing at a stricter
+    // ceiling than the baseline path, while keeping the final result no worse.
+    [Fact]
+    public void GreedyPipeline_WithTighterSeededUpperBound_StartsFromTighterBudget_AndFinalIsNotWorse_10_2_5()
+    {
+        var baselineBuilder = new StrategyBuilder(10, 2, 5);
+        _ = baselineBuilder.BuildGreedyFeasibleStage();
+        int baselineFirstBudget = FirstProofTightenBudget(baselineBuilder, out StrategyPlan baselinePlan);
+
+        var gatedBuilder = new StrategyBuilder(10, 2, 5);
+        StrategyPlan feasible = gatedBuilder.BuildGreedyFeasibleStage();
+        StrategyPlan gt = gatedBuilder.BuildGreedyTightenPlan();
+        Assert.True(gt.IsStrictRefinementOver(feasible),
+            "expected GT pre-step to improve the feasible bound on (10,2,5)");
+        gatedBuilder.OverrideGreedyPipelineUpperBound(gt.MaxStep);
+
+        int gatedFirstBudget = FirstProofTightenBudget(gatedBuilder, out StrategyPlan gatedPlan);
+
+        Assert.True(gatedFirstBudget < baselineFirstBudget,
+            $"expected tighter first proof budget with GT pre-step: baseline {baselineFirstBudget}, gated {gatedFirstBudget}");
+        Assert.True(gatedPlan.MaxStep <= baselinePlan.MaxStep,
+            $"gated pipeline should not end worse than baseline: baseline {baselinePlan.MaxStep}, gated {gatedPlan.MaxStep}");
+    }
+
+    // Neutral lock: when root probe says "skip", not applying any GT pre-step must keep the same
+    // proof-tighten start ceiling and final result as the baseline path.
+    [Fact]
+    public void GreedyPipeline_RootProbeSkip_PathMatchesBaseline_12_4_4()
+    {
+        var baselineBuilder = new StrategyBuilder(12, 4, 4);
+        _ = baselineBuilder.BuildGreedyFeasibleStage();
+        int baselineFirstBudget = FirstProofTightenBudget(baselineBuilder, out StrategyPlan baselinePlan);
+
+        var gatedBuilder = new StrategyBuilder(12, 4, 4);
+        _ = gatedBuilder.BuildGreedyFeasibleStage();
+        Assert.False(gatedBuilder.ShouldRunGreedyTightenByRootProbe());
+        int gatedFirstBudget = FirstProofTightenBudget(gatedBuilder, out StrategyPlan gatedPlan);
+
+        Assert.Equal(baselineFirstBudget, gatedFirstBudget);
+        Assert.Equal(baselinePlan.MaxStep, gatedPlan.MaxStep);
+    }
+
     // Runs the greedy edge progression and returns the outcome of its final TIGHTENING terminal stage
     // (ProvenInfeasible / Incomplete); ignores the always-last Completed pass. Returns
     // Tightened if the progression never bottomed out.
@@ -332,6 +375,20 @@ public class GreedyPipelineTests
                 terminal = stage.Outcome;
         });
         return terminal;
+    }
+
+    private static int FirstProofTightenBudget(StrategyBuilder builder, out StrategyPlan plan)
+    {
+        string? firstProofName = null;
+        plan = builder.RunGreedyPipeline(
+            onStageStart: name =>
+            {
+                if (firstProofName is null && name.StartsWith("proof-tighten\u2264", StringComparison.Ordinal))
+                    firstProofName = name;
+            });
+
+        Assert.NotNull(firstProofName);
+        return int.Parse(firstProofName!["proof-tighten\u2264".Length..]);
     }
 
     private static void AssertEveryDecisionHasGroup(StrategyNode node)
