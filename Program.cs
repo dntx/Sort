@@ -285,9 +285,31 @@ class Program
             WriteStageStatus("stage greedy-feasible: started");
             var greedyStopwatch = System.Diagnostics.Stopwatch.StartNew();
             StrategyPlan feasiblePlan = builder.BuildGreedyFeasibleStage();
+            StrategyPlan baseFeasiblePlan = feasiblePlan;
             greedyStopwatch.Stop();
             WriteStageStatus($"stage greedy-feasible: steps={feasiblePlan.MaxStep}, " +
                 $"edges={feasiblePlan.TotalBranchEdges} ({greedyStopwatch.Elapsed.TotalSeconds:F2}s)");
+
+            // Optional GT pre-step (root-probe gated): only run single-round GreedyTighten when the
+            // root micro-probe sees a possible root-height drop.
+            bool gtProbeRun = builder.ShouldRunGreedyTightenByRootProbe();
+            StrategyPlan? gtPlan = null;
+            bool gtImproved = false;
+            if (gtProbeRun)
+            {
+                WriteStageStatus("stage greedy-tighten: started (root probe passed)");
+                var gtStopwatch = System.Diagnostics.Stopwatch.StartNew();
+                gtPlan = builder.BuildGreedyTightenPlan();
+                gtStopwatch.Stop();
+                WriteStageStatus($"stage greedy-tighten: steps={gtPlan.MaxStep}, " +
+                    $"edges={gtPlan.TotalBranchEdges} ({gtStopwatch.Elapsed.TotalSeconds:F2}s)");
+                gtImproved = gtPlan.IsStrictRefinementOver(baseFeasiblePlan);
+                if (gtImproved)
+                {
+                    feasiblePlan = gtPlan;
+                    builder.OverrideGreedyPipelineUpperBound(feasiblePlan.MaxStep);
+                }
+            }
 
             // The anytime stages (each "proof-tighten≤N" tightening, a terminal no-solution ceiling,
             // and the final "edge-compact@S") are produced incrementally for the GUI. The CLI is a batch tool,
@@ -297,12 +319,30 @@ class Program
             // becomes the final tree.
             var stageSummaries = new System.Collections.Generic.List<string>
             {
-                FormatStageSummary("greedy-feasible", feasiblePlan),
+                FormatStageSummary("greedy-feasible", baseFeasiblePlan),
             };
-            int emittedStages = 1;
-            StrategyPlan incumbentPlan = feasiblePlan;
+            if (gtProbeRun)
+            {
+                if (gtPlan is not null && gtImproved)
+                    stageSummaries.Add(FormatStageSummary("greedy-tighten", gtPlan));
+                else if (gtPlan is not null)
+                    stageSummaries.Add($"{FormatStageSummary("greedy-tighten", gtPlan)}: no improvement");
+            }
+            else
+            {
+                stageSummaries.Add("greedy-tighten: skipped (root probe)");
+            }
+            int emittedStages = 1 + (gtProbeRun ? 1 : 0);
+            StrategyPlan incumbentPlan = baseFeasiblePlan;
             string finalName = "greedy-feasible";
-            StrategyPlan finalPlan = feasiblePlan;
+            StrategyPlan finalPlan = baseFeasiblePlan;
+
+            if (gtPlan is not null && gtImproved)
+            {
+                incumbentPlan = gtPlan;
+                finalName = "greedy-tighten";
+                finalPlan = gtPlan;
+            }
 
             if (stageLimit.HasValue && emittedStages >= stageLimit.Value)
             {

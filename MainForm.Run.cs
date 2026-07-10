@@ -68,6 +68,21 @@ partial class MainForm
                 // Greedy mode: GreedyFeasible gives an instant browsable strategy even on shapes exact
                 // never resolves (e.g. 25,5,5), then ProofTighten + EdgeCompact refine it.
                 StrategyPlan feasiblePlan = await Task.Run(() => builder.BuildGreedyFeasibleStage(), cancellationToken);
+                StrategyPlan baseFeasiblePlan = feasiblePlan;
+
+                // Optional GT pre-step (root-probe gated): only run single-round GreedyTighten when
+                // the root micro-probe sees a possible root-height drop.
+                bool gtProbeRun = await Task.Run(() => builder.ShouldRunGreedyTightenByRootProbe(), cancellationToken);
+                if (gtProbeRun)
+                {
+                    StrategyPlan gtPlan = await Task.Run(() => builder.BuildGreedyTightenPlan(), cancellationToken);
+                    if (gtPlan.IsStrictRefinementOver(baseFeasiblePlan))
+                    {
+                        feasiblePlan = gtPlan;
+                        builder.OverrideGreedyPipelineUpperBound(feasiblePlan.MaxStep);
+                    }
+                }
+
                 _feasiblePlan = feasiblePlan;
                 _latestProgress = CreateSnapshotFromPlan(feasiblePlan);
                 PopulateTree(feasiblePlan, defaultPlan: null, compactPlan: null, exactImproved: false, compactImproved: false);

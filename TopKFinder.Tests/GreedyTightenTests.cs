@@ -135,6 +135,22 @@ public class GreedyTightenTests
         Assert.Single(builder.GreedyTightenRoundTrace);
     }
 
+    // Root-only micro-probe gate: a conservative pre-check for running full single-round
+    // GreedyTighten. It may skip some cases that a full round would eventually tighten.
+    [Theory]
+    [InlineData(12, 4, 4, false)]
+    [InlineData(14, 3, 3, false)]
+    [InlineData(16, 5, 5, false)]
+    [InlineData(16, 4, 4, false)]
+    [InlineData(17, 5, 5, false)]
+    public void GreedyTightenRootProbe_ProducesStableConservativeDecision(int n, int m, int k, bool expected)
+    {
+        var builder = new StrategyBuilder(n, m, k);
+
+        bool shouldRun = builder.ShouldRunGreedyTightenByRootProbe();
+        Assert.Equal(expected, shouldRun);
+    }
+
     // The shared memo optimization must preserve internally consistent accounting across total
     // counters and per-round diagnostics.
     [Fact]

@@ -54,6 +54,17 @@ partial class StrategyBuilder
     // prior step build) leaves it -1 and keeps the pinned-progress behavior.
     private int _feasibleCompactStateEstimate = -1;
 
+    // Allows a caller that computed a tighter feasible plan on the same builder (for example an
+    // optional GreedyTighten pre-step) to seed the proof-tighten loop with that tighter U.
+    internal void OverrideGreedyPipelineUpperBound(int feasibleUpperBound)
+    {
+        if (feasibleUpperBound <= 0)
+            return;
+
+        if (_feasibleRootBudget < 0 || feasibleUpperBound < _feasibleRootBudget)
+            _feasibleRootBudget = feasibleUpperBound;
+    }
+
     // Builds the greedy-mode feasible strategy (step tree): a valid, displayable strategy whose
     // worst-case step count is a feasible UPPER bound U on the optimum -- never a proof of optimality.
     // Combined with the analytic proven lower bound L (GetMinWorstCaseLowerBound on the root) this
