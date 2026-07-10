@@ -19,21 +19,6 @@ partial class MainForm
             return;
         }
 
-        if (Program.IsPotentiallySlowSearch(n, m, k))
-        {
-            DialogResult choice = MessageBox.Show(
-                this,
-                $"Solving n={n}, m={m}, k={k} may take a long time (roughly ten seconds or more, up to minutes) because the search grows quickly for these parameters.\n\n" +
-                "You can press Stop at any time once it starts.\n\nContinue?",
-                "Large search",
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Warning,
-                MessageBoxDefaultButton.Button2);
-
-            if (choice != DialogResult.Yes)
-                return;
-        }
-
         _runCancellationSource?.Dispose();
         _runCancellationSource = new CancellationTokenSource();
         _stopEscalationSource?.Cancel();

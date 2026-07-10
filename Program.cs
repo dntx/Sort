@@ -553,33 +553,4 @@ class Program
         return true;
     }
 
-    // Heuristic guard for the GUI: the exact minimax search is exponential, so some
-    // valid inputs take ten-plus seconds to minutes. This flags those (and only those)
-    // so the GUI can warn before starting. Calibrated against measured Release run times
-    // over a probe grid. Three observations drive the rule:
-    //   1. A very small or very large top set (min(k, n-k) <= 2) keeps the combinatorial
-    //      state space tiny, so it stays fast regardless of n (e.g. 18,2,2 ~ 0.2 s).
-    //   2. When a single sort already isolates at least k items (k < m) the tree is shallow
-    //      and the search is fast (e.g. 16,5,4 ~ 0.1 s).
-    //   3. Among the remaining "hard shape" inputs, runtime is dominated by n and is worst
-    //      for mid-range m: a large sort (m > n/3) makes the tree shallow and fast even at
-    //      n=18 (18,7,7 ~ 1.4 s, 18,9,9 ~ 0.5 s), while mid-range m explodes
-    //      (18,6,6 ~ 13 s, 18,4,4 ~ 20 s, 20,4,6 > 60 s). Every hard-shape input with n <= 17
-    //      finished under ~8 s, while n >= 18 with m <= n/3 ran from ~13 s upward.
-    // The rule below flags only that measured-slow region (roughly ten seconds or more),
-    // intentionally staying conservative to avoid nuisance warnings on faster inputs.
-    public const int SlowSearchSizeThreshold = 18;
-
-    public static bool IsPotentiallySlowSearch(int n, int m, int k)
-    {
-        int boundaryItems = Math.Min(k, n - k);
-        if (boundaryItems <= 2)
-            return false;
-        if (k < m)
-            return false;
-        if (m >= n)
-            return false;
-
-        return n >= SlowSearchSizeThreshold && m * 3 <= n;
-    }
 }
