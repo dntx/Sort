@@ -141,9 +141,11 @@ partial class StrategyBuilder
 
         stopwatch.Stop();
 
-        return new StrategyPlan(
+        StrategyPlan plan = new StrategyPlan(
             _n, _m, _requestedK, _k, root, stopwatch.Elapsed, CreateSearchStatistics(),
             isFeasibleUpperBound: true);
+        _latestGreedyIncumbentPlan = plan;
+        return plan;
     }
 
     // Multi-round driver. Each round runs one critical-path post-order pass from the root; a pass that

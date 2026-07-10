@@ -367,25 +367,34 @@ public class GreedyPipelineTests
             });
     }
 
-    // Regression for the greedy 20,4,4 crash in the final edge-compaction pass. Seed the pipeline at
-    // the already-known feasible ceiling 8 so it only runs the terminal proof-tighten<=7 check and the
-    // edge-compact@8 pass, which used to fall through to a stale partial compact cache and throw.
+    // Regression for the conservative phase-B fallback: a capped final compact pass must reuse the
+    // latest complete incumbent as "no improvement" instead of trying to salvage a partial compact
+    // cache or escalating to an uncapped retry. 12,4,4 is much cheaper than 20,4,4 but still exercises
+    // the same no-improvement branch when the cap blocks a complete edge-compact pass.
     [Fact]
-    public void GreedyPipeline_SeededBudget8_CompletesWithoutMissingPatternCache_20_4_4()
+    public void GreedyPipeline_CappedPhaseB_ReusesCompleteIncumbent_12_4_4()
     {
         _ = TestTimeoutHelper.RunWithTimeout(
-            "RunGreedyPipeline seeded at budget 8 for 20,4,4",
-            TimeSpan.FromMinutes(3),
+            "RunGreedyPipeline capped phase-B fallback for 12,4,4",
+            TimeSpan.FromSeconds(120),
             cancellationToken =>
             {
-                var builder = new StrategyBuilder(20, 4, 4, cancellationToken);
-                builder.OverrideGreedyPipelineUpperBound(8);
+                var builder = new StrategyBuilder(12, 4, 4, cancellationToken)
+                {
+                    CompactGreedyCandidateCap = 1,
+                };
+
+                StageResult incumbent = builder.BuildProofTightenStage(5);
+                Assert.Equal(StageOutcome.Tightened, incumbent.Outcome);
+                Assert.NotNull(incumbent.Plan);
+                Assert.Equal(5, incumbent.Plan!.MaxStep);
+
+                builder.OverrideGreedyPipelineUpperBound(incumbent.Plan.MaxStep);
 
                 StrategyPlan plan = builder.RunGreedyPipeline();
 
                 Assert.True(plan.IsFeasibleUpperBound);
-                Assert.True(plan.MaxStep <= 8,
-                    $"seeded greedy edge pass should stay within budget 8, got {plan.MaxStep}");
+                Assert.Equal(incumbent.Plan.MaxStep, plan.MaxStep);
                 AssertEveryDecisionHasGroup(plan.Root);
                 return 0;
             });

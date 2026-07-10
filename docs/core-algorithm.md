@@ -411,8 +411,8 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     收紧步数（每个成功的更小步数解发一个 `proof-tighten≤N` 阶段）；**Phase B** 在收紧确定的最小可行步数 `S` 上跑**唯一一遍
     min-edge** compact（`ProbeFeasibleCompact(S)`，发一个 `edge-compact@S` 阶段）以最小化边数。若这一步恰好被
     `CompactGreedyCandidateCap` 截断，本轮 probe 留下的 partial phase-1b cache 会先被标记为**不可物化并立即丢弃**；
-    编排层随后才会在**同一个预算 `S`** 上自动切到 `int.MaxValue` 重新跑一遍，保证最终物化树来自**完整的 compact
-    选择缓存**，而不是沿用被截断 probe 留下的残缺状态。快速、可中断、非证明最优。
+    编排层不会再做更重的 uncapped 重跑，而是**保守地保留最近一个完整 incumbent plan**，把最终 edge 阶段记为
+    `no improvement`。也就是说，greedy 模式宁可放弃这最后一次边数优化机会，也不把尾部 runtime 升格成一次大枚举。快速、可中断、非证明最优。
     这样安排是刻意的：min-edge 只在**最终步数** `S` 上做一次，避免在中途会被收紧丢弃的 `U`、`U−1`… 各层白算一遍边数
     （旧架构在 `U` 层先跑一遍完整 min-edge 基线、随后又被步数收紧作废，纯属浪费）。
     Phase A / Phase B 的根预算优先取**step 阶段物化得到的 `U`**（同一个 builder 实例先跑 step、再跑 compact，编排层正是这样复用的）——

@@ -86,6 +86,7 @@ partial class StrategyBuilder
     private bool _phase1Solved;
     private bool _phase1bSolved;
     private bool _compactPatternCacheReadyForMaterialization;
+    private StrategyPlan? _latestGreedyIncumbentPlan;
     private bool _progressEstimateInitialized;
     private double _progressEstimateEma01;
     private long _lastProgressSampleElapsedMs;
@@ -270,6 +271,8 @@ partial class StrategyBuilder
             var stopwatch = Stopwatch.StartNew();
             (StageOutcome outcome, StrategyPlan? candidate) = ProbeAndClassify(budget);
             stopwatch.Stop();
+            if (candidate is not null)
+                _latestGreedyIncumbentPlan = candidate;
             return new StageResult(stageName, candidate, stopwatch.Elapsed, outcome);
         }
         finally
@@ -394,23 +397,11 @@ partial class StrategyBuilder
         if (plan is not null)
             return plan;
 
-        int configuredCap = CompactGreedyCandidateCap;
-        if (configuredCap != int.MaxValue)
+        if (_lastProbeEnumerationCapped
+            && _latestGreedyIncumbentPlan is not null
+            && _latestGreedyIncumbentPlan.MaxStep <= rootBudget)
         {
-            try
-            {
-                // A cap-truncated phase-B pass leaves only a partial compact cache behind. Retry the
-                // same proven-feasible ceiling uncapped so materialization is driven by a complete
-                // compact selection for this budget instead of stale leftovers from the failed attempt.
-                CompactGreedyCandidateCap = int.MaxValue;
-                plan = ProbeFeasibleCompact(rootBudget);
-                if (plan is not null)
-                    return plan;
-            }
-            finally
-            {
-                CompactGreedyCandidateCap = configuredCap;
-            }
+            return _latestGreedyIncumbentPlan;
         }
 
         throw new InvalidOperationException(
