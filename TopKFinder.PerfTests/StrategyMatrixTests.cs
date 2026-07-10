@@ -20,7 +20,7 @@ using Xunit;
 //   STRATEGY_MATRIX_MEASURED_RUNS          (default 3)
 //   STRATEGY_MATRIX_REGRESSION_PERCENT     (default 20)
 //   STRATEGY_MATRIX_CASE_SET               (default full; smoke skips the heaviest rows)
-//                                         (full-no-greedy-full-20-2-6 excludes only greedy-full:20,2,6)
+//   STRATEGY_MATRIX_EXCLUDE_KEYS           (default empty; comma/semicolon-separated matrix keys to exclude)
 //   STRATEGY_MATRIX_BASELINE_PATH          (default .\scripts\strategy-matrix-baseline.csv if present)
 //   STRATEGY_MATRIX_BASELINE_ONLY          (default 0; when 1, writes current results and exits)
 //   STRATEGY_MATRIX_REPORT_PATH           (default <repo>\strategy-matrix-report.csv)
@@ -152,13 +152,28 @@ public sealed class StrategyMatrixTests
             new("greedy-full:20,2,6", "greedy", "greedy-full", 20, 2, 6, ct => RunPlan(ct, 20, 2, 6, b => b.RunGreedyPipeline())),
         };
 
-        if (string.Equals(caseSet, "smoke", StringComparison.OrdinalIgnoreCase))
-            return full.Where(entry => entry.N <= 12).ToList();
+        List<MatrixEntry> selected = string.Equals(caseSet, "smoke", StringComparison.OrdinalIgnoreCase)
+            ? full.Where(entry => entry.N <= 12).ToList()
+            : full;
 
+        string excludeRaw = ReadStringEnv("STRATEGY_MATRIX_EXCLUDE_KEYS", string.Empty);
+
+        // Keep old case-set name as a compatibility alias for existing workflow runs.
         if (string.Equals(caseSet, "full-no-greedy-full-20-2-6", StringComparison.OrdinalIgnoreCase))
-            return full.Where(entry => entry.Key != "greedy-full:20,2,6").ToList();
+            excludeRaw = string.IsNullOrWhiteSpace(excludeRaw)
+                ? "greedy-full:20,2,6"
+                : $"{excludeRaw},greedy-full:20,2,6";
 
-        return full;
+        if (string.IsNullOrWhiteSpace(excludeRaw))
+            return selected;
+
+        var excludedKeys = excludeRaw
+            .Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
+            .Select(key => key.Trim())
+            .Where(key => key.Length > 0)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return selected.Where(entry => !excludedKeys.Contains(entry.Key)).ToList();
     }
 
     private static MatrixObservation RunGreedyTighten(CancellationToken cancellationToken, int n, int m, int k)

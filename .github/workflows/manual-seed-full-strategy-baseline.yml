@@ -6,10 +6,14 @@ on:
       case_set:
         description: Strategy matrix case set
         type: choice
-        default: full-no-greedy-full-20-2-6
+        default: full
         options:
-          - full-no-greedy-full-20-2-6
           - full
+          - smoke
+      exclude_keys:
+        description: Optional comma-separated matrix keys to exclude
+        type: string
+        default: greedy-full:20,2,6
       timeout_seconds:
         description: Per-row timeout for StrategyMatrixTests full baseline seed
         type: number
@@ -34,6 +38,7 @@ jobs:
     env:
       RUN_STRATEGY_MATRIX: "1"
       STRATEGY_MATRIX_CASE_SET: ${{ inputs.case_set }}
+      STRATEGY_MATRIX_EXCLUDE_KEYS: ${{ inputs.exclude_keys }}
       STRATEGY_MATRIX_BASELINE_ONLY: "1"
       STRATEGY_MATRIX_BASELINE_PATH: ".\\scripts\\strategy-matrix-baseline-full.csv"
       STRATEGY_MATRIX_TIMEOUT_SECONDS: ${{ inputs.timeout_seconds }}
@@ -64,6 +69,7 @@ jobs:
 
             - Workflow run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
             - Case set: ${{ inputs.case_set }}
+            - Exclude keys: ${{ inputs.exclude_keys }}
             - Baseline only: true
           labels: |
             perf-gate
