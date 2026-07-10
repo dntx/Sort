@@ -1,0 +1,48 @@
+name: manual-proof-tighten-gate
+
+on:
+  workflow_dispatch:
+    inputs:
+      timeout_seconds:
+        description: Timeout for the proof-tighten gate test case
+        type: number
+        default: 200
+      outcomes_cap:
+        description: Optional cap for OutcomesConstructed (0 disables)
+        type: number
+        default: 0
+      candidates_cap:
+        description: Optional cap for CandidateGroupsEnumerated (0 disables)
+        type: number
+        default: 0
+      searched_states_cap:
+        description: Optional cap for SearchedStates (0 disables)
+        type: number
+        default: 0
+
+permissions:
+  contents: read
+
+jobs:
+  proof-tighten-gate:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Run proof-tighten gate test
+        shell: pwsh
+        env:
+          RUN_PROOF_TIGHTEN_GATE: "1"
+          PROOF_TIGHTEN_TIMEOUT_SECONDS: ${{ inputs.timeout_seconds }}
+          PROOF_TIGHTEN_OUTCOMES_CAP: ${{ inputs.outcomes_cap }}
+          PROOF_TIGHTEN_CANDIDATES_CAP: ${{ inputs.candidates_cap }}
+          PROOF_TIGHTEN_SEARCHED_STATES_CAP: ${{ inputs.searched_states_cap }}
+        run: |
+          dotnet test .\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj -c Release --filter "ProofTightenPerfGateTests"

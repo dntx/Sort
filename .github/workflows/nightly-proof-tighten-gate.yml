@@ -1,0 +1,158 @@
+name: nightly-strategy-gates
+
+on:
+  schedule:
+    # Daily at 16:00 UTC (00:00 China Standard Time, UTC+8)
+    - cron: '0 16 * * *'
+  workflow_dispatch:
+    inputs:
+      case_set:
+        description: Strategy matrix case set for manual runs
+        type: choice
+        default: smoke
+        options:
+          - smoke
+          - full
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: nightly-strategy-gates
+  cancel-in-progress: false
+
+jobs:
+  strategy-matrix-smoke:
+    runs-on: windows-latest
+    env:
+      RUN_STRATEGY_MATRIX: "1"
+      STRATEGY_MATRIX_CASE_SET: ${{ github.event_name == 'workflow_dispatch' && inputs.case_set || 'smoke' }}
+      STRATEGY_MATRIX_TIMEOUT_SECONDS: "90"
+      STRATEGY_MATRIX_WARMUP_RUNS: "0"
+      STRATEGY_MATRIX_MEASURED_RUNS: "1"
+      STRATEGY_MATRIX_REGRESSION_PERCENT: "20"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Run strategy matrix test
+        run: dotnet test .\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj -c Release --filter "StrategyMatrixTests"
+
+      - name: Alert on failure (create or update issue)
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const title = "[perf-gate] nightly performance gates failed";
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            const body = [
+              "Nightly strategy matrix smoke run failed.",
+              "",
+              `- Job: strategy-matrix-smoke`,
+              `- Workflow run: ${runUrl}`,
+              `- Commit: ${context.sha}`,
+              `- Trigger: ${context.eventName}`,
+              "",
+              "Please inspect the matrix output from StrategyMatrixTests and compare with the baseline CSV."
+            ].join("\n");
+
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner,
+              repo,
+              state: "open",
+              per_page: 100,
+                labels: "perf-gate,nightly-performance-gates"
+            });
+
+            const existing = issues.find(i => i.title === title);
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: existing.number,
+                body
+              });
+            } else {
+              await github.rest.issues.create({
+                owner,
+                repo,
+                title,
+                body,
+                  labels: ["perf-gate", "nightly-performance-gates", "regression"]
+              });
+            }
+  
+  proof-tighten-gate:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Run proof-tighten gate test
+        shell: pwsh
+        env:
+          RUN_PROOF_TIGHTEN_GATE: "1"
+          PROOF_TIGHTEN_TIMEOUT_SECONDS: "120"
+        run: |
+          dotnet test .\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj -c Release --filter "ProofTightenPerfGateTests"
+
+      - name: Alert on failure (create or update issue)
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const title = "[perf-gate] nightly performance gates failed";
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            const body = [
+              "Nightly proof-tighten gate failed.",
+              "",
+              `- Job: proof-tighten-gate`,
+              `- Workflow run: ${runUrl}`,
+              `- Commit: ${context.sha}`,
+              `- Trigger: ${context.eventName}`,
+              "",
+              "Please inspect the proof-tighten gate output and compare with the current timeout baseline."
+            ].join("\n");
+
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner,
+              repo,
+              state: "open",
+              per_page: 100,
+              labels: "perf-gate,nightly-performance-gates"
+            });
+
+            const existing = issues.find(i => i.title === title);
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: existing.number,
+                body
+              });
+            } else {
+              await github.rest.issues.create({
+                owner,
+                repo,
+                title,
+                body,
+                labels: ["perf-gate", "nightly-performance-gates", "regression"]
+              });
+            }

@@ -1,0 +1,65 @@
+name: manual-seed-full-strategy-baseline
+
+on:
+  workflow_dispatch:
+    inputs:
+      timeout_seconds:
+        description: Per-row timeout for StrategyMatrixTests full baseline seed
+        type: number
+        default: 240
+      warmup_runs:
+        description: Warmup runs per matrix row
+        type: number
+        default: 0
+      measured_runs:
+        description: Measured runs per matrix row
+        type: number
+        default: 1
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  seed-full-baseline:
+    runs-on: windows-latest
+    timeout-minutes: 360
+    env:
+      RUN_STRATEGY_MATRIX: "1"
+      STRATEGY_MATRIX_CASE_SET: "full"
+      STRATEGY_MATRIX_BASELINE_ONLY: "1"
+      STRATEGY_MATRIX_BASELINE_PATH: ".\\scripts\\strategy-matrix-baseline-full.csv"
+      STRATEGY_MATRIX_TIMEOUT_SECONDS: ${{ inputs.timeout_seconds }}
+      STRATEGY_MATRIX_WARMUP_RUNS: ${{ inputs.warmup_runs }}
+      STRATEGY_MATRIX_MEASURED_RUNS: ${{ inputs.measured_runs }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Seed full strategy-matrix baseline
+        run: dotnet test .\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj -c Release --filter "StrategyMatrixTests"
+
+      - name: Open PR with baseline update
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: chore/seed-full-strategy-baseline-${{ github.run_id }}
+          delete-branch: true
+          commit-message: "chore(perf): seed full strategy matrix baseline"
+          title: "chore(perf): seed full strategy matrix baseline"
+          body: |
+            Seed `scripts/strategy-matrix-baseline-full.csv` from workflow run.
+
+            - Workflow run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            - Case set: full
+            - Baseline only: true
+          labels: |
+            perf-gate
+            baseline
+          add-paths: |
+            scripts/strategy-matrix-baseline-full.csv
