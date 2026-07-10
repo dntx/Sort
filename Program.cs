@@ -521,6 +521,8 @@ class Program
     {
         int lower = plan.SearchStatistics.RootProvenLowerBound;
         int upper = plan.MaxStep;
+        if (upper == 0)
+            return "max steps = 0 (proven optimal)";
         if (lower > 0 && lower == upper)
             return $"max steps = {upper} (proven optimal)";
 

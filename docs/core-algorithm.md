@@ -497,7 +497,9 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     帽子截断致未算完时标 `search incomplete (candidate cap reached)`）。
     树形区域的**总根节点**以最优挤压（`FormatPlanSqueeze`）打头——`n=…, m=…, k=…, <squeeze>, total elapsed=…`——
     其中 `<squeeze>` 在最终 `no solution` 终止后闭合为 **`max steps = S (proven optimal)`**（最显眼的「搜索完成、步数已证明最优」信号），
-    收紧途中则为 `L <= max steps <= U`；旧的 `(compact lowered from N)` 注记已移除（用处不大）。total elapsed 也用秒（3 位小数）。
+    收紧途中则为 `L <= max steps <= U`；若是对偶约减后的退化实例（如 `k' = 0`），头部仍显示用户请求的
+    `k`，并附 `dual k'=...` 注记，同时把挤压直接闭合为 `max steps = 0 (proven optimal)`，不再显示
+    `? <= max steps <= 0`。旧的 `(compact lowered from N)` 注记已移除（用处不大）。total elapsed 也用秒（3 位小数）。
     overview 的 round 折叠规则按「连续、单分支、同组大小、且各步分组彼此不重叠」聚合；因此除首轮
     `steps 1–X` 的全量分组外，后续复用旧元素但仍呈现规则分块的波次（如 `20,2,6` 的 `steps 11–15`）也会被折叠成单个 round。
     GUI 的「`<stage>: computing...`」占位提示在实现上统一为一套生命周期（生成 / 识别 / 替换 / stop 改写）：不仅用于
