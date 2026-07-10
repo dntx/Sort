@@ -222,6 +222,7 @@ dotnet test TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter ProofTight
 - 行为：拆成两个夜间 gate
   - `StrategyMatrixTests` 的 smoke 矩阵，覆盖 `6,2,2`、`10,2,5`、`12,4,4` 的 exact / greedy / greedy-tighten / proof-tighten / greedy-full 代表行
   - 单点 `ProofTightenPerfGateTests`，继续盯住历史敏感的 `20,2,6` 首探针
+  - proof-tighten 夜间门槛默认超时设为 `150s`（`PROOF_TIGHTEN_TIMEOUT_SECONDS`），用于吸收 hosted runner 抖动，避免在接近完成时的偶发压线误报
 - 报警：任一 job 失败时自动创建或更新带标签 `perf-gate,nightly-performance-gates` 的 issue，附上 run 链接与 commit
 - 本地 smoke：把 `STRATEGY_MATRIX_CASE_SET=smoke`，即可跳过最重的 `20,2,6` 行做快速验证；如果要看完整矩阵，可手动把 case set 切到 `full`
 
