@@ -99,8 +99,10 @@ partial class StrategyBuilder
 
         _useCompact = false;
         _useConstructiveSelection = true;
+        _feasiblePhase2StartMs = _progressStopwatch.ElapsedMilliseconds;  // Mark the start of the costly BuildState phase
         var root = BuildState(new ComparisonState(_n), 0, _k, 1);
         _useConstructiveSelection = false;
+        _feasiblePhaseSolved = true;  // Mark feasible stage complete so progress jumps to 100%
         _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds - _phase1bMilliseconds;
         stopwatch.Stop();
         ReportProgress(force: true);
