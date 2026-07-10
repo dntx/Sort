@@ -30,15 +30,17 @@ partial class MainForm
 
     private TreeNode CreatePlanTreeRoot(string stageName, StrategyPlan plan, string scope, TimeSpan elapsed)
     {
-        StrategyDepthIndex depthIndex = StrategyDepthIndex.Build(plan.Root);
+        var depthIndex = new LazyDepthIndex(plan.Root);
         var planNode = new TreeNode(FormatStageRootLabel(stageName, elapsed, plan))
         {
-            Tag = BuildPlanDetails(plan),
+            Tag = new LazyNodeDetails(() => BuildPlanDetails(plan)),
             NodeFont = new Font(_treeView.Font, FontStyle.Bold),
             ForeColor = _palette.ForeColor,
         };
         TreeNode stateRoot = CreateStateNode(plan.Root, plan.K, scope, depthIndex);
-        IndexJumpTargets(plan.Root, scope, stateRoot, new List<int>());
+        _jumpScopeRoots[scope] = stateRoot;
+        _jumpScopeStrategyRoots[scope] = plan.Root;
+        _indexedJumpScopes.Remove(scope);
         planNode.Nodes.Add(stateRoot);
         return planNode;
     }
@@ -68,7 +70,7 @@ partial class MainForm
         };
     }
 
-    private TreeNode CreateStateNode(StrategyNode node, int k, string scope, StrategyDepthIndex depthIndex)
+    private TreeNode CreateStateNode(StrategyNode node, int k, string scope, LazyDepthIndex depthIndex)
     {
         return node.Kind switch
         {
@@ -79,10 +81,10 @@ partial class MainForm
         };
     }
 
-    private TreeNode CreateDecisionNode(StrategyNode node, int k, string scope, StrategyDepthIndex depthIndex)
+    private TreeNode CreateDecisionNode(StrategyNode node, int k, string scope, LazyDepthIndex depthIndex)
     {
-        int maxStep = depthIndex.SubtreeMaxStep(node);
-        string headerText = $"S{node.StateId} [step {node.Step}/{maxStep}] sort({StrategyTextRenderer.FormatSet(node.Group)})";
+        // Keep initial rendering cheap: avoid full depth-index construction here.
+        string headerText = $"S{node.StateId} [step {node.Step}] sort({StrategyTextRenderer.FormatSet(node.Group)})";
         if (node.FinalChoice is null)
             headerText += node.Branches.Count == 1 ? " (1 edge)" : $" ({node.Branches.Count} edges)";
 
@@ -133,7 +135,7 @@ partial class MainForm
         _treeView.EndUpdate();
     }
 
-    private TreeNode CreateBranchNode(StrategyBranch branch, int k, string scope, StrategyDepthIndex depthIndex)
+    private TreeNode CreateBranchNode(StrategyBranch branch, int k, string scope, LazyDepthIndex depthIndex)
     {
         string branchHeader = branch.OrderText;
         if (branch.EquivalentOrders is not null)
@@ -346,9 +348,9 @@ partial class MainForm
         return treeNode;
     }
 
-    private TreeNode CreateReferenceNode(StrategyNode node, string scope, StrategyDepthIndex depthIndex)
+    private TreeNode CreateReferenceNode(StrategyNode node, string scope, LazyDepthIndex depthIndex)
     {
-        string label = depthIndex.TryGetReferenceRemaining(node.StateId, out int remaining)
+        string label = depthIndex.Value.TryGetReferenceRemaining(node.StateId, out int remaining)
             ? $"->S{node.StateId} {StrategyTextRenderer.FormatRemainingSteps(remaining)}"
             : $"->S{node.StateId}";
         label += StrategyTextRenderer.FormatRelabeling(node.ReferenceRelabeling);
@@ -396,6 +398,10 @@ partial class MainForm
         if (_stateNodesByKey.TryGetValue(key, out TreeNode? existing))
             return existing;
 
+        int separator = key.IndexOf(':');
+        if (separator > 0)
+            EnsureJumpTargetsIndexed(key[..separator]);
+
         if (!_jumpTargets.TryGetValue(key, out JumpTarget target))
             return null;
 
@@ -442,6 +448,19 @@ partial class MainForm
                 path.RemoveAt(path.Count - 1);
             }
         }
+    }
+
+    private void EnsureJumpTargetsIndexed(string scope)
+    {
+        if (_indexedJumpScopes.Contains(scope))
+            return;
+
+        if (!_jumpScopeRoots.TryGetValue(scope, out TreeNode? scopeRoot)
+            || !_jumpScopeStrategyRoots.TryGetValue(scope, out StrategyNode? strategyRoot))
+            return;
+
+        IndexJumpTargets(strategyRoot, scope, scopeRoot, new List<int>());
+        _indexedJumpScopes.Add(scope);
     }
 
     // Fully materializes every deferred decision node, then expands the whole tree. Used by the "expand
