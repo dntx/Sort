@@ -85,6 +85,7 @@ partial class StrategyBuilder
     private int _rootProvenLowerBound;
     private bool _phase1Solved;
     private bool _phase1bSolved;
+    private bool _compactPatternCacheReadyForMaterialization;
     private bool _progressEstimateInitialized;
     private double _progressEstimateEma01;
     private long _lastProgressSampleElapsedMs;
@@ -368,6 +369,7 @@ partial class StrategyBuilder
                 // "no group fit within budget" is not a proof of infeasibility (an untried group might
                 // have fit), so the caller must not close the squeeze / claim proven optimality.
                 _lastProbeEnumerationCapped = _compactEnumerationCapped;
+                ResetCompactState();
                 return null;
             }
 
@@ -560,8 +562,20 @@ partial class StrategyBuilder
         // chosen comparison-group pattern, so phase 2 always finds a populated entry here.
         // The compact PoC overrides the choice with its size-minimizing pattern when enabled.
         BestGroupPattern cachedPattern;
-        if (_useCompact && _compactGroupPatternCache.TryGetValue(currentKey, out BestGroupPattern compactPattern))
+        if (_useCompact)
         {
+            if (!_compactPatternCacheReadyForMaterialization)
+            {
+                throw new InvalidOperationException(
+                    "Compact phase 1b must finish with a complete group-pattern cache before phase 2 materialization.");
+            }
+
+            if (!_compactGroupPatternCache.TryGetValue(currentKey, out BestGroupPattern compactPattern))
+            {
+                throw new InvalidOperationException(
+                    "Compact phase 1b must populate the group-pattern cache for every state materialized in phase 2.");
+            }
+
             cachedPattern = compactPattern;
         }
         else if (!_bestGroupPatternCache.TryGetValue(currentKey, out cachedPattern))
@@ -1376,7 +1390,7 @@ partial class StrategyBuilder
 
     private void EnsureCompactSolved()
     {
-        if (_phase1bSolved)
+        if (_phase1bSolved && _compactPatternCacheReadyForMaterialization)
             return;
 
         // Optional phase 1b: among equally-optimal groups, choose the ones that minimize the
@@ -1391,6 +1405,7 @@ partial class StrategyBuilder
             : int.MaxValue;
         _compactRootCost = SolveCompact(new ComparisonState(_n), _k, rootBudget);
         _phase1bSolved = true;
+        _compactPatternCacheReadyForMaterialization = _compactRootCost != int.MaxValue;
     }
 
     private void ResetPerBuildTransientState()
