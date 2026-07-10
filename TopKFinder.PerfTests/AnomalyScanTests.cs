@@ -51,11 +51,6 @@ public sealed class AnomalyScanTests
         {
             if (m >= n && k >= n)
                 continue; // trivial / nothing to compare
-            if (Program.IsPotentiallySlowSearch(n, m, k))
-            {
-                skipped++;
-                continue;
-            }
 
             StrategyPlan? def;
             try

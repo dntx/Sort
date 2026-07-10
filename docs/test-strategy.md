@@ -179,7 +179,6 @@ GitHub Actions 侧提供了手动门槛工作流：
 | `ComparisonStateTests.cs` | 偏序集状态：传递闭包、祖先 / 后代计数等底层不变量 |
 | `FreeSymmetryClassTests.cs` | 对称性感知组生成的核心不变量：按 free-symmetry-class 枚举一个代表 == 扫描全部 m-子集得到的轨道集合 |
 | `DominanceMetricTests.cs` | phase-1 支配（subsumption）下界剪枝的**正确性**（下界 bracket 真值）与**有效性**（剪枝确实触发） |
-| `SlowSearchHeuristicTests.cs` | 静态分类器 `Program.IsPotentiallySlowSearch` 对「慢形状」的判定（**不**构建树） |
 | `StrategyOverviewTests.cs` | `StrategyOverview` 概览汇总的正确性 |
 | `StrategyTextRendererTests.cs` | 文本渲染器的格式化逻辑 |
 | `InputValidationTests.cs` / `CliArgsTests.cs` | 输入校验与命令行参数解析 |
