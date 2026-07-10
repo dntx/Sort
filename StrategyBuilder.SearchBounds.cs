@@ -607,7 +607,13 @@ partial class StrategyBuilder
         int maxGroupSize = Math.Min(_m, state.ActiveCount);
         int outcomes = 1;
         for (int i = 2; i <= maxGroupSize; i++)
+        {
+            // Large m values can overflow m! past Int32 and later feed negative capacities into
+            // HashSet/Dictionary constructors. Saturate to keep this as a safe upper bound.
+            if (outcomes > int.MaxValue / i)
+                return int.MaxValue;
             outcomes *= i;
+        }
         return outcomes;
     }
 
