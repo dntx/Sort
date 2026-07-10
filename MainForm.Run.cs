@@ -389,6 +389,8 @@ partial class MainForm
     {
         int lower = plan.SearchStatistics.RootProvenLowerBound;
         int upper = plan.MaxStep;
+        if (upper == 0)
+            return "max steps = 0 (proven optimal)";
         if (lower > 0 && lower == upper)
             return $"max steps = {upper} (proven optimal)";
 
@@ -396,9 +398,16 @@ partial class MainForm
         return $"{lowerText} <= max steps <= {upper}";
     }
 
+    private static string FormatPlanInputs(StrategyPlan plan)
+    {
+        if (plan.RequestedK == plan.K)
+            return $"n={plan.N}, m={plan.M}, k={plan.K}";
+        return $"n={plan.N}, m={plan.M}, k={plan.RequestedK} (dual k'={plan.K})";
+    }
+
     private static string BuildRootLabel(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan)
     {
-        string head = $"n={feasiblePlan.N}, m={feasiblePlan.M}, k={feasiblePlan.K}";
+        string head = FormatPlanInputs(feasiblePlan);
         if (defaultPlan is null)
             return $"{head}, {FormatPlanSqueeze(feasiblePlan)} (computing step...)";
         if (compactPlan is null)

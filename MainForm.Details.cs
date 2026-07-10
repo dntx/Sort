@@ -218,7 +218,9 @@ partial class MainForm
 
     private void UpdateSummaryText(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool compactImproved)
     {
-        string head = $"n={feasiblePlan.N}, m={feasiblePlan.M}, k={feasiblePlan.K}";
+        string head = feasiblePlan.RequestedK == feasiblePlan.K
+            ? $"n={feasiblePlan.N}, m={feasiblePlan.M}, k={feasiblePlan.K}"
+            : $"n={feasiblePlan.N}, m={feasiblePlan.M}, k={feasiblePlan.RequestedK} (dual k'={feasiblePlan.K})";
 
         if (defaultPlan is null)
         {
