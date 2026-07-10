@@ -38,7 +38,9 @@ partial class MainForm
             ForeColor = _palette.ForeColor,
         };
         TreeNode stateRoot = CreateStateNode(plan.Root, plan.K, scope, depthIndex);
-        IndexJumpTargets(plan.Root, scope, stateRoot, new List<int>());
+        _jumpScopeRoots[scope] = stateRoot;
+        _jumpScopeStrategyRoots[scope] = plan.Root;
+        _indexedJumpScopes.Remove(scope);
         planNode.Nodes.Add(stateRoot);
         return planNode;
     }
@@ -396,6 +398,10 @@ partial class MainForm
         if (_stateNodesByKey.TryGetValue(key, out TreeNode? existing))
             return existing;
 
+        int separator = key.IndexOf(':');
+        if (separator > 0)
+            EnsureJumpTargetsIndexed(key[..separator]);
+
         if (!_jumpTargets.TryGetValue(key, out JumpTarget target))
             return null;
 
@@ -442,6 +448,19 @@ partial class MainForm
                 path.RemoveAt(path.Count - 1);
             }
         }
+    }
+
+    private void EnsureJumpTargetsIndexed(string scope)
+    {
+        if (_indexedJumpScopes.Contains(scope))
+            return;
+
+        if (!_jumpScopeRoots.TryGetValue(scope, out TreeNode? scopeRoot)
+            || !_jumpScopeStrategyRoots.TryGetValue(scope, out StrategyNode? strategyRoot))
+            return;
+
+        IndexJumpTargets(strategyRoot, scope, scopeRoot, new List<int>());
+        _indexedJumpScopes.Add(scope);
     }
 
     // Fully materializes every deferred decision node, then expands the whole tree. Used by the "expand

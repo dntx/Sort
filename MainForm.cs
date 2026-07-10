@@ -124,6 +124,9 @@ partial class MainForm : Form
     // Per (scope:stateId) branch-index path from a plan's root state node to that state's node, so a jump
     // target that has not been materialized yet can be reached by walking and materializing the path.
     private readonly Dictionary<string, JumpTarget> _jumpTargets = new();
+    private readonly Dictionary<string, TreeNode> _jumpScopeRoots = new();
+    private readonly Dictionary<string, StrategyNode> _jumpScopeStrategyRoots = new();
+    private readonly HashSet<string> _indexedJumpScopes = new();
 
     private readonly record struct LazyDecision(StrategyNode Node, int K, string Scope, StrategyDepthIndex DepthIndex);
 

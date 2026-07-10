@@ -335,6 +335,9 @@ partial class MainForm
         _referenceTargets.Clear();
         _lazyDecisions.Clear();
         _jumpTargets.Clear();
+        _jumpScopeRoots.Clear();
+        _jumpScopeStrategyRoots.Clear();
+        _indexedJumpScopes.Clear();
         _navigationHistory.Clear();
         _backButton.Enabled = false;
 
