@@ -685,9 +685,38 @@ partial class MainForm
     private void ShowNodeDetails(TreeNode? node)
     {
         _detailsTextBox.Clear();
-        if (node?.Tag is not string text)
+        if (node is null)
             return;
 
-        _detailsTextBox.Text = text;
+        int requestVersion = Interlocked.Increment(ref _detailsRequestVersion);
+        switch (node.Tag)
+        {
+            case string text:
+                _detailsTextBox.Text = text;
+                return;
+            case LazyNodeDetails lazy when lazy.TryGetCached(out string cached):
+                _detailsTextBox.Text = cached;
+                return;
+            case LazyNodeDetails lazy:
+                _detailsTextBox.Text = "Loading details...";
+                _ = Task.Run(lazy.GetOrCreate).ContinueWith(t =>
+                {
+                    if (t.IsFaulted || !IsHandleCreated || IsDisposed)
+                        return;
+
+                    BeginInvoke(new Action(() =>
+                    {
+                        if (requestVersion != Volatile.Read(ref _detailsRequestVersion))
+                            return;
+                        if (!ReferenceEquals(_treeView.SelectedNode, node))
+                            return;
+
+                        _detailsTextBox.Text = t.Result;
+                    }));
+                }, TaskScheduler.Default);
+                return;
+            default:
+                return;
+        }
     }
 }

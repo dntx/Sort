@@ -146,6 +146,33 @@ partial class MainForm : Form
     private readonly record struct LazyOverviewSection(StrategyPlan Plan, string Scope);
 
     private readonly record struct JumpTarget(TreeNode ScopeRoot, int[] BranchPath);
+    private int _detailsRequestVersion;
+
+    private sealed class LazyNodeDetails
+    {
+        private readonly Func<string> _factory;
+        private string? _cached;
+
+        public LazyNodeDetails(Func<string> factory)
+        {
+            _factory = factory;
+        }
+
+        public bool TryGetCached(out string text)
+        {
+            if (_cached is null)
+            {
+                text = string.Empty;
+                return false;
+            }
+
+            text = _cached;
+            return true;
+        }
+
+        public string GetOrCreate()
+            => _cached ??= _factory();
+    }
 
     // A branch header node that carries which of its order-text "#n" labels this outcome resolves, mapped
     // to whether the item is doomed (true -> excluded from top-k, drawn in the exclusion color) or secured

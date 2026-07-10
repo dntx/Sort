@@ -311,7 +311,7 @@ partial class MainForm
         _treeView.Nodes.Clear();
         var root = new TreeNode(rootLabel)
         {
-            Tag = rootDetails,
+            Tag = new LazyNodeDetails(() => rootDetails),
             NodeFont = new Font(_treeView.Font, FontStyle.Bold),
             ForeColor = _palette.ForeColor,
         };
@@ -343,7 +343,7 @@ partial class MainForm
         _backButton.Enabled = false;
 
         string rootLabel = BuildRootLabel(feasiblePlan, defaultPlan, compactPlan);
-        string rootDetails = BuildRootDetails(feasiblePlan, defaultPlan, compactPlan, exactImproved, compactImproved);
+        var rootDetails = new LazyNodeDetails(() => BuildRootDetails(feasiblePlan, defaultPlan, compactPlan, exactImproved, compactImproved));
 
         var root = new TreeNode(rootLabel)
         {
@@ -458,7 +458,7 @@ partial class MainForm
 
         TreeNode root = _treeView.Nodes[0];
         root.Text = BuildRootLabel(_feasiblePlan, defaultPlan, compactPlan);
-        root.Tag = BuildTwoPhaseDetails(defaultPlan, compactPlan, compactImproved);
+        root.Tag = new LazyNodeDetails(() => BuildTwoPhaseDetails(defaultPlan, compactPlan, compactImproved));
 
         // Replace only the trailing compact slot (everything after the single step slot).
         while (root.Nodes.Count > 1)
@@ -561,7 +561,7 @@ partial class MainForm
 
         StrategyPlan shown = _compactPlan ?? _feasiblePlan;
         root.Text = BuildRootLabel(_feasiblePlan, _feasiblePlan, shown);
-        root.Tag = BuildGreedyProgressionDetails(_feasiblePlan, _proofTightenStages);
+        root.Tag = new LazyNodeDetails(() => BuildGreedyProgressionDetails(_feasiblePlan, _proofTightenStages));
         _treeView.EndUpdate();
 
         _overviewTree.BeginUpdate();

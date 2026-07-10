@@ -33,7 +33,7 @@ partial class MainForm
         var depthIndex = new LazyDepthIndex(plan.Root);
         var planNode = new TreeNode(FormatStageRootLabel(stageName, elapsed, plan))
         {
-            Tag = BuildPlanDetails(plan),
+            Tag = new LazyNodeDetails(() => BuildPlanDetails(plan)),
             NodeFont = new Font(_treeView.Font, FontStyle.Bold),
             ForeColor = _palette.ForeColor,
         };
