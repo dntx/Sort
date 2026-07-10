@@ -362,20 +362,10 @@ partial class StrategyBuilder
         }
 
         FeasibleTopSetInfo info = GetFeasibleTopSetInfo(state, remainingSlots);
-        int maxOutcomesPerStep = GetMaxOutcomesPerStep(state);
-        // Information-theoretic floor: each step distinguishes at most maxOutcomesPerStep outcomes, so
-        // telling info.Count feasible top-sets apart needs at least ceil(log_maxOutcomes(info.Count))
-        // steps. Accumulate in a long: info.Count can approach int.MaxValue and maxOutcomesPerStep is
-        // m! (e.g. 10! = 3.6M), so the int accumulator overflowed on the second multiply for large
-        // shapes (e.g. 26,10,10). A long comfortably holds info.Count * maxOutcomesPerStep.
-        long distinguishable = 1;
-        int steps = 0;
-        while (distinguishable < info.Count)
-        {
-            ThrowIfCancellationRequested();
-            steps++;
-            distinguishable *= maxOutcomesPerStep;
-        }
+        // Information-theoretic floor: each step distinguishes at most m! outcomes (group size capped by
+        // active count), so separating info.Count feasible top-sets needs ceil(log_{m!}(info.Count))
+        // steps. Compute in log-domain to avoid overflow/saturation artifacts from large factorials.
+        int steps = GetInformationLowerBoundSteps(info.Count, state.ActiveCount);
 
         steps = Math.Max(steps, GetAntichainLowerBound(state));
 
@@ -602,13 +592,39 @@ partial class StrategyBuilder
         return bestItem;
     }
 
-    private int GetMaxOutcomesPerStep(ComparisonState state)
+    private int GetInformationLowerBoundSteps(int feasibleTopSetCount, int activeCount)
     {
-        int maxGroupSize = Math.Min(_m, state.ActiveCount);
-        int outcomes = 1;
+        if (feasibleTopSetCount <= 1)
+            return 0;
+
+        double logMaxOutcomesPerStep = 0d;
+        int maxGroupSize = Math.Min(_m, activeCount);
         for (int i = 2; i <= maxGroupSize; i++)
-            outcomes *= i;
-        return outcomes;
+        {
+            ThrowIfCancellationRequested();
+            logMaxOutcomesPerStep += Math.Log(i);
+        }
+
+        // Defensive: for valid configs m >= 2 and non-terminal states activeCount > m, so this should
+        // always be positive. Keep a safe fallback if an invalid configuration slips through.
+        if (logMaxOutcomesPerStep <= 0d)
+            return int.MaxValue;
+
+        double logFeasibleCount = Math.Log(feasibleTopSetCount);
+        int steps = (int)Math.Floor(logFeasibleCount / logMaxOutcomesPerStep);
+        if (steps < 0)
+            steps = 0;
+
+        // Advance until the threshold is reached. This stays conservative in edge cases and avoids
+        // underestimating by one because of floating rounding noise.
+        while ((steps * logMaxOutcomesPerStep) < logFeasibleCount)
+            steps++;
+
+        // Guard against tiny upward rounding at exact boundaries.
+        while (steps > 0 && ((steps - 1) * logMaxOutcomesPerStep) >= logFeasibleCount)
+            steps--;
+
+        return steps;
     }
 
     internal ulong GetGuaranteedTopMaskForTesting(ComparisonState state, int remainingSlots)

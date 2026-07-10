@@ -60,6 +60,17 @@ public class GreedyFeasibleStageTests
         Assert.True(plan.MaxStep > 0, "feasible plan should take at least one comparison");
     }
 
+    // Regression: large-m greedy lookahead previously overflowed the per-step outcome ceiling
+    // (m!) and passed a negative capacity into HashSet, crashing on (25,24,1).
+    [Fact]
+    public void GreedyFeasibleStage_25_24_1_DoesNotThrowCapacityOutOfRange()
+    {
+        StrategyPlan plan = new StrategyBuilder(25, 24, 1).BuildGreedyFeasibleStage();
+
+        Assert.True(plan.IsFeasibleUpperBound);
+        Assert.True(plan.MaxStep > 0, "feasible plan should take at least one comparison");
+    }
+
     // The plan exposes a proven lower bound (the L side of the squeeze) that never exceeds the
     // feasible upper bound U it achieves. L <= opt <= U must hold.
     [Theory]

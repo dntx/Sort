@@ -548,7 +548,9 @@ partial class StrategyBuilder
         Func<ComparisonOutcome, bool> onUsefulOutcome)
     {
         ThrowIfCancellationRequested();
-        var evaluatedStateKeys = new HashSet<SearchStateKey>(GetMaxOutcomesPerStep(state));
+        // GetMaxOutcomesPerStep is a loose factorial ceiling; for large m it can be enormous and
+        // preallocating that many buckets can fail before traversal starts.
+        var evaluatedStateKeys = new HashSet<SearchStateKey>();
         var groupedBranches = collectMergedBranches ? new Dictionary<IntSequenceKey, MergedBranch>() : null;
         bool isUseful = false;
 
