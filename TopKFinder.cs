@@ -7,7 +7,7 @@ using System.Threading;
 
 partial class StrategyBuilder
 {
-    private const int ProgressReportIntervalMs = 50;  // Reduced from 100ms to provide smoother progress updates
+    private const int ProgressReportIntervalMs = 100;
     private readonly int _n;
     private readonly int _m;
     private readonly int _requestedK;
