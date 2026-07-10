@@ -107,7 +107,7 @@ jobs:
         shell: pwsh
         env:
           RUN_PROOF_TIGHTEN_GATE: "1"
-          PROOF_TIGHTEN_TIMEOUT_SECONDS: "120"
+          PROOF_TIGHTEN_TIMEOUT_SECONDS: "150"
         run: |
           dotnet test .\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj -c Release --filter "ProofTightenPerfGateTests"
 

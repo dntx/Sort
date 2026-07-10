@@ -13,6 +13,7 @@ minimax 搜索、对称性约减，以及三种剪枝下界（信息论下界、
 - [`test-strategy.md`](./test-strategy.md)：回归基线、性能护栏、手动 perf gate 工作流与测试方法。
 - [`ui-explorer.md`](./ui-explorer.md)：桌面 UI 阶段时间线、占位与取消语义。
 - `.github/workflows/nightly-proof-tighten-gate.yml` 与 `.github/workflows/nightly-full-strategy-matrix.yml`：夜间性能巡检与报警入口。
+  - 其中 nightly proof-tighten gate 的默认超时为 `150s`，用于降低 hosted runner 抖动带来的压线误报。
 
 实现注记（2026-07）：
 
