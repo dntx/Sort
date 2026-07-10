@@ -524,6 +524,23 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
 - `StrategyPlan.IsFeasibleUpperBound == true` 标记这棵树是「可行上界」而非「精确最优」，CLI / GUI 据此渲染相应的
   首阶段（`greedy-feasible`）区域。
 
+#### Overview 的规整链折叠（`m=2`）
+
+`StrategyOverviewRenderer` 在渲染 representative spine 时，除了已有的「同尺寸 disjoint wave」折叠外，
+新增了对 `m=2` 常见「锚点-挑战者」规整链的汇总：当出现连续单分支 pair 比较，且同一锚点持续与不同挑战者比较（长度 ≥ 3），
+overview 会把该段折叠为一行 `compare (#anchor) against N challengers`，并附一行挑战者区间与淘汰摘要。
+
+例如 `25,2,1` 的 greedy-feasible representative 路径会从 23 条逐步行压缩为：
+
+```text
+Round 1 · steps 1–23: compare (#1) against 23 challengers
+    challengers: (#2 ~ #24)
+    each sort drops its bottom 1 → 2 still in contention
+Finish · step 24: choose 1 of (#1, #25) for the last slot
+```
+
+该折叠只影响 overview 展示，不改变策略树结构与 step/edge 语义。
+
 ### 4.7 GreedyTighten（Phase 0）：可行树的局部改造收紧（已实现，已接入生产管线，root-probe gated）
 
 > ✅ **状态：已实现并接入 greedy 生产流水线**，以 root-probe gate 控制是否执行。当前接入策略是：`greedy-feasible` 后先做

@@ -16,6 +16,15 @@ public sealed class StrategyOverviewTests
         return StrategyOverviewRenderer.Build(plan);
     }
 
+    private static StrategyOverview BuildGreedyOverview(int n, int m, int k)
+    {
+        StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
+            $"StrategyBuilder.BuildGreedyFeasibleStage({n}, {m}, {k})",
+            OverviewTestTimeout,
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildGreedyFeasibleStage());
+        return StrategyOverviewRenderer.Build(plan);
+    }
+
     [Fact]
     public void N25M5K3_FoldsTheGroupingRoundAndFinishes()
     {
@@ -118,6 +127,18 @@ public sealed class StrategyOverviewTests
 
         OverviewRow finish = overview.Rows[^1];
         Assert.StartsWith("Finish: top 4 =", finish.Headline);
+    }
+
+    [Fact]
+    public void N25M2K1_Greedy_FoldsAnchorChallengeChainIntoSingleRound()
+    {
+        StrategyOverview overview = BuildGreedyOverview(25, 2, 1);
+
+        Assert.Equal(2, overview.Rows.Count);
+        Assert.Contains("steps 1\u201323", overview.Rows[0].Headline);
+        Assert.Contains("compare (#1) against 23 challengers", overview.Rows[0].Headline);
+        Assert.Contains(overview.Rows[0].Details, d => d.Contains("challengers: (#2", StringComparison.Ordinal));
+        Assert.StartsWith("Finish", overview.Rows[1].Headline);
     }
 
     [Fact]
