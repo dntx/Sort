@@ -409,7 +409,10 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     改为更紧的 `U'`。再进入
     `RunGreedyPipeline` 分两段：**Phase A** 用**只判可行、不计边数**的 compact 探测依次以 `U−1, U−2, …` 为根预算
     收紧步数（每个成功的更小步数解发一个 `proof-tighten≤N` 阶段）；**Phase B** 在收紧确定的最小可行步数 `S` 上跑**唯一一遍
-    min-edge** compact（`ProbeFeasibleCompact(S)`，发一个 `edge-compact@S` 阶段）以最小化边数。快速、可中断、非证明最优。
+    min-edge** compact（`ProbeFeasibleCompact(S)`，发一个 `edge-compact@S` 阶段）以最小化边数。若这一步恰好被
+    `CompactGreedyCandidateCap` 截断，本轮 probe 留下的 partial phase-1b cache 会先被标记为**不可物化并立即丢弃**；
+    编排层不会再做更重的 uncapped 重跑，而是**保守地保留最近一个完整 incumbent plan**，把最终 edge 阶段记为
+    `no improvement`。也就是说，greedy 模式宁可放弃这最后一次边数优化机会，也不把尾部 runtime 升格成一次大枚举。快速、可中断、非证明最优。
     这样安排是刻意的：min-edge 只在**最终步数** `S` 上做一次，避免在中途会被收紧丢弃的 `U`、`U−1`… 各层白算一遍边数
     （旧架构在 `U` 层先跑一遍完整 min-edge 基线、随后又被步数收紧作废，纯属浪费）。
     Phase A / Phase B 的根预算优先取**step 阶段物化得到的 `U`**（同一个 builder 实例先跑 step、再跑 compact，编排层正是这样复用的）——
@@ -529,7 +532,7 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
 
 **流水线位置**：可选插在 `greedy-feasible(U)` 与 `proof-tighten≤N` 之间：
 
-```
+```text
 greedy-feasible(U) → (optional) greedy-tighten → proof-tighten≤N → edge-compact@S
 ```
 
@@ -575,8 +578,10 @@ greedy-feasible(U) → (optional) greedy-tighten → proof-tighten≤N → edge-
 **soundness 校验（独立于精确搜索）**：GreedyTighten 只保证可行上界（`U' >= opt`）。在 `n <= 10` 用精确 `opt`（`BuildStepProofStage`）对照即可验证，但更大形状下精确搜索不可行。为此提供独立校验 `ValidateGreedyTightenPolicyDepthForTesting`：物化后从根**重放已提交策略**（不复用高度 memo），逐状态断言分组有未决对（progress）、对抗路径无环（必然终止）、每条路径都停在受信任的 top-k 终止条件，并重算最坏深度；返回深度 == 计划的 `MaxStep` 即证明该 `MaxStep` 是一棵**真实合法策略**的最坏步数（因而是 opt 的可靠上界）。这把 GreedyTighten 的正确性锁到精确搜索够不到的规模（例如 `20,4,6`：GT 给出并被验证的合法 `U'=14`）。
 
 **当前定位（2026-07-10）**：已并入 greedy 生产管线，但通过 root-probe 做保守 gate，避免在明显无收益形状上支付 GT 成本。流水线层面的回归测试同时锁定两类行为：
+
 1. 有收益路径：当提供更紧的可行上界种子时，proof-tighten 首个预算更紧，且最终结果不劣于基线。
 2. 无收益路径：probe 判 skip 时，起始预算与最终结果均与基线一致。
+
 这使 GT 的引入从“总是执行的额外开销”变成“按形状触发的可选预收紧步骤”。
 
 ---

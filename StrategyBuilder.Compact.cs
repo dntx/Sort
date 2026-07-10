@@ -79,6 +79,7 @@ partial class StrategyBuilder
         _compactCostMemo.Clear();
         _compactRealStepsMemo.Clear();
         _phase1bSolved = false;
+        _compactPatternCacheReadyForMaterialization = false;
         _compactRootCost = int.MaxValue;
     }
 

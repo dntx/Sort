@@ -85,6 +85,8 @@ partial class StrategyBuilder
     private int _rootProvenLowerBound;
     private bool _phase1Solved;
     private bool _phase1bSolved;
+    private bool _compactPatternCacheReadyForMaterialization;
+    private StrategyPlan? _latestGreedyIncumbentPlan;
     private bool _progressEstimateInitialized;
     private double _progressEstimateEma01;
     private long _lastProgressSampleElapsedMs;
@@ -238,16 +240,11 @@ partial class StrategyBuilder
             _compactFeasibilityOnly = false;
         }
 
-        // Phase B: one edge-compaction pass at the determined step S. Both the direct probe and the
-        // (should-not-happen) fall back produce a plan, so this ALWAYS emits exactly one edge-compact
-        // stage -- the strong-output contract holds for Phase B just as for the Phase A loop.
+        // Phase B: one edge-compaction pass at the determined step S.
         string edgeCompactStageName = FormatEdgeCompactStageName(bestStep);
         onStageStart?.Invoke(edgeCompactStageName);
         var edgeStopwatch = Stopwatch.StartNew();
-        // bestStep is a proven-feasible ceiling, so the probe should realize a plan; the fall back to a
-        // min-edge pass at the feasible budget U is a defensive guarantee that a valid plan always exists.
-        StrategyPlan finalPlan = (ProbeFeasibleCompact(bestStep)
-                ?? BuildPlan(useCompactSelection: true, useFeasibleBudget: true))
+        StrategyPlan finalPlan = BuildEdgeCompactPlanAtBudget(bestStep)
             .WithRootProvenLowerBound(_rootProvenLowerBound);
         edgeStopwatch.Stop();
         onStageCompleted?.Invoke(new StageResult(
@@ -274,6 +271,8 @@ partial class StrategyBuilder
             var stopwatch = Stopwatch.StartNew();
             (StageOutcome outcome, StrategyPlan? candidate) = ProbeAndClassify(budget);
             stopwatch.Stop();
+            if (candidate is not null)
+                _latestGreedyIncumbentPlan = candidate;
             return new StageResult(stageName, candidate, stopwatch.Elapsed, outcome);
         }
         finally
@@ -373,6 +372,7 @@ partial class StrategyBuilder
                 // "no group fit within budget" is not a proof of infeasibility (an untried group might
                 // have fit), so the caller must not close the squeeze / claim proven optimality.
                 _lastProbeEnumerationCapped = _compactEnumerationCapped;
+                ResetCompactState();
                 return null;
             }
 
@@ -389,6 +389,23 @@ partial class StrategyBuilder
             _feasibleRootBudgetActive = -1;
             ComparisonState.SetThreadCancellationToken(default);
         }
+    }
+
+    private StrategyPlan BuildEdgeCompactPlanAtBudget(int rootBudget)
+    {
+        StrategyPlan? plan = ProbeFeasibleCompact(rootBudget);
+        if (plan is not null)
+            return plan;
+
+        if (_lastProbeEnumerationCapped
+            && _latestGreedyIncumbentPlan is not null
+            && _latestGreedyIncumbentPlan.MaxStep <= rootBudget)
+        {
+            return _latestGreedyIncumbentPlan;
+        }
+
+        throw new InvalidOperationException(
+            $"Greedy edge-compaction could not materialize a plan at the proven-feasible budget {rootBudget}.");
     }
 
     private StrategyPlan BuildPlan(bool useCompactSelection, bool useFeasibleBudget = false)
@@ -536,8 +553,20 @@ partial class StrategyBuilder
         // chosen comparison-group pattern, so phase 2 always finds a populated entry here.
         // The compact PoC overrides the choice with its size-minimizing pattern when enabled.
         BestGroupPattern cachedPattern;
-        if (_useCompact && _compactGroupPatternCache.TryGetValue(currentKey, out BestGroupPattern compactPattern))
+        if (_useCompact)
         {
+            if (!_compactPatternCacheReadyForMaterialization)
+            {
+                throw new InvalidOperationException(
+                    "Compact phase 1b must finish with a complete group-pattern cache before phase 2 materialization.");
+            }
+
+            if (!_compactGroupPatternCache.TryGetValue(currentKey, out BestGroupPattern compactPattern))
+            {
+                throw new InvalidOperationException(
+                    "Compact phase 1b must populate the group-pattern cache for every state materialized in phase 2.");
+            }
+
             cachedPattern = compactPattern;
         }
         else if (!_bestGroupPatternCache.TryGetValue(currentKey, out cachedPattern))
@@ -1352,7 +1381,7 @@ partial class StrategyBuilder
 
     private void EnsureCompactSolved()
     {
-        if (_phase1bSolved)
+        if (_phase1bSolved && _compactPatternCacheReadyForMaterialization)
             return;
 
         // Optional phase 1b: among equally-optimal groups, choose the ones that minimize the
@@ -1367,6 +1396,7 @@ partial class StrategyBuilder
             : int.MaxValue;
         _compactRootCost = SolveCompact(new ComparisonState(_n), _k, rootBudget);
         _phase1bSolved = true;
+        _compactPatternCacheReadyForMaterialization = _compactRootCost != int.MaxValue;
     }
 
     private void ResetPerBuildTransientState()

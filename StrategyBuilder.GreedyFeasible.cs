@@ -113,6 +113,7 @@ partial class StrategyBuilder
         // combined run uses it as its step ceiling -- the tightest sound budget, guaranteeing the edge
         // plan is never worse than this step plan.
         _feasibleRootBudget = plan.MaxStep;
+        _latestGreedyIncumbentPlan = plan;
 
         // Denominator estimate for the edge phase's live progress (see field doc): the distinct
         // canonical states this step pass touched approximate the compact solve's total work.

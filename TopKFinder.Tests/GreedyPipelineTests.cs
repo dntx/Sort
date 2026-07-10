@@ -367,6 +367,39 @@ public class GreedyPipelineTests
             });
     }
 
+    // Regression for the conservative phase-B fallback: a capped final compact pass must reuse the
+    // latest complete incumbent as "no improvement" instead of trying to salvage a partial compact
+    // cache or escalating to an uncapped retry. 12,4,4 is much cheaper than 20,4,4 but still exercises
+    // the same no-improvement branch when the cap blocks a complete edge-compact pass.
+    [Fact]
+    public void GreedyPipeline_CappedPhaseB_ReusesCompleteIncumbent_12_4_4()
+    {
+        _ = TestTimeoutHelper.RunWithTimeout(
+            "RunGreedyPipeline capped phase-B fallback for 12,4,4",
+            TimeSpan.FromSeconds(120),
+            cancellationToken =>
+            {
+                var builder = new StrategyBuilder(12, 4, 4, cancellationToken)
+                {
+                    CompactGreedyCandidateCap = 1,
+                };
+
+                StageResult incumbent = builder.BuildProofTightenStage(5);
+                Assert.Equal(StageOutcome.Tightened, incumbent.Outcome);
+                Assert.NotNull(incumbent.Plan);
+                Assert.Equal(5, incumbent.Plan!.MaxStep);
+
+                builder.OverrideGreedyPipelineUpperBound(incumbent.Plan.MaxStep);
+
+                StrategyPlan plan = builder.RunGreedyPipeline();
+
+                Assert.True(plan.IsFeasibleUpperBound);
+                Assert.Equal(incumbent.Plan.MaxStep, plan.MaxStep);
+                AssertEveryDecisionHasGroup(plan.Root);
+                return 0;
+            });
+    }
+
     // Runs the greedy edge progression and returns the outcome of its final TIGHTENING terminal stage
     // (ProvenInfeasible / Incomplete); ignores the always-last Completed pass. Returns
     // Tightened if the progression never bottomed out.
