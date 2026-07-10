@@ -563,7 +563,86 @@ def _is_core_algorithm_code_path(path: str) -> bool:
     )
 
 
-def detect_core_algorithm_test_gap(diff: str) -> str | None:
+_NO_TEST_DECLARATION_RE = re.compile(
+    r"\b(?:no|without|skip(?:ped|ping)?|omit(?:ted|ting)?|not\s+adding)\b"
+    r"[^\n.]{0,40}\b(?:test|tests|coverage)\b",
+    re.IGNORECASE,
+)
+_NO_TEST_REASON_HINTS = {
+    "refactor",
+    "mechanical",
+    "non-functional",
+    "no behavior change",
+    "behaviour-preserving",
+    "existing test",
+    "already covered",
+    "covered by",
+    "no observable change",
+    "documentation only",
+    "docs only",
+}
+_NO_TEST_EVIDENCE_HINTS = {
+    "existing test",
+    "existing tests",
+    "already covered",
+    "covered by",
+    "coverage",
+    "verified",
+    "validated",
+    "manual verification",
+    "invariant",
+    "proof",
+    "behavior unchanged",
+    "behaviour-preserving",
+    "mechanical split",
+    "rename only",
+}
+_NO_TEST_SECTION_HEADER_RE = re.compile(
+    r"^\s{0,3}#{1,6}\s*(why\s+no\s+tests?|test\s+rationale|no-?test\s+rationale)\b",
+    re.IGNORECASE,
+)
+
+
+def _extract_no_test_section(pr_body: str) -> str:
+    """Extract a markdown section dedicated to test-omission rationale."""
+    lines = (pr_body or "").splitlines()
+    if not lines:
+        return ""
+
+    start = -1
+    for idx, line in enumerate(lines):
+        if _NO_TEST_SECTION_HEADER_RE.match(line):
+            start = idx + 1
+            break
+    if start < 0:
+        return ""
+
+    section: list[str] = []
+    for line in lines[start:]:
+        if line.lstrip().startswith("#"):
+            break
+        section.append(line)
+    return "\n".join(section).strip()
+
+
+def _has_reasonable_no_test_explanation(pr_body: str) -> bool:
+    """Heuristic: PR description explicitly and concretely justifies no new tests."""
+    raw = pr_body or ""
+    if not raw.strip():
+        return False
+
+    section_text = _extract_no_test_section(raw)
+    candidate = section_text if section_text else raw
+    normalized = " ".join(candidate.lower().split())
+    if not _NO_TEST_DECLARATION_RE.search(normalized):
+        return False
+
+    has_reason = any(hint in normalized for hint in _NO_TEST_REASON_HINTS)
+    has_evidence = any(hint in normalized for hint in _NO_TEST_EVIDENCE_HINTS)
+    return has_reason and has_evidence
+
+
+def detect_core_algorithm_test_gap(diff: str, pr_body: str = "") -> str | None:
     """Return a BLOCK finding when core algorithm changes lack substantive tests."""
     changed_core_files: set[str] = set()
     changed_test_files: set[str] = set()
@@ -616,18 +695,29 @@ def detect_core_algorithm_test_gap(diff: str) -> str | None:
     if not changed_core_files or substantive_test_files:
         return None
 
+    # Allow an explicit PR-level waiver when the author clearly explains why
+    # adding a new test would be non-meaningful for this specific change.
+    if _has_reasonable_no_test_explanation(pr_body):
+        return None
+
     core_list = ", ".join(f"`{p}`" for p in sorted(changed_core_files))
     if changed_test_files:
         return (
             f"- **[BLOCK]** Core algorithm files changed ({core_list}) but no substantive test "
             "updates were detected. Current test-file edits appear to be non-functional "
             "(e.g. comments/format/import/header only). Add or modify real test assertions/cases "
-            "that guard this algorithm change."
+            "that guard this algorithm change. If a meaningful test is not appropriate, explain "
+            "the reason in the PR description instead of adding a no-op test. Recommended format: "
+            "add a `Why no test` section stating (1) why behavior risk is low and (2) what existing "
+            "coverage/verification already guards the change."
         )
     return (
         f"- **[BLOCK]** Core algorithm files changed ({core_list}) but no test files with "
         "substantive test logic updates were detected. Add or modify real test assertions/cases "
-        "that guard this algorithm change."
+        "that guard this algorithm change. If a meaningful test is not appropriate, explain "
+        "the reason in the PR description instead of adding a no-op test. Recommended format: "
+        "add a `Why no test` section stating (1) why behavior risk is low and (2) what existing "
+        "coverage/verification already guards the change."
     )
 
 
@@ -1566,7 +1656,7 @@ def main() -> int:
     # stray doc/data files) so such junk-only changes are still BLOCKed.
     structural: tuple[str, str] | None = None
     policy_findings: list[str] = []
-    core_algo_test_gap = detect_core_algorithm_test_gap(raw_diff)
+    core_algo_test_gap = detect_core_algorithm_test_gap(raw_diff, pr_body=pr_body)
     if core_algo_test_gap:
         print("Policy check: core algorithm test gap detected (forcing BLOCK).")
         policy_findings.append(core_algo_test_gap)
