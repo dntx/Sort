@@ -408,7 +408,18 @@ public sealed class StrategyRegressionTests
                 reportCombinedRunProgress: true).BuildGreedyFeasibleStage());
 
         Assert.NotEmpty(snapshots);
-        Assert.All(snapshots, snapshot => Assert.Equal(0.10, snapshot.EstimatedProgress01, precision: 6));
+        Assert.All(snapshots, snapshot => Assert.InRange(snapshot.EstimatedProgress01, 0.0, 0.10));
+
+        for (int i = 1; i < snapshots.Count; i++)
+        {
+            Assert.True(
+                snapshots[i].EstimatedProgress01 >= snapshots[i - 1].EstimatedProgress01,
+                "combined-run progress regressed within greedy-feasible band");
+        }
+
+        Assert.True(
+            snapshots[^1].EstimatedProgress01 >= 0.099,
+            $"final progress report {snapshots[^1].EstimatedProgress01} did not reach first-band ceiling");
 
         SearchProgressSnapshot finalSnapshot = snapshots[^1];
         Assert.Equal(plan.SearchStatistics.SearchedStates, finalSnapshot.SearchedStates);
