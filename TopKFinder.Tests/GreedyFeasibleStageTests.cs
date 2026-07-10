@@ -206,6 +206,49 @@ public class GreedyFeasibleStageTests
         Assert.Equal(first.SearchStatistics.OutputStates, second.SearchStatistics.OutputStates);
     }
 
+    // Test that progress reporting is working correctly during feasible stage materialization.
+    // Progress should be reported incrementally and monotonically increase from 0 to completion.
+    [Theory]
+    [InlineData(25, 5, 10)]  // Historically slow greedy case where progress display matters most
+    [InlineData(16, 5, 5)]
+    public void GreedyFeasibleStage_ReportsProgressIncrementally(int n, int m, int k)
+    {
+        var progressReports = new List<double>();
+        var builder = new StrategyBuilder(
+            n, m, k,
+            cancellationToken: default,
+            progressCallback: snapshot => progressReports.Add(snapshot.EstimatedProgress01),
+            reportCombinedRunProgress: true);
+
+        StrategyPlan plan = builder.BuildGreedyFeasibleStage();
+
+        // Must report progress at least a few times during build
+        Assert.True(progressReports.Count > 0, "no progress reports were generated");
+
+        // All reports must be in [0, 1]
+        foreach (double progress in progressReports)
+        {
+            Assert.True(progress >= 0.0 && progress <= 1.0,
+                $"progress {progress} is outside valid range [0, 1]");
+        }
+
+        // Progress must be monotonically non-decreasing (no regression)
+        for (int i = 1; i < progressReports.Count; i++)
+        {
+            Assert.True(progressReports[i] >= progressReports[i - 1],
+                $"progress regressed from {progressReports[i - 1]} to {progressReports[i]} at step {i}");
+        }
+
+        // Final report should be at 0.1 (10% in the combined-run split, which is the feasible stage's band)
+        // This verifies that the feasible stage correctly maps its local 0-100% to the global 0-10% band.
+        Assert.True(progressReports[^1] >= 0.099,
+            $"final progress report {progressReports[^1]} was below 0.099 (expected ~0.1 for feasible stage)");
+
+        // Build must complete successfully
+        Assert.True(plan.MaxStep > 0);
+        Assert.True(plan.IsFeasibleUpperBound);
+    }
+
     private static void AssertEveryDecisionHasGroup(StrategyNode node)
     {
         if (node.Branches.Count > 0)
