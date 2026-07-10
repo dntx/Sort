@@ -701,8 +701,24 @@ partial class MainForm
                 _detailsTextBox.Text = "Loading details...";
                 _ = Task.Run(lazy.GetOrCreate).ContinueWith(t =>
                 {
-                    if (t.IsFaulted || !IsHandleCreated || IsDisposed)
+                    if (!IsHandleCreated || IsDisposed)
                         return;
+
+                    if (t.IsFaulted)
+                    {
+                        string error = t.Exception?.GetBaseException().Message ?? "unknown error";
+                        Debug.WriteLine($"Details load failed: {error}");
+                        BeginInvoke(new Action(() =>
+                        {
+                            if (requestVersion != Volatile.Read(ref _detailsRequestVersion))
+                                return;
+                            if (!ReferenceEquals(_treeView.SelectedNode, node))
+                                return;
+
+                            _detailsTextBox.Text = $"Failed to load details: {error}";
+                        }));
+                        return;
+                    }
 
                     BeginInvoke(new Action(() =>
                     {
