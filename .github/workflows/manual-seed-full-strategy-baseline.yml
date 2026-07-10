@@ -11,7 +11,7 @@ on:
           - full
           - smoke
       exclude_keys:
-        description: Optional comma-separated matrix keys to exclude
+        description: Optional semicolon-separated matrix keys to exclude
         type: string
         default: greedy-full:20,2,6
       timeout_seconds:
