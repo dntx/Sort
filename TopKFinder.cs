@@ -238,16 +238,11 @@ partial class StrategyBuilder
             _compactFeasibilityOnly = false;
         }
 
-        // Phase B: one edge-compaction pass at the determined step S. Both the direct probe and the
-        // (should-not-happen) fall back produce a plan, so this ALWAYS emits exactly one edge-compact
-        // stage -- the strong-output contract holds for Phase B just as for the Phase A loop.
+        // Phase B: one edge-compaction pass at the determined step S.
         string edgeCompactStageName = FormatEdgeCompactStageName(bestStep);
         onStageStart?.Invoke(edgeCompactStageName);
         var edgeStopwatch = Stopwatch.StartNew();
-        // bestStep is a proven-feasible ceiling, so the probe should realize a plan; the fall back to a
-        // min-edge pass at the feasible budget U is a defensive guarantee that a valid plan always exists.
-        StrategyPlan finalPlan = (ProbeFeasibleCompact(bestStep)
-                ?? BuildPlan(useCompactSelection: true, useFeasibleBudget: true))
+        StrategyPlan finalPlan = BuildEdgeCompactPlanAtBudget(bestStep)
             .WithRootProvenLowerBound(_rootProvenLowerBound);
         edgeStopwatch.Stop();
         onStageCompleted?.Invoke(new StageResult(
@@ -389,6 +384,35 @@ partial class StrategyBuilder
             _feasibleRootBudgetActive = -1;
             ComparisonState.SetThreadCancellationToken(default);
         }
+    }
+
+    private StrategyPlan BuildEdgeCompactPlanAtBudget(int rootBudget)
+    {
+        StrategyPlan? plan = ProbeFeasibleCompact(rootBudget);
+        if (plan is not null)
+            return plan;
+
+        int configuredCap = CompactGreedyCandidateCap;
+        if (configuredCap != int.MaxValue)
+        {
+            try
+            {
+                // A cap-truncated phase-B pass leaves only a partial compact cache behind. Retry the
+                // same proven-feasible ceiling uncapped so materialization is driven by a complete
+                // compact selection for this budget instead of stale leftovers from the failed attempt.
+                CompactGreedyCandidateCap = int.MaxValue;
+                plan = ProbeFeasibleCompact(rootBudget);
+                if (plan is not null)
+                    return plan;
+            }
+            finally
+            {
+                CompactGreedyCandidateCap = configuredCap;
+            }
+        }
+
+        throw new InvalidOperationException(
+            $"Greedy edge-compaction could not materialize a plan at the proven-feasible budget {rootBudget}.");
     }
 
     private StrategyPlan BuildPlan(bool useCompactSelection, bool useFeasibleBudget = false)

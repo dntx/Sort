@@ -367,6 +367,30 @@ public class GreedyPipelineTests
             });
     }
 
+    // Regression for the greedy 20,4,4 crash in the final edge-compaction pass. Seed the pipeline at
+    // the already-known feasible ceiling 8 so it only runs the terminal proof-tighten<=7 check and the
+    // edge-compact@8 pass, which used to fall through to a stale partial compact cache and throw.
+    [Fact]
+    public void GreedyPipeline_SeededBudget8_CompletesWithoutMissingPatternCache_20_4_4()
+    {
+        _ = TestTimeoutHelper.RunWithTimeout(
+            "RunGreedyPipeline seeded at budget 8 for 20,4,4",
+            TimeSpan.FromMinutes(3),
+            cancellationToken =>
+            {
+                var builder = new StrategyBuilder(20, 4, 4, cancellationToken);
+                builder.OverrideGreedyPipelineUpperBound(8);
+
+                StrategyPlan plan = builder.RunGreedyPipeline();
+
+                Assert.True(plan.IsFeasibleUpperBound);
+                Assert.True(plan.MaxStep <= 8,
+                    $"seeded greedy edge pass should stay within budget 8, got {plan.MaxStep}");
+                AssertEveryDecisionHasGroup(plan.Root);
+                return 0;
+            });
+    }
+
     // Runs the greedy edge progression and returns the outcome of its final TIGHTENING terminal stage
     // (ProvenInfeasible / Incomplete); ignores the always-last Completed pass. Returns
     // Tightened if the progression never bottomed out.
