@@ -66,6 +66,14 @@ static class StrategyOverviewRenderer
             bool single = spineNodes[i].Branches.Count == 1;
             int size = spineNodes[i].Group.Count;
 
+            if (single && size == 2 && TryBuildAnchorRunSummary(spineNodes, spineBranches, i, out int runEndExclusive, out OverviewRow anchorRow, roundNo + 1))
+            {
+                rows.Add(anchorRow);
+                roundNo++;
+                i = runEndExclusive;
+                continue;
+            }
+
             if (single)
             {
                 // Accumulate a maximal run of single-branch, same-size sorts on disjoint items.
@@ -139,6 +147,83 @@ static class StrategyOverviewRenderer
 
         rows.Add(BuildFinishRow(tail, plan.K, spineNodes.Count));
         return new StrategyOverview(rows);
+    }
+
+    private static bool TryBuildAnchorRunSummary(
+        IReadOnlyList<StrategyNode> spineNodes,
+        IReadOnlyList<StrategyBranch> spineBranches,
+        int start,
+        out int endExclusive,
+        out OverviewRow row,
+        int roundNo)
+    {
+        endExclusive = start;
+        row = null!;
+
+        IReadOnlyList<int> group = spineNodes[start].Group;
+        if (group.Count != 2)
+            return false;
+
+        int leftAnchor = group[0];
+        int rightAnchor = group[1];
+
+        int leftLen = ComputeAnchorRunLength(spineNodes, start, leftAnchor);
+        int rightLen = ComputeAnchorRunLength(spineNodes, start, rightAnchor);
+
+        int anchor = leftLen >= rightLen ? leftAnchor : rightAnchor;
+        int runLen = leftLen >= rightLen ? leftLen : rightLen;
+        if (runLen < 3)
+            return false;
+
+        var challengers = new List<int>(runLen);
+        var drops = new List<int>(runLen);
+        for (int j = start; j < start + runLen; j++)
+        {
+            IReadOnlyList<int> pair = spineNodes[j].Group;
+            challengers.Add(pair[0] == anchor ? pair[1] : pair[0]);
+            drops.Add(spineBranches[j].Effect.NewlyExcluded.Count);
+        }
+
+        int stepLo = start + 1;
+        int stepHi = start + runLen;
+        string span = stepLo == stepHi ? $"step {stepLo}" : $"steps {stepLo}\u2013{stepHi}";
+
+        var details = new List<string>
+        {
+            $"challengers: {StrategyTextRenderer.FormatOptionalSet(challengers)}",
+            SummarizeEliminations(drops, spineBranches[start + runLen - 1].Effect.PossibleCandidates.Count),
+        };
+
+        row = new OverviewRow(
+            $"Round {roundNo} \u00b7 {span}: compare {StrategyTextRenderer.FormatOptionalSet(new[] { anchor })} against {runLen} challengers",
+            details,
+            spineNodes[start].StateId);
+        endExclusive = start + runLen;
+        return true;
+    }
+
+    private static int ComputeAnchorRunLength(IReadOnlyList<StrategyNode> spineNodes, int start, int anchor)
+    {
+        var challengers = new HashSet<int>();
+        int j = start;
+        while (j < spineNodes.Count)
+        {
+            StrategyNode node = spineNodes[j];
+            if (node.Branches.Count != 1 || node.Group.Count != 2)
+                break;
+
+            IReadOnlyList<int> pair = node.Group;
+            if (pair[0] != anchor && pair[1] != anchor)
+                break;
+
+            int challenger = pair[0] == anchor ? pair[1] : pair[0];
+            if (!challengers.Add(challenger))
+                break;
+
+            j++;
+        }
+
+        return j - start;
     }
 
     public static string RenderText(StrategyPlan plan)
