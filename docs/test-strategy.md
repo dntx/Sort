@@ -195,6 +195,61 @@ GitHub Actions 侧提供了手动门槛工作流：
 | `DominanceReuseStatsTests.cs` | `RUN_DOMINANCE_STATS` | 统计 dominance floor 复用命中与覆盖率，定位下界复用退化 |
 | `GapTreeDumpTests.cs` | `RUN_GAP_DUMP` | 把 default 计划与 gap oracle 证明的边最优计划并排渲染，肉眼对比为何真最优边数更少 |
 | `OrderedBlockHonestyTests.cs` | `RUN_BLOCK_HONESTY` | 有序块置换检测器的诚实性 / 完整性扫描：确认 sibling 合并都由真实 parent-state automorphism 支撑 |
+| `ProofTightenPerfGateTests.cs` | `RUN_PROOF_TIGHTEN_GATE` | 针对历史敏感形状 `20,2,6` 的 greedy `proof-tighten<=U-1` 首探针 gate：默认只看超时（抓卡死/数量级爆炸），可选叠加 `OutcomesConstructed / CandidateGroupsEnumerated / SearchedStates` 的确定性上限（机器无关，便于 ratchet） |
+
+`ProofTightenPerfGateTests` 使用说明：
+
+- 本地触发：
+
+```powershell
+$env:RUN_PROOF_TIGHTEN_GATE = "1"
+dotnet test TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter ProofTightenPerfGateTests
+```
+
+- 可选环境变量：
+  - `PROOF_TIGHTEN_TIMEOUT_SECONDS`（默认 200）
+  - `PROOF_TIGHTEN_OUTCOMES_CAP`（默认 0，0=关闭）
+  - `PROOF_TIGHTEN_CANDIDATES_CAP`（默认 0，0=关闭）
+  - `PROOF_TIGHTEN_SEARCHED_STATES_CAP`（默认 0，0=关闭）
+
+- 建议流程：先用 timeout-only 观察稳定性，再在同机多次测量后把确定性 cap 锁进 CI（优先锁 `OutcomesConstructed`）。
+- GitHub Actions 手动工作流：`.github/workflows/manual-proof-tighten-gate.yml`（`workflow_dispatch`）。
+
+夜间自动巡检（推荐）：
+
+- 工作流：`.github/workflows/nightly-proof-tighten-gate.yml`
+- 触发：每天一次（`16:00 UTC`，即中国时区 `00:00`）
+- 行为：拆成两个夜间 gate
+  - `StrategyMatrixTests` 的 smoke 矩阵，覆盖 `6,2,2`、`10,2,5`、`12,4,4` 的 exact / greedy / greedy-tighten / proof-tighten / greedy-full 代表行
+  - 单点 `ProofTightenPerfGateTests`，继续盯住历史敏感的 `20,2,6` 首探针
+- 报警：任一 job 失败时自动创建或更新带标签 `perf-gate,nightly-performance-gates` 的 issue，附上 run 链接与 commit
+- 本地 smoke：把 `STRATEGY_MATRIX_CASE_SET=smoke`，即可跳过最重的 `20,2,6` 行做快速验证；如果要看完整矩阵，可手动把 case set 切到 `full`
+
+这样可以把慢例 gate 从日间 PR 流程里解耦出来：白天保持 required checks 轻量，夜间用 smoke 矩阵加关键单点 probe 持续做回归巡检，full 矩阵保留给手动触发。
+
+full nightly 报警（一步一步）:
+
+1. 先跑一次 full baseline seed（只需要第一次，之后按需重做）
+  - 在 GitHub Actions 手动运行 `.github/workflows/manual-seed-full-strategy-baseline.yml`
+  - 默认参数可直接用：`timeout_seconds=240`、`warmup_runs=0`、`measured_runs=1`
+  - 该 workflow 会自动生成并提交 `scripts/strategy-matrix-baseline-full.csv`，并自动创建 PR
+  - 合并该 PR 后，full nightly 才有可比较的基线
+
+2. 启用 full nightly compare + 报警
+  - 工作流：`.github/workflows/nightly-full-strategy-matrix.yml`
+  - 触发：每天 `18:00 UTC`（中国时区 `02:00`）+ 支持手动触发
+  - 行为：运行 `StrategyMatrixTests` 的 `full` case-set，并与 `scripts/strategy-matrix-baseline-full.csv` 比较
+  - 报警：失败时自动创建/更新标签 `perf-gate,nightly-full-matrix` 的 issue（标题包含日期，便于按天追踪）
+
+3. 后续维护（推荐）
+  - 当算法有明显性能变化时，再手动跑一次 seed workflow，生成新的 baseline PR
+  - 审核并合并后，nightly 会自动基于新基线继续报警
+
+`StrategyMatrixTests` 的标准用法是“基线历史 + 中位数比较”：
+
+- `STRATEGY_MATRIX_BASELINE_ONLY=1` 时，把当前结果写成基线 CSV。
+- 正常 nightly 比较时，若 baseline CSV 对同一个 key 有多行，测试会取这些历史行的中位数作为比较基线。
+- 这样就能把“最近 5 次 accepted 夜跑”的中位数自然纳入门限，而不是拿一次原始采样做门限。
 
 ---
 

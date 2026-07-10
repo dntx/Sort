@@ -1,0 +1,95 @@
+name: nightly-full-strategy-matrix
+
+on:
+  schedule:
+    # Daily at 18:00 UTC (02:00 China Standard Time, UTC+8)
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: nightly-full-strategy-matrix
+  cancel-in-progress: false
+
+jobs:
+  full-matrix-compare:
+    runs-on: windows-latest
+    timeout-minutes: 360
+    env:
+      RUN_STRATEGY_MATRIX: "1"
+      STRATEGY_MATRIX_CASE_SET: "full"
+      STRATEGY_MATRIX_BASELINE_PATH: ".\\scripts\\strategy-matrix-baseline-full.csv"
+      STRATEGY_MATRIX_TIMEOUT_SECONDS: "240"
+      STRATEGY_MATRIX_WARMUP_RUNS: "0"
+      STRATEGY_MATRIX_MEASURED_RUNS: "1"
+      STRATEGY_MATRIX_REGRESSION_PERCENT: "20"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Ensure full baseline exists
+        shell: pwsh
+        run: |
+          if (!(Test-Path .\scripts\strategy-matrix-baseline-full.csv)) {
+            throw "Missing scripts/strategy-matrix-baseline-full.csv. Run manual-seed-full-strategy-baseline first."
+          }
+
+      - name: Run full strategy matrix compare
+        run: dotnet test .\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj -c Release --filter "StrategyMatrixTests"
+
+      - name: Alert on failure (create or update issue)
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const date = new Date().toISOString().slice(0, 10);
+            const title = `[perf-gate] nightly full strategy matrix failed (${date})`;
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            const body = [
+              "Nightly full strategy matrix compare failed.",
+              "",
+              `- Job: full-matrix-compare`,
+              `- Workflow run: ${runUrl}`,
+              `- Commit: ${context.sha}`,
+              `- Trigger: ${context.eventName}`,
+              `- Baseline: scripts/strategy-matrix-baseline-full.csv`,
+              "",
+              "Please inspect StrategyMatrixTests output for FAIL_TIME_REGRESSION / FAIL_STRUCTURE_CHANGED rows."
+            ].join("\n");
+
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner,
+              repo,
+              state: "open",
+              per_page: 100,
+              labels: "perf-gate,nightly-full-matrix"
+            });
+
+            const existing = issues.find(i => i.title === title);
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: existing.number,
+                body
+              });
+            } else {
+              await github.rest.issues.create({
+                owner,
+                repo,
+                title,
+                body,
+                labels: ["perf-gate", "nightly-full-matrix", "regression"]
+              });
+            }
