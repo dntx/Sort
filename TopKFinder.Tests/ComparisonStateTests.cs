@@ -221,6 +221,19 @@ public sealed class ComparisonStateTests
         Assert.Equal(2, lowerBound);
     }
 
+    // Regression: large m should keep information-theoretic lower-bound math stable without relying on
+    // integer factorial accumulation/overflow behavior.
+    [Fact]
+    public void MinWorstCaseLowerBound_LargeM_LogDomainComputationRemainsStable()
+    {
+        var builder = new StrategyBuilder(25, 24, 1);
+        var state = new ComparisonState(25);
+
+        int lowerBound = builder.GetMinWorstCaseLowerBoundForTesting(state, remainingSlots: 1);
+
+        Assert.True(lowerBound >= 1, "undetermined non-terminal state should keep a positive lower bound");
+    }
+
     // Determinability floor: a normalized non-terminal state with activeCount > m provably needs at least
     // 2 comparisons -- a single step totally orders one group of m active items but cannot decide an active
     // item left outside that group, so the state is not determined in one step (full proof in
