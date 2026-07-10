@@ -7,7 +7,7 @@ using System.Threading;
 
 partial class StrategyBuilder
 {
-    private const int ProgressReportIntervalMs = 100;
+    private const int ProgressReportIntervalMs = 50;  // Reduced from 100ms to provide smoother progress updates
     private readonly int _n;
     private readonly int _m;
     private readonly int _requestedK;
@@ -58,6 +58,9 @@ partial class StrategyBuilder
     private int _pendingStates;
     private int _peakPendingStates;
     private long _lastProgressReportMs = -ProgressReportIntervalMs;
+    private int _lastReportedVisitedStatesCount = 0;
+    private long _feasiblePhase2StartMs = -1;  // When BuildState recursion began in feasible stage
+    private bool _feasiblePhaseSolved = false;  // Mark when feasible stage materialization completes
     private int _lowerBoundPrunes;
     private int _duplicateOutcomeSkips;
     private int _mergedOutcomeCollisions;
@@ -445,6 +448,7 @@ partial class StrategyBuilder
     private StrategyNode BuildState(ComparisonState state, ulong fixedTopMask, int remainingSlots, int step)
     {
         ThrowIfCancellationRequested();
+        ThrottledReportProgressDuringFeasibleBuild();
         NormalizeState(state, ref fixedTopMask, ref remainingSlots);
         ObserveSearchState(state, remainingSlots);
 
@@ -1086,6 +1090,56 @@ partial class StrategyBuilder
             _rootProvenLowerBound));
     }
 
+    // For feasible-stage incremental progress: periodically check visited-state count and report
+    // if enough time has passed since the last report. Called from BuildState to provide smooth
+    // progress updates during the possibly-slow recursive materialization of the greedy tree.
+    internal void ThrottledReportProgressDuringFeasibleBuild()
+    {
+        if (_progressCallback is null || _progressScope != ProgressScope.FeasibleInCombinedRun)
+            return;
+
+        long elapsedMs = _progressStopwatch.ElapsedMilliseconds;
+        if (elapsedMs - _lastProgressReportMs < ProgressReportIntervalMs)
+            return;
+
+        // Only report if the visited-state count has actually changed, to avoid redundant calls.
+        int currentVisitedCount = _visitedSearchStates.Count;
+        if (currentVisitedCount <= _lastReportedVisitedStatesCount)
+            return;
+
+        _lastReportedVisitedStatesCount = currentVisitedCount;
+        _searchedStates = currentVisitedCount;
+        _lastProgressReportMs = elapsedMs;
+
+        double localProgress = EstimateProgress(elapsedMs);
+        double estimatedProgress01 = MapToReportedProgress(localProgress);
+        _progressCallback(new SearchProgressSnapshot(
+            elapsedMs,
+            _searchedStates,
+            _pendingStates,
+            _peakPendingStates,
+            _stateIds.Count,
+            _rootIncumbents.Count == 0 ? null : _rootIncumbents[^1],
+            _rootIncumbents.Count,
+            _lowerBoundPrunes,
+            _duplicateOutcomeSkips,
+            _mergedOutcomeCollisions,
+            _exactCacheHits,
+            _lowerBoundCacheHits,
+            _feasibleTopSetCacheHits,
+            _bestGroupPatternCacheHits,
+            _outcomesConstructed,
+            _candidateGroupsEnumerated,
+            _lowerBoundStepsCache.Count,
+            _feasibleTopSetCache.Count,
+            _compactStatesSolved,
+            _compactGroupsEnumerated,
+            _compactStepOptimalGroups,
+            _feasibleCompactStateEstimate,
+            estimatedProgress01,
+            _rootProvenLowerBound));
+    }
+
     private double MapToReportedProgress(double localProgress01)
     {
         if (!_reportCombinedRunProgress)
@@ -1103,17 +1157,39 @@ partial class StrategyBuilder
             _ => (0.0, 1.0),
         };
 
-        // The feasible phase is a single indivisible greedy slice with no internal progress signal,
-        // so instead of sitting at 0% (which reads as "nothing happening") it fills its whole 10% band
-        // and hands off continuously to the default phase, which starts at 10%.
-        double localFraction = _progressScope == ProgressScope.FeasibleInCombinedRun
-            ? 1.0
-            : Math.Clamp(localProgress01, 0.0, 1.0);
+        // All phases now report incremental progress based on their own work signal:
+        // - FeasibleInCombinedRun: grows from 0% to 100% of its 10% band as states are visited
+        // - DefaultInCombinedRun: grows from 0% to 100% of its 60% band as states are searched
+        // - CompactFeasibleInCombinedRun: grows from 0% to 100% of its 90% band as states are solved
+        // This ensures the display never looks stuck; progress monotonically increases whenever work happens.
+        double localFraction = Math.Clamp(localProgress01, 0.0, 1.0);
         return Math.Clamp(progressBase + (localFraction * progressSpan), 0.0, 1.0);
     }
 
     private double EstimateProgress(long elapsedMs)
     {
+        // Greedy-mode feasible (step) phase: use a self-correcting asymptote like the edge phase.
+        // progress = elapsed / (elapsed + remaining_estimate), which smoothly grows from 0% toward 100%
+        // without plateauing. We conservatively assume at least 500ms of remaining work ahead.
+        if (_progressScope == ProgressScope.FeasibleInCombinedRun)
+        {
+            if (_feasiblePhaseSolved)
+                return 1.0;
+
+            if (_feasiblePhase2StartMs < 0)
+                return 0.0;
+
+            long elapsedInPhase2 = elapsedMs - _feasiblePhase2StartMs;
+            if (elapsedInPhase2 <= 0)
+                return 0.0;
+
+            // Use the same asymptote as the edge phase: estimate remaining work conservatively.
+            // The remaining estimate (min 500ms) ensures the bar rises continuously.
+            long remainingEstimate = Math.Max(500L, 1000L - elapsedInPhase2 / 2);
+            double fraction = elapsedInPhase2 / (double)(elapsedInPhase2 + remainingEstimate);
+            return Math.Min(fraction, 0.99);
+        }
+
         // Greedy-mode edge phase: the compact solve has no pending/searched signal (those counters are
         // reset and never touched here), so drive progress off _compactStatesSolved. Once the solve
         // finishes (_phase1bSolved) the remaining phase-2 materialization is effectively instant, so
@@ -1408,6 +1484,9 @@ partial class StrategyBuilder
 
         _visitedSearchStates.Clear();
         _searchedStates = 0;
+        _lastReportedVisitedStatesCount = 0;
+        _feasiblePhase2StartMs = -1;
+        _feasiblePhaseSolved = false;
         _pendingStates = 0;
         _peakPendingStates = 0;
 
