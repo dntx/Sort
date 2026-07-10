@@ -50,6 +50,7 @@ partial class MainForm
         _stateNodesByKey.Clear();
         _referenceTargets.Clear();
         _lazyDecisions.Clear();
+        _lazyOverviewSections.Clear();
         _jumpTargets.Clear();
         _navigationHistory.Clear();
         _backButton.Enabled = false;
@@ -110,9 +111,23 @@ partial class MainForm
             ForeColor = _palette.ForeColor,
         };
 
-        foreach (OverviewRow row in StrategyOverviewRenderer.Build(plan).Rows)
+        // Defer expensive overview row construction until the section is actually expanded.
+        sectionNode.Nodes.Add(new TreeNode());
+        _lazyOverviewSections[sectionNode] = new LazyOverviewSection(plan, scope);
+        return sectionNode;
+    }
+
+    private void MaterializeOverviewSection(TreeNode sectionNode)
+    {
+        if (!_lazyOverviewSections.TryGetValue(sectionNode, out LazyOverviewSection lazy))
+            return;
+
+        _lazyOverviewSections.Remove(sectionNode);
+        _overviewTree.BeginUpdate();
+        sectionNode.Nodes.Clear();
+        foreach (OverviewRow row in StrategyOverviewRenderer.Build(lazy.Plan).Rows)
         {
-            string? key = row.LinkStateId is int id ? $"{scope}:{id}" : null;
+            string? key = row.LinkStateId is int id ? $"{lazy.Scope}:{id}" : null;
             var headlineNode = new TreeNode(row.Headline)
             {
                 Tag = key,
@@ -128,9 +143,7 @@ partial class MainForm
             }
             sectionNode.Nodes.Add(headlineNode);
         }
-
-        sectionNode.Expand();
-        return sectionNode;
+        _overviewTree.EndUpdate();
     }
 
     private TreeNode BuildOverviewNoteNode(string text)

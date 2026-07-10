@@ -30,7 +30,7 @@ partial class MainForm
 
     private TreeNode CreatePlanTreeRoot(string stageName, StrategyPlan plan, string scope, TimeSpan elapsed)
     {
-        StrategyDepthIndex depthIndex = StrategyDepthIndex.Build(plan.Root);
+        var depthIndex = new LazyDepthIndex(plan.Root);
         var planNode = new TreeNode(FormatStageRootLabel(stageName, elapsed, plan))
         {
             Tag = BuildPlanDetails(plan),
@@ -70,7 +70,7 @@ partial class MainForm
         };
     }
 
-    private TreeNode CreateStateNode(StrategyNode node, int k, string scope, StrategyDepthIndex depthIndex)
+    private TreeNode CreateStateNode(StrategyNode node, int k, string scope, LazyDepthIndex depthIndex)
     {
         return node.Kind switch
         {
@@ -81,10 +81,10 @@ partial class MainForm
         };
     }
 
-    private TreeNode CreateDecisionNode(StrategyNode node, int k, string scope, StrategyDepthIndex depthIndex)
+    private TreeNode CreateDecisionNode(StrategyNode node, int k, string scope, LazyDepthIndex depthIndex)
     {
-        int maxStep = depthIndex.SubtreeMaxStep(node);
-        string headerText = $"S{node.StateId} [step {node.Step}/{maxStep}] sort({StrategyTextRenderer.FormatSet(node.Group)})";
+        // Keep initial rendering cheap: avoid full depth-index construction here.
+        string headerText = $"S{node.StateId} [step {node.Step}] sort({StrategyTextRenderer.FormatSet(node.Group)})";
         if (node.FinalChoice is null)
             headerText += node.Branches.Count == 1 ? " (1 edge)" : $" ({node.Branches.Count} edges)";
 
@@ -135,7 +135,7 @@ partial class MainForm
         _treeView.EndUpdate();
     }
 
-    private TreeNode CreateBranchNode(StrategyBranch branch, int k, string scope, StrategyDepthIndex depthIndex)
+    private TreeNode CreateBranchNode(StrategyBranch branch, int k, string scope, LazyDepthIndex depthIndex)
     {
         string branchHeader = branch.OrderText;
         if (branch.EquivalentOrders is not null)
@@ -348,9 +348,9 @@ partial class MainForm
         return treeNode;
     }
 
-    private TreeNode CreateReferenceNode(StrategyNode node, string scope, StrategyDepthIndex depthIndex)
+    private TreeNode CreateReferenceNode(StrategyNode node, string scope, LazyDepthIndex depthIndex)
     {
-        string label = depthIndex.TryGetReferenceRemaining(node.StateId, out int remaining)
+        string label = depthIndex.Value.TryGetReferenceRemaining(node.StateId, out int remaining)
             ? $"->S{node.StateId} {StrategyTextRenderer.FormatRemainingSteps(remaining)}"
             : $"->S{node.StateId}";
         label += StrategyTextRenderer.FormatRelabeling(node.ReferenceRelabeling);

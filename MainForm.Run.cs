@@ -334,6 +334,7 @@ partial class MainForm
         _stateNodesByKey.Clear();
         _referenceTargets.Clear();
         _lazyDecisions.Clear();
+        _lazyOverviewSections.Clear();
         _jumpTargets.Clear();
         _jumpScopeRoots.Clear();
         _jumpScopeStrategyRoots.Clear();

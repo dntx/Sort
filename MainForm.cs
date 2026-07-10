@@ -120,6 +120,7 @@ partial class MainForm : Form
     // when the user requests "expand all". Membership in this dictionary (not any placeholder text) is
     // the source of truth for "not yet materialized".
     private readonly Dictionary<TreeNode, LazyDecision> _lazyDecisions = new();
+    private readonly Dictionary<TreeNode, LazyOverviewSection> _lazyOverviewSections = new();
 
     // Per (scope:stateId) branch-index path from a plan's root state node to that state's node, so a jump
     // target that has not been materialized yet can be reached by walking and materializing the path.
@@ -128,7 +129,21 @@ partial class MainForm : Form
     private readonly Dictionary<string, StrategyNode> _jumpScopeStrategyRoots = new();
     private readonly HashSet<string> _indexedJumpScopes = new();
 
-    private readonly record struct LazyDecision(StrategyNode Node, int K, string Scope, StrategyDepthIndex DepthIndex);
+    private sealed class LazyDepthIndex
+    {
+        private readonly StrategyNode _root;
+        private StrategyDepthIndex? _value;
+
+        public LazyDepthIndex(StrategyNode root)
+        {
+            _root = root;
+        }
+
+        public StrategyDepthIndex Value => _value ??= StrategyDepthIndex.Build(_root);
+    }
+
+    private readonly record struct LazyDecision(StrategyNode Node, int K, string Scope, LazyDepthIndex DepthIndex);
+    private readonly record struct LazyOverviewSection(StrategyPlan Plan, string Scope);
 
     private readonly record struct JumpTarget(TreeNode ScopeRoot, int[] BranchPath);
 
@@ -396,6 +411,7 @@ partial class MainForm : Form
             Font = new Font(FontFamily.GenericSansSerif, 9),
         };
         _overviewTree.AfterSelect += (_, _) => JumpFromOverviewSelection();
+        _overviewTree.BeforeExpand += (_, e) => { if (e.Node is { } n) MaterializeOverviewSection(n); };
         _overviewTree.ContextMenuStrip = CreateOverviewContextMenu();
         _overviewTree.KeyDown += OverviewTree_KeyDown;
         _overviewExpandButton.Click += (_, _) => _overviewTree.ExpandAll();
