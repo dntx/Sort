@@ -59,6 +59,24 @@ public class GreedyTightenTests
             $"greedy-tighten step {tightened} was worse than the greedy-feasible upper bound {feasible}");
     }
 
+    // Positive-value lock: on these shapes the greedy-feasible bound cannot reach the target step,
+    // while single-round GreedyTighten can. This guards against regressions where GT silently loses
+    // its practical tightening value.
+    [Theory]
+    [InlineData(10, 2, 5, 17)]
+    [InlineData(14, 3, 3, 9)]
+    [InlineData(17, 5, 5, 6)]
+    public void GreedyTightenPlan_KnownValueCases_ReachThresholdOnlyWithGt(int n, int m, int k, int threshold)
+    {
+        int feasible = new StrategyBuilder(n, m, k).BuildGreedyFeasibleStage().MaxStep;
+        int tightened = new StrategyBuilder(n, m, k).BuildGreedyTightenPlan().MaxStep;
+
+        Assert.True(feasible > threshold,
+            $"expected greedy-feasible step to stay above threshold {threshold}, got {feasible}");
+        Assert.True(tightened <= threshold,
+            $"expected greedy-tighten step to reach threshold {threshold}, got {tightened}");
+    }
+
     // Independent soundness lock, valid even where the exact search is intractable (unlike
     // StepNeverBelowOptimum, which needs BuildStepProofStage). Re-simulates the committed policy from the
     // root, checking every state makes progress, no adversary path cycles, and every path ends at a
