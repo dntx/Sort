@@ -232,7 +232,7 @@ full nightly 报警（一步一步）:
 1. 先跑一次 full baseline seed（只需要第一次，之后按需重做）
   - 在 GitHub Actions 手动运行 `.github/workflows/manual-seed-full-strategy-baseline.yml`
   - 默认参数可直接用：`case_set=full`、`exclude_keys=greedy-full:20,2,6`、`timeout_seconds=240`、`warmup_runs=0`、`measured_runs=1`
-  - 说明：通过 `exclude_keys`（逗号分隔）排除慢例；默认仅排除 `greedy-full:20,2,6`，保留其余 full 行（包括 `20,2,6` 的 `greedy-feasible / greedy-tighten / proof-tighten-first`）
+  - 说明：通过 `exclude_keys`（分号分隔）排除慢例；默认仅排除 `greedy-full:20,2,6`，保留其余 full 行（包括 `20,2,6` 的 `greedy-feasible / greedy-tighten / proof-tighten-first`）
   - 该 workflow 会自动生成并提交 `scripts/strategy-matrix-baseline-full.csv`，并自动创建 PR
   - 合并该 PR 后，full nightly 才有可比较的基线
 

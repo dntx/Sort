@@ -20,7 +20,7 @@ using Xunit;
 //   STRATEGY_MATRIX_MEASURED_RUNS          (default 3)
 //   STRATEGY_MATRIX_REGRESSION_PERCENT     (default 20)
 //   STRATEGY_MATRIX_CASE_SET               (default full; smoke skips the heaviest rows)
-//   STRATEGY_MATRIX_EXCLUDE_KEYS           (default empty; comma/semicolon-separated matrix keys to exclude)
+//   STRATEGY_MATRIX_EXCLUDE_KEYS           (default empty; semicolon/newline-separated matrix keys to exclude)
 //   STRATEGY_MATRIX_BASELINE_PATH          (default .\scripts\strategy-matrix-baseline.csv if present)
 //   STRATEGY_MATRIX_BASELINE_ONLY          (default 0; when 1, writes current results and exits)
 //   STRATEGY_MATRIX_REPORT_PATH           (default <repo>\strategy-matrix-report.csv)
@@ -162,13 +162,13 @@ public sealed class StrategyMatrixTests
         if (string.Equals(caseSet, "full-no-greedy-full-20-2-6", StringComparison.OrdinalIgnoreCase))
             excludeRaw = string.IsNullOrWhiteSpace(excludeRaw)
                 ? "greedy-full:20,2,6"
-                : $"{excludeRaw},greedy-full:20,2,6";
+                : $"{excludeRaw};greedy-full:20,2,6";
 
         if (string.IsNullOrWhiteSpace(excludeRaw))
             return selected;
 
         var excludedKeys = excludeRaw
-            .Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
+            .Split(new[] { ';', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
             .Select(key => key.Trim())
             .Where(key => key.Length > 0)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
