@@ -279,7 +279,52 @@ full nightly 报警（一步一步）:
 - 若改动影响工作量计数，**在同一 PR 内**更新相应的计数器上限（ratchet）并量出新基线；
 - 若新增了核心算法区域的能力，考虑是否需要在本文档补充对应的护栏说明。
 
-## 9. 已证明最优值速查表
+## 9. PR 中 "Why no test" 说明约定（适用于核心算法改动）
+
+当核心算法文件发生实质改动，但你判断「新增测试没有信息增益」时，不必硬加 no-op 测试；
+可以在 PR 描述里写清楚原因与证据。
+
+建议直接加一个小节标题：
+
+- `## Why no test`
+
+并至少包含两点：
+
+1. **原因（Reason）**：为什么这次改动的行为风险低（例如机械拆分、纯重构、无可观察行为变化）。
+2. **证据（Evidence）**：现有哪些覆盖/验证已经约束了该改动（例如已有测试集、不变量、手工验证路径）。
+
+可复用模板：
+
+```md
+## Why no test
+- Reason: <why adding a new test is low value for this change>
+- Evidence: <which existing tests/invariants/manual verification already cover it>
+```
+
+通过示例：
+
+```md
+## Why no test
+- Reason: This PR is a behavior-preserving mechanical split of StrategyBuilder helpers.
+- Evidence: Existing StrategyRegressionTests and GreedyPipelineTests cover the same call paths; local run shows identical MaxStep and counters on affected shapes.
+```
+
+不通过示例（会被视为说明不足）：
+
+```md
+## Why no test
+- No test needed.
+```
+
+或：
+
+```md
+No tests added.
+```
+
+上面两类都缺少可审阅的 reason/evidence，reviewer 仍可要求补测试或补完整说明。
+
+## 10. 已证明最优值速查表
 
 `docs/optimal-max-steps.md` 汇总了一批 `(n, m, k)` 在 exact 模式下**已证明的最优
 max steps**，来源于 `StrategyRegressionTests.cs` 的 `InlineData` 基线与 `--mode exact` 实测。
