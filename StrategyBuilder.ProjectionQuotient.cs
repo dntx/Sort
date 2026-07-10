@@ -266,7 +266,7 @@ partial class StrategyBuilder
             int memberFirst = member.Family.RepresentativeOrderItems[0];
             if (memberFirst != b1 && memberFirst != b2)
                 return null;
-            totalCount += member.Family.Count;
+            totalCount = SaturatingAdd(totalCount, member.Family.Count);
         }
 
         // |block| * (|heads| - 1)! = 2 * 2! = 4 distinct orderings.
@@ -328,7 +328,7 @@ partial class StrategyBuilder
             int last = order[order.Count - 1];
             if (last != b1 && last != b2)
                 return null;
-            totalCount += member.Family.Count;
+            totalCount = SaturatingAdd(totalCount, member.Family.Count);
         }
         if (totalCount != 4)
             return null;
@@ -405,7 +405,7 @@ partial class StrategyBuilder
                 return null;
             if (!((order[2] == a2 && order[3] == b2) || (order[2] == b2 && order[3] == a2)))
                 return null;
-            totalCount += member.Family.Count;
+            totalCount = SaturatingAdd(totalCount, member.Family.Count);
         }
         if (totalCount != 8)
             return null;
@@ -490,7 +490,7 @@ partial class StrategyBuilder
                 return null;
             if (order[2] != partner && order[3] != partner)
                 return null;
-            totalCount += member.Family.Count;
+            totalCount = SaturatingAdd(totalCount, member.Family.Count);
         }
         if (totalCount != 12)
             return null;

@@ -518,7 +518,7 @@ partial class StrategyBuilder
         {
             yield return OrderFamilyDescriptor.CreateSymmetric(
                 representativeOrder,
-                checked((int)multiplicity),
+                SaturatingToInt32(multiplicity),
                 symmetryInfo,
                 classSequence.ToArray());
             yield break;
@@ -552,6 +552,25 @@ partial class StrategyBuilder
             remainingCounts[@class.Index]++;
             nextItemIndices[@class.Index]--;
         }
+    }
+
+    private static int SaturatingToInt32(BigInteger value)
+    {
+        if (value <= int.MinValue)
+            return int.MinValue;
+        if (value >= int.MaxValue)
+            return int.MaxValue;
+        return (int)value;
+    }
+
+    private static int SaturatingAdd(int left, int right)
+    {
+        long sum = (long)left + right;
+        if (sum >= int.MaxValue)
+            return int.MaxValue;
+        if (sum <= int.MinValue)
+            return int.MinValue;
+        return (int)sum;
     }
 
     private static string BuildSymmetricFamilyPatternText(GroupSymmetryInfo symmetryInfo, IReadOnlyList<int> classSequence)

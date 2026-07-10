@@ -14,6 +14,12 @@ minimax 搜索、对称性约减，以及三种剪枝下界（信息论下界、
 - [`ui-explorer.md`](./ui-explorer.md)：桌面 UI 阶段时间线、占位与取消语义。
 - `.github/workflows/nightly-proof-tighten-gate.yml` 与 `.github/workflows/nightly-full-strategy-matrix.yml`：夜间性能巡检与报警入口。
 
+实现注记（2026-07）：
+
+- 对称等价分支的组合计数在大规模输入上可能超过 `Int32`（例如 `(20,19,19)` 对偶化后会触发 `19!` 级别计数）。
+- 这类计数用于展示与汇总时采用**饱和语义**：超过上限时钳制到 `int.MaxValue`，避免 `BigInteger -> int` 转换溢出中断 greedy 流程。
+- 该保护不改变搜索最优性目标（`MaxStep`），只避免大计数显示路径上的数值异常。
+
 ---
 
 ## 1. 问题定义
