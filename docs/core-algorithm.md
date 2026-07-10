@@ -421,14 +421,15 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     （`ProbeFeasibleCompact`，其 `SolveBudgetFeasibility` **跳过** `CountDisplayBranches` 边计数、只返回可行步数），
     直到某个预算**不可行**（根处 `SolveCompact` 返回 `int.MaxValue`，此时不物化、直接判负，避免 `BuildState` 抛错）
     或触达**已证明下界 `L`** 为止；每拿到一个更小 `S` 的可行解就采纳为新的最优、发一个 `proof-tighten≤N` 阶段。
-    当前实现将 proof-tighten 的可行性缓存与预算绑定：`_compactCostMemo` 以 `(state,budget)` 为键，
-    `_compactGroupPatternCache` 记录每个状态在**最紧可行预算**下的组（`_compactGroupPatternTightestBudget`），
-    looser 预算不会覆盖 tighter 预算。收紧循环仍以**物化 `MaxStep` 为地面真值**设守卫：
-    只接受 `MaxStep` **严格更小**的候选，任何未变优的结果一律停止收紧。由于真正被采纳的可行解永远不可能优于真实 `opt`，
-    所以 `opt−1` 必然不可行——这保证收紧后的 `S` 仍满足 `S ≥ opt`、绝不会假性低于最优（见 `ProofTightenPlanTests`）。
-    Phase A（只判可行）会跨 probe 复用 compact 缓存，仅重开根预算继续下探；
-    进入 Phase B（min-edge）前再统一 `ResetCompactState`，避免把 feasibility-only 的步数哨兵目标混入边数最小化。
-    跨阶段的 `_rootProvenLowerBound` 则**刻意保留**，使收紧后的 compact 计划仍带着 `L`。**当某个预算 `N` 被证明不可行时**，把 `_rootProvenLowerBound`
+    **注意 compact 组选择是 budget-无关的启发式**（`_compactGroupPatternCache` 只按状态键
+    缓存，同一状态在不同预算下求解会「最后写入者获胜」），个别形状下一次 probe 物化出的树可能**并未真正满足它的天花板**；
+    因此收紧循环以**物化 `MaxStep` 为地面真值**设了守卫：
+    只接受 `MaxStep` **严格更小**的候选，任何未变优的结果一律停止收紧、绝不据此把天花板抬回 `MaxStep−1`（否则会在
+    `U−1 → 更大` 之间反复震荡且再也停不下来）。由于真正被采纳的可行解永远不可能优于真实 `opt`，所以 `opt−1` 必然不可行——这保证收紧后的
+    `S` 仍满足 `S ≥ opt`、绝不会假性低于最优（见 `ProofTightenPlanTests`）。每次重跑前用
+    `ResetCompactState` 清掉 compact 专属缓存（`_compactGroupPatternCache` / `_compactCostMemo` /
+    `_compactRealStepsMemo` / `_phase1bSolved`），让搜索在新的天花板下重新求解；跨阶段的 `_rootProvenLowerBound`
+    则**刻意保留**，使收紧后的 compact 计划仍带着 `L`。**当某个预算 `N` 被证明不可行时**，把 `_rootProvenLowerBound`
     提升到 `N+1`（`RecordRootProvenLowerBound(budget + 1)`，恰等于 incumbent 的 `MaxStep`）——搜索此时已证明
     `opt ≥ incumbent.MaxStep`，而 incumbent 又达到了它，于是 `L == S` 的挤压收敛为 `max steps = S (proven optimal)`。
     编排层（CLI / GUI）在收到「证明不可行」终止阶段时，用 `WithRootProvenLowerBound` 把当前 incumbent 计划的挤压闭合（见下「Anytime 呈现」）。
