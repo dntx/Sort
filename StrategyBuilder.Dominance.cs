@@ -63,7 +63,7 @@ partial class StrategyBuilder
     // so every count here is a genuinely NEW sharing opportunity beyond today's isomorphism dedup.
     public int DominanceUpperTight => _dominanceUpperTight;
 
-    private const int DominanceProbeBudget = 20000;
+    private const int DominanceProbeBudget = 20_000;
 
     private int _dominanceProbeBudgetRemaining;
 

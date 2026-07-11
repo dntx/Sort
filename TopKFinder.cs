@@ -8,6 +8,57 @@ using System.Threading;
 partial class StrategyBuilder
 {
     private const int ProgressReportIntervalMs = 100;
+    private const int IterativeDeepeningMinGroupSize = 5;
+    private const int IterativeDeepeningMinRequestedTopCount = 5;
+    private const int IterativeDeepeningMinNToMScale = 2;
+    private const int PairwiseConstructiveSelectionGroupSize = 2;
+    private const int DisplayLineTieBreakMinGroupSize = 3;
+    private const int GreedyCandidateCapMinimum = 1;
+    private const int GreedyCandidateCapGrowthFactor = 4;
+    private const int DefaultCancellationProbeMask = 63;
+
+    private static class ProgressTuning
+    {
+        public static class CombinedRun
+        {
+            public const int FeasibleSpanPercent = 10;
+            public const int DefaultSpanPercent = 60;
+            public const int CompactPrimaryBasePercent = 60;
+            public const int CompactPrimarySpanPercent = 40;
+            public const int CompactFeasibleBasePercent = 10;
+            public const int CompactFeasibleSpanPercent = 90;
+        }
+
+        public static class Asymptote
+        {
+            public const long MinimumRemainingMs = 500L;
+            public const long InitialRemainingMs = 1000L;
+            public const int ElapsedDivisor = 2;
+            public const double FeasibleSoftCap = 0.99;
+            public const double CompactFeasibleSoftCap = 0.999;
+            public const double RawProgressSoftCapWithPending = 0.995;
+        }
+
+        public static class Ema
+        {
+            public const double SearchRateAlpha = 0.22;
+            public const double PendingCostAlpha = 0.35;
+            public const double PendingCostConservativeRiseAlpha = 0.45;
+            public const double PendingCostConservativeFallAlpha = 0.04;
+            public const double ProgressRiseAlpha = 0.25;
+            public const double ProgressFallAlpha = 0.08;
+        }
+
+        public static class Pending
+        {
+            public const double CostBootstrapFloor = 64.0;
+            public const long ZeroSettlingWindowMs = 400;
+            public const int TailThreshold = 3;
+            public const double TailInflationOnePending = 3.0;
+            public const double TailInflationTwoPending = 2.1;
+            public const double TailInflationThreePending = 1.5;
+        }
+    }
     private readonly int _n;
     private readonly int _m;
     private readonly int _requestedK;
@@ -120,12 +171,17 @@ partial class StrategyBuilder
         _m = m;
         _requestedK = k;
         _k = k > n - k ? n - k : k;
-        _useIterativeDeepening = _m >= 5 && _k >= 5 && _n >= 2 * _m;
+        _useIterativeDeepening = ShouldUseIterativeDeepening();
         _cancellationToken = cancellationToken;
         _progressCallback = progressCallback;
         _reportCombinedRunProgress = reportCombinedRunProgress;
         _progressScope = ProgressScope.DefaultStandalone;
     }
+
+    private bool ShouldUseIterativeDeepening()
+        => _m >= IterativeDeepeningMinGroupSize
+            && _k >= IterativeDeepeningMinRequestedTopCount
+            && _n >= IterativeDeepeningMinNToMScale * _m;
 
     public StrategyPlan BuildStepProofStage()
     {
@@ -340,14 +396,14 @@ partial class StrategyBuilder
     }
 
     private static int NormalizeGreedyCandidateCap(int cap)
-        => cap <= 0 ? 1 : cap;
+        => cap <= 0 ? GreedyCandidateCapMinimum : cap;
 
     private static int NextGreedyCandidateCap(int current)
     {
         if (current >= int.MaxValue)
             return int.MaxValue;
 
-        long grown = (long)current * 4L;
+        long grown = (long)current * GreedyCandidateCapGrowthFactor;
         return grown >= int.MaxValue ? int.MaxValue : (int)grown;
     }
 
@@ -1150,10 +1206,10 @@ partial class StrategyBuilder
         // step (feasible bound) gets 10%, so edge (feasible-compact) gets the remaining 90%.
         (double progressBase, double progressSpan) = _progressScope switch
         {
-            ProgressScope.FeasibleInCombinedRun => (0.0, 0.10),
-            ProgressScope.DefaultInCombinedRun => (0.0, 0.60),
-            ProgressScope.CompactPrimaryInCombinedRun => (0.60, 0.40),
-            ProgressScope.CompactFeasibleInCombinedRun => (0.10, 0.90),
+            ProgressScope.FeasibleInCombinedRun => (0.0, ProgressTuning.CombinedRun.FeasibleSpanPercent / 100.0),
+            ProgressScope.DefaultInCombinedRun => (0.0, ProgressTuning.CombinedRun.DefaultSpanPercent / 100.0),
+            ProgressScope.CompactPrimaryInCombinedRun => (ProgressTuning.CombinedRun.CompactPrimaryBasePercent / 100.0, ProgressTuning.CombinedRun.CompactPrimarySpanPercent / 100.0),
+            ProgressScope.CompactFeasibleInCombinedRun => (ProgressTuning.CombinedRun.CompactFeasibleBasePercent / 100.0, ProgressTuning.CombinedRun.CompactFeasibleSpanPercent / 100.0),
             _ => (0.0, 1.0),
         };
 
@@ -1185,9 +1241,11 @@ partial class StrategyBuilder
 
             // Use the same asymptote as the edge phase: estimate remaining work conservatively.
             // The remaining estimate (min 500ms) ensures the bar rises continuously.
-            long remainingEstimate = Math.Max(500L, 1000L - elapsedInPhase2 / 2);
+            long remainingEstimate = Math.Max(
+                ProgressTuning.Asymptote.MinimumRemainingMs,
+                ProgressTuning.Asymptote.InitialRemainingMs - elapsedInPhase2 / ProgressTuning.Asymptote.ElapsedDivisor);
             double fraction = elapsedInPhase2 / (double)(elapsedInPhase2 + remainingEstimate);
-            return Math.Min(fraction, 0.99);
+            return Math.Min(fraction, ProgressTuning.Asymptote.FeasibleSoftCap);
         }
 
         // Greedy-mode edge phase: the compact solve has no pending/searched signal (those counters are
@@ -1213,7 +1271,7 @@ partial class StrategyBuilder
             // ~1 and only snaps to 100% when the solve actually completes above.
             double scale = _feasibleCompactStateEstimate;
             double fraction = _compactStatesSolved / (_compactStatesSolved + scale);
-            return Math.Min(fraction, 0.999);
+            return Math.Min(fraction, ProgressTuning.Asymptote.CompactFeasibleSoftCap);
         }
 
         if (_searchedStates <= 0)
@@ -1233,8 +1291,7 @@ partial class StrategyBuilder
                 }
                 else
                 {
-                    const double searchRateAlpha = 0.22;
-                    _searchRateStatesPerMs += searchRateAlpha * (observedSearchRate - _searchRateStatesPerMs);
+                    _searchRateStatesPerMs += ProgressTuning.Ema.SearchRateAlpha * (observedSearchRate - _searchRateStatesPerMs);
                 }
             }
 
@@ -1257,15 +1314,12 @@ partial class StrategyBuilder
                 }
                 else
                 {
-                    const double pendingCostAlpha = 0.35;
-                    _pendingCostStatesPerPending += pendingCostAlpha * (observedCostPerPending - _pendingCostStatesPerPending);
+                    _pendingCostStatesPerPending += ProgressTuning.Ema.PendingCostAlpha * (observedCostPerPending - _pendingCostStatesPerPending);
 
-                    const double conservativeRiseAlpha = 0.45;
-                    const double conservativeFallAlpha = 0.04;
                     double conservativeAlpha =
                         observedCostPerPending >= _pendingCostConservativeStatesPerPending
-                            ? conservativeRiseAlpha
-                            : conservativeFallAlpha;
+                            ? ProgressTuning.Ema.PendingCostConservativeRiseAlpha
+                            : ProgressTuning.Ema.PendingCostConservativeFallAlpha;
                     _pendingCostConservativeStatesPerPending +=
                         conservativeAlpha * (observedCostPerPending - _pendingCostConservativeStatesPerPending);
                 }
@@ -1293,8 +1347,8 @@ partial class StrategyBuilder
         {
             _pendingCostEstimateInitialized = true;
             _pendingCostStatesPerPending = _pendingStates > 0
-                ? Math.Max(64.0, _searchedStates / (double)_pendingStates)
-                : 64.0;
+                ? Math.Max(ProgressTuning.Pending.CostBootstrapFloor, _searchedStates / (double)_pendingStates)
+                : ProgressTuning.Pending.CostBootstrapFloor;
             _pendingCostConservativeStatesPerPending = _pendingCostStatesPerPending;
         }
 
@@ -1315,7 +1369,7 @@ partial class StrategyBuilder
             }
 
             bool zeroSettled =
-                elapsedMs - _pendingZeroSinceMs >= 400 &&
+                elapsedMs - _pendingZeroSinceMs >= ProgressTuning.Pending.ZeroSettlingWindowMs &&
                 _searchedStates == _pendingZeroSearchedAtStart;
             if (zeroSettled)
             {
@@ -1332,15 +1386,15 @@ partial class StrategyBuilder
             _pendingZeroSettling = false;
         }
 
-        if (isDefaultScope && effectivePending <= 3)
+        if (isDefaultScope && effectivePending <= ProgressTuning.Pending.TailThreshold)
         {
             // In default phase, tiny pending counts are often heavy tails rather than near-finish.
             // Apply a conservative inflation so progress does not pin near 100% too early.
             double inflation = effectivePending switch
             {
-                1 => 3.0,
-                2 => 2.1,
-                _ => 1.5,
+                1 => ProgressTuning.Pending.TailInflationOnePending,
+                2 => ProgressTuning.Pending.TailInflationTwoPending,
+                _ => ProgressTuning.Pending.TailInflationThreePending,
             };
             costPerPending *= inflation;
         }
@@ -1352,7 +1406,7 @@ partial class StrategyBuilder
 
         double rawProgress = Math.Clamp(_searchedStates / estimatedTotal, 0.0, 1.0);
         if (effectivePending > 0)
-            rawProgress = Math.Min(rawProgress, 0.995);
+            rawProgress = Math.Min(rawProgress, ProgressTuning.Asymptote.RawProgressSoftCapWithPending);
 
         if (!_progressEstimateInitialized)
         {
@@ -1361,9 +1415,9 @@ partial class StrategyBuilder
         }
         else
         {
-            const double riseAlpha = 0.25;
-            const double fallAlpha = 0.08;
-            double alpha = rawProgress >= _progressEstimateEma01 ? riseAlpha : fallAlpha;
+            double alpha = rawProgress >= _progressEstimateEma01
+                ? ProgressTuning.Ema.ProgressRiseAlpha
+                : ProgressTuning.Ema.ProgressFallAlpha;
             _progressEstimateEma01 += alpha * (rawProgress - _progressEstimateEma01);
         }
 
@@ -1408,7 +1462,7 @@ partial class StrategyBuilder
 
     // Shared throttled cancellation probe for hot loops. Call this in frequently-executed paths
     // instead of open-coding per-loop counters so probe cadence stays consistent as algorithms evolve.
-    private void ProbeCancellation(int throttleMask = 63)
+    private void ProbeCancellation(int throttleMask = DefaultCancellationProbeMask)
     {
         if (_cancellationToken.IsCancellationRequested)
             _cancellationToken.ThrowIfCancellationRequested();
