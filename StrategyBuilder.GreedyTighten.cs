@@ -4,6 +4,7 @@ using System.Diagnostics;
 
 partial class StrategyBuilder
 {
+    private const int DefaultGreedyTightenCandidateCap = 128;
     // GreedyTighten (Phase 0) — local restructuring of the greedy-feasible tree to lower the longest
     // path. See docs/core-algorithm.md 4.7 for the full design/rationale. This is the FRAMEWORK slice
     // (阶段 A): multi-round + critical-path post-order + AND short-circuit + single-state edit +
@@ -13,7 +14,7 @@ partial class StrategyBuilder
     //
     // It is NOT wired into the production pipeline yet; BuildGreedyTightenPlan is only exercised by
     // tests until the mechanism is validated.
-    internal int GreedyTightenCandidateCap = 128;
+    internal int GreedyTightenCandidateCap = DefaultGreedyTightenCandidateCap;
 
     // Production default: GreedyTighten runs a SINGLE critical-path round. Post-fix measurement (eval
     // nMax=10) shows one round reaches the same tightened U' as unbounded rounds on 305/320 cases at

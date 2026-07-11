@@ -3,6 +3,7 @@ using System.Collections.Generic;
 
 partial class StrategyBuilder
 {
+    private const int DefaultCompactGreedyCandidateCap = 128;
     // EXPERIMENTAL (PoC): when enabled, phase 2 reads comparison groups from a
     // "compact" pattern cache produced by a secondary two-level DP. The DP keeps the
     // optimal worst-case step count (computed by phase 1) as the primary objective and,
@@ -28,7 +29,7 @@ partial class StrategyBuilder
     // seconds. The constructive group is always evaluated first (a proven within-budget choice), so any
     // cap keeps the phase correct -- it only trades a little per-state edge-count minimization for a
     // bounded, interruptible runtime. int.MaxValue preserves the original exhaustive behavior.
-    internal int CompactGreedyCandidateCap = 128;
+    internal int CompactGreedyCandidateCap = DefaultCompactGreedyCandidateCap;
     
     
     private int _compactGroupsEnumerated;
