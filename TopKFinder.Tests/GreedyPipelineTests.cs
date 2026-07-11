@@ -92,6 +92,25 @@ public class GreedyPipelineTests
         Assert.Equal(plan.MaxStep, plan.SearchStatistics.RootProvenLowerBound);
     }
 
+    [Theory]
+    [InlineData(12, 4, 128)]
+    [InlineData(25, 10, 256)]
+    [InlineData(30, 10, 384)]
+    public void CompactGreedyCandidateCap_DefaultCap_ScalesWithStateSurface(int activeCount, int groupSize, int expectedCap)
+    {
+        var builder = new StrategyBuilder(Math.Max(activeCount, groupSize), groupSize, 1);
+
+        Assert.Equal(expectedCap, builder.GetCompactGreedyCandidateCapForTesting(activeCount, groupSize));
+    }
+
+    [Fact]
+    public void CompactGreedyCandidateCap_ExplicitOverride_DisablesAdaptiveScaling()
+    {
+        var builder = new StrategyBuilder(25, 10, 1) { CompactGreedyCandidateCap = 64 };
+
+        Assert.Equal(64, builder.GetCompactGreedyCandidateCapForTesting(25, 10));
+    }
+
     // Locks the new per-probe auto-expansion behavior: even with a tiny starting cap, a single
     // proof-tighten probe at U-1 should internally widen caps on the same budget until it reaches a
     // conclusive answer (Tightened or ProvenInfeasible), rather than stopping at Incomplete.

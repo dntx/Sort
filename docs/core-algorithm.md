@@ -427,7 +427,9 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     会把它们**全部生成 + McKay 去重**，于是几乎卡死。现在生成本身带一个 per-state 上限
     `CompactGreedyCandidateCap`（默认 128，见 `GenerateClassRepresentatives` 的 `generationCap`）：先把 step 阶段的
     构造式分组作为种子第一个评估（保证有界内必有可行解），再生成至多 `cap` 个代表参与「子节点最少」的贪心挑选。
-    该默认值现通过 `DefaultCompactGreedyCandidateCap = 128` 集中命名，便于后续统一调参。
+    该默认值现通过 `DefaultCompactGreedyCandidateCap = 128` 集中命名，便于后续统一调参；当调用方保持默认值时，运行期会按
+    当前状态的 `activeCount * groupSize` 搜索面把有效 cap 温和放大到最多 `4x` 基线，以减少宽状态上的 probe 重试。显式设置
+    非默认值则保持精确覆盖，不参与自适应放大。
     分组数 `≤ cap` 的状态因此与穷举**逐字节相同**（小/中形状毫无变化），只有分组数超过 `cap` 的大 `m` 状态被截断——
     用一点边数紧凑度换取**有界、可中断**的运行时间（`25,10,10` 由「出不来」降到约 23 s）。`int.MaxValue` 恢复原先
     的完整穷举，精确（exact）模式与最优性审计仍走未截断路径。
@@ -567,7 +569,8 @@ greedy-feasible(U) → (optional) greedy-tighten → proof-tighten≤N → edge-
 2. **次要收益**：即便 `U' > opt`，`ProofTighten` 也从更低起点开始，省掉上端便宜的松探测。
 3. **独立收益**：在 `ProofTighten` 跑不完的大 `m` 形状上，GreedyTighten 仍改善展示出的可行树（更小 max-step、更好的 anytime 结果）。
 4. **成本刻意压低**：只碰最深路径、每状态候选 `cap=128`、memo 高度、不做完整枚举——下行风险有界。
-  对应代码中的默认值现集中为 `DefaultGreedyTightenCandidateCap = 128`，与 compact 阶段的 cap 分开命名。
+  对应代码中的默认值现集中为 `DefaultGreedyTightenCandidateCap = 128`，与 compact 阶段的 cap 分开命名；保持默认值时同样按
+  `activeCount * groupSize` 搜索面做最多 `4x` 的温和自适应放大，而显式 override 仍按给定值精确执行。
 
 **反证条件（发生什么就证明不该加入，预先登记）**：在代表性算例集上实测，命中任一即判死：
 
