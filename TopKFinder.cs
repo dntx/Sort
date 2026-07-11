@@ -308,6 +308,9 @@ partial class StrategyBuilder
         finally
         {
             _compactFeasibilityOnly = false;
+            _proofTightenInitialBudget = -1;
+            _proofTightenCurrentBudget = -1;
+            _proofTightenLowerBound = -1;
         }
 
         // Phase B: one edge-compaction pass at the determined step S.
