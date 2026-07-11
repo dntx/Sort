@@ -20,6 +20,7 @@ using System.Linq;
 // sampled, because they are honest only in the quotient form and must be reviewed before adoption.
 partial class StrategyBuilder
 {
+    private const int ProjectionPairingMinOrbitComponentSize = 2;
     private const int ProjectionPairingProbeSampleLimit = 40;
 
     internal bool EnableProjectionPairingProbe { get; set; }
@@ -65,7 +66,7 @@ partial class StrategyBuilder
     {
         _probeBuckets++;
 
-        if (bucket.Count < 2)
+        if (bucket.Count < ProjectionPairingMinOrbitComponentSize)
         {
             _probeParentOrbitLines += 1;
             _probeProjectionLines += 1;
@@ -117,7 +118,7 @@ partial class StrategyBuilder
         foreach (List<int> component in componentsByRoot.Values)
         {
             int orbitCount = component.Count;
-            if (orbitCount < 2)
+            if (orbitCount < ProjectionPairingMinOrbitComponentSize)
                 continue;
 
             _probeMultiOrbitComponents++;

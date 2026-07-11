@@ -21,6 +21,12 @@ using System.Numerics;
 // finer pre-merge split (kept for the on/off comparison tests and as a safety fallback).
 partial class StrategyBuilder
 {
+    private const int ProjectionMergeMinOrbitCount = 2;
+    private const int ProjectionQuotientMinHeadCount = 3;
+    private const int ProjectionQuotientMaxHeadCount = 4;
+    private const int QuotientSymmetricBlockSize = 2;
+    private const int TopAnchoredQuotientExpectedOrderingCount = 4;
+
     // All-orbit projection merge. Unions every pair of parent orbits whose representatives are
     // related by a projection automorphism, then keeps a multi-orbit component folded only when it
     // is an honest single global-drop orbit and (for multi-family components) the structural quotient
@@ -29,7 +35,7 @@ partial class StrategyBuilder
         ComparisonState state, List<List<MergedFamilyOutcome>> orbits)
     {
         int n = orbits.Count;
-        if (n < 2)
+        if (n < ProjectionMergeMinOrbitCount)
             return orbits.Select(orbit => (orbit, false)).ToList();
 
         var projectionCache = new Dictionary<ulong, (ComparisonState State, int[] Colors)>();
@@ -157,7 +163,7 @@ partial class StrategyBuilder
     {
         IReadOnlyList<int> repOrder = representative.Family.RepresentativeOrderItems;
         var headSet = new HashSet<int>(repOrder);
-        if (headSet.Count < 3 || headSet.Count > 4)
+        if (headSet.Count < ProjectionQuotientMinHeadCount || headSet.Count > ProjectionQuotientMaxHeadCount)
             return null;
 
         foreach (MergedFamilyOutcome member in line)
@@ -186,7 +192,7 @@ partial class StrategyBuilder
     private EquivalentOrderSummary? TryTopAnchoredQuotient(
         ComparisonState state, List<MergedFamilyOutcome> line, IReadOnlyList<int> repOrder, HashSet<int> headSet)
     {
-        if (headSet.Count != 3)
+        if (headSet.Count != ProjectionQuotientMinHeadCount)
             return null;
 
         ulong active = state.ActiveMask;
@@ -203,13 +209,13 @@ partial class StrategyBuilder
         List<int> blockHeads;
         int partner;
         bool blockCarriesTail;
-        if (tailedHeads.Count == 2 && leafHeads.Count == 1)
+        if (tailedHeads.Count == QuotientSymmetricBlockSize && leafHeads.Count == 1)
         {
             blockHeads = tailedHeads;
             partner = leafHeads[0];
             blockCarriesTail = true;
         }
-        else if (leafHeads.Count == 2 && tailedHeads.Count == 1)
+        else if (leafHeads.Count == QuotientSymmetricBlockSize && tailedHeads.Count == 1)
         {
             blockHeads = leafHeads;
             partner = tailedHeads[0];
@@ -270,7 +276,7 @@ partial class StrategyBuilder
         }
 
         // |block| * (|heads| - 1)! = 2 * 2! = 4 distinct orderings.
-        if (totalCount != 4)
+        if (totalCount != TopAnchoredQuotientExpectedOrderingCount)
             return null;
 
         int repFirst = repOrder[0];
