@@ -5,6 +5,9 @@ using System.Linq;
 
 static class StrategyTextRenderer
 {
+    private const int BannerBorderWidth = 20;
+    private const int RangeCompressionMinRunLength = 4;
+
     private const string InLabel = "+";
     private const string OutLabel = "-";
     private const string FixedLabel = "fixed";
@@ -56,7 +59,7 @@ static class StrategyTextRenderer
         RenderNode(plan.Root, plan.K, writer, 0, depthIndex);
     }
 
-    private static string Banner(string label) => $"{new string('=', 20)} {label} {new string('=', 20)}";
+    private static string Banner(string label) => $"{new string('=', BannerBorderWidth)} {label} {new string('=', BannerBorderWidth)}";
 
     private static void WriteLegend(TextWriter writer)
     {
@@ -153,7 +156,7 @@ static class StrategyTextRenderer
                 i++;
 
             int runLength = i - runStart + 1;
-            if (runLength >= 4)
+            if (runLength >= RangeCompressionMinRunLength)
             {
                 segments.Add($"#{sorted[runStart] + 1} ~ #{sorted[i] + 1}");
             }
