@@ -47,6 +47,7 @@ partial class StrategyBuilder
             public const double PendingCostConservativeFallAlpha = 0.04;
             public const double ProgressRiseAlpha = 0.25;
             public const double ProgressFallAlpha = 0.08;
+            public const double ProofTightenCombinedProgressAlpha = 0.05;
         }
 
         public static class Pending
@@ -165,6 +166,8 @@ partial class StrategyBuilder
     private int _proofTightenInitialBudget = -1;   // first budget tried (= U - 1)
     private int _proofTightenCurrentBudget = -1;   // budget currently being probed
     private int _proofTightenLowerBound = -1;       // proven lower bound L at loop start
+    private bool _proofTightenProgressEmaInitialized;
+    private double _proofTightenProgressEma01;
 
     public StrategyBuilder(
         int n,
@@ -280,6 +283,8 @@ partial class StrategyBuilder
         _proofTightenInitialBudget = budget;
         _proofTightenCurrentBudget = budget;
         _proofTightenLowerBound = provenLowerBound;
+        _proofTightenProgressEmaInitialized = false;
+        _proofTightenProgressEma01 = 0.0;
         try
         {
             while (budget >= provenLowerBound)
@@ -311,6 +316,8 @@ partial class StrategyBuilder
             _proofTightenInitialBudget = -1;
             _proofTightenCurrentBudget = -1;
             _proofTightenLowerBound = -1;
+            _proofTightenProgressEmaInitialized = false;
+            _proofTightenProgressEma01 = 0.0;
         }
 
         // Phase B: one edge-compaction pass at the determined step S.
@@ -1292,8 +1299,24 @@ partial class StrategyBuilder
                 if (totalRange > 0)
                 {
                     int completedStages = _proofTightenInitialBudget - _proofTightenCurrentBudget;
-                    double combined = (completedStages + stageFraction) / totalRange;
-                    return Math.Min(combined, ProgressTuning.Asymptote.CompactFeasibleSoftCap);
+                    double rawCombined = (completedStages + stageFraction) / totalRange;
+                    rawCombined = Math.Clamp(rawCombined, 0.0, ProgressTuning.Asymptote.CompactFeasibleSoftCap);
+
+                    // Slight smoothing for budget-boundary jumps: preserve trend but make abrupt
+                    // "next proof ceiling" transitions visually less hard.
+                    if (!_proofTightenProgressEmaInitialized)
+                    {
+                        _proofTightenProgressEmaInitialized = true;
+                        _proofTightenProgressEma01 = rawCombined;
+                    }
+                    else
+                    {
+                        _proofTightenProgressEma01 +=
+                            ProgressTuning.Ema.ProofTightenCombinedProgressAlpha *
+                            (rawCombined - _proofTightenProgressEma01);
+                    }
+
+                    return _proofTightenProgressEma01;
                 }
             }
 
