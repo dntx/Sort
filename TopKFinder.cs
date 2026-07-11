@@ -13,6 +13,7 @@ partial class StrategyBuilder
     private const int IterativeDeepeningMinNToMScale = 2;
     private const int PairwiseConstructiveSelectionGroupSize = 2;
     private const int DisplayLineTieBreakMinGroupSize = 3;
+    private const int DisplayLineTieBreakMaxActiveCount = 16;
     private const int GreedyCandidateCapMinimum = 1;
     private const int GreedyCandidateCapGrowthFactor = 4;
     private const int AdaptiveDefaultCandidateCapMaxMultiplier = 4;
