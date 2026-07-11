@@ -207,6 +207,9 @@ public class GreedyPipelineTests
     // Progress regression guard for the L/U-aware proof-tighten estimator. Simulate two consecutive
     // tightening ceilings with reflection and assert the second ceiling's initial combined progress
     // does not drop below the prior ceiling's near-complete progress.
+    //
+    // This also pins the current UI-smoothing tuning in this PR: proof-tighten combined progress
+    // uses EMA alpha=0.05, so the second sample should move only 5% toward the new raw value.
     [Fact]
     public void ProofTighten_CombinedProgress_DoesNotRegressAcrossBudgets()
     {
@@ -235,6 +238,15 @@ public class GreedyPipelineTests
         Assert.True(
             stage2Start >= stage1NearDone,
             $"combined proof-tighten progress regressed across budgets: stage1={stage1NearDone:F4}, stage2={stage2Start:F4}");
+
+        // Raw stage-2 value at (completedStages=1, stageFraction=0, totalRange=5) is exactly 0.2.
+        // With alpha=0.05 smoothing: ema2 = ema1 + 0.05 * (0.2 - ema1).
+        const double rawStage2 = 0.2;
+        double expectedStage2 = stage1NearDone + 0.05 * (rawStage2 - stage1NearDone);
+        Assert.Equal(expectedStage2, stage2Start, precision: 12);
+        Assert.True(
+            stage2Start < rawStage2,
+            $"expected smoothing to stay below raw second-stage jump {rawStage2:F4}, got {stage2Start:F4}");
     }
 
     // Regression guard for the tighter-budget keep/reuse fix in this change. Previously, on (20,4,6) a
