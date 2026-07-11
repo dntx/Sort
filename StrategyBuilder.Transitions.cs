@@ -4,6 +4,9 @@ using System.Linq;
 
 partial class StrategyBuilder
 {
+    private const int MultiFamilyBranchLineMinMembers = 2;
+    private const int ProjectionMergedOrbitMinSourceOrbitCount = 2;
+
     // Principle-D rendering (default ON). When true, MergeOrbitsByProjection folds sibling orderings
     // that become interchangeable only *after removing the items they all eliminate this step* (the
     // doomed "drop" set) onto one displayed branch, instead of relying on the stricter parent-state
@@ -107,7 +110,7 @@ partial class StrategyBuilder
         // internal symmetry), so it routes through the structural quotient renderer instead. The
         // merge step only folds such a component when this renderer accepts it, so a null here means
         // the line was not actually a quotient merge and falls through to the normal handling.
-        if (line.Count >= 2 && projectionMerged && !allSingleton)
+        if (line.Count >= MultiFamilyBranchLineMinMembers && projectionMerged && !allSingleton)
         {
             MergedFamilyOutcome quotientRepresentative = SelectOrbitRepresentative(line);
             EquivalentOrderSummary? quotientSummary =
@@ -117,7 +120,7 @@ partial class StrategyBuilder
                     quotientRepresentative.Family.RepresentativeOrder, quotientRepresentative, quotientSummary);
         }
 
-        if (line.Count >= 2
+        if (line.Count >= MultiFamilyBranchLineMinMembers
             && allSingleton
             && summary is not null
             && (projectionMerged || summary.PatternText.Contains(" | ", StringComparison.Ordinal)))
@@ -363,7 +366,7 @@ partial class StrategyBuilder
         // must be disclosed with a "drop {...}" legend; a root that is a single pass-through orbit
         // (singleton with no projection partner, or any multi-ordering parent orbit) keeps its exact
         // parent-automorphism rendering.
-        return order.Select(root => (byRoot[root], combinedCount[root] >= 2)).ToList();
+        return order.Select(root => (byRoot[root], combinedCount[root] >= ProjectionMergedOrbitMinSourceOrbitCount)).ToList();
     }
 
     // Tests the principle-D projection symmetry between two single orderings: remove the items both
