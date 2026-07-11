@@ -6,6 +6,10 @@ using System.Text.RegularExpressions;
 
 partial class StrategyBuilder
 {
+    private const int ProjectionDropBraceMinDroppedItems = 2;
+    private const int PlaceholderClassMinInlineSize = 2;
+    private const int BraceTokenMinLength = 2;
+
     // Renders a genuine parent-automorphism orbit (e.g. two interchangeable sorted chains) as one
     // representative ordering plus a relabeling that maps it onto the other member(s). The pattern
     // engine cannot express such a cross-relabeling as a disjunction-free template, so without this
@@ -130,7 +134,7 @@ partial class StrategyBuilder
             }
         }
 
-        if (survivors is null || dropped is null || dropped.Count < 2)
+        if (survivors is null || dropped is null || dropped.Count < ProjectionDropBraceMinDroppedItems)
             return null; // nothing to collapse into an any-order brace
 
         // Honesty gate: the brace + residual represents exactly the linear extensions of the dropped
@@ -393,7 +397,7 @@ partial class StrategyBuilder
 
         foreach (PlaceholderClass cls in classes)
         {
-            if (cls.Items.Length < 2)
+            if (cls.Items.Length < PlaceholderClassMinInlineSize)
                 continue;
 
             int start = FindContiguousPlaceholderRun(tokens, cls.Alias, cls.Items.Length);
@@ -502,7 +506,7 @@ partial class StrategyBuilder
     // placeholder members of "alias" (e.g. "{A1, A2, A3}" for a 3-member class A).
     private static bool IsWholeClassBrace(string token, string alias, int length)
     {
-        if (token.Length < 2 || token[0] != '{' || token[^1] != '}')
+        if (token.Length < BraceTokenMinLength || token[0] != '{' || token[^1] != '}')
             return false;
 
         string[] members = token.Substring(1, token.Length - 2).Split(", ");
