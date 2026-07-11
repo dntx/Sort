@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Threading;
 using Xunit;
 
@@ -90,6 +91,25 @@ public class GreedyPipelineTests
         StageOutcome terminal = TerminalOutcome(builder, out StrategyPlan plan);
         Assert.Equal(StageOutcome.ProvenInfeasible, terminal);
         Assert.Equal(plan.MaxStep, plan.SearchStatistics.RootProvenLowerBound);
+    }
+
+    [Theory]
+    [InlineData(12, 4, 128)]
+    [InlineData(25, 10, 256)]
+    [InlineData(30, 10, 384)]
+    public void CompactGreedyCandidateCap_DefaultCap_ScalesWithStateSurface(int activeCount, int groupSize, int expectedCap)
+    {
+        var builder = new StrategyBuilder(Math.Max(activeCount, groupSize), groupSize, 1);
+
+        Assert.Equal(expectedCap, builder.GetCompactGreedyCandidateCapForTesting(activeCount, groupSize));
+    }
+
+    [Fact]
+    public void CompactGreedyCandidateCap_ExplicitOverride_DisablesAdaptiveScaling()
+    {
+        var builder = new StrategyBuilder(25, 10, 1) { CompactGreedyCandidateCap = 64 };
+
+        Assert.Equal(64, builder.GetCompactGreedyCandidateCapForTesting(25, 10));
     }
 
     // Locks the new per-probe auto-expansion behavior: even with a tiny starting cap, a single
@@ -201,6 +221,78 @@ public class GreedyPipelineTests
 
         Assert.NotEmpty(started);
         Assert.Equal(started, completed);
+    }
+
+    // Progress regression guard for the L/U-aware proof-tighten estimator. Simulate two consecutive
+    // tightening ceilings with reflection and assert the second ceiling's initial combined progress
+    // does not drop below the prior ceiling's near-complete progress.
+    //
+    // This also pins the current UI-smoothing tuning in this PR: proof-tighten combined progress
+    // uses EMA alpha=0.05, so the second sample should move only 5% toward the new raw value.
+    [Fact]
+    public void ProofTighten_CombinedProgress_DoesNotRegressAcrossBudgets()
+    {
+        var builder = new StrategyBuilder(12, 4, 4, reportCombinedRunProgress: true);
+        Type type = typeof(StrategyBuilder);
+
+        FieldInfo progressScopeField = type.GetField("_progressScope", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        object compactFeasibleScope = Enum.Parse(progressScopeField.FieldType, "CompactFeasibleInCombinedRun");
+        progressScopeField.SetValue(builder, compactFeasibleScope);
+
+        type.GetField("_phase1bSolved", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, false);
+        type.GetField("_feasibleCompactStateEstimate", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, 100);
+        type.GetField("_proofTightenInitialBudget", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, 9);
+        type.GetField("_proofTightenLowerBound", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, 5);
+
+        // Stage 1 near completion at budget=9.
+        type.GetField("_proofTightenCurrentBudget", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, 9);
+        type.GetField("_compactStatesSolved", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, 900);
+        double stage1NearDone = InvokeEstimateProgress(builder, elapsedMs: 1000);
+
+        // Stage 2 just started at budget=8 (solved counter reset).
+        type.GetField("_proofTightenCurrentBudget", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, 8);
+        type.GetField("_compactStatesSolved", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, 0);
+        double stage2Start = InvokeEstimateProgress(builder, elapsedMs: 1001);
+
+        Assert.True(
+            stage2Start >= stage1NearDone,
+            $"combined proof-tighten progress regressed across budgets: stage1={stage1NearDone:F4}, stage2={stage2Start:F4}");
+
+        // Raw stage-2 value at (completedStages=1, stageFraction=0, totalRange=5) is exactly 0.2.
+        // With alpha=0.05 smoothing: ema2 = ema1 + 0.05 * (0.2 - ema1).
+        const double rawStage2 = 0.2;
+        double expectedStage2 = stage1NearDone + 0.05 * (rawStage2 - stage1NearDone);
+        Assert.Equal(expectedStage2, stage2Start, precision: 12);
+        Assert.True(
+            stage2Start < rawStage2,
+            $"expected smoothing to stay below raw second-stage jump {rawStage2:F4}, got {stage2Start:F4}");
+    }
+
+    // Guardrail for AI-review B1: proof-tighten rawCombined must be range-clamped before entering
+    // EMA so upstream anomalies cannot propagate values outside [0, softCap].
+    [Fact]
+    public void ProofTighten_CombinedProgress_ClampsRawCombinedToSoftCap()
+    {
+        var builder = new StrategyBuilder(12, 4, 4, reportCombinedRunProgress: true);
+        Type type = typeof(StrategyBuilder);
+
+        FieldInfo progressScopeField = type.GetField("_progressScope", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        object compactFeasibleScope = Enum.Parse(progressScopeField.FieldType, "CompactFeasibleInCombinedRun");
+        progressScopeField.SetValue(builder, compactFeasibleScope);
+
+        type.GetField("_phase1bSolved", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, false);
+        type.GetField("_feasibleCompactStateEstimate", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, 100);
+
+        // Force an oversized (yet non-negative and internally consistent) context so
+        // rawCombined > soft cap if unclamped:
+        // completedStages = 999, totalRange = 1000 => rawCombined ~= 0.999 + stageFraction.
+        type.GetField("_proofTightenInitialBudget", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, 1000);
+        type.GetField("_proofTightenCurrentBudget", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, 1);
+        type.GetField("_proofTightenLowerBound", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, 1);
+        type.GetField("_compactStatesSolved", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, 0);
+
+        double progress = InvokeEstimateProgress(builder, elapsedMs: 1000);
+        Assert.Equal(0.999, progress, precision: 12);
     }
 
     // Regression guard for the tighter-budget keep/reuse fix in this change. Previously, on (20,4,6) a
@@ -426,6 +518,17 @@ public class GreedyPipelineTests
 
         Assert.NotNull(firstProofName);
         return int.Parse(firstProofName!["proof-tighten\u2264".Length..]);
+    }
+
+    private static double InvokeEstimateProgress(StrategyBuilder builder, long elapsedMs)
+    {
+        MethodInfo method = typeof(StrategyBuilder).GetMethod(
+            "EstimateProgress",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+
+        object? value = method.Invoke(builder, new object[] { elapsedMs });
+        Assert.NotNull(value);
+        return (double)value!;
     }
 
     private static void AssertEveryDecisionHasGroup(StrategyNode node)

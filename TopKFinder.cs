@@ -15,6 +15,7 @@ partial class StrategyBuilder
     private const int DisplayLineTieBreakMinGroupSize = 3;
     private const int GreedyCandidateCapMinimum = 1;
     private const int GreedyCandidateCapGrowthFactor = 4;
+    private const int AdaptiveDefaultCandidateCapMaxMultiplier = 4;
     private const int DefaultCancellationProbeMask = 63;
 
     private static class ProgressTuning
@@ -47,6 +48,7 @@ partial class StrategyBuilder
             public const double PendingCostConservativeFallAlpha = 0.04;
             public const double ProgressRiseAlpha = 0.25;
             public const double ProgressFallAlpha = 0.08;
+            public const double ProofTightenCombinedProgressAlpha = 0.05;
         }
 
         public static class Pending
@@ -158,6 +160,15 @@ partial class StrategyBuilder
     private int _cancellationProbeCounter;
     private bool _forceImmediateCancellationProbe;
     private ProgressScope _progressScope;
+    // Outer-loop budget context for proof-tighten progress estimation (CompactFeasibleInCombinedRun
+    // scope). Set at the start of RunGreedyPipeline's Phase A tighten loop; updated each iteration
+    // so EstimateProgress can fold in the L < step < U range alongside the per-stage signal.
+    // -1 when outside a proof-tighten loop.
+    private int _proofTightenInitialBudget = -1;   // first budget tried (= U - 1)
+    private int _proofTightenCurrentBudget = -1;   // budget currently being probed
+    private int _proofTightenLowerBound = -1;       // proven lower bound L at loop start
+    private bool _proofTightenProgressEmaInitialized;
+    private double _proofTightenProgressEma01;
 
     public StrategyBuilder(
         int n,
@@ -182,6 +193,25 @@ partial class StrategyBuilder
         => _m >= IterativeDeepeningMinGroupSize
             && _k >= IterativeDeepeningMinRequestedTopCount
             && _n >= IterativeDeepeningMinNToMScale * _m;
+
+    // The fixed default cap is a good BASE knob, but the actual candidate-generation surface is the
+    // current state's active width times the chosen group size. When callers leave the default in
+    // place, scale that base cap up by a small bounded multiplier on wider states to reduce needless
+    // proof-tighten retries; any explicit non-default override remains exact.
+    private static int ScaleDefaultCandidateCap(int configuredCap, int defaultCap, int activeCount, int groupSize)
+    {
+        if (configuredCap != defaultCap)
+            return configuredCap;
+
+        if (activeCount <= 0 || groupSize <= 0)
+            return defaultCap;
+
+        long searchSurface = (long)activeCount * groupSize;
+        long surfaceUnits = (searchSurface + defaultCap - 1L) / defaultCap;
+        long multiplier = Math.Clamp(surfaceUnits, 1L, (long)AdaptiveDefaultCandidateCapMaxMultiplier);
+        long scaledCap = defaultCap * multiplier;
+        return scaledCap >= int.MaxValue ? int.MaxValue : (int)scaledCap;
+    }
 
     public StrategyPlan BuildStepProofStage()
     {
@@ -270,11 +300,17 @@ partial class StrategyBuilder
         _compactFeasibilityOnly = true;
         int bestStep = U;
         int budget = U - 1;
+        _proofTightenInitialBudget = budget;
+        _proofTightenCurrentBudget = budget;
+        _proofTightenLowerBound = provenLowerBound;
+        _proofTightenProgressEmaInitialized = false;
+        _proofTightenProgressEma01 = 0.0;
         try
         {
             while (budget >= provenLowerBound)
             {
                 _cancellationToken.ThrowIfCancellationRequested();
+                _proofTightenCurrentBudget = budget;
                 string stageName = FormatProofTightenStageName(budget);
                 onStageStart?.Invoke(stageName);
                 StageResult stage = BuildProofTightenStage(budget);
@@ -297,6 +333,11 @@ partial class StrategyBuilder
         finally
         {
             _compactFeasibilityOnly = false;
+            _proofTightenInitialBudget = -1;
+            _proofTightenCurrentBudget = -1;
+            _proofTightenLowerBound = -1;
+            _proofTightenProgressEmaInitialized = false;
+            _proofTightenProgressEma01 = 0.0;
         }
 
         // Phase B: one edge-compaction pass at the determined step S.
@@ -1257,21 +1298,49 @@ partial class StrategyBuilder
         {
             if (_phase1bSolved)
                 return 1.0;
-            if (_feasibleCompactStateEstimate <= 0)
-                return 0.0;
 
-            // The step-phase state count is only a rough SCALE for the edge phase's work -- measured
-            // ratios of edge-solved to step-states span ~0.3x..27x across shapes, mostly because the
-            // edge phase's iterative-deepening depth is not predictable up front. A hard denominator
-            // therefore either tops out early (under-estimate) or stalls at a clamp. Use a
-            // self-correcting asymptote instead: fraction = solved / (solved + scale). It rises strictly
-            // with every solved state, stays below 1 however badly the scale under/over-shoots, and
-            // never sticks -- under-estimates self-correct because the effective denominator grows with
-            // solved. The watched (slow) shapes have solved >> scale, so the bar climbs smoothly toward
-            // ~1 and only snaps to 100% when the solve actually completes above.
-            double scale = _feasibleCompactStateEstimate;
-            double fraction = _compactStatesSolved / (_compactStatesSolved + scale);
-            return Math.Min(fraction, ProgressTuning.Asymptote.CompactFeasibleSoftCap);
+            // Per-stage fraction: fraction = solved / (solved + scale) asymptote.
+            // Falls back to 0 when the scale anchor is unavailable (standalone edge with no prior step).
+            double stageFraction = 0.0;
+            if (_feasibleCompactStateEstimate > 0)
+            {
+                double scale = _feasibleCompactStateEstimate;
+                stageFraction = _compactStatesSolved / (_compactStatesSolved + scale);
+                stageFraction = Math.Min(stageFraction, ProgressTuning.Asymptote.CompactFeasibleSoftCap);
+            }
+
+            // Blend with the outer L < step < U loop structure: in the worst case every budget level
+            // from U-1 down to L is tried one by one, for totalRange = (U-1) - L + 1 = U - L stages.
+            // completedStages is the number of budget levels already resolved; each successful tighten
+            // can jump by more than 1, so the bar leaps forward whenever the step drops sharply.
+            if (_proofTightenInitialBudget >= 0 && _proofTightenCurrentBudget >= 0)
+            {
+                int totalRange = _proofTightenInitialBudget - _proofTightenLowerBound + 1;
+                if (totalRange > 0)
+                {
+                    int completedStages = _proofTightenInitialBudget - _proofTightenCurrentBudget;
+                    double rawCombined = (completedStages + stageFraction) / totalRange;
+                    rawCombined = Math.Clamp(rawCombined, 0.0, ProgressTuning.Asymptote.CompactFeasibleSoftCap);
+
+                    // Slight smoothing for budget-boundary jumps: preserve trend but make abrupt
+                    // "next proof ceiling" transitions visually less hard.
+                    if (!_proofTightenProgressEmaInitialized)
+                    {
+                        _proofTightenProgressEmaInitialized = true;
+                        _proofTightenProgressEma01 = rawCombined;
+                    }
+                    else
+                    {
+                        _proofTightenProgressEma01 +=
+                            ProgressTuning.Ema.ProofTightenCombinedProgressAlpha *
+                            (rawCombined - _proofTightenProgressEma01);
+                    }
+
+                    return _proofTightenProgressEma01;
+                }
+            }
+
+            return stageFraction;
         }
 
         if (_searchedStates <= 0)

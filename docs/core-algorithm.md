@@ -423,6 +423,9 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     `CompactGreedyCandidateCap` 截断，本轮 probe 留下的 partial phase-1b cache 会先被标记为**不可物化并立即丢弃**；
     编排层不会再做更重的 uncapped 重跑，而是**保守地保留最近一个完整 incumbent plan**，把最终 edge 阶段记为
     `no improvement`。也就是说，greedy 模式宁可放弃这最后一次边数优化机会，也不把尾部 runtime 升格成一次大枚举。快速、可中断、非证明最优。
+    进度估计方面，`proof-tighten` 阶段把**外层收紧区间** `U→L`（最差需逐档探测 `U-L` 层）与**当前层内工作量**（`solved/(solved+scale)` 渐近分数）融合，
+    使进度条既能反映每一层内部推进，也能在预算一次跨多档时体现整体收紧进展。为减小跨预算档位切换时的体感跳变，
+    融合值在该阶段额外经过一个轻量 EMA 平滑（当前参数 `alpha = 0.05`，只影响展示，不影响求解/判定语义）。
     这样安排是刻意的：min-edge 只在**最终步数** `S` 上做一次，避免在中途会被收紧丢弃的 `U`、`U−1`… 各层白算一遍边数
     （旧架构在 `U` 层先跑一遍完整 min-edge 基线、随后又被步数收紧作废，纯属浪费）。
     Phase A / Phase B 的根预算优先取**step 阶段物化得到的 `U`**（同一个 builder 实例先跑 step、再跑 compact，编排层正是这样复用的）——
@@ -433,7 +436,9 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     会把它们**全部生成 + McKay 去重**，于是几乎卡死。现在生成本身带一个 per-state 上限
     `CompactGreedyCandidateCap`（默认 128，见 `GenerateClassRepresentatives` 的 `generationCap`）：先把 step 阶段的
     构造式分组作为种子第一个评估（保证有界内必有可行解），再生成至多 `cap` 个代表参与「子节点最少」的贪心挑选。
-    该默认值现通过 `DefaultCompactGreedyCandidateCap = 128` 集中命名，便于后续统一调参。
+    该默认值现通过 `DefaultCompactGreedyCandidateCap = 128` 集中命名，便于后续统一调参；当调用方保持默认值时，运行期会按
+    当前状态的 `activeCount * groupSize` 搜索面把有效 cap 温和放大到最多 `4x` 基线，以减少宽状态上的 probe 重试。显式设置
+    非默认值则保持精确覆盖，不参与自适应放大。
     分组数 `≤ cap` 的状态因此与穷举**逐字节相同**（小/中形状毫无变化），只有分组数超过 `cap` 的大 `m` 状态被截断——
     用一点边数紧凑度换取**有界、可中断**的运行时间（`25,10,10` 由「出不来」降到约 23 s）。`int.MaxValue` 恢复原先
     的完整穷举，精确（exact）模式与最优性审计仍走未截断路径。
@@ -573,7 +578,8 @@ greedy-feasible(U) → (optional) greedy-tighten → proof-tighten≤N → edge-
 2. **次要收益**：即便 `U' > opt`，`ProofTighten` 也从更低起点开始，省掉上端便宜的松探测。
 3. **独立收益**：在 `ProofTighten` 跑不完的大 `m` 形状上，GreedyTighten 仍改善展示出的可行树（更小 max-step、更好的 anytime 结果）。
 4. **成本刻意压低**：只碰最深路径、每状态候选 `cap=128`、memo 高度、不做完整枚举——下行风险有界。
-  对应代码中的默认值现集中为 `DefaultGreedyTightenCandidateCap = 128`，与 compact 阶段的 cap 分开命名。
+  对应代码中的默认值现集中为 `DefaultGreedyTightenCandidateCap = 128`，与 compact 阶段的 cap 分开命名；保持默认值时同样按
+  `activeCount * groupSize` 搜索面做最多 `4x` 的温和自适应放大，而显式 override 仍按给定值精确执行。
 
 **反证条件（发生什么就证明不该加入，预先登记）**：在代表性算例集上实测，命中任一即判死：
 
