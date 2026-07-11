@@ -264,10 +264,12 @@ public class GreedyPipelineTests
         type.GetField("_phase1bSolved", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, false);
         type.GetField("_feasibleCompactStateEstimate", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, 100);
 
-        // Force a bogus/oversized outer-loop context so rawCombined > soft cap if unclamped.
-        type.GetField("_proofTightenInitialBudget", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, 50);
-        type.GetField("_proofTightenCurrentBudget", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, -50);
-        type.GetField("_proofTightenLowerBound", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, 5);
+        // Force an oversized (yet non-negative and internally consistent) context so
+        // rawCombined > soft cap if unclamped:
+        // completedStages = 999, totalRange = 1000 => rawCombined ~= 0.999 + stageFraction.
+        type.GetField("_proofTightenInitialBudget", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, 1000);
+        type.GetField("_proofTightenCurrentBudget", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, 1);
+        type.GetField("_proofTightenLowerBound", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, 1);
         type.GetField("_compactStatesSolved", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, 0);
 
         double progress = InvokeEstimateProgress(builder, elapsedMs: 1000);
