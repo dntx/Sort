@@ -7,6 +7,7 @@ using System.Text;
 partial class StrategyBuilder
 {
     private const int DoomedTailMinFoldLength = 2;
+    private const int MultiMemberSymmetryClassMinSize = 2;
 
     // Builds the "doomed-tail edge" view of a comparison step, in which every ordering that
     // differs only by permuting an already-eliminated tail collapses into a single edge whose
@@ -285,7 +286,7 @@ partial class StrategyBuilder
         int letterIndex = 0;
         foreach (GroupSymmetryClass symmetryClass in symmetryInfo.Classes)
         {
-            if (symmetryClass.Items.Length > 1)
+            if (symmetryClass.Items.Length >= MultiMemberSymmetryClassMinSize)
                 classLetters[symmetryClass.Index] = GetAliasName(letterIndex++);
         }
 
@@ -324,7 +325,7 @@ partial class StrategyBuilder
         // formula (recomputed on the reduced tail below) stays consistent.
         var chainHeadItems = new List<int>();
         var remainingTail = new List<int>(tailItems);
-        while (remainingTail.Count > 1)
+        while (remainingTail.Count >= DoomedTailMinFoldLength)
         {
             int forcedHead = -1;
             foreach (int candidate in remainingTail)
@@ -365,7 +366,7 @@ partial class StrategyBuilder
         }
 
         string body;
-        if (remainingTail.Count >= 2)
+        if (remainingTail.Count >= DoomedTailMinFoldLength)
         {
             string braceSet = "{" + string.Join(", ", tailTokens) + "}";
             body = chainTokens.Count > 0
@@ -410,7 +411,7 @@ partial class StrategyBuilder
         var legendParts = new List<string>();
         foreach (GroupSymmetryClass symmetryClass in symmetryInfo.Classes)
         {
-            if (symmetryClass.Items.Length > 1)
+            if (symmetryClass.Items.Length >= MultiMemberSymmetryClassMinSize)
             {
                 legendParts.Add(
                     $"{classLetters[symmetryClass.Index]} \u2208 permute {FormatBraceSet(symmetryClass.Items)}");
