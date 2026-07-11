@@ -386,6 +386,12 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
   的候选，而不是做递归 rollout。这个评分保持了选择器的多项式成本，同时把基础反链经常漏掉的跨边界桥接带了回来；
   其效果由 `FeasiblePlan_LookaheadPinsRawUpperBound` 等回归测试固定。
 
+- **候选打分早停（incumbent-dominance short-circuit）**：在 1-ply 候选评分里，当前候选按结果分支累积
+  `maxChildLowerBound / maxChildActiveCount / DistinctSuccessorCount` 三个前缀键；这三者在遍历过程中都是
+  单调不减。若前缀已经严格劣于当前 incumbent 分数，则该候选后续不可能翻盘，立即停止该候选的结果遍历。
+  这不会改变分数定义和最终选组（仅减少不必要的评分工作量），并通过 A/B 回归测试（同案关闭早停对照）
+  锁定「启用早停时 OutcomesConstructed 不上升」。
+
 - **`m == 2` 视为单独的 pairwise regime，不走上述 lookahead**：当前 1-ply 前瞻是为**真正的组排序**（`m >= 3`）设计的，
   依赖「一步能产生很多 outcome、一次能把一个反链压成更长的链」这一结构。`m=2` 时这些前提同时退化：
   一步只有 **2 个** outcome，本质上就是一次二元比较；反链宽度每步最多只降 **1**（宽度下界为
