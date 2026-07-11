@@ -20,6 +20,8 @@ using System.Linq;
 // sampled, because they are honest only in the quotient form and must be reviewed before adoption.
 partial class StrategyBuilder
 {
+    private const int ProjectionPairingProbeSampleLimit = 40;
+
     internal bool EnableProjectionPairingProbe { get; set; }
 
     private int _probeBuckets;
@@ -134,20 +136,20 @@ partial class StrategyBuilder
             if (!honest)
             {
                 _probeComponentsLeak++;
-                if (_probeLeakSamples.Count < 40)
+                if (_probeLeakSamples.Count < ProjectionPairingProbeSampleLimit)
                     _probeLeakSamples.Add(DescribeComponent(orbits, component, globalDrop, maxFamily));
             }
 
             if (orbitCount >= 3)
             {
                 _probeComponentsGe3++;
-                if (_probeGe3Samples.Count < 40)
+                if (_probeGe3Samples.Count < ProjectionPairingProbeSampleLimit)
                     _probeGe3Samples.Add(
                         (honest ? "OK   " : "LEAK ") + DescribeComponent(orbits, component, globalDrop, maxFamily));
             }
         }
 
-        if (componentsByRoot.Count < orbits.Count && _probeWinSamples.Count < 40)
+        if (componentsByRoot.Count < orbits.Count && _probeWinSamples.Count < ProjectionPairingProbeSampleLimit)
         {
             string reps = string.Join(" | ", orbits.Select(orbit => orbit[0].Family.RepresentativeOrder));
             _probeWinSamples.Add($"({_n},{_m},{_requestedK}) orbits {orbits.Count}->{componentsByRoot.Count}  [{reps}]");
