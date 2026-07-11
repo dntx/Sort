@@ -29,6 +29,10 @@ partial class StrategyBuilder
     // directly via ChooseConstructiveGroup when _useConstructiveSelection is set, so no precomputed
     // pattern cache / closure pre-solve is needed (the chooser is cheap and deterministic).
     private bool _useConstructiveSelection;
+    // Test-only switch: when true, candidate lookahead scoring always runs to completion (no
+    // incumbent-based early prune). Used by regression tests to A/B lock the pruning win via
+    // deterministic work counters.
+    internal bool DisableConstructiveCandidateEarlyPruneForTesting { get; set; }
     private Dictionary<SearchStateKey, int>? _constructiveDepthMemo;
     private int _greedyScoreLowerBoundCacheReuseHits;
 
@@ -278,7 +282,14 @@ partial class StrategyBuilder
             if (!seenCandidates.Add(sig))
                 return;
 
-            ConstructiveCandidateScore score = ScoreCandidateGroup(state, remainingSlots, key, group);
+            ConstructiveCandidateScore score = ScoreCandidateGroup(
+                state,
+                remainingSlots,
+                key,
+                group,
+                DisableConstructiveCandidateEarlyPruneForTesting || bestGroup is null
+                    ? null
+                    : bestScore);
             bool choose = false;
             int scoreCmp = score.CompareTo(bestScore);
             if (bestGroup is null || scoreCmp < 0)
@@ -546,20 +557,31 @@ partial class StrategyBuilder
 
     // Candidate score used by constructive lookahead: a cheap one-step heuristic over immediate
     // outcomes only.
-    private ConstructiveCandidateScore ScoreCandidateGroup(ComparisonState state, int remainingSlots, SearchStateKey key, List<int> group)
+    private ConstructiveCandidateScore ScoreCandidateGroup(
+        ComparisonState state,
+        int remainingSlots,
+        SearchStateKey key,
+        List<int> group,
+        ConstructiveCandidateScore? cutoff)
     {
-        return ScoreCandidateGroupCheap(state, remainingSlots, key, group);
+        return ScoreCandidateGroupCheap(state, remainingSlots, key, group, cutoff);
     }
 
     // Fast heuristic score based on immediate outcomes only.
     // Priority: lower max lower-bound, then lower max active count, then fewer distinct immediate
     // successors (a subtree-width proxy), then lower average active count.
-    private ConstructiveCandidateScore ScoreCandidateGroupCheap(ComparisonState state, int remainingSlots, SearchStateKey key, List<int> group)
+    private ConstructiveCandidateScore ScoreCandidateGroupCheap(
+        ComparisonState state,
+        int remainingSlots,
+        SearchStateKey key,
+        List<int> group,
+        ConstructiveCandidateScore? cutoff)
     {
         int maxChildLowerBound = 0;
         int maxChildActiveCount = 0;
         int sumChildActiveCount = 0;
         int outcomeCount = 0;
+        bool pruned = false;
 
         VisitComparisonOutcomes(
             state,
@@ -593,8 +615,25 @@ partial class StrategyBuilder
 
                 sumChildActiveCount += childActiveCount;
                 outcomeCount++;
+
+                // Safe early stop: these score-prefix components are monotonic as we process outcomes,
+                // so once they are already strictly worse than the incumbent score, this candidate
+                // cannot recover to beat it.
+                if (cutoff.HasValue && IsDefinitelyWorseByScorePrefix(
+                    maxChildLowerBound,
+                    maxChildActiveCount,
+                    outcomeCount,
+                    cutoff.Value))
+                {
+                    pruned = true;
+                    return false;
+                }
+
                 return true;
             });
+
+        if (pruned)
+            return ConstructiveCandidateScore.Worst;
 
         int averageChildActiveCount = outcomeCount == 0 ? 0 : sumChildActiveCount / outcomeCount;
         return new ConstructiveCandidateScore(
@@ -602,6 +641,29 @@ partial class StrategyBuilder
             maxChildActiveCount,
             averageChildActiveCount,
             outcomeCount);
+    }
+
+    private static bool IsDefinitelyWorseByScorePrefix(
+        int maxChildLowerBound,
+        int maxChildActiveCount,
+        int distinctSuccessorCountSoFar,
+        ConstructiveCandidateScore cutoff)
+    {
+        if (maxChildLowerBound > cutoff.MaxChildLowerBound)
+            return true;
+
+        if (maxChildLowerBound < cutoff.MaxChildLowerBound)
+            return false;
+
+        if (maxChildActiveCount > cutoff.MaxChildActiveCount)
+            return true;
+
+        if (maxChildActiveCount < cutoff.MaxChildActiveCount)
+            return false;
+
+        // DistinctSuccessorCount is monotonic non-decreasing during traversal, so once the running
+        // count already exceeds the cutoff, this candidate can no longer catch up on later keys.
+        return distinctSuccessorCountSoFar > cutoff.DistinctSuccessorCount;
     }
 
     private readonly record struct ConstructiveCandidateScore(

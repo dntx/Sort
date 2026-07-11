@@ -386,6 +386,12 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
   的候选，而不是做递归 rollout。这个评分保持了选择器的多项式成本，同时把基础反链经常漏掉的跨边界桥接带了回来；
   其效果由 `FeasiblePlan_LookaheadPinsRawUpperBound` 等回归测试固定。
 
+- **候选打分早停（incumbent-dominance short-circuit）**：在 1-ply 候选评分里，当前候选按结果分支累积
+  `maxChildLowerBound / maxChildActiveCount / DistinctSuccessorCount` 三个前缀键；这三者在遍历过程中都是
+  单调不减。若前缀已经严格劣于当前 incumbent 分数，则该候选后续不可能翻盘，立即停止该候选的结果遍历。
+  这不会改变分数定义和最终选组（仅减少不必要的评分工作量），并通过 A/B 回归测试（同案关闭早停对照）
+  锁定「启用早停时 OutcomesConstructed 不上升」。
+
 - **`m == 2` 视为单独的 pairwise regime，不走上述 lookahead**：当前 1-ply 前瞻是为**真正的组排序**（`m >= 3`）设计的，
   依赖「一步能产生很多 outcome、一次能把一个反链压成更长的链」这一结构。`m=2` 时这些前提同时退化：
   一步只有 **2 个** outcome，本质上就是一次二元比较；反链宽度每步最多只降 **1**（宽度下界为
@@ -417,6 +423,8 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     `CompactGreedyCandidateCap` 截断，本轮 probe 留下的 partial phase-1b cache 会先被标记为**不可物化并立即丢弃**；
     编排层不会再做更重的 uncapped 重跑，而是**保守地保留最近一个完整 incumbent plan**，把最终 edge 阶段记为
     `no improvement`。也就是说，greedy 模式宁可放弃这最后一次边数优化机会，也不把尾部 runtime 升格成一次大枚举。快速、可中断、非证明最优。
+    进度估计方面，`proof-tighten` 阶段把**外层收紧区间** `U→L`（最差需逐档探测 `U-L` 层）与**当前层内工作量**（`solved/(solved+scale)` 渐近分数）融合，
+    使进度条既能反映每一层内部推进，也能在预算一次跨多档时体现整体收紧进展。
     这样安排是刻意的：min-edge 只在**最终步数** `S` 上做一次，避免在中途会被收紧丢弃的 `U`、`U−1`… 各层白算一遍边数
     （旧架构在 `U` 层先跑一遍完整 min-edge 基线、随后又被步数收紧作废，纯属浪费）。
     Phase A / Phase B 的根预算优先取**step 阶段物化得到的 `U`**（同一个 builder 实例先跑 step、再跑 compact，编排层正是这样复用的）——

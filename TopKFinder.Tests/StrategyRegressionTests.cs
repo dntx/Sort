@@ -223,6 +223,38 @@ public sealed class StrategyRegressionTests
         }
     }
 
+    // Greedy-feasible lookahead now short-circuits candidate scoring when a candidate is already
+    // dominated by the current incumbent on monotonic score-prefix keys. Lock that win using
+    // deterministic work counters instead of wall-clock: with pruning enabled, outcome
+    // construction must not increase versus an A/B control run that disables the short-circuit.
+    [Theory]
+    [InlineData(22, 3, 6)]
+    [InlineData(24, 3, 6)]
+    public void GreedyFeasible_EarlyPrune_DoesNotIncreaseOutcomeWork(int n, int m, int k)
+    {
+        StrategyPlan withPrune = TestTimeoutHelper.RunWithTimeout(
+            $"StrategyBuilder.BuildGreedyFeasibleStage({n}, {m}, {k}) [with prune]",
+            RegressionTestTimeout,
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildGreedyFeasibleStage());
+
+        StrategyPlan withoutPrune = TestTimeoutHelper.RunWithTimeout(
+            $"StrategyBuilder.BuildGreedyFeasibleStage({n}, {m}, {k}) [without prune]",
+            RegressionTestTimeout,
+            cancellationToken =>
+            {
+                var builder = new StrategyBuilder(n, m, k, cancellationToken)
+                {
+                    DisableConstructiveCandidateEarlyPruneForTesting = true
+                };
+                return builder.BuildGreedyFeasibleStage();
+            });
+
+        Assert.Equal(withoutPrune.MaxStep, withPrune.MaxStep);
+        Assert.True(
+            withPrune.SearchStatistics.OutcomesConstructed <= withoutPrune.SearchStatistics.OutcomesConstructed,
+            $"greedy-feasible outcomes increased with early-prune enabled: with={withPrune.SearchStatistics.OutcomesConstructed}, without={withoutPrune.SearchStatistics.OutcomesConstructed}");
+    }
+
     // === Squeeze report (L <= opt <= U): proven-lower-bound (L) side ===
     // The iterative-deepening driver lifts a global budget that is, at every pass, a PROVEN lower
     // bound on the root optimum. Phase A surfaces that value as SearchStatistics.RootProvenLowerBound
