@@ -249,6 +249,31 @@ public class GreedyPipelineTests
             $"expected smoothing to stay below raw second-stage jump {rawStage2:F4}, got {stage2Start:F4}");
     }
 
+    // Guardrail for AI-review B1: proof-tighten rawCombined must be range-clamped before entering
+    // EMA so upstream anomalies cannot propagate values outside [0, softCap].
+    [Fact]
+    public void ProofTighten_CombinedProgress_ClampsRawCombinedToSoftCap()
+    {
+        var builder = new StrategyBuilder(12, 4, 4, reportCombinedRunProgress: true);
+        Type type = typeof(StrategyBuilder);
+
+        FieldInfo progressScopeField = type.GetField("_progressScope", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        object compactFeasibleScope = Enum.Parse(progressScopeField.FieldType, "CompactFeasibleInCombinedRun");
+        progressScopeField.SetValue(builder, compactFeasibleScope);
+
+        type.GetField("_phase1bSolved", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, false);
+        type.GetField("_feasibleCompactStateEstimate", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, 100);
+
+        // Force a bogus/oversized outer-loop context so rawCombined > soft cap if unclamped.
+        type.GetField("_proofTightenInitialBudget", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, 50);
+        type.GetField("_proofTightenCurrentBudget", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, -50);
+        type.GetField("_proofTightenLowerBound", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, 5);
+        type.GetField("_compactStatesSolved", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, 0);
+
+        double progress = InvokeEstimateProgress(builder, elapsedMs: 1000);
+        Assert.Equal(0.999, progress, precision: 12);
+    }
+
     // Regression guard for the tighter-budget keep/reuse fix in this change. Previously, on (20,4,6) a
     // looser-budget pattern overwrote the tighter-feasible one, so the materialized plan OVERSHOT the
     // proof-tighten<=14 ceiling (realized step 16) and the probe was classified Overshot. Keeping the

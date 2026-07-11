@@ -1300,7 +1300,7 @@ partial class StrategyBuilder
                 {
                     int completedStages = _proofTightenInitialBudget - _proofTightenCurrentBudget;
                     double rawCombined = (completedStages + stageFraction) / totalRange;
-                    rawCombined = Math.Min(rawCombined, ProgressTuning.Asymptote.CompactFeasibleSoftCap);
+                    rawCombined = Math.Clamp(rawCombined, 0.0, ProgressTuning.Asymptote.CompactFeasibleSoftCap);
 
                     // Slight smoothing for budget-boundary jumps: preserve trend but make abrupt
                     // "next proof ceiling" transitions visually less hard.
