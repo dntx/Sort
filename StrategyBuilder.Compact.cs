@@ -30,6 +30,12 @@ partial class StrategyBuilder
     // cap keeps the phase correct -- it only trades a little per-state edge-count minimization for a
     // bounded, interruptible runtime. int.MaxValue preserves the original exhaustive behavior.
     internal int CompactGreedyCandidateCap = DefaultCompactGreedyCandidateCap;
+
+    private int GetCompactGreedyCandidateCap(int activeCount, int groupSize)
+        => ScaleDefaultCandidateCap(CompactGreedyCandidateCap, DefaultCompactGreedyCandidateCap, activeCount, groupSize);
+
+    internal int GetCompactGreedyCandidateCapForTesting(int activeCount, int groupSize)
+        => GetCompactGreedyCandidateCap(activeCount, groupSize);
     
     
     private int _compactGroupsEnumerated;
@@ -368,7 +374,8 @@ partial class StrategyBuilder
         // cap bounds BOTH the representative generation/dedup and the FitChildren cost per state -- the
         // materialized full enumeration over thousands of large-m groups is what makes the edge phase
         // hang. The constructive group above guarantees correctness regardless of the cap.
-         foreach (var group in EnumerateDistinctGroups(state, candidates, groupSize, CompactGreedyCandidateCap))
+        int candidateCap = GetCompactGreedyCandidateCap(candidates.Count, groupSize);
+        foreach (var group in EnumerateDistinctGroups(state, candidates, groupSize, candidateCap))
         {
             if (!seen.Add(new IntSequenceKey(group.ToArray())))
                 continue;
@@ -473,7 +480,8 @@ partial class StrategyBuilder
             seen.Add(new IntSequenceKey(constructiveGroup.ToArray()));
             fits.Add((constructiveGroup, constructiveChildren));
         }
-        foreach (var group in EnumerateDistinctGroups(state, candidates, groupSize, CompactGreedyCandidateCap))
+        int candidateCap = GetCompactGreedyCandidateCap(candidates.Count, groupSize);
+        foreach (var group in EnumerateDistinctGroups(state, candidates, groupSize, candidateCap))
         {
             if (!seen.Add(new IntSequenceKey(group.ToArray())))
                 continue;
