@@ -13,6 +13,8 @@ partial class StrategyBuilder
     private const int IterativeDeepeningMinNToMScale = 2;
     private const int PairwiseConstructiveSelectionGroupSize = 2;
     private const int DisplayLineTieBreakMinGroupSize = 3;
+    // Enable heavy display-line tie-break only on smaller active states; large states use
+    // score+lex tie-break to avoid CountDisplayBranches becoming a stage-1 hotspot.
     private const int DisplayLineTieBreakMaxActiveCount = 16;
     private const int GreedyCandidateCapMinimum = 1;
     private const int GreedyCandidateCapGrowthFactor = 4;
