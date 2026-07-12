@@ -6,8 +6,6 @@ using System.Text;
 
 partial class StrategyBuilder
 {
-    private const int DoomedTailMinFoldLength = 2;
-
     // Builds the "doomed-tail edge" view of a comparison step, in which every ordering that
     // differs only by permuting an already-eliminated tail collapses into a single edge whose
     // pattern carries that tail as an unordered brace set "{...}". This replaces the per-family
@@ -45,7 +43,7 @@ partial class StrategyBuilder
         {
             int prefixLength = ComputeDoomedPrefixLength(
                 familyOutcomes[i].Family.RepresentativeOrderItems, outsideAncestors, remainingSlots);
-            if (n - prefixLength < DoomedTailMinFoldLength)
+            if (n - prefixLength <= 1)
                 return null;
             prefixLengths[i] = prefixLength;
         }
@@ -324,7 +322,7 @@ partial class StrategyBuilder
         // formula (recomputed on the reduced tail below) stays consistent.
         var chainHeadItems = new List<int>();
         var remainingTail = new List<int>(tailItems);
-        while (remainingTail.Count >= DoomedTailMinFoldLength)
+        while (remainingTail.Count > 1)
         {
             int forcedHead = -1;
             foreach (int candidate in remainingTail)
@@ -365,7 +363,7 @@ partial class StrategyBuilder
         }
 
         string body;
-        if (remainingTail.Count >= DoomedTailMinFoldLength)
+        if (remainingTail.Count > 1)
         {
             string braceSet = "{" + string.Join(", ", tailTokens) + "}";
             body = chainTokens.Count > 0
