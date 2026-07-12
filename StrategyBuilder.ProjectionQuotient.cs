@@ -21,10 +21,8 @@ using System.Numerics;
 // finer pre-merge split (kept for the on/off comparison tests and as a safety fallback).
 partial class StrategyBuilder
 {
-    private const int ProjectionMergeMinOrbitCount = 2;
     private const int ProjectionQuotientMinHeadCount = 3;
     private const int ProjectionQuotientMaxHeadCount = 4;
-    private const int QuotientSymmetricBlockSize = 2;
     private const int TopAnchoredQuotientExpectedOrderingCount = 4;
 
     // All-orbit projection merge. Unions every pair of parent orbits whose representatives are
@@ -35,7 +33,7 @@ partial class StrategyBuilder
         ComparisonState state, List<List<MergedFamilyOutcome>> orbits)
     {
         int n = orbits.Count;
-        if (n < ProjectionMergeMinOrbitCount)
+        if (n <= 1)
             return orbits.Select(orbit => (orbit, false)).ToList();
 
         var projectionCache = new Dictionary<ulong, (ComparisonState State, int[] Colors)>();
@@ -209,13 +207,13 @@ partial class StrategyBuilder
         List<int> blockHeads;
         int partner;
         bool blockCarriesTail;
-        if (tailedHeads.Count == QuotientSymmetricBlockSize && leafHeads.Count == 1)
+        if (tailedHeads.Count == 2 && leafHeads.Count == 1)
         {
             blockHeads = tailedHeads;
             partner = leafHeads[0];
             blockCarriesTail = true;
         }
-        else if (leafHeads.Count == QuotientSymmetricBlockSize && tailedHeads.Count == 1)
+        else if (leafHeads.Count == 2 && tailedHeads.Count == 1)
         {
             blockHeads = leafHeads;
             partner = tailedHeads[0];
