@@ -169,6 +169,27 @@ public class GreedyTightenTests
         Assert.Equal(expected, shouldRun);
     }
 
+    [Fact]
+    public void GreedyTighten_IgnoresFeasibleOnlyFixedCandidateFlag()
+    {
+        // Stage-scoped contract: fixed-candidate is a greedy-feasible experiment only.
+        // Greedy-tighten fallback selection should still use its normal behavior.
+        const int n = 12;
+        const int m = 4;
+        const int k = 4;
+
+        var baselineBuilder = new StrategyBuilder(n, m, k);
+        int baseline = baselineBuilder.BuildGreedyTightenPlan().MaxStep;
+
+        var flaggedBuilder = new StrategyBuilder(n, m, k)
+        {
+            ForceConstructiveFixedCandidateSelection = true,
+        };
+        int flagged = flaggedBuilder.BuildGreedyTightenPlan().MaxStep;
+
+        Assert.Equal(baseline, flagged);
+    }
+
     // The shared memo optimization must preserve internally consistent accounting across total
     // counters and per-round diagnostics.
     [Fact]

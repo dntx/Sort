@@ -70,6 +70,9 @@ partial class MainForm
                 StrategyPlan feasiblePlan = await Task.Run(() => builder.BuildGreedyFeasibleStage(), cancellationToken);
                 StrategyPlan baseFeasiblePlan = feasiblePlan;
 
+                // Keep any fixed-candidate experiment scoped to greedy-feasible only.
+                builder.ForceConstructiveFixedCandidateSelection = false;
+
                 // Optional GT pre-step (root-probe gated): only run single-round GreedyTighten when
                 // the root micro-probe sees a possible root-height drop.
                 bool gtProbeRun = await Task.Run(() => builder.ShouldRunGreedyTightenByRootProbe(), cancellationToken);

@@ -7,7 +7,7 @@ public sealed class CliArgsTests
     {
         bool ok = Program.TryParseCliArgs(
             new[] { "9", "3", "3" },
-            out string? n, out string? m, out string? k, out Program.Mode mode, out int? stageLimit, out string? error);
+            out string? n, out string? m, out string? k, out Program.Mode mode, out int? stageLimit, out bool greedyFixedCandidate, out string? error);
 
         Assert.True(ok);
         Assert.Equal("9", n);
@@ -15,6 +15,7 @@ public sealed class CliArgsTests
         Assert.Equal("3", k);
         Assert.Equal(Program.Mode.Exact, mode);
         Assert.Null(stageLimit);
+        Assert.False(greedyFixedCandidate);
         Assert.Null(error);
     }
 
@@ -27,11 +28,12 @@ public sealed class CliArgsTests
     {
         bool ok = Program.TryParseCliArgs(
             new[] { "9", "3", "3", "--mode", value },
-            out _, out _, out _, out Program.Mode mode, out int? stageLimit, out string? error);
+            out _, out _, out _, out Program.Mode mode, out int? stageLimit, out bool greedyFixedCandidate, out string? error);
 
         Assert.True(ok);
         Assert.Equal(expected, mode.ToString());
         Assert.Null(stageLimit);
+        Assert.False(greedyFixedCandidate);
         Assert.Null(error);
     }
 
@@ -40,11 +42,12 @@ public sealed class CliArgsTests
     {
         bool ok = Program.TryParseCliArgs(
             new[] { "9", "3", "3", "--stage", "2" },
-            out _, out _, out _, out Program.Mode mode, out int? stageLimit, out string? error);
+            out _, out _, out _, out Program.Mode mode, out int? stageLimit, out bool greedyFixedCandidate, out string? error);
 
         Assert.True(ok);
         Assert.Equal(Program.Mode.Exact, mode);
         Assert.Equal(2, stageLimit);
+        Assert.False(greedyFixedCandidate);
         Assert.Null(error);
     }
 
@@ -53,11 +56,26 @@ public sealed class CliArgsTests
     {
         bool ok = Program.TryParseCliArgs(
             new[] { "9", "3", "3", "--mode", "greedy", "--stage", "1" },
-            out _, out _, out _, out Program.Mode mode, out int? stageLimit, out string? error);
+            out _, out _, out _, out Program.Mode mode, out int? stageLimit, out bool greedyFixedCandidate, out string? error);
 
         Assert.True(ok);
         Assert.Equal(Program.Mode.Greedy, mode);
         Assert.Equal(1, stageLimit);
+        Assert.False(greedyFixedCandidate);
+        Assert.Null(error);
+    }
+
+    [Fact]
+    public void TryParseCliArgs_ParsesGreedyFixedCandidateFlag()
+    {
+        bool ok = Program.TryParseCliArgs(
+            new[] { "9", "3", "3", "--greedy-fixed-candidate" },
+            out _, out _, out _, out Program.Mode mode, out int? stageLimit, out bool greedyFixedCandidate, out string? error);
+
+        Assert.True(ok);
+        Assert.Equal(Program.Mode.Exact, mode);
+        Assert.Null(stageLimit);
+        Assert.True(greedyFixedCandidate);
         Assert.Null(error);
     }
 
@@ -66,7 +84,7 @@ public sealed class CliArgsTests
     {
         bool ok = Program.TryParseCliArgs(
             new[] { "9", "3", "3", "--mode", "X" },
-            out _, out _, out _, out _, out _, out string? error);
+            out _, out _, out _, out _, out _, out _, out string? error);
 
         Assert.False(ok);
         Assert.Equal("Error: unknown mode 'X' (expected exact or greedy)", error);
@@ -77,7 +95,7 @@ public sealed class CliArgsTests
     {
         bool ok = Program.TryParseCliArgs(
             new[] { "9", "3", "3", "--mode" },
-            out _, out _, out _, out _, out _, out string? error);
+            out _, out _, out _, out _, out _, out _, out string? error);
 
         Assert.False(ok);
         Assert.Equal("Error: --mode requires a value (exact or greedy)", error);
@@ -88,7 +106,7 @@ public sealed class CliArgsTests
     {
         bool ok = Program.TryParseCliArgs(
             new[] { "9", "3", "3", "--stage" },
-            out _, out _, out _, out _, out _, out string? error);
+            out _, out _, out _, out _, out _, out _, out string? error);
 
         Assert.False(ok);
         Assert.Equal("Error: --stage requires a positive integer value", error);
@@ -102,7 +120,7 @@ public sealed class CliArgsTests
     {
         bool ok = Program.TryParseCliArgs(
             new[] { "9", "3", "3", "--stage", value },
-            out _, out _, out _, out _, out _, out string? error);
+            out _, out _, out _, out _, out _, out _, out string? error);
 
         Assert.False(ok);
         Assert.Equal($"Error: invalid stage '{value}' (expected a positive integer)", error);
@@ -117,7 +135,7 @@ public sealed class CliArgsTests
     {
         bool ok = Program.TryParseCliArgs(
             new[] { "9", "3", "3", option },
-            out _, out _, out _, out _, out _, out string? error);
+            out _, out _, out _, out _, out _, out _, out string? error);
 
         Assert.False(ok);
         Assert.Equal($"Error: unknown option '{option}'", error);
@@ -127,7 +145,7 @@ public sealed class CliArgsTests
     public void TryParseCliArgs_RejectsTooFewPositionals()
     {
         bool ok = Program.TryParseCliArgs(
-            new[] { "9", "3" }, out _, out _, out _, out _, out _, out string? error);
+            new[] { "9", "3" }, out _, out _, out _, out _, out _, out _, out string? error);
 
         Assert.False(ok);
         Assert.StartsWith("Error: expected 3 positional arguments", error);
@@ -137,7 +155,7 @@ public sealed class CliArgsTests
     public void TryParseCliArgs_RejectsTooManyPositionals()
     {
         bool ok = Program.TryParseCliArgs(
-            new[] { "9", "3", "3", "2" }, out _, out _, out _, out _, out _, out string? error);
+            new[] { "9", "3", "3", "2" }, out _, out _, out _, out _, out _, out _, out string? error);
 
         Assert.False(ok);
         Assert.StartsWith("Error: expected 3 positional arguments", error);
@@ -147,7 +165,7 @@ public sealed class CliArgsTests
     public void TryParseCliArgs_RejectsFlagOnlyInput()
     {
         bool ok = Program.TryParseCliArgs(
-            new[] { "--compact" }, out _, out _, out _, out _, out _, out string? error);
+            new[] { "--compact" }, out _, out _, out _, out _, out _, out _, out string? error);
 
         Assert.False(ok);
         Assert.Equal("Error: unknown option '--compact'", error);
