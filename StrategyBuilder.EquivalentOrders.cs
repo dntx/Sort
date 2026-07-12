@@ -8,10 +8,7 @@ partial class StrategyBuilder
 {
     private const int PermutationTemplateMinRemainingItems = 4;
     private const int PartialPatternFamilyMinOrders = 4;
-    private const int PartialPatternFamilyMinOrderLength = 2;
     private const int WindowPermutationFamilyMinOrderLength = 4;
-    private const int OrderedBlockPermutationMinOrders = 2;
-    private const int OrderedBlockPermutationMinOrderLength = 2;
     private const int InterleavedChainTrackMinItems = 4;
     private const int InterleavedChainTrackMaxItems = 8;
 
@@ -352,7 +349,7 @@ partial class StrategyBuilder
         IReadOnlyDictionary<int, int> representativePositions)
     {
         int orderLength = orders[0].Count;
-        if (orders.Count < PartialPatternFamilyMinOrders || orderLength < PartialPatternFamilyMinOrderLength)
+        if (orders.Count < PartialPatternFamilyMinOrders || orderLength <= 1)
             return null;
 
         var candidates = new List<PartialPatternFamilyCandidate>();
@@ -507,7 +504,7 @@ partial class StrategyBuilder
         IReadOnlyList<int> remainingItems,
         IReadOnlyDictionary<int, int> representativePositions)
     {
-        if (orders.Count < OrderedBlockPermutationMinOrders || orders[0].Count < OrderedBlockPermutationMinOrderLength)
+        if (orders.Count <= 1 || orders[0].Count <= 1)
             return null;
 
         // a -> b is a block-internal edge iff b immediately follows a in EVERY ordering. An item with
@@ -589,7 +586,7 @@ partial class StrategyBuilder
         IReadOnlyDictionary<int, int> representativePositions)
     {
         int n = remainingItems.Count;
-        if (orders.Count < OrderedBlockPermutationMinOrders || n < InterleavedChainTrackMinItems || n > InterleavedChainTrackMaxItems)
+        if (orders.Count <= 1 || n < InterleavedChainTrackMinItems || n > InterleavedChainTrackMaxItems)
             return null;
 
         List<List<int>>? bestChains = null;
