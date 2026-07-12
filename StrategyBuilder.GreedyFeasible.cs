@@ -204,7 +204,7 @@ partial class StrategyBuilder
         // active antichain width by at most one, so the immediate-outcome scorer has much weaker signal
         // than for true group sorts (m>=3) while still paying the same heavy lower-bound cost. Treat it
         // as a pairwise edge-selection problem and use the base antichain heuristic directly.
-        if (_m == PairwiseConstructiveSelectionGroupSize)
+        if (_m == 2)
             return ChooseConstructiveGroupBase(state, remainingSlots);
 
         List<int>? group = ChooseConstructiveGroupLookahead(state, remainingSlots);
@@ -261,11 +261,10 @@ partial class StrategyBuilder
         string? bestSig = null;
         var seenCandidates = new HashSet<string>();
         Dictionary<string, int>? displayLineCountCache =
-            _m >= DisplayLineTieBreakMinGroupSize &&
             (DisableConstructiveDisplayLineTieBreakActiveGateForTesting ||
              state.ActiveCount <= DisplayLineTieBreakMaxActiveCount)
-                ? new Dictionary<string, int>()
-                : null;
+            ? new Dictionary<string, int>()
+            : null;
 
         int GetDisplayLineCountCached(string sig, List<int> candidate)
         {

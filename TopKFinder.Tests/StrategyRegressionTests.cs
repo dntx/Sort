@@ -284,6 +284,33 @@ public sealed class StrategyRegressionTests
             $"display tie-break evaluations increased with gate enabled: with={withGateBuilder.ConstructiveDisplayLineTieBreakEvaluations}, without={withoutGateBuilder.ConstructiveDisplayLineTieBreakEvaluations}");
     }
 
+    // Pairwise mode (m=2) exits before lookahead scoring, so display-line tie-break evaluations
+    // must remain zero regardless of the active-count gate override.
+    [Fact]
+    public void GreedyFeasible_PairwiseMode_DoesNotRunDisplayLineTieBreak()
+    {
+        var defaultBuilder = new StrategyBuilder(12, 2, 6);
+        StrategyPlan defaultPlan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.BuildGreedyFeasibleStage(12, 2, 6) [pairwise default gate]",
+            RegressionTestTimeout,
+            _ => defaultBuilder.BuildGreedyFeasibleStage());
+
+        var forcedBuilder = new StrategyBuilder(12, 2, 6)
+        {
+            DisableConstructiveDisplayLineTieBreakActiveGateForTesting = true
+        };
+        StrategyPlan forcedPlan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.BuildGreedyFeasibleStage(12, 2, 6) [pairwise gate override]",
+            RegressionTestTimeout,
+            _ => forcedBuilder.BuildGreedyFeasibleStage());
+
+        Assert.True(defaultPlan.MaxStep > 0);
+        Assert.True(forcedPlan.MaxStep > 0);
+        Assert.Equal(defaultPlan.MaxStep, forcedPlan.MaxStep);
+        Assert.Equal(0, defaultBuilder.ConstructiveDisplayLineTieBreakEvaluations);
+        Assert.Equal(0, forcedBuilder.ConstructiveDisplayLineTieBreakEvaluations);
+    }
+
     // === Squeeze report (L <= opt <= U): proven-lower-bound (L) side ===
     // The iterative-deepening driver lifts a global budget that is, at every pass, a PROVEN lower
     // bound on the root optimum. Phase A surfaces that value as SearchStatistics.RootProvenLowerBound
