@@ -20,10 +20,21 @@ partial class StrategyBuilder
     // (see /memories/repo). Set false to recover the older, finer split.
     internal bool EnableProjectionOrbitMerging { get; set; } = true;
 
-    private List<StrategyBranch> BuildBranches(ComparisonState state, ulong fixedTopMask, int remainingSlots, SelectedComparisonGroup chosenGroup, int nextStep)
+    private List<StrategyBranch> BuildBranches(
+        ComparisonState state,
+        ulong fixedTopMask,
+        int remainingSlots,
+        SelectedComparisonGroup chosenGroup,
+        int nextStep,
+        bool forceConstructiveFixedCandidateSelection)
     {
         return BuildBranchSpecs(state, remainingSlots, chosenGroup)
-            .Select(spec => BuildTransitionBranch(state, fixedTopMask, spec, nextStep))
+            .Select(spec => BuildTransitionBranch(
+                state,
+                fixedTopMask,
+                spec,
+                nextStep,
+                forceConstructiveFixedCandidateSelection))
             .ToList();
     }
 
@@ -495,14 +506,24 @@ partial class StrategyBuilder
         _mergedOutcomeCollisions++;
     }
 
-    private StrategyBranch BuildTransitionBranch(ComparisonState state, ulong fixedTopMask, BranchSpec spec, int nextStep)
+    private StrategyBranch BuildTransitionBranch(
+        ComparisonState state,
+        ulong fixedTopMask,
+        BranchSpec spec,
+        int nextStep,
+        bool forceConstructiveFixedCandidateSelection)
     {
         MergedFamilyOutcome outcome = spec.Outcome;
         return new StrategyBranch(
             spec.OrderText,
             spec.Summary,
             BuildComparisonEffect(state, fixedTopMask, outcome.NextState, outcome.NextFixedTopMask),
-            BuildState(outcome.NextState, outcome.NextFixedTopMask, outcome.NextRemainingSlots, nextStep));
+            BuildState(
+                outcome.NextState,
+                outcome.NextFixedTopMask,
+                outcome.NextRemainingSlots,
+                nextStep,
+                forceConstructiveFixedCandidateSelection));
     }
 
     private StrategyEffect BuildComparisonEffect(ComparisonState before, ulong beforeFixedTopMask, ComparisonState after, ulong afterFixedTopMask)

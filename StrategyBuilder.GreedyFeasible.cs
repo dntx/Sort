@@ -33,9 +33,6 @@ partial class StrategyBuilder
     // incumbent-based early prune). Used by regression tests to A/B lock the pruning win via
     // deterministic work counters.
     internal bool DisableConstructiveCandidateEarlyPruneForTesting { get; set; }
-    // Greedy-feasible stage policy switch: that stage always uses the fixed constructive base picker
-    // (no lookahead scoring), while all other callers keep the default selector behavior.
-    private bool _forceConstructiveFixedCandidateSelection;
     private Dictionary<SearchStateKey, int>? _constructiveDepthMemo;
     private int _greedyScoreLowerBoundCacheReuseHits;
 
@@ -106,18 +103,14 @@ partial class StrategyBuilder
 
         _useCompact = false;
         _useConstructiveSelection = true;
-        _forceConstructiveFixedCandidateSelection = true;
-        StrategyNode root;
-        try
-        {
-            _feasiblePhase2StartMs = _progressStopwatch.ElapsedMilliseconds;  // Mark the start of the costly BuildState phase
-            root = BuildState(new ComparisonState(_n), 0, _k, 1);
-        }
-        finally
-        {
-            _forceConstructiveFixedCandidateSelection = false;
-            _useConstructiveSelection = false;
-        }
+        _feasiblePhase2StartMs = _progressStopwatch.ElapsedMilliseconds;  // Mark the start of the costly BuildState phase
+        StrategyNode root = BuildState(
+            new ComparisonState(_n),
+            0,
+            _k,
+            1,
+            forceConstructiveFixedCandidateSelection: true);
+        _useConstructiveSelection = false;
         _feasiblePhaseSolved = true;  // Mark feasible stage complete so progress jumps to 100%
         _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds - _phase1bMilliseconds;
         stopwatch.Stop();
@@ -205,9 +198,12 @@ partial class StrategyBuilder
     // Builds the next comparison group constructively from the current partial order. Returns a group
     // of min(m, active) items GUARANTEED to contain an unresolved pair (so the sort makes progress).
     // Delegates to the 1-ply lookahead chooser, which refines the base antichain policy.
-    private List<int> ChooseConstructiveGroup(ComparisonState state, int remainingSlots)
+    private List<int> ChooseConstructiveGroup(
+        ComparisonState state,
+        int remainingSlots,
+        bool forceFixedCandidateSelection = false)
     {
-        if (_forceConstructiveFixedCandidateSelection)
+        if (forceFixedCandidateSelection)
             return ChooseConstructiveGroupBase(state, remainingSlots);
 
         // m=2 is a qualitatively different regime: each step has only two outcomes and can shrink the
