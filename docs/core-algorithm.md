@@ -428,8 +428,8 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     融合值在该阶段额外经过一个轻量 EMA 平滑（当前参数 `alpha = 0.05`，只影响展示，不影响求解/判定语义）。
     这样安排是刻意的：min-edge 只在**最终步数** `S` 上做一次，避免在中途会被收紧丢弃的 `U`、`U−1`… 各层白算一遍边数
     （旧架构在 `U` 层先跑一遍完整 min-edge 基线、随后又被步数收紧作废，纯属浪费）。
-    CLI 实验开关 `--greedy-fixed-candidate` 仅作用于 `greedy-feasible` 首阶段（把该阶段分组选择固定为 base antichain），
-    不会关闭 `greedy-tighten` 里的 fallback 构造选择器；后续阶段仍保持默认行为。
+    当前实现中 `greedy-feasible` 首阶段默认固定使用 base antichain 构造分组（不做 lookahead 评分）；
+    `greedy-tighten` 里的 fallback 构造选择器仍保持默认行为。
     Phase A / Phase B 的根预算优先取**step 阶段物化得到的 `U`**（同一个 builder 实例先跑 step、再跑 compact，编排层正是这样复用的）——
     这是最紧且可靠的预算：step 树本身就是一个 `U` 步解的见证，所以 compact 在该上限下绝不会需要超过 `U` 步，从而保证
     **compact 计划不会比 step 更差**。若 `RunGreedyPipeline` 被独立调用（builder 上没有先跑 step），则内部先跑一遍

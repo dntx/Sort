@@ -28,9 +28,6 @@ class Program
         "  -h, --help      Show this help and exit.\n" +
         "  --mode <mode>   Search mode. exact (default) = exact + compact (proven optimal).\n" +
         "                  greedy = feasible bound, then min-step tightening, then one min-edge pass (interruptible with Ctrl+C).\n" +
-        "  --greedy-fixed-candidate\n" +
-        "                  Greedy experiment: force a fixed constructive candidate chooser (disable\n" +
-        "                  lookahead scoring). Greedy mode only; ignored in exact mode.\n" +
         "  --stage <n>     Stop after stage n (1-based).\n" +
         "                  exact: 1=step-proof, 2=edge-compact.\n" +
         "                  greedy: 1=greedy-feasible, 2+=continue along tightening progression.\n" +
@@ -67,7 +64,6 @@ class Program
                 out string? kText,
                 out Mode mode,
                 out int? stageLimit,
-                out bool greedyFixedCandidate,
                 out string? argError))
             {
                 Console.WriteLine(argError);
@@ -81,7 +77,7 @@ class Program
                 return;
             }
 
-            RunHeadless(nFromArgs, mFromArgs, kFromArgs, mode, stageLimit, greedyFixedCandidate);
+            RunHeadless(nFromArgs, mFromArgs, kFromArgs, mode, stageLimit);
             return;
         }
 
@@ -107,7 +103,7 @@ class Program
             return;
         }
 
-        RunHeadless(n, m, k, Mode.Exact, stageLimit: null, greedyFixedCandidate: false);
+        RunHeadless(n, m, k, Mode.Exact, stageLimit: null);
     }
 
     public static bool IsHelpRequested(string[] args)
@@ -122,7 +118,6 @@ class Program
         out string? kText,
         out Mode mode,
         out int? stageLimit,
-        out bool greedyFixedCandidate,
         out string? error)
     {
         nText = null;
@@ -130,7 +125,6 @@ class Program
         kText = null;
         mode = Mode.Exact;
         stageLimit = null;
-        greedyFixedCandidate = false;
         error = null;
 
         var positionals = new System.Collections.Generic.List<string>();
@@ -173,10 +167,6 @@ class Program
 
                 stageLimit = parsed;
             }
-            else if (arg == "--greedy-fixed-candidate")
-            {
-                greedyFixedCandidate = true;
-            }
             else if (arg.StartsWith("-", StringComparison.Ordinal))
             {
                 error = $"Error: unknown option '{arg}'";
@@ -200,7 +190,7 @@ class Program
         return true;
     }
 
-    private static void RunHeadless(int n, int m, int k, Mode mode, int? stageLimit, bool greedyFixedCandidate)
+    private static void RunHeadless(int n, int m, int k, Mode mode, int? stageLimit)
     {
         int canonicalK = Math.Min(k, n - k);
         if (canonicalK != k)
@@ -264,8 +254,6 @@ class Program
             cancellation.Token,
             ReportProgress,
             reportCombinedRunProgress: true);
-        if (mode == Mode.Greedy)
-            builder.ForceConstructiveFixedCandidateSelection = greedyFixedCandidate;
 
         try
         {
@@ -308,10 +296,6 @@ class Program
             greedyStopwatch.Stop();
             WriteStageStatus($"stage greedy-feasible: steps={feasiblePlan.MaxStep}, " +
                 $"edges={feasiblePlan.TotalBranchEdges} ({greedyStopwatch.Elapsed.TotalSeconds:F2}s)");
-
-            // The CLI fixed-candidate experiment is scoped to the greedy-feasible stage only.
-            // Greedy-tighten and downstream stages keep their normal selector behavior.
-            builder.ForceConstructiveFixedCandidateSelection = false;
 
             // Optional GT pre-step (root-probe gated): only run single-round GreedyTighten when the
             // root micro-probe sees a possible root-height drop.
