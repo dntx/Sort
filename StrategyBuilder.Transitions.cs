@@ -307,7 +307,7 @@ partial class StrategyBuilder
         ComparisonState state, List<List<MergedFamilyOutcome>> orbits)
     {
         int n = orbits.Count;
-        if (n < ProjectionMergeMinOrbitCount)
+        if (n <= 1)
             return orbits.Select(orbit => (orbit, false)).ToList();
 
         var projectionCache = new Dictionary<ulong, (ComparisonState State, int[] Colors)>();
