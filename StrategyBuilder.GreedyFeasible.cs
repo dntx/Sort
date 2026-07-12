@@ -113,7 +113,7 @@ partial class StrategyBuilder
             _k,
             1,
             new MaterializationContext(
-                ConstructiveSelection: ConstructiveSelectionMode.FixedBase));
+                ConstructiveSelection: ConstructiveSelectionOverride.FixedBase));
         _feasiblePhaseSolved = true;  // Mark feasible stage complete so progress jumps to 100%
         _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds - _phase1bMilliseconds;
         stopwatch.Stop();
