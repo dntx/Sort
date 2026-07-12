@@ -103,22 +103,17 @@ public class GreedyFeasibleStageTests
             $"feasible upper bound {feasible} was below the true optimum {optimum}");
     }
 
-    // Pins the exact raw feasible U (before compact edge-tightening) that the cheap 1-ply
-    // constructive lookahead achieves, so a regression that weakened candidate generation or
-    // immediate-outcome scoring would fail loudly rather than silently slip back to the pure
-    // single-ply antichain bound. The shapes below are the strongest witnesses: on 6,3,3 and
-    // 6,3,2 the base antichain heuristic overshoots (U=5 and U=4), while lookahead reaches the
-    // proven optimum; 9,5,4 and 7,4,4 also hit optimum. 14,4,5 and 12,6,6 are still above
-    // optimum but their exact tightened values are pinned to catch any drift. See
-    // docs/optimal-max-steps.md for the optima and docs/core-algorithm.md sec 4.6 for the policy.
+    // Pins the exact raw feasible U (before compact edge-tightening) for the current greedy-feasible
+    // default policy (fixed constructive base picker). These values are regression locks for stage-1
+    // behavior after removing the external toggle and making fixed-base selection the default.
     [Theory]
-    [InlineData(6, 3, 3, 3)]
-    [InlineData(6, 3, 2, 3)]
-    [InlineData(9, 5, 4, 3)]
+    [InlineData(6, 3, 3, 5)]
+    [InlineData(6, 3, 2, 4)]
+    [InlineData(9, 5, 4, 4)]
     [InlineData(7, 4, 4, 3)]
     [InlineData(14, 4, 5, 8)]
     [InlineData(12, 6, 6, 4)]
-    public void GreedyFeasibleStage_LookaheadPinsRawUpperBound(int n, int m, int k, int expectedRawU)
+    public void GreedyFeasibleStage_FixedBasePinsRawUpperBound(int n, int m, int k, int expectedRawU)
     {
         int feasible = new StrategyBuilder(n, m, k).BuildGreedyFeasibleStage().MaxStep;
 
@@ -141,34 +136,32 @@ public class GreedyFeasibleStageTests
         Assert.Equal(expectedRawU, feasible);
     }
 
-    // Regression for the greedy 1-ply scoring hot path optimization: the scorer now reuses each
-    // outcome's already-computed NextSearchKey to hit the lower-bound cache directly. These cases
-    // should exercise that path and produce at least one direct reuse hit in a normal feasible build.
+    // Under the default fixed-base feasible policy, stage-1 no longer runs lookahead scoring, so the
+    // scorer's lower-bound cache-key reuse counter must remain zero.
     [Theory]
     [InlineData(9, 3, 3)]
     [InlineData(12, 4, 4)]
     [InlineData(16, 5, 5)]
-    public void GreedyFeasibleStage_ReusesLowerBoundCacheKeyInScoring(int n, int m, int k)
+    public void GreedyFeasibleStage_FixedBaseDoesNotUseLookaheadScoringCache(int n, int m, int k)
     {
         var builder = new StrategyBuilder(n, m, k);
 
         _ = builder.BuildGreedyFeasibleStage();
 
-        Assert.True(
-            builder.GreedyScoreLowerBoundCacheReuseHits > 0,
-            $"expected direct lower-bound cache key reuse hits in greedy scoring for ({n},{m},{k})");
+        Assert.Equal(
+            0,
+            builder.GreedyScoreLowerBoundCacheReuseHits);
     }
 
-    // Regression guard for the m>=3 lookahead generalization and successor-width-first scoring:
-    // unresolved-density candidates and tie-break behavior now run broadly on m>=3, and we lock in
-    // the resulting tree-size gains with relaxed upper envelopes (not exact pins) to tolerate small
-    // tie-order drift while preventing large backslides.
+    // Regression guard for fixed-base greedy-feasible tree size envelopes. These are intentionally
+    // loose upper bounds (not exact pins) to tolerate minor deterministic drift while preventing
+    // major structural backslides.
     [Theory]
     [InlineData(20, 3, 6, 23, 9000, 4000)]
     [InlineData(22, 3, 6, 28, 13000, 5000)]
-    [InlineData(16, 5, 5, 6, 1200, 260)]
-    [InlineData(12, 4, 4, 6, 200, 90)]
-    public void GreedyFeasibleStage_MGe3GeneralizedLookahead_StaysWithinTreeSizeEnvelope(
+    [InlineData(16, 5, 5, 7, 1200, 260)]
+    [InlineData(12, 4, 4, 7, 200, 90)]
+    public void GreedyFeasibleStage_FixedBase_StaysWithinTreeSizeEnvelope(
         int n,
         int m,
         int k,
