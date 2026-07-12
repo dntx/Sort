@@ -33,10 +33,15 @@ partial class StrategyBuilder
     // incumbent-based early prune). Used by regression tests to A/B lock the pruning win via
     // deterministic work counters.
     internal bool DisableConstructiveCandidateEarlyPruneForTesting { get; set; }
+    // Test-only switch: when true, disables the active-count gate for display-line tie-break so
+    // tests can A/B compare heavy tie-break evaluation work.
+    internal bool DisableConstructiveDisplayLineTieBreakActiveGateForTesting { get; set; }
     private Dictionary<SearchStateKey, int>? _constructiveDepthMemo;
     private int _greedyScoreLowerBoundCacheReuseHits;
+    private int _constructiveDisplayLineTieBreakEvaluations;
 
     internal int GreedyScoreLowerBoundCacheReuseHits => _greedyScoreLowerBoundCacheReuseHits;
+    internal int ConstructiveDisplayLineTieBreakEvaluations => _constructiveDisplayLineTieBreakEvaluations;
 
     // Feasible step budget U threaded from the step phase to the edge phase within one combined run.
     // BuildGreedyFeasibleStage sets it to the MATERIALIZED MaxStep of the just-built step tree (the tightest
@@ -256,7 +261,11 @@ partial class StrategyBuilder
         string? bestSig = null;
         var seenCandidates = new HashSet<string>();
         Dictionary<string, int>? displayLineCountCache =
-            _m >= DisplayLineTieBreakMinGroupSize ? new Dictionary<string, int>() : null;
+            _m >= DisplayLineTieBreakMinGroupSize &&
+            (DisableConstructiveDisplayLineTieBreakActiveGateForTesting ||
+             state.ActiveCount <= DisplayLineTieBreakMaxActiveCount)
+                ? new Dictionary<string, int>()
+                : null;
 
         int GetDisplayLineCountCached(string sig, List<int> candidate)
         {
@@ -267,6 +276,7 @@ partial class StrategyBuilder
                 return cached;
 
             int count = CountDisplayBranches(state, remainingSlots, candidate);
+            _constructiveDisplayLineTieBreakEvaluations++;
             displayLineCountCache[sig] = count;
             return count;
         }
