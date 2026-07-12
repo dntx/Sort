@@ -25,10 +25,9 @@ partial class StrategyBuilder
     // this chooser runs the top-k set is not yet determined, so such a pair always exists among the
     // active items, and ChooseConstructiveGroup guarantees one is included.
     //
-    // This builder reuses the existing BuildState materialization: ChooseGroup computes the group
-    // directly via ChooseConstructiveGroup when _useConstructiveSelection is set, so no precomputed
+    // This builder reuses the existing BuildState materialization: the greedy-feasible stage enables
+    // constructive selection through MaterializationContext (see TopKFinder.cs), so no precomputed
     // pattern cache / closure pre-solve is needed (the chooser is cheap and deterministic).
-    private bool _useConstructiveSelection;
     // Test-only switch: when true, candidate lookahead scoring always runs to completion (no
     // incumbent-based early prune). Used by regression tests to A/B lock the pruning win via
     // deterministic work counters.
@@ -107,10 +106,14 @@ partial class StrategyBuilder
         _phase1bMilliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds;
 
         _useCompact = false;
-        _useConstructiveSelection = true;
         _feasiblePhase2StartMs = _progressStopwatch.ElapsedMilliseconds;  // Mark the start of the costly BuildState phase
-        var root = BuildState(new ComparisonState(_n), 0, _k, 1);
-        _useConstructiveSelection = false;
+        StrategyNode root = BuildState(
+            new ComparisonState(_n),
+            0,
+            _k,
+            1,
+            new MaterializationContext(
+                ForceFixedConstructiveSelection: true));
         _feasiblePhaseSolved = true;  // Mark feasible stage complete so progress jumps to 100%
         _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds - _phase1bMilliseconds;
         stopwatch.Stop();
@@ -198,8 +201,14 @@ partial class StrategyBuilder
     // Builds the next comparison group constructively from the current partial order. Returns a group
     // of min(m, active) items GUARANTEED to contain an unresolved pair (so the sort makes progress).
     // Delegates to the 1-ply lookahead chooser, which refines the base antichain policy.
-    private List<int> ChooseConstructiveGroup(ComparisonState state, int remainingSlots)
+    private List<int> ChooseConstructiveGroup(
+        ComparisonState state,
+        int remainingSlots,
+        bool forceFixedCandidateSelection = false)
     {
+        if (forceFixedCandidateSelection)
+            return ChooseConstructiveGroupBase(state, remainingSlots);
+
         // m=2 is a qualitatively different regime: each step has only two outcomes and can shrink the
         // active antichain width by at most one, so the immediate-outcome scorer has much weaker signal
         // than for true group sorts (m>=3) while still paying the same heavy lower-bound cost. Treat it

@@ -543,7 +543,15 @@ partial class StrategyBuilder
         }
     }
 
-    private StrategyNode BuildState(ComparisonState state, ulong fixedTopMask, int remainingSlots, int step)
+    private readonly record struct MaterializationContext(
+        bool ForceFixedConstructiveSelection = false);
+
+    private StrategyNode BuildState(
+        ComparisonState state,
+        ulong fixedTopMask,
+        int remainingSlots,
+        int step,
+        MaterializationContext context = default)
     {
         ThrowIfCancellationRequested();
         ThrottledReportProgressDuringFeasibleBuild();
@@ -594,8 +602,18 @@ partial class StrategyBuilder
 
         try
         {
-            SelectedComparisonGroup chosenGroup = ChooseGroup(state, fixedTopMask, remainingSlots);
-            var branches = BuildBranches(state, fixedTopMask, remainingSlots, chosenGroup, step + 1);
+            SelectedComparisonGroup chosenGroup = ChooseGroup(
+                state,
+                fixedTopMask,
+                remainingSlots,
+                context);
+            var branches = BuildBranches(
+                state,
+                fixedTopMask,
+                remainingSlots,
+                chosenGroup,
+                step + 1,
+                context);
             return StrategyNode.Decision(stateId, step, chosenGroup.Group, branches);
         }
         finally
@@ -610,15 +628,22 @@ partial class StrategyBuilder
         return state.GetActiveItemsOrdered();
     }
 
-    private SelectedComparisonGroup ChooseGroup(ComparisonState state, ulong fixedTopMask, int remainingSlots)
+    private SelectedComparisonGroup ChooseGroup(
+        ComparisonState state,
+        ulong fixedTopMask,
+        int remainingSlots,
+        MaterializationContext context)
     {
         ThrowIfCancellationRequested();
 
         // The constructive feasible plan computes its group directly from the current partial order
         // (cheap, O(m*active^2)), so unlike greedy/compact it needs no precomputed pattern cache.
-        if (_useConstructiveSelection)
+        if (context.ForceFixedConstructiveSelection)
         {
-            List<int> constructiveGroup = ChooseConstructiveGroup(state, remainingSlots);
+            List<int> constructiveGroup = ChooseConstructiveGroup(
+                state,
+                remainingSlots,
+                forceFixedCandidateSelection: true);
             return new SelectedComparisonGroup(
                 constructiveGroup,
                 BuildMergedComparisonOutcomes(state, fixedTopMask, remainingSlots, constructiveGroup));

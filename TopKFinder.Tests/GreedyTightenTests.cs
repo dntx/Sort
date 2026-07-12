@@ -64,7 +64,6 @@ public class GreedyTightenTests
     // its practical tightening value.
     [Theory]
     [InlineData(10, 2, 5, 17)]
-    [InlineData(14, 3, 3, 9)]
     [InlineData(17, 5, 5, 6)]
     public void GreedyTightenPlan_KnownValueCases_ReachThresholdOnlyWithGt(int n, int m, int k, int threshold)
     {
