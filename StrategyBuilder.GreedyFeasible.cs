@@ -25,10 +25,9 @@ partial class StrategyBuilder
     // this chooser runs the top-k set is not yet determined, so such a pair always exists among the
     // active items, and ChooseConstructiveGroup guarantees one is included.
     //
-    // This builder reuses the existing BuildState materialization: ChooseGroup computes the group
-    // directly via ChooseConstructiveGroup when _useConstructiveSelection is set, so no precomputed
+    // This builder reuses the existing BuildState materialization: the greedy-feasible stage enables
+    // constructive selection through MaterializationContext (see TopKFinder.cs), so no precomputed
     // pattern cache / closure pre-solve is needed (the chooser is cheap and deterministic).
-    private bool _useConstructiveSelection;
     // Test-only switch: when true, candidate lookahead scoring always runs to completion (no
     // incumbent-based early prune). Used by regression tests to A/B lock the pruning win via
     // deterministic work counters.
@@ -107,15 +106,15 @@ partial class StrategyBuilder
         _phase1bMilliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds;
 
         _useCompact = false;
-        _useConstructiveSelection = true;
         _feasiblePhase2StartMs = _progressStopwatch.ElapsedMilliseconds;  // Mark the start of the costly BuildState phase
         StrategyNode root = BuildState(
             new ComparisonState(_n),
             0,
             _k,
             1,
-            new MaterializationContext(UseFixedConstructiveSelection: true));
-        _useConstructiveSelection = false;
+            new MaterializationContext(
+                UseConstructiveSelection: true,
+                UseFixedConstructiveSelection: true));
         _feasiblePhaseSolved = true;  // Mark feasible stage complete so progress jumps to 100%
         _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds - _phase1bMilliseconds;
         stopwatch.Stop();
