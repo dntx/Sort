@@ -295,7 +295,7 @@ partial class StrategyBuilder
     private EquivalentOrderSummary? TryBottomAnchoredQuotient(
         ComparisonState state, List<MergedFamilyOutcome> line, IReadOnlyList<int> repOrder, HashSet<int> headSet)
     {
-        if (headSet.Count != 3)
+        if (headSet.Count != ProjectionQuotientMinHeadCount)
             return null;
 
         ulong active = state.ActiveMask;
@@ -377,7 +377,7 @@ partial class StrategyBuilder
     private EquivalentOrderSummary? TryTwoBlockQuotient(
         ComparisonState state, List<MergedFamilyOutcome> line, IReadOnlyList<int> repOrder, HashSet<int> headSet)
     {
-        if (headSet.Count != 4 || repOrder.Count != 4)
+        if (headSet.Count != ProjectionQuotientMaxHeadCount || repOrder.Count != ProjectionQuotientMaxHeadCount)
             return null;
 
         int a1 = repOrder[0];
@@ -405,7 +405,7 @@ partial class StrategyBuilder
         foreach (MergedFamilyOutcome member in line)
         {
             IReadOnlyList<int> order = member.Family.RepresentativeOrderItems;
-            if (order.Count != 4 || order[0] != a1 || order[1] != b1)
+            if (order.Count != ProjectionQuotientMaxHeadCount || order[0] != a1 || order[1] != b1)
                 return null;
             if (!((order[2] == a2 && order[3] == b2) || (order[2] == b2 && order[3] == a2)))
                 return null;
@@ -455,7 +455,7 @@ partial class StrategyBuilder
     private EquivalentOrderSummary? TryThreeBlockPartnerQuotient(
         ComparisonState state, List<MergedFamilyOutcome> line, IReadOnlyList<int> repOrder, HashSet<int> headSet)
     {
-        if (headSet.Count != 4 || repOrder.Count != 4)
+        if (headSet.Count != ProjectionQuotientMaxHeadCount || repOrder.Count != ProjectionQuotientMaxHeadCount)
             return null;
 
         ulong active = state.ActiveMask;
@@ -470,7 +470,7 @@ partial class StrategyBuilder
             else
                 leaves.Add(head);
         }
-        if (leaves.Count != 3 || tailed.Count != 1)
+        if (leaves.Count != ProjectionQuotientMinHeadCount || tailed.Count != 1)
             return null;
         int partner = tailed[0];
 
@@ -490,7 +490,7 @@ partial class StrategyBuilder
         foreach (MergedFamilyOutcome member in line)
         {
             IReadOnlyList<int> order = member.Family.RepresentativeOrderItems;
-            if (order.Count != 4)
+            if (order.Count != ProjectionQuotientMaxHeadCount)
                 return null;
             if (order[2] != partner && order[3] != partner)
                 return null;
