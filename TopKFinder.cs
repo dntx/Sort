@@ -478,7 +478,7 @@ partial class StrategyBuilder
             }
 
             _useCompact = true;
-            var root = BuildState(new ComparisonState(_n), 0, _k, 1, forceFixedConstructiveSelection: false);
+            var root = BuildState(new ComparisonState(_n), 0, _k, 1);
             _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1bMilliseconds;
             stopwatch.Stop();
             return new StrategyPlan(
@@ -529,7 +529,7 @@ partial class StrategyBuilder
 
             // Phase 2: materialize the strategy tree, reusing the cached group patterns.
             _useCompact = useCompactSelection;
-            var root = BuildState(new ComparisonState(_n), 0, _k, 1, forceFixedConstructiveSelection: false);
+            var root = BuildState(new ComparisonState(_n), 0, _k, 1);
             _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds - _phase1bMilliseconds;
             stopwatch.Stop();
             ReportProgress(force: true);
@@ -548,7 +548,7 @@ partial class StrategyBuilder
         ulong fixedTopMask,
         int remainingSlots,
         int step,
-        bool forceFixedConstructiveSelection)
+        bool forceFixedConstructiveSelection = false)
     {
         ThrowIfCancellationRequested();
         ThrottledReportProgressDuringFeasibleBuild();
