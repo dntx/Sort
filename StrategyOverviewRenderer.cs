@@ -43,9 +43,6 @@ sealed class OverviewRow
 
 static class StrategyOverviewRenderer
 {
-    private const int PairComparisonGroupSize = 2;
-    private const int AnchorRunMinLength = 3;
-
     public static StrategyOverview Build(StrategyPlan plan)
     {
         // Walk the representative spine: follow the first branch of each decision until a finish
@@ -69,7 +66,7 @@ static class StrategyOverviewRenderer
             bool single = spineNodes[i].Branches.Count == 1;
             int size = spineNodes[i].Group.Count;
 
-            if (single && size == PairComparisonGroupSize && TryBuildAnchorRunSummary(spineNodes, spineBranches, i, out int runEndExclusive, out OverviewRow anchorRow, roundNo + 1))
+            if (single && size == 2 && TryBuildAnchorRunSummary(spineNodes, spineBranches, i, out int runEndExclusive, out OverviewRow anchorRow, roundNo + 1))
             {
                 rows.Add(anchorRow);
                 roundNo++;
@@ -164,7 +161,7 @@ static class StrategyOverviewRenderer
         row = null!;
 
         IReadOnlyList<int> group = spineNodes[start].Group;
-        if (group.Count != PairComparisonGroupSize)
+        if (group.Count != 2)
             return false;
 
         int leftAnchor = group[0];
@@ -175,7 +172,7 @@ static class StrategyOverviewRenderer
 
         int anchor = leftLen >= rightLen ? leftAnchor : rightAnchor;
         int runLen = leftLen >= rightLen ? leftLen : rightLen;
-        if (runLen < AnchorRunMinLength)
+        if (runLen <= 2)
             return false;
 
         var challengers = new List<int>(runLen);
@@ -212,7 +209,7 @@ static class StrategyOverviewRenderer
         while (j < spineNodes.Count)
         {
             StrategyNode node = spineNodes[j];
-            if (node.Branches.Count != 1 || node.Group.Count != PairComparisonGroupSize)
+            if (node.Branches.Count != 1 || node.Group.Count != 2)
                 break;
 
             IReadOnlyList<int> pair = node.Group;
