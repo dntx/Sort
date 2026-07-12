@@ -144,7 +144,7 @@ partial class StrategyBuilder
         // at the end). Absent overrides fall back to ChooseConstructiveGroup, so this yields the
         // greedy-feasible tree plus the committed local edits.
         _useGreedyTightenSelection = true;
-        StrategyNode root = BuildState(new ComparisonState(_n), 0, _k, 1, forceConstructiveFixedCandidateSelection: false);
+        StrategyNode root = BuildState(new ComparisonState(_n), 0, _k, 1, forceFixedConstructiveSelection: false);
         _useGreedyTightenSelection = false;
 
         stopwatch.Stop();

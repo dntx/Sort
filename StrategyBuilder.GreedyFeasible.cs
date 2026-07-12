@@ -114,7 +114,7 @@ partial class StrategyBuilder
             0,
             _k,
             1,
-            forceConstructiveFixedCandidateSelection: true);
+            forceFixedConstructiveSelection: true);
         _useConstructiveSelection = false;
         _feasiblePhaseSolved = true;  // Mark feasible stage complete so progress jumps to 100%
         _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds - _phase1bMilliseconds;

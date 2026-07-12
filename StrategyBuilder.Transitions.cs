@@ -26,7 +26,7 @@ partial class StrategyBuilder
         int remainingSlots,
         SelectedComparisonGroup chosenGroup,
         int nextStep,
-        bool forceConstructiveFixedCandidateSelection)
+        bool forceFixedConstructiveSelection)
     {
         return BuildBranchSpecs(state, remainingSlots, chosenGroup)
             .Select(spec => BuildTransitionBranch(
@@ -34,7 +34,7 @@ partial class StrategyBuilder
                 fixedTopMask,
                 spec,
                 nextStep,
-                forceConstructiveFixedCandidateSelection))
+                forceFixedConstructiveSelection))
             .ToList();
     }
 
@@ -511,7 +511,7 @@ partial class StrategyBuilder
         ulong fixedTopMask,
         BranchSpec spec,
         int nextStep,
-        bool forceConstructiveFixedCandidateSelection)
+        bool forceFixedConstructiveSelection)
     {
         MergedFamilyOutcome outcome = spec.Outcome;
         return new StrategyBranch(
@@ -523,7 +523,7 @@ partial class StrategyBuilder
                 outcome.NextFixedTopMask,
                 outcome.NextRemainingSlots,
                 nextStep,
-                forceConstructiveFixedCandidateSelection));
+                forceFixedConstructiveSelection));
     }
 
     private StrategyEffect BuildComparisonEffect(ComparisonState before, ulong beforeFixedTopMask, ComparisonState after, ulong afterFixedTopMask)

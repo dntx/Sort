@@ -478,7 +478,7 @@ partial class StrategyBuilder
             }
 
             _useCompact = true;
-            var root = BuildState(new ComparisonState(_n), 0, _k, 1, forceConstructiveFixedCandidateSelection: false);
+            var root = BuildState(new ComparisonState(_n), 0, _k, 1, forceFixedConstructiveSelection: false);
             _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1bMilliseconds;
             stopwatch.Stop();
             return new StrategyPlan(
@@ -529,7 +529,7 @@ partial class StrategyBuilder
 
             // Phase 2: materialize the strategy tree, reusing the cached group patterns.
             _useCompact = useCompactSelection;
-            var root = BuildState(new ComparisonState(_n), 0, _k, 1, forceConstructiveFixedCandidateSelection: false);
+            var root = BuildState(new ComparisonState(_n), 0, _k, 1, forceFixedConstructiveSelection: false);
             _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds - _phase1bMilliseconds;
             stopwatch.Stop();
             ReportProgress(force: true);
@@ -548,7 +548,7 @@ partial class StrategyBuilder
         ulong fixedTopMask,
         int remainingSlots,
         int step,
-        bool forceConstructiveFixedCandidateSelection)
+        bool forceFixedConstructiveSelection)
     {
         ThrowIfCancellationRequested();
         ThrottledReportProgressDuringFeasibleBuild();
@@ -603,14 +603,14 @@ partial class StrategyBuilder
                 state,
                 fixedTopMask,
                 remainingSlots,
-                forceConstructiveFixedCandidateSelection);
+                forceFixedConstructiveSelection);
             var branches = BuildBranches(
                 state,
                 fixedTopMask,
                 remainingSlots,
                 chosenGroup,
                 step + 1,
-                forceConstructiveFixedCandidateSelection);
+                forceFixedConstructiveSelection);
             return StrategyNode.Decision(stateId, step, chosenGroup.Group, branches);
         }
         finally
@@ -629,7 +629,7 @@ partial class StrategyBuilder
         ComparisonState state,
         ulong fixedTopMask,
         int remainingSlots,
-        bool forceConstructiveFixedCandidateSelection)
+        bool forceFixedConstructiveSelection)
     {
         ThrowIfCancellationRequested();
 
@@ -640,7 +640,7 @@ partial class StrategyBuilder
             List<int> constructiveGroup = ChooseConstructiveGroup(
                 state,
                 remainingSlots,
-                forceConstructiveFixedCandidateSelection);
+                forceFixedConstructiveSelection);
             return new SelectedComparisonGroup(
                 constructiveGroup,
                 BuildMergedComparisonOutcomes(state, fixedTopMask, remainingSlots, constructiveGroup));

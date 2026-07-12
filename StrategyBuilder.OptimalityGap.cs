@@ -130,7 +130,7 @@ partial class StrategyBuilder
             _compactGroupPatternCache[kv.Key] = kv.Value;
 
         ResetPerBuildTransientState();
-        StrategyNode root = BuildState(new ComparisonState(_n), 0, _k, 1, forceConstructiveFixedCandidateSelection: false);
+        StrategyNode root = BuildState(new ComparisonState(_n), 0, _k, 1, forceFixedConstructiveSelection: false);
         return new StrategyPlan(_n, _m, _requestedK, _k, root, TimeSpan.Zero, CreateSearchStatistics());
     }
 
@@ -200,7 +200,7 @@ partial class StrategyBuilder
             _compactGroupPatternCache[kv.Key] = kv.Value;
 
         ResetPerBuildTransientState();
-        StrategyNode root = BuildState(new ComparisonState(_n), 0, _k, 1, forceConstructiveFixedCandidateSelection: false);
+        StrategyNode root = BuildState(new ComparisonState(_n), 0, _k, 1, forceFixedConstructiveSelection: false);
         maxStep = MaxStepOf(root);
         return CountDisplayedEdges(root);
     }
