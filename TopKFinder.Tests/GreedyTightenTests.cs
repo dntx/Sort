@@ -59,17 +59,19 @@ public class GreedyTightenTests
             $"greedy-tighten step {tightened} was worse than the greedy-feasible upper bound {feasible}");
     }
 
-    // Positive-value lock: on these shapes, single-round GreedyTighten should still reach a known
-    // practical threshold. The greedy-feasible baseline may or may not already hit that threshold
-    // depending on the stage-1 picker policy.
+    // Positive-value lock: on these shapes the greedy-feasible bound cannot reach the target step,
+    // while single-round GreedyTighten can. This guards against regressions where GT silently loses
+    // its practical tightening value.
     [Theory]
     [InlineData(10, 2, 5, 17)]
-    [InlineData(14, 3, 3, 9)]
     [InlineData(17, 5, 5, 6)]
-    public void GreedyTightenPlan_KnownValueCases_ReachThreshold(int n, int m, int k, int threshold)
+    public void GreedyTightenPlan_KnownValueCases_ReachThresholdOnlyWithGt(int n, int m, int k, int threshold)
     {
+        int feasible = new StrategyBuilder(n, m, k).BuildGreedyFeasibleStage().MaxStep;
         int tightened = new StrategyBuilder(n, m, k).BuildGreedyTightenPlan().MaxStep;
 
+        Assert.True(feasible > threshold,
+            $"expected greedy-feasible step to stay above threshold {threshold}, got {feasible}");
         Assert.True(tightened <= threshold,
             $"expected greedy-tighten step to reach threshold {threshold}, got {tightened}");
     }
