@@ -57,14 +57,7 @@ class Program
                 return;
             }
 
-            if (!TryParseCliArgs(
-                args,
-                out string? nText,
-                out string? mText,
-                out string? kText,
-                out Mode mode,
-                out int? stageLimit,
-                out string? argError))
+            if (!TryParseCliArgs(args, out string? nText, out string? mText, out string? kText, out Mode mode, out int? stageLimit, out string? argError))
             {
                 Console.WriteLine(argError);
                 Console.WriteLine(UsageText);
