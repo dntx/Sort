@@ -744,6 +744,68 @@ _STANDARD_DOC_STEMS = {
     "code_of_conduct", "security", "notice", "authors", "copying",
 }
 
+_FORMAT_INTENT_RE = re.compile(
+    r"\b(?:format(?:ting)?|whitespace|style(?:-only)?|lint(?:ing)?|cleanup)\b",
+    re.IGNORECASE,
+)
+
+
+def _has_explicit_formatting_intent(pr_title: str, pr_body: str) -> bool:
+    """True when PR metadata explicitly says formatting/styling is intentional."""
+    text = f"{pr_title or ''}\n{pr_body or ''}"
+    return bool(_FORMAT_INTENT_RE.search(text))
+
+
+def _is_format_only_csharp_section(section: str) -> bool:
+    """True when a C# diff section changes only whitespace/newline layout.
+
+    Safety: if changed lines include quote characters, skip this heuristic to
+    avoid misclassifying string-literal text edits as formatting-only.
+    """
+    added, removed = _split_changed_content_lines(section)
+    if not added or not removed:
+        return False
+    changed = [line for line in (added + removed) if line.strip()]
+    if not changed:
+        return False
+    if any('"' in line or "'" in line for line in changed):
+        return False
+
+    norm_added = "".join(re.sub(r"\s+", "", line) for line in added if line.strip())
+    norm_removed = "".join(re.sub(r"\s+", "", line) for line in removed if line.strip())
+    if not norm_added or not norm_removed:
+        return False
+    return norm_added == norm_removed
+
+
+def detect_unexplained_format_only_code_changes(diff: str, pr_title: str, pr_body: str) -> str | None:
+    """BLOCK formatting-only C# file changes unless the PR explicitly says so."""
+    if _has_explicit_formatting_intent(pr_title, pr_body):
+        return None
+
+    format_only_paths: set[str] = set()
+    for section in split_diff_sections(diff):
+        path = section_path(section)
+        if not path or path in EXCLUDED_REVIEW_PATHS:
+            continue
+        if classify_path(path) != "code" or not path.lower().endswith(".cs"):
+            continue
+        if section_status(section) in {"added", "deleted", "renamed"}:
+            continue
+        if _is_format_only_csharp_section(section):
+            format_only_paths.add(path)
+
+    if not format_only_paths:
+        return None
+
+    file_list = ", ".join(f"`{p}`" for p in sorted(format_only_paths))
+    return (
+        f"- **[BLOCK]** Unexplained formatting-only code change(s) detected: {file_list}. "
+        "These edits only alter whitespace/line-wrapping and are not described as "
+        "a formatting/style change in the PR title/description. Remove the unrelated "
+        "formatting-only code edits, or explicitly state that formatting is intentional."
+    )
+
 
 def _is_docs_location(path: str) -> bool:
     """True when the file lives under a docs/ (or doc/) directory."""
@@ -1674,6 +1736,14 @@ def main() -> int:
     if suspicious_files:
         print("Policy check: suspicious/unexplained added files detected (forcing BLOCK).")
         policy_findings.append(suspicious_files)
+    format_only_code_changes = detect_unexplained_format_only_code_changes(
+        raw_diff,
+        pr_title,
+        pr_body,
+    )
+    if format_only_code_changes:
+        print("Policy check: unexplained formatting-only code changes detected (forcing BLOCK).")
+        policy_findings.append(format_only_code_changes)
     if manifest:
         try:
             structural_review = call_structural_model(
