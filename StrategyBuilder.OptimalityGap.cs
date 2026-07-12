@@ -655,7 +655,7 @@ partial class StrategyBuilder
         int falseMerges = 0;
         VisitOrbitPartition(root, idToSnapshot, sb, ref mergeNodes, ref falseMerges);
 
-        sb.Insert(0, $"nodes where B merges >=2 branches : {mergeNodes}\n" +
+        sb.Insert(0, $"nodes where B merges multiple branches : {mergeNodes}\n" +
                      $"B-merged pairs A cannot back (BAD) : {falseMerges}\n\n");
         return sb.ToString();
     }
@@ -667,7 +667,7 @@ partial class StrategyBuilder
         ref int mergeNodes,
         ref int falseMerges)
     {
-        if (node.Kind == StrategyNodeKind.Decision && node.FinalChoice is null && node.Branches.Count >= 2
+        if (node.Kind == StrategyNodeKind.Decision && node.FinalChoice is null && node.Branches.Count > 1
             && idToSnapshot.TryGetValue(node.StateId, out ExpandedStateSnapshot snapshot))
         {
             // Group branch indices by augmented orbit key (approach B).
@@ -683,7 +683,7 @@ partial class StrategyBuilder
                 list.Add(i);
             }
 
-            var orbits = keyToBranches.Values.Where(g => g.Count >= 2).ToList();
+            var orbits = keyToBranches.Values.Where(g => g.Count > 1).ToList();
             if (orbits.Count > 0)
             {
                 mergeNodes++;

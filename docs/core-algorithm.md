@@ -21,6 +21,11 @@ minimax 搜索、对称性约减，以及三种剪枝下界（信息论下界、
 - 这类计数用于展示与汇总时采用**饱和语义**：超过上限时钳制到 `int.MaxValue`，避免 `BigInteger -> int` 转换溢出中断 greedy 流程。
 - 该保护不改变搜索最优性目标（`MaxStep`），只避免大计数显示路径上的数值异常。
 - 对 `m!` 这类“每步结果上界”只可作为**松上界**参与剪枝估计，不应直接用于大容量集合预分配；`(25,24,1)` 场景曾因预分配过大触发容量异常/内存异常，现已改为饱和上界 + 动态增长容器。
+- 显示层去参数化：将仅表达固定谓词（如 `> 1`、`> 2`）的阈值别名常量内联为直接条件，保留预算/上限类常量（如采样上限）继续集中定义，以减少“同义参数”噪音且不改变行为。
+- 本轮继续在投影商与重标号显示路径执行同样规则：仅移除“`2` 这种纯谓词别名”，保留承载结构语义的 `3/4` 约束常量，确保可读性与行为稳定性同时成立。
+- 本轮补充在概览与等价模式路径执行同样规则：对“至少两个/两两比较”的固定阈值采用直接谓词表达，减少重复命名常量而不改变显示行为。
+- 本轮补充在构造型贪心路径执行同样规则：移除仅承载 `2/3` 固定阈值语义的别名常量，直接以内联谓词表达条件，保持搜索与展示行为不变。
+- 本轮补充在 projection quotient 路径统一阈值表达：将分散的 `3/4` 守卫字面量替换为已有具名常量（`ProjectionQuotientMinHeadCount` / `ProjectionQuotientMaxHeadCount`），仅做一致性收敛，不改变行为。
 
 ---
 
@@ -386,6 +391,11 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
   的候选，而不是做递归 rollout。这个评分保持了选择器的多项式成本，同时把基础反链经常漏掉的跨边界桥接带了回来；
   其效果由 `FeasiblePlan_LookaheadPinsRawUpperBound` 等回归测试固定。
 
+- **display-line 并列打破的重操作门控**：1-ply 候选分数并列时，历史实现会调用 `CountDisplayBranches` 作为额外 tie-break，
+  但该路径会进入分支合并/轨道划分，代价在大 active 状态上明显放大。现在仅在 `m >= 3` 且 `activeCount <= 16`
+  时启用此重型 tie-break；更大状态直接保留「分数 -> 字典序」并列规则。该改动只影响并列打破时机，不改变
+  可行性/正确性语义，目标是削减长耗时 case（如 `25,5,10`）的 stage-1 热点开销。
+
 - **候选打分早停（incumbent-dominance short-circuit）**：在 1-ply 候选评分里，当前候选按结果分支累积
   `maxChildLowerBound / maxChildActiveCount / DistinctSuccessorCount` 三个前缀键；这三者在遍历过程中都是
   单调不减。若前缀已经严格劣于当前 incumbent 分数，则该候选后续不可能翻盘，立即停止该候选的结果遍历。
@@ -438,7 +448,9 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     会把它们**全部生成 + McKay 去重**，于是几乎卡死。现在生成本身带一个 per-state 上限
     `CompactGreedyCandidateCap`（默认 128，见 `GenerateClassRepresentatives` 的 `generationCap`）：先把 step 阶段的
     构造式分组作为种子第一个评估（保证有界内必有可行解），再生成至多 `cap` 个代表参与「子节点最少」的贪心挑选。
-    该默认值现通过 `DefaultCompactGreedyCandidateCap = 128` 集中命名，便于后续统一调参。
+    该默认值现通过 `DefaultCompactGreedyCandidateCap = 128` 集中命名，便于后续统一调参；当调用方保持默认值时，运行期会按
+    当前状态的 `activeCount * groupSize` 搜索面把有效 cap 温和放大到最多 `4x` 基线，以减少宽状态上的 probe 重试。显式设置
+    非默认值则保持精确覆盖，不参与自适应放大。
     分组数 `≤ cap` 的状态因此与穷举**逐字节相同**（小/中形状毫无变化），只有分组数超过 `cap` 的大 `m` 状态被截断——
     用一点边数紧凑度换取**有界、可中断**的运行时间（`25,10,10` 由「出不来」降到约 23 s）。`int.MaxValue` 恢复原先
     的完整穷举，精确（exact）模式与最优性审计仍走未截断路径。
@@ -578,7 +590,8 @@ greedy-feasible(U) → (optional) greedy-tighten → proof-tighten≤N → edge-
 2. **次要收益**：即便 `U' > opt`，`ProofTighten` 也从更低起点开始，省掉上端便宜的松探测。
 3. **独立收益**：在 `ProofTighten` 跑不完的大 `m` 形状上，GreedyTighten 仍改善展示出的可行树（更小 max-step、更好的 anytime 结果）。
 4. **成本刻意压低**：只碰最深路径、每状态候选 `cap=128`、memo 高度、不做完整枚举——下行风险有界。
-  对应代码中的默认值现集中为 `DefaultGreedyTightenCandidateCap = 128`，与 compact 阶段的 cap 分开命名。
+  对应代码中的默认值现集中为 `DefaultGreedyTightenCandidateCap = 128`，与 compact 阶段的 cap 分开命名；保持默认值时同样按
+  `activeCount * groupSize` 搜索面做最多 `4x` 的温和自适应放大，而显式 override 仍按给定值精确执行。
 
 **反证条件（发生什么就证明不该加入，预先登记）**：在代表性算例集上实测，命中任一即判死：
 

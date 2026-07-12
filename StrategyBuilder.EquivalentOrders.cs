@@ -6,6 +6,12 @@ using System.Text.RegularExpressions;
 
 partial class StrategyBuilder
 {
+    private const int PermutationTemplateMinRemainingItems = 4;
+    private const int PartialPatternFamilyMinOrders = 4;
+    private const int WindowPermutationFamilyMinOrderLength = 4;
+    private const int InterleavedChainTrackMinItems = 4;
+    private const int InterleavedChainTrackMaxItems = 8;
+
     private static EquivalentPatternSummary BuildEquivalentPatternSummary(
         IReadOnlyList<IReadOnlyList<int>> orders,
         IReadOnlyList<int> remainingItems,
@@ -148,7 +154,7 @@ partial class StrategyBuilder
         IReadOnlyList<int> remainingItems,
         IReadOnlyDictionary<int, int> representativePositions)
     {
-        if (remainingItems.Count < 4)
+        if (remainingItems.Count < PermutationTemplateMinRemainingItems)
             return null;
 
         PermutationTemplateCandidate? bestCandidate = null;
@@ -343,7 +349,7 @@ partial class StrategyBuilder
         IReadOnlyDictionary<int, int> representativePositions)
     {
         int orderLength = orders[0].Count;
-        if (orders.Count < 4 || orderLength < 2)
+        if (orders.Count < PartialPatternFamilyMinOrders || orderLength <= 1)
             return null;
 
         var candidates = new List<PartialPatternFamilyCandidate>();
@@ -362,7 +368,7 @@ partial class StrategyBuilder
             foreach (var groupedOrder in groupedOrders)
             {
                 var members = groupedOrder.ToList();
-                if (members.Count < 4)
+                if (members.Count < PartialPatternFamilyMinOrders)
                     continue;
 
                 int[] prefixItems = members[0].PrefixItems;
@@ -413,7 +419,7 @@ partial class StrategyBuilder
         IReadOnlyDictionary<int, int> representativePositions)
     {
         int orderLength = orders[0].Count;
-        if (orders.Count < 4 || orderLength < 4)
+        if (orders.Count < PartialPatternFamilyMinOrders || orderLength < WindowPermutationFamilyMinOrderLength)
             return null;
 
         var candidates = new List<WindowPermutationFamilyCandidate>();
@@ -498,7 +504,7 @@ partial class StrategyBuilder
         IReadOnlyList<int> remainingItems,
         IReadOnlyDictionary<int, int> representativePositions)
     {
-        if (orders.Count < 2 || orders[0].Count < 2)
+        if (orders.Count <= 1 || orders[0].Count <= 1)
             return null;
 
         // a -> b is a block-internal edge iff b immediately follows a in EVERY ordering. An item with
@@ -580,7 +586,7 @@ partial class StrategyBuilder
         IReadOnlyDictionary<int, int> representativePositions)
     {
         int n = remainingItems.Count;
-        if (orders.Count < 2 || n < 4 || n > 8)
+        if (orders.Count <= 1 || n < InterleavedChainTrackMinItems || n > InterleavedChainTrackMaxItems)
             return null;
 
         List<List<int>>? bestChains = null;

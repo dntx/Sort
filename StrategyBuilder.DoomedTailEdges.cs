@@ -43,7 +43,7 @@ partial class StrategyBuilder
         {
             int prefixLength = ComputeDoomedPrefixLength(
                 familyOutcomes[i].Family.RepresentativeOrderItems, outsideAncestors, remainingSlots);
-            if (n - prefixLength < 2)
+            if (n - prefixLength <= 1)
                 return null;
             prefixLengths[i] = prefixLength;
         }
@@ -363,7 +363,7 @@ partial class StrategyBuilder
         }
 
         string body;
-        if (remainingTail.Count >= 2)
+        if (remainingTail.Count > 1)
         {
             string braceSet = "{" + string.Join(", ", tailTokens) + "}";
             body = chainTokens.Count > 0

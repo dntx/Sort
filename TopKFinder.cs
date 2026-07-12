@@ -11,10 +11,12 @@ partial class StrategyBuilder
     private const int IterativeDeepeningMinGroupSize = 5;
     private const int IterativeDeepeningMinRequestedTopCount = 5;
     private const int IterativeDeepeningMinNToMScale = 2;
-    private const int PairwiseConstructiveSelectionGroupSize = 2;
-    private const int DisplayLineTieBreakMinGroupSize = 3;
+    // Enable heavy display-line tie-break only on smaller active states; large states use
+    // score+lex tie-break to avoid CountDisplayBranches becoming a stage-1 hotspot.
+    private const int DisplayLineTieBreakMaxActiveCount = 17;
     private const int GreedyCandidateCapMinimum = 1;
     private const int GreedyCandidateCapGrowthFactor = 4;
+    private const int AdaptiveDefaultCandidateCapMaxMultiplier = 4;
     private const int DefaultCancellationProbeMask = 63;
 
     private static class ProgressTuning
@@ -192,6 +194,25 @@ partial class StrategyBuilder
         => _m >= IterativeDeepeningMinGroupSize
             && _k >= IterativeDeepeningMinRequestedTopCount
             && _n >= IterativeDeepeningMinNToMScale * _m;
+
+    // The fixed default cap is a good BASE knob, but the actual candidate-generation surface is the
+    // current state's active width times the chosen group size. When callers leave the default in
+    // place, scale that base cap up by a small bounded multiplier on wider states to reduce needless
+    // proof-tighten retries; any explicit non-default override remains exact.
+    private static int ScaleDefaultCandidateCap(int configuredCap, int defaultCap, int activeCount, int groupSize)
+    {
+        if (configuredCap != defaultCap)
+            return configuredCap;
+
+        if (activeCount <= 0 || groupSize <= 0)
+            return defaultCap;
+
+        long searchSurface = (long)activeCount * groupSize;
+        long surfaceUnits = (searchSurface + defaultCap - 1L) / defaultCap;
+        long multiplier = Math.Clamp(surfaceUnits, 1L, (long)AdaptiveDefaultCandidateCapMaxMultiplier);
+        long scaledCap = defaultCap * multiplier;
+        return scaledCap >= int.MaxValue ? int.MaxValue : (int)scaledCap;
+    }
 
     public StrategyPlan BuildStepProofStage()
     {

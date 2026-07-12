@@ -212,4 +212,21 @@ public sealed class ProjectionOrbitMergeTests
         // The old misleading rigid tail chain must not appear.
         Assert.DoesNotContain("pattern: #6 > #3 > #4 > #9", onText);
     }
+
+    [Fact]
+    public void M2_PairwiseMode_DoesNotRenderThreeOrFourHeadProjectionQuotients()
+    {
+        (StrategyPlan off, string offText) = Build(6, 2, 2, projectionMerging: false);
+        (StrategyPlan on, string onText) = Build(6, 2, 2, projectionMerging: true);
+
+        // The structural quotient renderer is intentionally bounded to 3/4-head components.
+        // In pairwise mode (m=2), those shapes are impossible and must never be rendered.
+        Assert.Equal(off.MaxStep, on.MaxStep);
+        Assert.DoesNotContain("pattern: A1 > {A2", onText);
+        Assert.DoesNotContain("pattern: A1 > B1 > {A2, B2}", onText);
+        Assert.DoesNotContain("pattern: {A1, A2} > {A3", onText);
+
+        // Toggle-off remains the baseline split rendering for the same pairwise input.
+        Assert.DoesNotContain("pattern: A1 > {A2", offText);
+    }
 }

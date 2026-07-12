@@ -172,7 +172,7 @@ static class StrategyOverviewRenderer
 
         int anchor = leftLen >= rightLen ? leftAnchor : rightAnchor;
         int runLen = leftLen >= rightLen ? leftLen : rightLen;
-        if (runLen < 3)
+        if (runLen <= 2)
             return false;
 
         var challengers = new List<int>(runLen);

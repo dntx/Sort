@@ -255,6 +255,62 @@ public sealed class StrategyRegressionTests
             $"greedy-feasible outcomes increased with early-prune enabled: with={withPrune.SearchStatistics.OutcomesConstructed}, without={withoutPrune.SearchStatistics.OutcomesConstructed}");
     }
 
+    // Large-active lookahead scoring now gates the expensive display-line tie-break path. Lock
+    // that gate by A/B comparing deterministic heavy-path evaluation counts on the same case:
+    // default behavior must not do more display-line tie-break evaluations than an override that
+    // disables the active-count gate.
+    [Fact]
+    public void GreedyFeasible_DisplayLineTieBreakGate_DoesNotIncreaseHeavyTieBreakWork()
+    {
+        var withGateBuilder = new StrategyBuilder(20, 3, 6);
+        StrategyPlan withGate = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.BuildGreedyFeasibleStage(20, 3, 6) [display tie-break gate on]",
+            RegressionTestTimeout,
+            _ => withGateBuilder.BuildGreedyFeasibleStage());
+
+        var withoutGateBuilder = new StrategyBuilder(20, 3, 6)
+        {
+            DisableConstructiveDisplayLineTieBreakActiveGateForTesting = true
+        };
+        StrategyPlan withoutGate = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.BuildGreedyFeasibleStage(20, 3, 6) [display tie-break gate off]",
+            RegressionTestTimeout,
+            _ => withoutGateBuilder.BuildGreedyFeasibleStage());
+
+        Assert.True(withGate.MaxStep > 0);
+        Assert.True(withoutGate.MaxStep > 0);
+        Assert.True(
+            withGateBuilder.ConstructiveDisplayLineTieBreakEvaluations <= withoutGateBuilder.ConstructiveDisplayLineTieBreakEvaluations,
+            $"display tie-break evaluations increased with gate enabled: with={withGateBuilder.ConstructiveDisplayLineTieBreakEvaluations}, without={withoutGateBuilder.ConstructiveDisplayLineTieBreakEvaluations}");
+    }
+
+    // Pairwise mode (m=2) exits before lookahead scoring, so display-line tie-break evaluations
+    // must remain zero regardless of the active-count gate override.
+    [Fact]
+    public void GreedyFeasible_PairwiseMode_DoesNotRunDisplayLineTieBreak()
+    {
+        var defaultBuilder = new StrategyBuilder(12, 2, 6);
+        StrategyPlan defaultPlan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.BuildGreedyFeasibleStage(12, 2, 6) [pairwise default gate]",
+            RegressionTestTimeout,
+            _ => defaultBuilder.BuildGreedyFeasibleStage());
+
+        var forcedBuilder = new StrategyBuilder(12, 2, 6)
+        {
+            DisableConstructiveDisplayLineTieBreakActiveGateForTesting = true
+        };
+        StrategyPlan forcedPlan = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.BuildGreedyFeasibleStage(12, 2, 6) [pairwise gate override]",
+            RegressionTestTimeout,
+            _ => forcedBuilder.BuildGreedyFeasibleStage());
+
+        Assert.True(defaultPlan.MaxStep > 0);
+        Assert.True(forcedPlan.MaxStep > 0);
+        Assert.Equal(defaultPlan.MaxStep, forcedPlan.MaxStep);
+        Assert.Equal(0, defaultBuilder.ConstructiveDisplayLineTieBreakEvaluations);
+        Assert.Equal(0, forcedBuilder.ConstructiveDisplayLineTieBreakEvaluations);
+    }
+
     // === Squeeze report (L <= opt <= U): proven-lower-bound (L) side ===
     // The iterative-deepening driver lifts a global budget that is, at every pass, a PROVEN lower
     // bound on the root optimum. Phase A surfaces that value as SearchStatistics.RootProvenLowerBound

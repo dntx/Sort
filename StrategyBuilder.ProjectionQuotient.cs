@@ -21,6 +21,10 @@ using System.Numerics;
 // finer pre-merge split (kept for the on/off comparison tests and as a safety fallback).
 partial class StrategyBuilder
 {
+    private const int ProjectionQuotientMinHeadCount = 3;
+    private const int ProjectionQuotientMaxHeadCount = 4;
+    private const int TopAnchoredQuotientExpectedOrderingCount = 4;
+
     // All-orbit projection merge. Unions every pair of parent orbits whose representatives are
     // related by a projection automorphism, then keeps a multi-orbit component folded only when it
     // is an honest single global-drop orbit and (for multi-family components) the structural quotient
@@ -29,7 +33,7 @@ partial class StrategyBuilder
         ComparisonState state, List<List<MergedFamilyOutcome>> orbits)
     {
         int n = orbits.Count;
-        if (n < 2)
+        if (n <= 1)
             return orbits.Select(orbit => (orbit, false)).ToList();
 
         var projectionCache = new Dictionary<ulong, (ComparisonState State, int[] Colors)>();
@@ -157,7 +161,7 @@ partial class StrategyBuilder
     {
         IReadOnlyList<int> repOrder = representative.Family.RepresentativeOrderItems;
         var headSet = new HashSet<int>(repOrder);
-        if (headSet.Count < 3 || headSet.Count > 4)
+        if (headSet.Count < ProjectionQuotientMinHeadCount || headSet.Count > ProjectionQuotientMaxHeadCount)
             return null;
 
         foreach (MergedFamilyOutcome member in line)
@@ -186,7 +190,7 @@ partial class StrategyBuilder
     private EquivalentOrderSummary? TryTopAnchoredQuotient(
         ComparisonState state, List<MergedFamilyOutcome> line, IReadOnlyList<int> repOrder, HashSet<int> headSet)
     {
-        if (headSet.Count != 3)
+        if (headSet.Count != ProjectionQuotientMinHeadCount)
             return null;
 
         ulong active = state.ActiveMask;
@@ -270,7 +274,7 @@ partial class StrategyBuilder
         }
 
         // |block| * (|heads| - 1)! = 2 * 2! = 4 distinct orderings.
-        if (totalCount != 4)
+        if (totalCount != TopAnchoredQuotientExpectedOrderingCount)
             return null;
 
         int repFirst = repOrder[0];
@@ -291,7 +295,7 @@ partial class StrategyBuilder
     private EquivalentOrderSummary? TryBottomAnchoredQuotient(
         ComparisonState state, List<MergedFamilyOutcome> line, IReadOnlyList<int> repOrder, HashSet<int> headSet)
     {
-        if (headSet.Count != 3)
+        if (headSet.Count != ProjectionQuotientMinHeadCount)
             return null;
 
         ulong active = state.ActiveMask;
@@ -373,7 +377,7 @@ partial class StrategyBuilder
     private EquivalentOrderSummary? TryTwoBlockQuotient(
         ComparisonState state, List<MergedFamilyOutcome> line, IReadOnlyList<int> repOrder, HashSet<int> headSet)
     {
-        if (headSet.Count != 4 || repOrder.Count != 4)
+        if (headSet.Count != ProjectionQuotientMaxHeadCount || repOrder.Count != ProjectionQuotientMaxHeadCount)
             return null;
 
         int a1 = repOrder[0];
@@ -401,7 +405,7 @@ partial class StrategyBuilder
         foreach (MergedFamilyOutcome member in line)
         {
             IReadOnlyList<int> order = member.Family.RepresentativeOrderItems;
-            if (order.Count != 4 || order[0] != a1 || order[1] != b1)
+            if (order.Count != ProjectionQuotientMaxHeadCount || order[0] != a1 || order[1] != b1)
                 return null;
             if (!((order[2] == a2 && order[3] == b2) || (order[2] == b2 && order[3] == a2)))
                 return null;
@@ -451,7 +455,7 @@ partial class StrategyBuilder
     private EquivalentOrderSummary? TryThreeBlockPartnerQuotient(
         ComparisonState state, List<MergedFamilyOutcome> line, IReadOnlyList<int> repOrder, HashSet<int> headSet)
     {
-        if (headSet.Count != 4 || repOrder.Count != 4)
+        if (headSet.Count != ProjectionQuotientMaxHeadCount || repOrder.Count != ProjectionQuotientMaxHeadCount)
             return null;
 
         ulong active = state.ActiveMask;
@@ -466,7 +470,7 @@ partial class StrategyBuilder
             else
                 leaves.Add(head);
         }
-        if (leaves.Count != 3 || tailed.Count != 1)
+        if (leaves.Count != ProjectionQuotientMinHeadCount || tailed.Count != 1)
             return null;
         int partner = tailed[0];
 
@@ -486,7 +490,7 @@ partial class StrategyBuilder
         foreach (MergedFamilyOutcome member in line)
         {
             IReadOnlyList<int> order = member.Family.RepresentativeOrderItems;
-            if (order.Count != 4)
+            if (order.Count != ProjectionQuotientMaxHeadCount)
                 return null;
             if (order[2] != partner && order[3] != partner)
                 return null;

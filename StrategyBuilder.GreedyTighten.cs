@@ -16,6 +16,12 @@ partial class StrategyBuilder
     // tests until the mechanism is validated.
     internal int GreedyTightenCandidateCap = DefaultGreedyTightenCandidateCap;
 
+    private int GetGreedyTightenCandidateCap(int activeCount, int groupSize)
+        => ScaleDefaultCandidateCap(GreedyTightenCandidateCap, DefaultGreedyTightenCandidateCap, activeCount, groupSize);
+
+    internal int GetGreedyTightenCandidateCapForTesting(int activeCount, int groupSize)
+        => GetGreedyTightenCandidateCap(activeCount, groupSize);
+
     // Production default: GreedyTighten runs a SINGLE critical-path round. Post-fix measurement (eval
     // nMax=10) shows one round reaches the same tightened U' as unbounded rounds on 305/320 cases at
     // ~0.47x the cost, so additional rounds are not worth their cost by default.
@@ -101,7 +107,8 @@ partial class StrategyBuilder
 
         var candidates = root.GetActiveItemsOrdered();
         int groupSize = Math.Min(_m, candidates.Count);
-        foreach (List<int> candidate in EnumerateDistinctGroups(root, candidates, groupSize, GreedyTightenCandidateCap))
+        int candidateCap = GetGreedyTightenCandidateCap(candidates.Count, groupSize);
+        foreach (List<int> candidate in EnumerateDistinctGroups(root, candidates, groupSize, candidateCap))
         {
             if (!GroupHasUnresolvedPair(root, candidate))
                 continue;
@@ -282,8 +289,9 @@ partial class StrategyBuilder
         // height (hit-once-and-move-on). Scoring/ordering is the deferred 阶段 B tuning.
         var candidates = state.GetActiveItemsOrdered();
         int groupSize = Math.Min(_m, candidates.Count);
+        int candidateCap = GetGreedyTightenCandidateCap(candidates.Count, groupSize);
         int candidateRank = 0;
-        foreach (List<int> candidate in EnumerateDistinctGroups(state, candidates, groupSize, GreedyTightenCandidateCap))
+        foreach (List<int> candidate in EnumerateDistinctGroups(state, candidates, groupSize, candidateCap))
         {
             if (!GroupHasUnresolvedPair(state, candidate))
                 continue; // must make progress, else the subtree does not terminate

@@ -118,7 +118,7 @@ partial class StrategyBuilder
         // internal symmetry), so it routes through the structural quotient renderer instead. The
         // merge step only folds such a component when this renderer accepts it, so a null here means
         // the line was not actually a quotient merge and falls through to the normal handling.
-        if (line.Count >= 2 && projectionMerged && !allSingleton)
+        if (line.Count > 1 && projectionMerged && !allSingleton)
         {
             MergedFamilyOutcome quotientRepresentative = SelectOrbitRepresentative(line);
             EquivalentOrderSummary? quotientSummary =
@@ -128,7 +128,7 @@ partial class StrategyBuilder
                     quotientRepresentative.Family.RepresentativeOrder, quotientRepresentative, quotientSummary);
         }
 
-        if (line.Count >= 2
+        if (line.Count > 1
             && allSingleton
             && summary is not null
             && (projectionMerged || summary.PatternText.Contains(" | ", StringComparison.Ordinal)))
@@ -318,7 +318,7 @@ partial class StrategyBuilder
         ComparisonState state, List<List<MergedFamilyOutcome>> orbits)
     {
         int n = orbits.Count;
-        if (n < 2)
+        if (n <= 1)
             return orbits.Select(orbit => (orbit, false)).ToList();
 
         var projectionCache = new Dictionary<ulong, (ComparisonState State, int[] Colors)>();
@@ -374,7 +374,7 @@ partial class StrategyBuilder
         // must be disclosed with a "drop {...}" legend; a root that is a single pass-through orbit
         // (singleton with no projection partner, or any multi-ordering parent orbit) keeps its exact
         // parent-automorphism rendering.
-        return order.Select(root => (byRoot[root], combinedCount[root] >= 2)).ToList();
+        return order.Select(root => (byRoot[root], combinedCount[root] > 1)).ToList();
     }
 
     // Tests the principle-D projection symmetry between two single orderings: remove the items both
