@@ -255,25 +255,25 @@ public sealed class StrategyRegressionTests
             $"greedy-feasible outcomes increased with early-prune enabled: with={withPrune.SearchStatistics.OutcomesConstructed}, without={withoutPrune.SearchStatistics.OutcomesConstructed}");
     }
 
-    // Large-active lookahead scoring now gates the expensive display-line tie-break path. Lock
-    // that gate by A/B comparing deterministic heavy-path evaluation counts on the same case:
-    // default behavior must not do more display-line tie-break evaluations than an override that
-    // disables the active-count gate.
+    // Lookahead scoring now gates the expensive display-line tie-break path by adaptive
+    // per-state budget. Lock that gate by A/B comparing deterministic heavy-path evaluation counts
+    // on the same case: default behavior must not do more display-line tie-break evaluations than
+    // an override that disables budget gating.
     [Fact]
-    public void GreedyFeasible_DisplayLineTieBreakGate_DoesNotIncreaseHeavyTieBreakWork()
+    public void GreedyFeasible_DisplayLineTieBreakAdaptiveBudget_DoesNotIncreaseHeavyTieBreakWork()
     {
         var withGateBuilder = new StrategyBuilder(20, 3, 6);
         StrategyPlan withGate = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.BuildGreedyFeasibleStage(20, 3, 6) [display tie-break gate on]",
+            "StrategyBuilder.BuildGreedyFeasibleStage(20, 3, 6) [display adaptive-budget gate on]",
             RegressionTestTimeout,
             _ => withGateBuilder.BuildGreedyFeasibleStage());
 
         var withoutGateBuilder = new StrategyBuilder(20, 3, 6)
         {
-            DisableConstructiveDisplayLineTieBreakActiveGateForTesting = true
+            DisableConstructiveDisplayLineTieBreakAdaptiveBudgetForTesting = true
         };
         StrategyPlan withoutGate = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.BuildGreedyFeasibleStage(20, 3, 6) [display tie-break gate off]",
+            "StrategyBuilder.BuildGreedyFeasibleStage(20, 3, 6) [display adaptive-budget gate off]",
             RegressionTestTimeout,
             _ => withoutGateBuilder.BuildGreedyFeasibleStage());
 

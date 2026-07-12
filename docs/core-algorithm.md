@@ -386,10 +386,11 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
   的候选，而不是做递归 rollout。这个评分保持了选择器的多项式成本，同时把基础反链经常漏掉的跨边界桥接带了回来；
   其效果由 `FeasiblePlan_LookaheadPinsRawUpperBound` 等回归测试固定。
 
-- **display-line 并列打破的重操作门控**：1-ply 候选分数并列时，历史实现会调用 `CountDisplayBranches` 作为额外 tie-break，
-  但该路径会进入分支合并/轨道划分，代价在大 active 状态上明显放大。现在仅在 `m >= 3` 且 `activeCount <= 16`
-  时启用此重型 tie-break；更大状态直接保留「分数 -> 字典序」并列规则。该改动只影响并列打破时机，不改变
-  可行性/正确性语义，目标是削减长耗时 case（如 `25,5,10`）的 stage-1 热点开销。
+- **display-line 并列打破的自适应预算门控**：1-ply 候选分数并列时，历史实现会调用 `CountDisplayBranches` 作为额外 tie-break，
+  但该路径会进入分支合并/轨道划分，长尾状态里可能成为热点。现在先按 score 收集并列最优候选，再按当前状态
+  计算一个自适应预算（随 `m` 与 `remainingSlots` 增长、随未解 active 宽度衰减）；当并列候选不超过预算时评估全量，
+  超预算时则在一个确定性的代表子集上做受限评估，仍保留 display-line 信号但把开销控制在预算内。该改动只影响并列
+  打破时机，不改变可行性/正确性语义，目标是在控制长耗时 case 开销的同时避免硬编码单点阈值。
 
 - **候选打分早停（incumbent-dominance short-circuit）**：在 1-ply 候选评分里，当前候选按结果分支累积
   `maxChildLowerBound / maxChildActiveCount / DistinctSuccessorCount` 三个前缀键；这三者在遍历过程中都是

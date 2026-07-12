@@ -33,9 +33,9 @@ partial class StrategyBuilder
     // incumbent-based early prune). Used by regression tests to A/B lock the pruning win via
     // deterministic work counters.
     internal bool DisableConstructiveCandidateEarlyPruneForTesting { get; set; }
-    // Test-only switch: when true, disables the active-count gate for display-line tie-break so
-    // tests can A/B compare heavy tie-break evaluation work.
-    internal bool DisableConstructiveDisplayLineTieBreakActiveGateForTesting { get; set; }
+    // Test-only switch: when true, disables adaptive per-state budget gating for display-line
+    // tie-break so tests can A/B compare heavy tie-break evaluation work.
+    internal bool DisableConstructiveDisplayLineTieBreakAdaptiveBudgetForTesting { get; set; }
     private Dictionary<SearchStateKey, int>? _constructiveDepthMemo;
     private int _greedyScoreLowerBoundCacheReuseHits;
     private int _constructiveDisplayLineTieBreakEvaluations;
@@ -258,12 +258,10 @@ partial class StrategyBuilder
 
         List<int>? bestGroup = null;
         ConstructiveCandidateScore bestScore = ConstructiveCandidateScore.Worst;
-        string? bestSig = null;
+        var bestScoreCandidates = new List<(List<int> Group, string Sig)>();
         var seenCandidates = new HashSet<string>();
         Dictionary<string, int>? displayLineCountCache =
-            _m >= DisplayLineTieBreakMinGroupSize &&
-            (DisableConstructiveDisplayLineTieBreakActiveGateForTesting ||
-             state.ActiveCount <= DisplayLineTieBreakMaxActiveCount)
+            _m >= DisplayLineTieBreakMinGroupSize
                 ? new Dictionary<string, int>()
                 : null;
 
@@ -305,25 +303,13 @@ partial class StrategyBuilder
             if (bestGroup is null || scoreCmp < 0)
             {
                 choose = true;
+                bestScoreCandidates.Clear();
+                bestScoreCandidates.Add((group, sig));
             }
             else if (scoreCmp == 0 && bestGroup is not null)
             {
-                // Use exact immediate display-branch lines as an additional tie-break. This only
-                // runs on score ties, so clear winners stay on the cheap path.
-                if (displayLineCountCache is not null && bestSig is not null)
-                {
-                    int candidateLines = GetDisplayLineCountCached(sig, group);
-                    int bestLines = GetDisplayLineCountCached(bestSig, bestGroup);
-                    if (candidateLines < bestLines)
-                    {
-                        choose = true;
-                    }
-                    else if (candidateLines == bestLines && LexLess(group, bestGroup))
-                    {
-                        choose = true;
-                    }
-                }
-                else if (LexLess(group, bestGroup))
+                bestScoreCandidates.Add((group, sig));
+                if (LexLess(group, bestGroup))
                 {
                     choose = true;
                 }
@@ -333,7 +319,6 @@ partial class StrategyBuilder
             {
                 bestScore = score;
                 bestGroup = group;
-                bestSig = sig;
             }
         }
 
@@ -350,6 +335,84 @@ partial class StrategyBuilder
         Consider(ProposeBoundaryStraddlingGroup(state, active, remainingSlots));
         // Feature template C: maximize unresolved-pair density inside the chosen group.
         Consider(ProposeUnresolvedDensityGroup(state, active, remainingSlots));
+
+        if (bestGroup is not null && displayLineCountCache is not null && bestScoreCandidates.Count > 1)
+        {
+            int finalistCap = DisableConstructiveDisplayLineTieBreakAdaptiveBudgetForTesting
+                ? int.MaxValue
+                : Math.Max(
+                    DisplayLineTieBreakStateBudgetMinimum,
+                    (DisplayLineTieBreakStateBudgetMultiplier * _m * Math.Max(1, remainingSlots)) /
+                    Math.Max(1, state.ActiveCount - remainingSlots + 1));
+
+            List<(List<int> Group, string Sig)> finalistsToEvaluate;
+            if (bestScoreCandidates.Count <= finalistCap)
+            {
+                finalistsToEvaluate = bestScoreCandidates;
+            }
+            else
+            {
+                // Over budget: still run a bounded display-line tie-break on a deterministic
+                // representative subset instead of skipping the heavy signal entirely.
+                var orderedFinalists = new List<(List<int> Group, string Sig)>(bestScoreCandidates);
+                orderedFinalists.Sort((a, b) => LexLess(a.Group, b.Group) ? -1 : (LexLess(b.Group, a.Group) ? 1 : 0));
+                finalistsToEvaluate = new List<(List<int> Group, string Sig)>(finalistCap);
+
+                // Always include the current score+lex winner candidate.
+                string bestSig = string.Join(",", bestGroup);
+                for (int i = 0; i < orderedFinalists.Count; i++)
+                {
+                    if (orderedFinalists[i].Sig == bestSig)
+                    {
+                        finalistsToEvaluate.Add(orderedFinalists[i]);
+                        break;
+                    }
+                }
+
+                if (finalistsToEvaluate.Count == 0)
+                    finalistsToEvaluate.Add(orderedFinalists[0]);
+
+                // Fill remaining slots by evenly spaced picks over lex-ordered finalists.
+                int remaining = Math.Max(0, finalistCap - finalistsToEvaluate.Count);
+                for (int pick = 0; pick < remaining; pick++)
+                {
+                    int index = (int)(((long)(pick + 1) * (orderedFinalists.Count - 1)) / Math.Max(1, remaining));
+                    (List<int> Group, string Sig) candidate = orderedFinalists[index];
+                    bool exists = false;
+                    foreach ((List<int> Group, string Sig) chosen in finalistsToEvaluate)
+                    {
+                        if (chosen.Sig == candidate.Sig)
+                        {
+                            exists = true;
+                            break;
+                        }
+                    }
+
+                    if (!exists)
+                        finalistsToEvaluate.Add(candidate);
+                }
+            }
+
+            if (finalistsToEvaluate.Count > 0)
+            {
+                int bestLines = int.MaxValue;
+                List<int>? bestByDisplay = null;
+                foreach ((List<int> candidate, string sig) in finalistsToEvaluate)
+                {
+                    int candidateLines = GetDisplayLineCountCached(sig, candidate);
+                    if (bestByDisplay is null ||
+                        candidateLines < bestLines ||
+                        (candidateLines == bestLines && LexLess(candidate, bestByDisplay)))
+                    {
+                        bestLines = candidateLines;
+                        bestByDisplay = candidate;
+                    }
+                }
+
+                if (bestByDisplay is not null)
+                    bestGroup = bestByDisplay;
+            }
+        }
 
         return bestGroup ?? primary;
     }
