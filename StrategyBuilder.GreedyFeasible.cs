@@ -261,11 +261,10 @@ partial class StrategyBuilder
         string? bestSig = null;
         var seenCandidates = new HashSet<string>();
         Dictionary<string, int>? displayLineCountCache =
-                _m >= 3 &&
             (DisableConstructiveDisplayLineTieBreakActiveGateForTesting ||
              state.ActiveCount <= DisplayLineTieBreakMaxActiveCount)
-                ? new Dictionary<string, int>()
-                : null;
+            ? new Dictionary<string, int>()
+            : null;
 
         int GetDisplayLineCountCached(string sig, List<int> candidate)
         {
