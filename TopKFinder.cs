@@ -543,12 +543,14 @@ partial class StrategyBuilder
         }
     }
 
+    private readonly record struct MaterializationContext(bool UseFixedConstructiveSelection = false);
+
     private StrategyNode BuildState(
         ComparisonState state,
         ulong fixedTopMask,
         int remainingSlots,
         int step,
-        bool forceFixedConstructiveSelection = false)
+        MaterializationContext context = default)
     {
         ThrowIfCancellationRequested();
         ThrottledReportProgressDuringFeasibleBuild();
@@ -603,14 +605,14 @@ partial class StrategyBuilder
                 state,
                 fixedTopMask,
                 remainingSlots,
-                forceFixedConstructiveSelection);
+                context);
             var branches = BuildBranches(
                 state,
                 fixedTopMask,
                 remainingSlots,
                 chosenGroup,
                 step + 1,
-                forceFixedConstructiveSelection);
+                context);
             return StrategyNode.Decision(stateId, step, chosenGroup.Group, branches);
         }
         finally
@@ -629,7 +631,7 @@ partial class StrategyBuilder
         ComparisonState state,
         ulong fixedTopMask,
         int remainingSlots,
-        bool forceFixedConstructiveSelection)
+        MaterializationContext context)
     {
         ThrowIfCancellationRequested();
 
@@ -640,7 +642,7 @@ partial class StrategyBuilder
             List<int> constructiveGroup = ChooseConstructiveGroup(
                 state,
                 remainingSlots,
-                forceFixedConstructiveSelection);
+                context.UseFixedConstructiveSelection);
             return new SelectedComparisonGroup(
                 constructiveGroup,
                 BuildMergedComparisonOutcomes(state, fixedTopMask, remainingSlots, constructiveGroup));
