@@ -543,9 +543,15 @@ partial class StrategyBuilder
         }
     }
 
+    private enum ConstructiveSelectionMode
+    {
+        Disabled = 0,
+        Lookahead = 1,
+        FixedBase = 2,
+    }
+
     private readonly record struct MaterializationContext(
-        bool UseConstructiveSelection = false,
-        bool UseFixedConstructiveSelection = false);
+        ConstructiveSelectionMode ConstructiveSelection = ConstructiveSelectionMode.Disabled);
 
     private StrategyNode BuildState(
         ComparisonState state,
@@ -639,12 +645,12 @@ partial class StrategyBuilder
 
         // The constructive feasible plan computes its group directly from the current partial order
         // (cheap, O(m*active^2)), so unlike greedy/compact it needs no precomputed pattern cache.
-        if (context.UseConstructiveSelection)
+        if (context.ConstructiveSelection != ConstructiveSelectionMode.Disabled)
         {
             List<int> constructiveGroup = ChooseConstructiveGroup(
                 state,
                 remainingSlots,
-                context.UseFixedConstructiveSelection);
+                context.ConstructiveSelection == ConstructiveSelectionMode.FixedBase);
             return new SelectedComparisonGroup(
                 constructiveGroup,
                 BuildMergedComparisonOutcomes(state, fixedTopMask, remainingSlots, constructiveGroup));
