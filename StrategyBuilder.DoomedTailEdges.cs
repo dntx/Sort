@@ -7,7 +7,6 @@ using System.Text;
 partial class StrategyBuilder
 {
     private const int DoomedTailMinFoldLength = 2;
-    private const int MultiMemberSymmetryClassMinSize = 2;
 
     // Builds the "doomed-tail edge" view of a comparison step, in which every ordering that
     // differs only by permuting an already-eliminated tail collapses into a single edge whose
@@ -286,7 +285,7 @@ partial class StrategyBuilder
         int letterIndex = 0;
         foreach (GroupSymmetryClass symmetryClass in symmetryInfo.Classes)
         {
-            if (symmetryClass.Items.Length >= MultiMemberSymmetryClassMinSize)
+            if (symmetryClass.Items.Length > 1)
                 classLetters[symmetryClass.Index] = GetAliasName(letterIndex++);
         }
 
@@ -411,7 +410,7 @@ partial class StrategyBuilder
         var legendParts = new List<string>();
         foreach (GroupSymmetryClass symmetryClass in symmetryInfo.Classes)
         {
-            if (symmetryClass.Items.Length >= MultiMemberSymmetryClassMinSize)
+            if (symmetryClass.Items.Length > 1)
             {
                 legendParts.Add(
                     $"{classLetters[symmetryClass.Index]} \u2208 permute {FormatBraceSet(symmetryClass.Items)}");

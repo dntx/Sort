@@ -21,7 +21,6 @@ using System.Linq;
 partial class StrategyBuilder
 {
     private const int ProjectionPairingMinOrbitComponentSize = 2;
-    private const int ProjectionPairingMultiFamilyMinCount = 2;
     private const int ProjectionPairingGe3ComponentMinOrbitCount = 3;
     private const int ProjectionPairingProbeSampleLimit = 40;
 
@@ -132,7 +131,7 @@ partial class StrategyBuilder
                 flattened.AddRange(orbits[orbitIndex]);
 
             int maxFamily = flattened.Max(outcome => outcome.Family.Count);
-            if (maxFamily >= ProjectionPairingMultiFamilyMinCount)
+            if (maxFamily > 1)
                 _probeMultiFamilyComponents++;
 
             bool honest = ComponentIsSingleGlobalDropOrbit(state, flattened, out ulong globalDrop);
