@@ -62,6 +62,7 @@ public sealed class ZeroStepDisplayTests
             phase2Milliseconds: 0,
             outcomesConstructed: 0,
             candidateGroupsEnumerated: 0,
+            searchTreeEdges: -1,
             compactStatesSolved: 0,
             compactGroupsEnumerated: 0,
             compactStepOptimalGroups: 0,

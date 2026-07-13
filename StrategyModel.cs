@@ -395,6 +395,7 @@ sealed class SearchStatistics
         long phase2Milliseconds,
         int outcomesConstructed,
         int candidateGroupsEnumerated,
+        int searchTreeEdges,
         int compactStatesSolved,
         int compactGroupsEnumerated,
         int compactStepOptimalGroups,
@@ -413,6 +414,7 @@ sealed class SearchStatistics
         Phase2Milliseconds = phase2Milliseconds;
         OutcomesConstructed = outcomesConstructed;
         CandidateGroupsEnumerated = candidateGroupsEnumerated;
+        SearchTreeEdges = searchTreeEdges;
         CompactStatesSolved = compactStatesSolved;
         CompactGroupsEnumerated = compactGroupsEnumerated;
         CompactStepOptimalGroups = compactStepOptimalGroups;
@@ -447,6 +449,12 @@ sealed class SearchStatistics
     // the primary signal for symmetry-aware group-generation optimizations.
     public int CandidateGroupsEnumerated { get; }
 
+    // Search-tree edge objective used by compact selection: at each expanded search state,
+    // children.Count + sum(child objective), keyed by SearchStateKey. This is distinct from
+    // StrategyPlan.TotalBranchEdges (display/materialized edges). -1 means not computed for the
+    // current stage.
+    public int SearchTreeEdges { get; }
+
     // Compact-pass-only counters (zero unless the compact selection is enabled). The shared
     // SearchedStates/OutputStates totals do not otherwise reflect the compact pass's work.
     public int CompactStatesSolved { get; }
@@ -474,6 +482,7 @@ sealed class SearchStatistics
             Phase2Milliseconds,
             OutcomesConstructed,
             CandidateGroupsEnumerated,
+            SearchTreeEdges,
             CompactStatesSolved,
             CompactGroupsEnumerated,
             CompactStepOptimalGroups,

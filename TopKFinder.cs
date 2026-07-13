@@ -534,7 +534,15 @@ partial class StrategyBuilder
             stopwatch.Stop();
             ReportProgress(force: true);
             bool feasible = useFeasibleBudget;
-            return new StrategyPlan(_n, _m, _requestedK, _k, root, stopwatch.Elapsed, CreateSearchStatistics(),
+            int searchTreeEdges = useCompactSelection ? _compactRootCost : -1;
+            return new StrategyPlan(
+                _n,
+                _m,
+                _requestedK,
+                _k,
+                root,
+                stopwatch.Elapsed,
+                CreateSearchStatistics(searchTreeEdges),
                 isFeasibleUpperBound: feasible);
         }
         finally
@@ -1142,7 +1150,7 @@ partial class StrategyBuilder
         ReportProgress();
     }
 
-    private SearchStatistics CreateSearchStatistics()
+    private SearchStatistics CreateSearchStatistics(int searchTreeEdges = -1)
     {
         _searchedStates = _visitedSearchStates.Count;
         return new SearchStatistics(
@@ -1167,6 +1175,7 @@ partial class StrategyBuilder
             _phase2Milliseconds,
             _outcomesConstructed,
             _candidateGroupsEnumerated,
+            searchTreeEdges,
             _compactStatesSolved,
             _compactGroupsEnumerated,
             _compactStepOptimalGroups,

@@ -37,82 +37,8 @@ partial class StrategyBuilder
     internal int GetCompactGreedyCandidateCapForTesting(int activeCount, int groupSize)
         => GetCompactGreedyCandidateCap(activeCount, groupSize);
 
-    // Computes the compact objective value (search-tree edges) for the currently selected policy:
-    // default step-optimal groups when useCompactSelection=false, compact-selected groups when true.
-    // The objective is the same one optimized by SolveCompact: children.Count + sum(child costs)
-    // over the implicit search tree keyed by SearchStateKey.
-    internal int ComputeSearchTreeEdgeObjectiveForTesting(bool useCompactSelection)
-    {
-        if (useCompactSelection)
-            EnsureCompactSolved();
-        else
-            EnsurePhase1Solved();
 
-        bool previousUseCompact = _useCompact;
-        _useCompact = useCompactSelection;
-        try
-        {
-            var memo = new Dictionary<SearchStateKey, int>();
-            return ComputeSearchTreeEdgeObjective(new ComparisonState(_n), _k, memo);
-        }
-        finally
-        {
-            _useCompact = previousUseCompact;
-        }
-    }
 
-    private int ComputeSearchTreeEdgeObjective(
-        ComparisonState state,
-        int remainingSlots,
-        Dictionary<SearchStateKey, int> memo)
-    {
-        ulong fixedTopMask = 0;
-        NormalizeState(state, ref fixedTopMask, ref remainingSlots);
-
-        if (remainingSlots == 0)
-            return 0;
-        if (TryGetDeterminedTopSet(state, remainingSlots, out _))
-            return 0;
-        if (state.ActiveCount <= remainingSlots)
-            return 0;
-        if (state.ActiveCount <= _m)
-            return 0;
-
-        SearchStateKey key = GetSearchStateKey(state, remainingSlots);
-        if (memo.TryGetValue(key, out int cached))
-            return cached;
-
-        SelectedComparisonGroup chosen = ChooseGroup(
-            state,
-            fixedTopMask: 0,
-            remainingSlots,
-            context: default);
-
-        int childCount = 0;
-        int childCostSum = 0;
-        OutcomeTraversalSummary traversal = VisitComparisonOutcomes(
-            state,
-            fixedTopMask: 0,
-            remainingSlots,
-            chosen.Group,
-            currentKey: key,
-            collectMergedBranches: false,
-            onUsefulOutcome: outcome =>
-            {
-                childCount++;
-                childCostSum += ComputeSearchTreeEdgeObjective(
-                    outcome.NextState,
-                    outcome.NextRemainingSlots,
-                    memo);
-                return true;
-            });
-
-        int value = traversal.IsUseful ? childCount + childCostSum : 0;
-        memo[key] = value;
-        return value;
-    }
-    
-    
     private int _compactGroupsEnumerated;
     private int _compactStepOptimalGroups;
 
@@ -612,6 +538,86 @@ partial class StrategyBuilder
         if (state.ActiveCount <= _m)
             return 0;
         return _compactRealStepsMemo.TryGetValue(GetSearchStateKey(state, remainingSlots), out int steps) ? steps : 0;
+    }
+
+    // Search objective over the implicit search tree keyed by SearchStateKey:
+    // children.Count + sum(child costs). Distinct from display/materialized edge count.
+    internal int GetStepOptimalSearchTreeEdges()
+    {
+        EnsurePhase1Solved();
+        return ComputeSearchTreeEdgesForSelection(useCompactSelection: false);
+    }
+
+    internal int GetCompactSearchTreeEdges()
+    {
+        EnsureCompactSolved();
+        return _compactRootCost;
+    }
+
+    private int ComputeSearchTreeEdgesForSelection(bool useCompactSelection)
+    {
+        bool previousUseCompact = _useCompact;
+        _useCompact = useCompactSelection;
+        try
+        {
+            var memo = new Dictionary<SearchStateKey, int>();
+            return ComputeSearchTreeEdges(new ComparisonState(_n), _k, memo);
+        }
+        finally
+        {
+            _useCompact = previousUseCompact;
+        }
+    }
+
+    private int ComputeSearchTreeEdges(
+        ComparisonState state,
+        int remainingSlots,
+        Dictionary<SearchStateKey, int> memo)
+    {
+        ulong fixedTopMask = 0;
+        NormalizeState(state, ref fixedTopMask, ref remainingSlots);
+
+        if (remainingSlots == 0)
+            return 0;
+        if (TryGetDeterminedTopSet(state, remainingSlots, out _))
+            return 0;
+        if (state.ActiveCount <= remainingSlots)
+            return 0;
+        if (state.ActiveCount <= _m)
+            return 0;
+
+        SearchStateKey key = GetSearchStateKey(state, remainingSlots);
+        if (memo.TryGetValue(key, out int cached))
+            return cached;
+
+        SelectedComparisonGroup chosen = ChooseGroup(
+            state,
+            fixedTopMask: 0,
+            remainingSlots,
+            context: default);
+
+        int childCount = 0;
+        int childCostSum = 0;
+        OutcomeTraversalSummary traversal = VisitComparisonOutcomes(
+            state,
+            fixedTopMask: 0,
+            remainingSlots,
+            chosen.Group,
+            currentKey: key,
+            collectMergedBranches: false,
+            onUsefulOutcome: outcome =>
+            {
+                childCount++;
+                childCostSum += ComputeSearchTreeEdges(
+                    outcome.NextState,
+                    outcome.NextRemainingSlots,
+                    memo);
+                return true;
+            });
+
+        int value = traversal.IsUseful ? childCount + childCostSum : 0;
+        memo[key] = value;
+        return value;
     }
 
     // Number of displayed branch lines this state renders for the given comparison group,

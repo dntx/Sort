@@ -963,23 +963,19 @@ public sealed class StrategyRegressionTests
             $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k})",
             RegressionTestTimeout,
             _ => baselineBuilder.BuildStepProofStage());
-
-        int baselineSearchEdgeObjective = baselineBuilder.ComputeSearchTreeEdgeObjectiveForTesting(
-            useCompactSelection: false);
+        int baselineSearchTreeEdges = baselineBuilder.GetStepOptimalSearchTreeEdges();
 
         var compactBuilder = new StrategyBuilder(n, m, k);
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
             $"StrategyBuilder.BuildCompactPlan({n}, {m}, {k})",
             RegressionTestTimeout,
             _ => compactBuilder.BuildEdgeCompactStage());
-
-        int compactSearchEdgeObjective = compactBuilder.ComputeSearchTreeEdgeObjectiveForTesting(
-            useCompactSelection: true);
+        int compactSearchTreeEdges = compactBuilder.GetCompactSearchTreeEdges();
 
         Assert.Equal(baseline.MaxStep, compact.MaxStep);
         Assert.True(
-            compactSearchEdgeObjective <= baselineSearchEdgeObjective,
-            $"compact search-edge objective {compactSearchEdgeObjective} exceeded baseline {baselineSearchEdgeObjective}");
+            compactSearchTreeEdges <= baselineSearchTreeEdges,
+            $"compact search-edge objective {compactSearchTreeEdges} exceeded baseline {baselineSearchTreeEdges}");
     }
 
     // P2.1 -- compact-phase work-counter monitor (deterministic time proxy for the compact pass).
