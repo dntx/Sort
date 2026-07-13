@@ -269,23 +269,35 @@ partial class StrategyBuilder
         ConstructiveCandidateScore bestScore = ConstructiveCandidateScore.Worst;
         string? bestSig = null;
         var seenCandidates = new HashSet<string>();
-        Dictionary<string, int>? displayLineCountCache =
+        Dictionary<string, int>? searchChildCountCache =
             (DisableConstructiveDisplayLineTieBreakActiveGateForTesting ||
              state.ActiveCount <= DisplayLineTieBreakMaxActiveCount)
             ? new Dictionary<string, int>()
             : null;
 
-        int GetDisplayLineCountCached(string sig, List<int> candidate)
+        int GetSearchChildCountCached(string sig, List<int> candidate)
         {
-            if (displayLineCountCache is null)
+            if (searchChildCountCache is null)
                 return int.MaxValue;
 
-            if (displayLineCountCache.TryGetValue(sig, out int cached))
+            if (searchChildCountCache.TryGetValue(sig, out int cached))
                 return cached;
 
-            int count = CountDisplayBranches(state, remainingSlots, candidate);
+            int count = 0;
+            VisitComparisonOutcomes(
+                state,
+                fixedTopMask: 0,
+                remainingSlots,
+                candidate,
+                currentKey: key,
+                collectMergedBranches: false,
+                onUsefulOutcome: _ =>
+                {
+                    count++;
+                    return true;
+                });
             _constructiveDisplayLineTieBreakEvaluations++;
-            displayLineCountCache[sig] = count;
+            searchChildCountCache[sig] = count;
             return count;
         }
 
@@ -316,17 +328,17 @@ partial class StrategyBuilder
             }
             else if (scoreCmp == 0 && bestGroup is not null)
             {
-                // Use exact immediate display-branch lines as an additional tie-break. This only
+                // Use immediate distinct search successors as an additional tie-break. This only
                 // runs on score ties, so clear winners stay on the cheap path.
-                if (displayLineCountCache is not null && bestSig is not null)
+                if (searchChildCountCache is not null && bestSig is not null)
                 {
-                    int candidateLines = GetDisplayLineCountCached(sig, group);
-                    int bestLines = GetDisplayLineCountCached(bestSig, bestGroup);
-                    if (candidateLines < bestLines)
+                    int candidateChildren = GetSearchChildCountCached(sig, group);
+                    int bestChildren = GetSearchChildCountCached(bestSig, bestGroup);
+                    if (candidateChildren < bestChildren)
                     {
                         choose = true;
                     }
-                    else if (candidateLines == bestLines && LexLess(group, bestGroup))
+                    else if (candidateChildren == bestChildren && LexLess(group, bestGroup))
                     {
                         choose = true;
                     }
