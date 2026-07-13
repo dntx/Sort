@@ -63,7 +63,10 @@ public class GreedyTightenTests
     // while single-round GreedyTighten can. This guards against regressions where GT silently loses
     // its practical tightening value.
     [Theory]
+    [InlineData(8, 3, 3, 5)]
     [InlineData(10, 2, 5, 17)]
+    [InlineData(12, 4, 4, 6)]
+    [InlineData(16, 4, 4, 7)]
     public void GreedyTightenPlan_KnownValueCases_ReachThresholdOnlyWithGt(int n, int m, int k, int threshold)
     {
         int feasible = new StrategyBuilder(n, m, k).BuildGreedyFeasibleStage().MaxStep;
