@@ -947,28 +947,39 @@ public sealed class StrategyRegressionTests
         Assert.Equal(baseline.MaxStep, compact.MaxStep);
     }
 
-    // Compact selection keeps the optimal worst-case step count. With the current objective
-    // (search-tree edge count), display-edge count can increase on some shapes, so this test only
-    // pins the max-step invariant.
+    // Compact selection keeps the optimal worst-case step count and optimizes the search-tree
+    // edge objective (children.Count recurrence). Display edges can increase, but the search
+    // objective itself must not regress versus the default step-optimal policy.
     [Theory]
     [InlineData(9, 3, 3)]
     [InlineData(11, 3, 3)]
     [InlineData(12, 4, 4)]
     [InlineData(10, 3, 4)]
     [InlineData(12, 4, 3)]
-    public void Compact_PreservesMaxStep(int n, int m, int k)
+    public void Compact_PreservesMaxStepAndDoesNotRegressSearchEdges(int n, int m, int k)
     {
+        var baselineBuilder = new StrategyBuilder(n, m, k);
         StrategyPlan baseline = TestTimeoutHelper.RunWithTimeout(
             $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k})",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildStepProofStage());
+            _ => baselineBuilder.BuildStepProofStage());
 
+        int baselineSearchEdgeObjective = baselineBuilder.ComputeSearchTreeEdgeObjectiveForTesting(
+            useCompactSelection: false);
+
+        var compactBuilder = new StrategyBuilder(n, m, k);
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
             $"StrategyBuilder.BuildCompactPlan({n}, {m}, {k})",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildEdgeCompactStage());
+            _ => compactBuilder.BuildEdgeCompactStage());
+
+        int compactSearchEdgeObjective = compactBuilder.ComputeSearchTreeEdgeObjectiveForTesting(
+            useCompactSelection: true);
 
         Assert.Equal(baseline.MaxStep, compact.MaxStep);
+        Assert.True(
+            compactSearchEdgeObjective <= baselineSearchEdgeObjective,
+            $"compact search-edge objective {compactSearchEdgeObjective} exceeded baseline {baselineSearchEdgeObjective}");
     }
 
     // P2.1 -- compact-phase work-counter monitor (deterministic time proxy for the compact pass).
