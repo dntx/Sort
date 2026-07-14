@@ -69,12 +69,15 @@ Objective:
 Scope:
 - Introduce a DisplayRenderEngine skeleton.
 - Keep parity checks in place to verify equivalence with the current path.
+- Keep this PR intentionally lightweight: it should be useful, but it does not need to force all complex display behavior to be perfect up front.
 
 Out of scope:
 - No full folding logic migration yet.
+- Complex display semantics are deferred to PR4.
 
 Acceptance:
-- Parity tests pass for canonical shapes.
+- The new display path is usable and preserves current behavior for the targeted cases.
+- Parity checks are in place, but the focus is on establishing the skeleton rather than over-engineering the first step.
 
 ### PR4 — Folding logic migration into render engine
 
@@ -84,6 +87,7 @@ Objective:
 Scope:
 - Migrate folding-related behaviors such as doomed-tail, symmetry-orbit, and projection merge handling.
 - Keep parity tests active through the migration.
+- This PR is where the more complex display-oriented behavior is handled in a deliberate, careful way.
 
 Out of scope:
 - No compact objective semantic switch yet.
@@ -91,6 +95,7 @@ Out of scope:
 Acceptance:
 - Folding parity is preserved for migrated tracks.
 - Existing regressions remain green or are intentionally re-baselined with rationale.
+- The richer display logic is validated in a more detailed parity pass here.
 
 ### PR5 — Compact semantic clarification (current PR)
 
@@ -130,23 +135,26 @@ Acceptance:
 
 ## Open Questions / Decisions to Settle
 
-These are the main points that still deserve explicit agreement:
+The following decisions have been clarified for now:
 
 1. Boundary definition
-   - What exactly counts as “search semantics” versus “display semantics” in the current codebase?
-   - Should the compact objective be fully owned by the search layer, or should the display layer retain a thin advisory role?
+   - Display layer covers equivalence rules, branch-pattern generation, and human-oriented presentation optimizations.
+   - Search layer remains the purely mathematical/search-oriented side of the pipeline.
 
-2. Migration strategy
-   - Should the legacy path remain as a compatibility fallback until PR6, or should each PR aim for a clean internal split as soon as feasible?
+2. PR3/PR4 scope
+   - PR3 should be lightweight and functional enough to establish the new display path, without over-committing to complex behavior.
+   - Complex display work is intentionally deferred to PR4.
 
-3. Naming and terminology
-   - Should we rename exact/greedy compact paths to make the distinction between search-space and display-space semantics clearer?
+3. Acceptance criteria for PR3/PR4
+   - PR3 can use a lightweight parity strategy for the targeted cases.
+   - PR4 should revisit parity more carefully once the richer display logic is moved over.
 
-4. Acceptance criteria for PR3/PR4
-   - Do we want strict parity for all canonical shapes, or a smaller representative subset during the early migration phases?
+4. Naming and terminology
+   - There should be no separate "display-edge compact" naming; all compact paths remain under the search-edge compact framing.
+   - The important distinction is between exact edge compact and greedy edge compact.
 
 5. Long-term ownership
-   - Once PR6 lands, should the search-layer and display-layer interfaces be documented as first-class architecture boundaries in the repository?
+   - Once PR6 lands, the search-layer and display-layer interfaces should be documented as first-class architecture boundaries in the repository.
 
 ## Resumption Checklist
 
