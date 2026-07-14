@@ -85,6 +85,8 @@ public class GreedyPipelineTests
 
         StageResult edgeStage = Assert.Single(stages, s => s.Outcome == StageOutcome.Completed);
         Assert.Same(plan, edgeStage.Plan);
+        Assert.True(plan.SearchStatistics.SearchTreeEdges > 0,
+            "expected edge-compact stage to report positive search-tree edge objective");
         Assert.True(plan.SearchStatistics.CompactStatesSolved > 0,
             "expected edge-compact stage to solve compact states");
         Assert.True(plan.SearchStatistics.CompactGroupsEnumerated > 0,

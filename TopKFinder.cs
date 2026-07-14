@@ -482,7 +482,7 @@ partial class StrategyBuilder
             _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1bMilliseconds;
             stopwatch.Stop();
             return new StrategyPlan(
-                _n, _m, _requestedK, _k, root, stopwatch.Elapsed, CreateSearchStatistics(),
+                _n, _m, _requestedK, _k, root, stopwatch.Elapsed, CreateSearchStatistics(_compactRootCost),
                 isFeasibleUpperBound: true);
         }
         finally
