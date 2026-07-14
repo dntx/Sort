@@ -27,6 +27,20 @@ The long-term target is a cleaner layered architecture, while keeping behavior s
 - Current PR: #300
 - Current focus: make the compact objective reflect search-tree edge semantics instead of display-layer coupling.
 
+## Decisions Already Agreed
+
+1. Search vs display boundary
+   - The display layer owns equivalence rules, branch-pattern generation, and human-oriented presentation optimizations.
+   - The search layer remains the purely mathematical/search-oriented side of the pipeline.
+
+2. PR3/PR4 scope
+   - PR3 should be lightweight and functional enough to establish the new display path without over-committing to complex behavior.
+   - Complex display work is intentionally deferred to PR4.
+
+3. Naming and terminology
+   - There is no separate "display-edge compact" naming; compact paths remain under the search-edge compact framing.
+   - The important distinction is between exact edge compact and greedy edge compact.
+
 ## 6-PR Roadmap
 
 ### PR1 — New data model (additive only)
