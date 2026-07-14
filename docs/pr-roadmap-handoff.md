@@ -34,50 +34,110 @@ Validation used:
 - `dotnet test TopKFinder.Tests/TopKFinder.Tests.csproj --filter "FullyQualifiedName~Compact_PinsCurrentDisplayEdgeBaseline|FullyQualifiedName~Compact_PreservesMaxStepAndDoesNotRegressSearchEdges|FullyQualifiedName~Compact_WorkCountersStayWithinBaseline"`
 - `dotnet test TopKFinder.Tests/TopKFinder.Tests.csproj --filter "FullyQualifiedName~GreedyPipeline_EdgeCompactStage_ReportsCompactWork"`
 
-## PR1-PR4, PR6 Definitions
-Note:
-- The detailed semantics of PR1-PR4 were discussed previously but are not fully captured in persistent records.
-- This section is intentionally structured as a fill-in template so the plan can be reconstructed once reviewed.
+## Agreed 6-PR Plan (Original)
+This section captures the previously agreed roadmap semantics.
 
-### PR1
-- Objective:
-- In-scope changes:
-- Out-of-scope:
-- Acceptance checks:
-- Status:
+### Architecture Choice
+- Preferred path: Route A (gradual migration, lower risk, 6 PRs).
+- Alternate path discussed: Route B (2-3 PR minimal split), but not selected for this track.
 
-### PR2
-- Objective:
-- In-scope changes:
-- Out-of-scope:
-- Acceptance checks:
-- Status:
+### PR1 - New data model (additive only)
+Objective:
+- Introduce new search/display model types in parallel with existing ones.
 
-### PR3
-- Objective:
-- In-scope changes:
-- Out-of-scope:
-- Acceptance checks:
-- Status:
+In-scope:
+- Additive type definitions in `StrategyModel.cs` (or equivalent) such as `SearchNode`, `SearchBranch`, `SearchEffect`, `SearchStrategy`.
+- No removal of existing `StrategyNode` / `StrategyBranch` yet.
 
-### PR4
-- Objective:
-- In-scope changes:
-- Out-of-scope:
-- Acceptance checks:
-- Status:
+Out-of-scope:
+- No behavior switch.
+- No renderer/path replacement.
 
-### PR6 (Queued after PR5)
-Known queued items:
+Acceptance:
+- Compiles with zero behavior changes.
+- Existing tests pass unchanged.
+
+### PR2 - Pure algorithm path in parallel
+Objective:
+- Add a pure search-tree build path without replacing current path.
+
+In-scope:
+- Add `BuildSearchTree(...)`-style path in builder (`TopKFinder.cs` and/or split file).
+- Keep old `BuildState()` path intact.
+
+Out-of-scope:
+- No rendering pipeline migration yet.
+
+Acceptance:
+- New tests assert step parity: `BuildSearchTree().MaxStep == BuildStepProofStage().MaxStep` on selected shapes.
+
+### PR3 - DisplayRenderEngine skeleton + parity guard
+Objective:
+- Introduce explicit display render engine with initial 1:1 mapping.
+
+In-scope:
+- New `DisplayRenderEngine` skeleton with no advanced folding in first step.
+- Add parity tests to verify output equivalence against existing path.
+
+Out-of-scope:
+- No full folding logic migration yet.
+
+Acceptance:
+- Parity tests pass for selected canonical shapes.
+
+### PR4 - Folding logic migration into render engine
+Objective:
+- Move display folding behavior out of search/build path into display layer.
+
+In-scope:
+- Migrate folding tracks (doomed-tail, symmetry orbit, projection merge) in stages.
+- Keep parity tests active throughout migration.
+
+Out-of-scope:
+- No compact objective semantic switch (that is PR5).
+
+Acceptance:
+- Folding parity maintained for migrated tracks.
+- Existing regression tests remain green or intentionally re-baselined with rationale.
+
+### PR5 - Compact semantic clarification (current PR)
+Objective:
+- Switch compact objective from display-coupled counting to search-tree edge objective.
+
+In-scope:
+- Remove display-layer coupling from compact objective path.
+- Use search-tree objective (`children.Count` recurrence).
+- Add/adjust regression locks for search objective and compact work counters.
+- Surface `SearchStatistics.SearchTreeEdges` and wire exact + greedy compact outputs.
+
+Acceptance:
+- `Compact_PreservesMaxStepAndDoesNotRegressSearchEdges` green.
+- `Compact_PinsCurrentDisplayEdgeBaseline` green with pinned expectations.
+- Greedy edge-compact coverage includes explicit edge-objective assertion.
+
+### PR6 - Main-path switch + cleanup
+Objective:
+- Switch public pipeline to new layered model and remove obsolete legacy glue.
+
+In-scope:
+- Route public plan-building through separated search + display pipeline.
+- Cleanup dead/legacy paths after parity confidence.
+
+Known queued naming/task items:
 - Unify exact/greedy edge-compact entry shape via clearer internal helper boundary.
 - Rename exact vs greedy edge-compact paths to avoid implying identical algorithmic guarantees.
 
-Template:
-- Objective:
-- In-scope changes:
-- Out-of-scope:
-- Acceptance checks:
-- Status:
+Acceptance:
+- Full regression suite green after switch.
+- Documentation updated for final architecture.
+
+## Size/Risk Snapshot (agreed planning estimate)
+- PR1: low risk, additive model definitions.
+- PR2: low risk, parallel algorithm path.
+- PR3: medium risk, renderer skeleton + parity checks.
+- PR4: medium risk, staged fold migration.
+- PR5: medium risk, compact objective semantic switch (current work).
+- PR6: highest risk, final path switch + cleanup.
 
 ## Cross-Machine Resume Checklist
 1. `git fetch origin`
