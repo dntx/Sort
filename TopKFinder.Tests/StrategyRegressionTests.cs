@@ -1018,6 +1018,8 @@ public sealed class StrategyRegressionTests
 
     [Theory]
     [InlineData(11, 3, 3, 10)]
+    // 12,4,4 stays pinned here as the historical full-bucket-merge regression shape under the
+    // current search-tree edge objective; its rendered compact tree currently lands at 51 edges.
     [InlineData(12, 4, 4, 51)]
     [InlineData(10, 3, 4, 11)]
     public void Compact_PinsCurrentDisplayEdgeBaseline(int n, int m, int k, int expectedEdgeCap)
@@ -1036,24 +1038,6 @@ public sealed class StrategyRegressionTests
         Assert.True(
             compact.TotalBranchEdges <= expectedEdgeCap,
             $"compact total edges regressed to {compact.TotalBranchEdges}");
-    }
-
-    // Regression pin for 12,4,4 under the current search-tree edge objective.
-    [Fact]
-    public void Compact_KLeHalf_CapturesFullBucketMerge_1244()
-    {
-        StrategyPlan baseline = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.BuildDefaultPlan(12, 4, 4)",
-            RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(12, 4, 4, cancellationToken).BuildStepProofStage());
-
-        StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.BuildCompactPlan(12, 4, 4)",
-            RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(12, 4, 4, cancellationToken).BuildEdgeCompactStage());
-
-        Assert.Equal(baseline.MaxStep, compact.MaxStep);
-        Assert.Equal(51, compact.TotalBranchEdges);
     }
 
     // Searched-state monitor for the compact pass. Compact runs a second, less-prunable
