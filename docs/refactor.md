@@ -1,6 +1,6 @@
 # 6-PR Refactor Roadmap
 
-Last updated: 2026-07-15
+Last updated: 2026-07-16
 
 This document is the source-of-truth for the 6-PR refactor track that decouples search-tree construction from display/render behavior.
 
@@ -21,16 +21,17 @@ The long-term target is a cleaner layered architecture, while keeping behavior s
 4. Treat this document as the canonical roadmap for the refactor track.
 5. Any behavior change must be documented here and reflected in the relevant tests.
 
-## Implementation Reality Check (2026-07-15)
+## Implementation Reality Check (2026-07-16)
 
-This section reflects the current code, not the target architecture.
+This section is written as the expected repository state after the PR updating this file is merged to main.
 
-1. PR1 status: not landed
-   - `SearchNode` / `SearchBranch` / `SearchEffect` / `SearchStrategy` do not exist.
-   - The production model remains `StrategyNode` / `StrategyBranch` (`StrategyModel.cs`).
+1. PR1 status: landed on main
+    - Added: `SearchNode` / `SearchBranch` / `SearchEffect` / `SearchStrategy`, plus
+       `SearchModelMapper`.
+   - Existing `StrategyNode` / `StrategyBranch` path remains primary; no behavior switch yet.
 
 2. PR2 status: not landed
-   - There is no separate `BuildSearchTree`-style parallel build path.
+   - There is no separate `BuildSearchTree`-style parallel build path on main.
    - The build pipeline still runs through `BuildState`-based logic.
 
 3. PR3 status: not landed
@@ -41,9 +42,9 @@ This section reflects the current code, not the target architecture.
    - Folding / orbit / projection display behavior is still implemented in `StrategyBuilder.*` helpers.
    - The search/display boundary described in this roadmap has not been structurally enforced yet.
 
-5. PR5 status: partially landed (performance/pipeline behavior), semantic switch not complete
-   - Landed: greedy proof-tighten uses feasibility-only probing in Phase A and runs one min-edge pass in Phase B (`RunGreedyPipeline` in `TopKFinder.cs`).
-   - Not landed: compact objective is still display-coupled via `CountDisplayBranches(...)` (`StrategyBuilder.Compact.cs`), so the "search-tree edge semantics" switch is not complete.
+5. PR5 status: landed on main
+   - Compact objective now uses search-tree edge semantics and surfaces `SearchStatistics.SearchTreeEdges`.
+   - This is an existing main-branch baseline status, not a change introduced by this PR1 document/update PR.
 
 6. PR6 status: not landed
    - Public pipeline has not switched to a new layered search-model + display-model architecture.
@@ -139,7 +140,7 @@ Acceptance:
 - Existing regressions remain green or are intentionally re-baselined with rationale.
 - The richer display logic is validated in a more detailed parity pass here.
 
-### PR5 — Compact semantic clarification (current PR)
+### PR5 — Compact semantic clarification (landed on main)
 
 Objective:
 - Switch the compact objective from display-coupled counting to a search-tree edge objective.
