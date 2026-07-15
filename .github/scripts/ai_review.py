@@ -790,12 +790,31 @@ def _is_format_only_csharp_section(section: str) -> bool:
     return norm_added == norm_removed
 
 
+def _iter_diff_hunks(section: str) -> list[tuple[str, str]]:
+    """Return (hunk header, hunk body) pairs from a single diff section."""
+    hunks: list[tuple[str, str]] = []
+    current_header = ""
+    current_lines: list[str] = []
+    for line in section.splitlines(keepends=True):
+        if line.startswith("@@"):
+            if current_header:
+                hunks.append((current_header, "".join(current_lines)))
+            current_header = line.strip()
+            current_lines = []
+            continue
+        if current_header:
+            current_lines.append(line)
+    if current_header:
+        hunks.append((current_header, "".join(current_lines)))
+    return hunks
+
+
 def detect_unexplained_format_only_code_changes(diff: str, pr_title: str, pr_body: str) -> str | None:
     """BLOCK formatting-only C# file changes unless the PR explicitly says so."""
     if _has_explicit_formatting_intent(pr_title, pr_body):
         return None
 
-    format_only_paths: set[str] = set()
+    format_only_hunks_by_path: dict[str, list[str]] = {}
     for section in split_diff_sections(diff):
         path = section_path(section)
         if not path or path in EXCLUDED_REVIEW_PATHS:
@@ -804,15 +823,24 @@ def detect_unexplained_format_only_code_changes(diff: str, pr_title: str, pr_bod
             continue
         if section_status(section) in {"added", "deleted", "renamed"}:
             continue
-        if _is_format_only_csharp_section(section):
-            format_only_paths.add(path)
 
-    if not format_only_paths:
+        hunk_headers: list[str] = []
+        for header, hunk_body in _iter_diff_hunks(section):
+            if _is_format_only_csharp_section(hunk_body):
+                hunk_headers.append(header)
+
+        if hunk_headers:
+            format_only_hunks_by_path[path] = hunk_headers
+
+    if not format_only_hunks_by_path:
         return None
 
-    file_list = ", ".join(f"`{p}`" for p in sorted(format_only_paths))
+    file_hunk_list = ", ".join(
+        f"`{path}` ({'; '.join(hunks)})"
+        for path, hunks in sorted(format_only_hunks_by_path.items())
+    )
     return (
-        f"- **[BLOCK]** Unexplained formatting-only code change(s) detected: {file_list}. "
+        f"- **[BLOCK]** Unexplained formatting-only code change(s) detected: {file_hunk_list}. "
         "These edits only alter whitespace/line-wrapping and are not described as "
         "a formatting/style change in the PR title/description. Remove the unrelated "
         "formatting-only code edits, or explicitly state that formatting is intentional."
