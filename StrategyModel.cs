@@ -395,7 +395,7 @@ sealed class SearchStatistics
         long phase2Milliseconds,
         int outcomesConstructed,
         int candidateGroupsEnumerated,
-        int searchTreeEdges,
+        int? searchTreeEdges,
         int compactStatesSolved,
         int compactGroupsEnumerated,
         int compactStepOptimalGroups,
@@ -451,9 +451,9 @@ sealed class SearchStatistics
 
     // Search-tree edge objective used by compact selection: at each expanded search state,
     // children.Count + sum(child objective), keyed by SearchStateKey. This is distinct from
-    // StrategyPlan.TotalBranchEdges (display/materialized edges). -1 means not computed for the
+    // StrategyPlan.TotalBranchEdges (display/materialized edges). null means not computed for the
     // current stage.
-    public int SearchTreeEdges { get; }
+    public int? SearchTreeEdges { get; }
 
     // Compact-pass-only counters (zero unless the compact selection is enabled). The shared
     // SearchedStates/OutputStates totals do not otherwise reflect the compact pass's work.

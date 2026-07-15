@@ -534,7 +534,7 @@ partial class StrategyBuilder
             stopwatch.Stop();
             ReportProgress(force: true);
             bool feasible = useFeasibleBudget;
-            int searchTreeEdges = useCompactSelection ? _compactRootCost : -1;
+            int? searchTreeEdges = useCompactSelection ? _compactRootCost : null;
             return new StrategyPlan(
                 _n,
                 _m,
@@ -1150,7 +1150,7 @@ partial class StrategyBuilder
         ReportProgress();
     }
 
-    private SearchStatistics CreateSearchStatistics(int searchTreeEdges = -1)
+    private SearchStatistics CreateSearchStatistics(int? searchTreeEdges = null)
     {
         _searchedStates = _visitedSearchStates.Count;
         return new SearchStatistics(
