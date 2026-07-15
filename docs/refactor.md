@@ -21,12 +21,6 @@ The long-term target is a cleaner layered architecture, while keeping behavior s
 4. Treat this document as the canonical roadmap for the refactor track.
 5. Any behavior change must be documented here and reflected in the relevant tests.
 
-## Current Context
-
-- Current branch: docs/6-pr-refactor-roadmap
-- Current PR: N/A (documentation/status alignment pass)
-- Current focus: keep this roadmap synchronized with what has actually landed in code.
-
 ## Implementation Reality Check (2026-07-15)
 
 This section reflects the current code, not the target architecture.
