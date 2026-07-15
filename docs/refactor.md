@@ -23,11 +23,11 @@ The long-term target is a cleaner layered architecture, while keeping behavior s
 
 ## Implementation Reality Check (2026-07-16)
 
-This section reflects the current code and active PRs, not only the long-term target architecture.
+This section is written as the expected repository state after the PR updating this file is merged to main.
 
-1. PR1 status: in progress (additive model backfill in PR #305)
-   - Added on branch `pr1-additive-search-model`: `SearchNode` / `SearchBranch` / `SearchEffect` /
-     `SearchStrategy`, plus `SearchModelMapper`.
+1. PR1 status: landed on main
+    - Added: `SearchNode` / `SearchBranch` / `SearchEffect` / `SearchStrategy`, plus
+       `SearchModelMapper`.
    - Existing `StrategyNode` / `StrategyBranch` path remains primary; no behavior switch yet.
 
 2. PR2 status: not landed
