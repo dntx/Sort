@@ -1040,6 +1040,26 @@ public sealed class StrategyRegressionTests
             $"compact total edges regressed to {compact.TotalBranchEdges}");
     }
 
+    // Historical 1244 shape: this was originally introduced to guard the full-bucket pre-merge fix
+    // in display rendering. Under the current search-edge objective, we keep a dedicated pin so this
+    // canonical case remains explicitly tracked as-is.
+    [Fact]
+    public void Compact_KLeHalf_CapturesFullBucketMerge_1244()
+    {
+        StrategyPlan baseline = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.BuildDefaultPlan(12, 4, 4)",
+            RegressionTestTimeout,
+            cancellationToken => new StrategyBuilder(12, 4, 4, cancellationToken).BuildStepProofStage());
+
+        StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.BuildCompactPlan(12, 4, 4)",
+            RegressionTestTimeout,
+            cancellationToken => new StrategyBuilder(12, 4, 4, cancellationToken).BuildEdgeCompactStage());
+
+        Assert.Equal(baseline.MaxStep, compact.MaxStep);
+        Assert.Equal(51, compact.TotalBranchEdges);
+    }
+
     // Searched-state monitor for the compact pass. Compact runs a second, less-prunable
     // search on top of phase 1, so its searched-state count is the main lever for its cost.
     // These caps pin the current work so that future algorithm changes surface any regression
