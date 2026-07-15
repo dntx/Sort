@@ -23,9 +23,43 @@ The long-term target is a cleaner layered architecture, while keeping behavior s
 
 ## Current Context
 
-- Current branch for PR5 work: pr5-compact-search-edges
-- Current PR: #300
-- Current focus: make the compact objective reflect search-tree edge semantics instead of display-layer coupling.
+- Current branch: docs/6-pr-refactor-roadmap
+- Current PR: N/A (documentation/status alignment pass)
+- Current focus: keep this roadmap synchronized with what has actually landed in code.
+
+## Implementation Reality Check (2026-07-15)
+
+This section reflects the current code, not the target architecture.
+
+1. PR1 status: not landed
+   - `SearchNode` / `SearchBranch` / `SearchEffect` / `SearchStrategy` do not exist.
+   - The production model remains `StrategyNode` / `StrategyBranch` (`StrategyModel.cs`).
+
+2. PR2 status: not landed
+   - There is no separate `BuildSearchTree`-style parallel build path.
+   - The build pipeline still runs through `BuildState`-based logic.
+
+3. PR3 status: not landed
+   - There is no `DisplayRenderEngine` type in the codebase.
+   - Display parity checks exist, but not through a standalone render-engine skeleton.
+
+4. PR4 status: not landed
+   - Folding / orbit / projection display behavior is still implemented in `StrategyBuilder.*` helpers.
+   - The search/display boundary described in this roadmap has not been structurally enforced yet.
+
+5. PR5 status: partially landed (performance/pipeline behavior), semantic switch not complete
+   - Landed: greedy proof-tighten uses feasibility-only probing in Phase A and runs one min-edge pass in Phase B (`RunGreedyPipeline` in `TopKFinder.cs`).
+   - Not landed: compact objective is still display-coupled via `CountDisplayBranches(...)` (`StrategyBuilder.Compact.cs`), so the "search-tree edge semantics" switch is not complete.
+
+6. PR6 status: not landed
+   - Public pipeline has not switched to a new layered search-model + display-model architecture.
+   - Legacy glue has not been removed because the new layered architecture is not yet present.
+
+## How to Read This Roadmap
+
+- Sections "PR1..PR6" below remain the intended target plan.
+- The "Implementation Reality Check" section is the authoritative current-state snapshot.
+- When code lands, update both the PR scope text (if needed) and the status snapshot above.
 
 ## Decisions Already Agreed
 
