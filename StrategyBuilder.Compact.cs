@@ -36,7 +36,8 @@ partial class StrategyBuilder
 
     internal int GetCompactGreedyCandidateCapForTesting(int activeCount, int groupSize)
         => GetCompactGreedyCandidateCap(activeCount, groupSize);
-
+    
+    
     private int _compactGroupsEnumerated;
     private int _compactStepOptimalGroups;
 
