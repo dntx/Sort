@@ -24,3 +24,40 @@ index 1111111..2222222 100644
     assert finding is not None
     assert "Unexplained formatting-only code change" in finding
     assert "StrategyBuilder.Compact.cs" in finding
+
+
+def test_detects_format_only_hunk_when_section_has_other_real_changes():
+    diff = """diff --git a/StrategyBuilder.Compact.cs b/StrategyBuilder.Compact.cs
+index 1111111..2222222 100644
+--- a/StrategyBuilder.Compact.cs
++++ b/StrategyBuilder.Compact.cs
+@@ -36,8 +36,9 @@ private int GetCompactGreedyCandidateCap(int activeCount, int groupSize)
+ 
+     internal int GetCompactGreedyCandidateCapForTesting(int activeCount, int groupSize)
+         => GetCompactGreedyCandidateCap(activeCount, groupSize);
+-    
+-    
++
++
++
+     private int _compactGroupsEnumerated;
+@@ -286,7 +287,7 @@ private int SolveCompact(ComparisonState state, int remainingSlots, int feasible
+                 continue;
+ 
+             // Only now pay for the heavy display enumeration that yields the exact edge count.
+-            int edgeCount = CountDisplayBranches(state, remainingSlots, group);
++            int edgeCount = children.Count;
+             int groupCost = edgeCount + branchCostSum;
+             if (groupCost < bestCost)
+"""
+
+    finding = ai_review.detect_unexplained_format_only_code_changes(
+        diff,
+        "Refactor compact objective to search-tree edge count",
+        "Functional change only",
+    )
+
+    assert finding is not None
+    assert "Unexplained formatting-only code change" in finding
+    assert "StrategyBuilder.Compact.cs" in finding
+    assert "@@ -36,8 +36,9 @@" in finding
