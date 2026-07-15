@@ -30,9 +30,9 @@ This section is written as the expected repository state after the PR updating t
        `SearchModelMapper`.
    - Existing `StrategyNode` / `StrategyBranch` path remains primary; no behavior switch yet.
 
-2. PR2 status: not landed
-   - There is no separate `BuildSearchTree`-style parallel build path on main.
-   - The build pipeline still runs through `BuildState`-based logic.
+2. PR2 status: landed on main
+   - Added a parallel `BuildSearchTree()` entry point that projects the existing step-proof plan into `SearchStrategy`.
+   - The underlying build pipeline still runs through `BuildState`-based logic; this PR is additive and does not switch the primary path yet.
 
 3. PR3 status: not landed
    - There is no `DisplayRenderEngine` type in the codebase.

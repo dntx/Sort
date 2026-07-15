@@ -222,6 +222,11 @@ partial class StrategyBuilder
         return BuildPlan(useCompactSelection: false);
     }
 
+    // Parallel search-tree entry point for the refactor track: materialize the existing step-proof
+    // plan and project it into the search model without changing the underlying search behavior.
+    public SearchStrategy BuildSearchTree()
+        => SearchModelMapper.FromStrategyPlan(BuildStepProofStage());
+
     public StrategyPlan RunExactPipeline(
         Action<StageResult>? onStageCompleted = null,
         Action<string>? onStageStart = null)
