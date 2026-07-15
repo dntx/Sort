@@ -49,6 +49,7 @@ This section is written as the expected repository state after the PR updating t
 6. PR6 status: not landed
    - Public pipeline has not switched to a new layered search-model + display-model architecture.
    - Legacy glue has not been removed because the new layered architecture is not yet present.
+   - The naming split between exact edge compact and greedy edge compact has not been fully rolled out in public-facing labels/docs.
 
 ## How to Read This Roadmap
 
@@ -69,6 +70,8 @@ This section is written as the expected repository state after the PR updating t
 3. Naming and terminology
    - There is no separate "display-edge compact" naming; compact paths remain under the search-edge compact framing.
    - The important distinction is between exact edge compact and greedy edge compact.
+   - Canonical naming rule: use "edge compact exact" for the exact-mode compact stage and "edge compact greedy" for the greedy pipeline's terminal compact stage.
+   - PR6 must propagate this naming rule consistently across CLI/help text, UI stage labels, and docs.
 
 ## 6-PR Roadmap
 
@@ -164,10 +167,12 @@ Objective:
 Scope:
 - Route the public plan-building flow through separated search + display stages.
 - Remove obsolete or dead compatibility paths.
+- Apply the edge-compact naming split consistently in public-facing surfaces (exact vs greedy).
 
 Acceptance:
 - Full regression suite is green after the switch.
 - Documentation reflects the final architecture.
+- Public naming is consistent: exact-mode compact stage is labeled as edge compact exact, and greedy-mode terminal compact stage as edge compact greedy.
 
 ## Working Conventions
 
@@ -195,6 +200,7 @@ The following decisions have been clarified for now:
 4. Naming and terminology
    - There should be no separate "display-edge compact" naming; all compact paths remain under the search-edge compact framing.
    - The important distinction is between exact edge compact and greedy edge compact.
+   - Canonical naming rule: use "edge compact exact" (exact mode) and "edge compact greedy" (greedy mode terminal stage), and keep this split consistent across UI/CLI/docs.
 
 5. Long-term ownership
    - Once PR6 lands, the search-layer and display-layer interfaces should be documented as first-class architecture boundaries in the repository.

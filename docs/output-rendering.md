@@ -263,11 +263,12 @@ pattern: #1 > #11 > ... > #5 ; (#1 ~ #10) ↔ (#11 ~ #20)
 **与搜索的关系**：投影合并只折叠「本就收敛到同一规范搜索后继」的排序，所以它是搜索的**严格细化**——
 `CheckDisplaySearchParity`（`StrategyBuilder.OptimalityGap.cs`）处处无残差。
 
-> **已知 compact 不一致（待修，TODO）**：compact 选择的目标函数 `CountDisplayBranches`
-> （`StrategyBuilder.Compact.cs`）用 `fixedTopMask: 0` 估算合并边数，而合并行为依赖真实的 fixed/doomed
-> 上下文，于是 compact 的 DP 目标 ≠ 最终渲染边数，个别形状下 compact 树会渲染出比 merge-OFF 更多的边
-> （如 10,3,4：9 → 11）。修复方向是把真实 `fixedTopMask` 传进目标函数，使 DP 目标 = 渲染边数，再收紧
-> 相关基线。default/exact 渲染层不受此影响。
+> **历史注记（PR5 前）**：旧版 compact 目标曾通过显示层分支线口径（CountDisplayBranches）近似边数，
+> 在 fixed/doomed 上下文相关形状中会与最终渲染边数出现偏差。
+>
+> **当前状态（PR5 后）**：compact 已切换为搜索层目标（search-tree edges，children.Count 递归口径），
+> 本文档此处不再作为待修 TODO。显示层文案中的 edge-compact 表示阶段名称，不代表 display-edge 目标函数。
+> 评估 compact 行为时应优先参考搜索口径指标（例如 SearchStatistics.SearchTreeEdges）与对应回归测试。
 
 
 ### 轨道 A：doomed-tail 边（`StrategyBuilder.DoomedTailEdges.cs`）
