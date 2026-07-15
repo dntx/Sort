@@ -759,22 +759,34 @@ def _has_explicit_formatting_intent(pr_title: str, pr_body: str) -> bool:
 def _is_format_only_csharp_section(section: str) -> bool:
     """True when a C# diff section changes only whitespace/newline layout.
 
-    Safety: if changed lines include quote characters, skip this heuristic to
-    avoid misclassifying string-literal text edits as formatting-only.
+    This includes blank-line churn and stray whitespace-only edits that do not
+    change any substantive code. Safety: if changed lines include quote
+    characters, skip this heuristic to avoid misclassifying string-literal text
+    edits as formatting-only.
     """
     added, removed = _split_changed_content_lines(section)
-    if not added or not removed:
+    if not added and not removed:
         return False
+
+    def _normalize_nonempty_lines(lines: list[str]) -> list[str]:
+        normalized: list[str] = []
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            normalized.append(re.sub(r"\s+", "", line))
+        return normalized
+
     changed = [line for line in (added + removed) if line.strip()]
     if not changed:
-        return False
+        return True
     if any('"' in line or "'" in line for line in changed):
         return False
 
-    norm_added = "".join(re.sub(r"\s+", "", line) for line in added if line.strip())
-    norm_removed = "".join(re.sub(r"\s+", "", line) for line in removed if line.strip())
-    if not norm_added or not norm_removed:
-        return False
+    norm_added = _normalize_nonempty_lines(added)
+    norm_removed = _normalize_nonempty_lines(removed)
+    if not norm_added and not norm_removed:
+        return True
     return norm_added == norm_removed
 
 
