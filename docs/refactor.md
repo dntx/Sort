@@ -44,6 +44,7 @@ This section is written as the expected repository state after the PR updating t
 
 5. PR5 status: landed on main
    - Compact objective now uses search-tree edge semantics and surfaces `SearchStatistics.SearchTreeEdges`.
+   - This is an existing main-branch baseline status, not a change introduced by this PR1 document/update PR.
 
 6. PR6 status: not landed
    - Public pipeline has not switched to a new layered search-model + display-model architecture.
