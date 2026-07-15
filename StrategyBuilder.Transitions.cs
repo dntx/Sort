@@ -12,12 +12,8 @@ partial class StrategyBuilder
     // notation "A1 > {A2, #7} ; A = {...} ; drop tail(A2)"); any component the structural renderer
     // cannot express falls back to the singleton merge, so this is never worse than no merging.
     // It is a strict display refinement of the search (CheckDisplaySearchParity holds), only ever
-    // folds orderings that share a canonical search successor, and never changes the optimal MaxStep;
-    // it affects displayed branch lines and the compact edge-count proxy (CountDisplayBranches).
-    // NOTE: the compact-selection objective (CountDisplayBranches) evaluates the merge with
-    // fixedTopMask=0, so on rare shapes the merged compact tree can render more edges than the
-    // merge-off compact tree (e.g. 10,3,4: 9 -> 11) -- a known inconsistency tracked as a follow-up
-    // (see /memories/repo). Set false to recover the older, finer split.
+    // folds orderings that share a canonical search successor, and never changes the optimal MaxStep.
+    // It only affects displayed branch lines. Set false to recover the older, finer split.
     internal bool EnableProjectionOrbitMerging { get; set; } = true;
 
     private List<StrategyBranch> BuildBranches(
@@ -40,8 +36,7 @@ partial class StrategyBuilder
 
     // Builds the ordered display-branch specs for a chosen comparison group without
     // materializing the subtrees. BuildBranches maps these through BuildTransitionBranch
-    // (which recurses); the compact DP counts them via CountDisplayBranches to minimize
-    // the total number of displayed edges. The returned list is already in display order,
+    // (which recurses). The returned list is already in display order,
     // so its Count is exactly the number of branch lines this node will render.
     private List<BranchSpec> BuildBranchSpecs(ComparisonState state, int remainingSlots, SelectedComparisonGroup chosenGroup)
     {
@@ -162,9 +157,7 @@ partial class StrategyBuilder
 
     // Splits one merged bucket's order families into the exact set of displayed branch lines.
     // Each returned inner list is the families folded onto a single line; its first element is the
-    // line's representative. Both BuildBranchSpecs (which materializes the line) and
-    // CountDisplayBranches (which only counts lines) route through here, so the displayed edge
-    // count and the compact DP's edge count can never disagree.
+    // line's representative. BuildBranchSpecs routes through here for materialization.
     //
     // A merged bucket groups every order family whose outcome maps to the same display-canonical
     // next state. If the full bucket can be summarized by one disjunction-free pattern, we render it

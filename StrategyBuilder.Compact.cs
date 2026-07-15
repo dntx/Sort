@@ -7,17 +7,17 @@ partial class StrategyBuilder
     // EXPERIMENTAL (PoC): when enabled, phase 2 reads comparison groups from a
     // "compact" pattern cache produced by a secondary two-level DP. The DP keeps the
     // optimal worst-case step count (computed by phase 1) as the primary objective and,
-    // among all equally-optimal groups, minimizes the total number of displayed branch
-    // edges (the count of branch lines the renderer draws across the whole subtree). This
-    // lets us measure whether a global "prefer the fewest-edges equally-optimal solution"
-    // rule shrinks the trees.
+    // among all equally-optimal groups, minimizes the total number of search-tree branch
+    // edges (children.Count at each expanded node, summed recursively). This lets us
+    // measure whether a global "prefer the fewest-edges equally-optimal solution" rule
+    // shrinks the trees.
     private bool _useCompact;
     private bool _compactUsesFeasibleBudget;
     // When true, the feasible-budget compact solve only proves feasibility at the threaded step
     // ceiling (children.Count-proxy sort is kept -- it is load-bearing for feasibility at tight
-    // budgets -- but the heavy CountDisplayBranches edge counting is skipped and deferred to a single
-    // final min-edge pass). Drives the greedy-mode Phase A feasibility-only tightening; Phase B clears
-    // it to run one real min-edge pass at the determined step.
+    // budgets -- and no exact edge pass is performed in this mode). Drives the greedy-mode
+    // Phase A feasibility-only tightening; Phase B clears it to run one real min-edge pass at
+    // the determined step.
     private bool _compactFeasibilityOnly;
     private int _compactStatesSolved;
 
@@ -286,7 +286,7 @@ partial class StrategyBuilder
                 continue;
 
             // Only now pay for the heavy display enumeration that yields the exact edge count.
-            int edgeCount = CountDisplayBranches(state, remainingSlots, group);
+            int edgeCount = children.Count;
             int groupCost = edgeCount + branchCostSum;
             if (groupCost < bestCost)
             {
@@ -417,7 +417,7 @@ partial class StrategyBuilder
                 continue;
 
             CacheCompactPatternForBudget(key, state, group, budget);
-            int cost = CountDisplayBranches(state, remainingSlots, group) + branchCostSum;
+            int cost = children.Count + branchCostSum;
             _compactCostMemo[memoKey] = cost;
 
             // Track the realized worst-case depth separately from the edge cost so the plan's MaxStep
@@ -436,8 +436,7 @@ partial class StrategyBuilder
     // threaded step ceiling using the first solvable group in children-count-proxy order, and returns
     // as soon as one is found. It mirrors the min-edge greedy's candidate gathering and children.Count
     // sort (that ordering is load-bearing for feasibility at tight budgets, not just an edge
-    // optimization), but DOES NOT call the heavy CountDisplayBranches edge counter -- all edge work is
-    // deferred to a single final min-edge pass at the determined step. It still caches the chosen group
+    // optimization), and performs no edge minimization in this phase. It still caches the chosen group
     // pattern (so BuildState can materialize) and the realized step count (so the plan's MaxStep is
     // correct). Returns 1 + maxChildRealSteps as a finite "cost" (callers only compare against
     // int.MaxValue), or int.MaxValue if no group fits the ceiling.
@@ -467,8 +466,7 @@ partial class StrategyBuilder
             return rejected || !traversal.IsUseful ? null : children;
         }
 
-        // Mirror SolveEdgeCompactGreedy's candidate gathering and children-count proxy sort, but
-        // DEFER all exact edge counting (CountDisplayBranches) to the final min-edge pass.
+        // Mirror SolveEdgeCompactGreedy's candidate gathering and children-count proxy sort.
         var fits = new List<(List<int> Group, List<(ComparisonState State, int RemainingSlots)> Children)>();
         List<int> constructiveGroup = ChooseConstructiveGroup(state, remainingSlots);
         var seen = new HashSet<IntSequenceKey>();
@@ -541,26 +539,87 @@ partial class StrategyBuilder
         return _compactRealStepsMemo.TryGetValue(GetSearchStateKey(state, remainingSlots), out int steps) ? steps : 0;
     }
 
-    // Number of displayed branch lines this state renders for the given comparison group,
-    // including doomed-tail folding and the automorphism-orbit vs. distinct-family split. Routes
-    // every merged bucket through the same SplitMergedBucketIntoBranchLines helper as
-    // BuildBranchSpecs, so the compact DP's edge count is exactly what the display will render.
-    // A single-family bucket is one relabeling orbit and always renders as one line; only
-    // multi-family buckets pay for the automorphism partition and the pattern engine.
-    private int CountDisplayBranches(ComparisonState state, int remainingSlots, IReadOnlyList<int> group)
+    // Search objective over the implicit search tree keyed by SearchStateKey:
+    // children.Count + sum(child costs). Distinct from display/materialized edge count.
+    internal int GetStepOptimalSearchTreeEdges()
     {
-        IReadOnlyList<MergedBranch> merged = BuildMergedComparisonOutcomes(state, fixedTopMask: 0, remainingSlots, group);
-        var chosenGroup = new SelectedComparisonGroup(group, merged);
-
-        List<BranchSpec>? doomedTailSpecs = TryBuildDoomedTailSpecs(state, remainingSlots, chosenGroup);
-        if (doomedTailSpecs is not null)
-            return doomedTailSpecs.Count;
-
-        int count = 0;
-        foreach (MergedBranch branch in merged)
-            count += SplitMergedBucketIntoBranchLines(state, branch.FamilyOutcomes).Count;
-
-        return count;
+        EnsurePhase1Solved();
+        return ComputeSearchTreeEdgesForSelection(useCompactSelection: false);
     }
+
+    internal int GetCompactSearchTreeEdges()
+    {
+        EnsureCompactSolved();
+        return _compactRootCost;
+    }
+
+    private int ComputeSearchTreeEdgesForSelection(bool useCompactSelection)
+    {
+        bool previousUseCompact = _useCompact;
+        _useCompact = useCompactSelection;
+        try
+        {
+            var memo = new Dictionary<SearchStateKey, int>();
+            return ComputeSearchTreeEdges(new ComparisonState(_n), _k, memo);
+        }
+        finally
+        {
+            _useCompact = previousUseCompact;
+        }
+    }
+
+    private int ComputeSearchTreeEdges(
+        ComparisonState state,
+        int remainingSlots,
+        Dictionary<SearchStateKey, int> memo)
+    {
+        ulong fixedTopMask = 0;
+        NormalizeState(state, ref fixedTopMask, ref remainingSlots);
+
+        if (remainingSlots == 0)
+            return 0;
+        if (TryGetDeterminedTopSet(state, remainingSlots, out _))
+            return 0;
+        if (state.ActiveCount <= remainingSlots)
+            return 0;
+        if (state.ActiveCount <= _m)
+            return 0;
+
+        SearchStateKey key = GetSearchStateKey(state, remainingSlots);
+        if (memo.TryGetValue(key, out int cached))
+            return cached;
+
+        SelectedComparisonGroup chosen = ChooseGroup(
+            state,
+            fixedTopMask: 0,
+            remainingSlots,
+            context: default);
+
+        int childCount = 0;
+        int childCostSum = 0;
+        OutcomeTraversalSummary traversal = VisitComparisonOutcomes(
+            state,
+            fixedTopMask: 0,
+            remainingSlots,
+            chosen.Group,
+            currentKey: key,
+            collectMergedBranches: false,
+            onUsefulOutcome: outcome =>
+            {
+                childCount++;
+                childCostSum += ComputeSearchTreeEdges(
+                    outcome.NextState,
+                    outcome.NextRemainingSlots,
+                    memo);
+                return true;
+            });
+
+        int value = traversal.IsUseful ? childCount + childCostSum : 0;
+        memo[key] = value;
+        return value;
+    }
+
+    // Number of displayed branch lines this state renders for the given comparison group,
+
 }
 

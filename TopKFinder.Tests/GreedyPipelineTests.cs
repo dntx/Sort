@@ -71,6 +71,30 @@ public class GreedyPipelineTests
             $"feasible compact step {edgeStep} was below the true optimum {optimum}");
     }
 
+    // Explicit edge-compact coverage for greedy mode: the terminal Completed stage must carry the
+    // returned plan and report non-zero compact-pass work counters, proving the final compact pass
+    // actually ran (not only proof-tighten stages).
+    [Theory]
+    [InlineData(9, 3, 3)]
+    [InlineData(12, 4, 4)]
+    public void GreedyPipeline_EdgeCompactStage_ReportsCompactWork(int n, int m, int k)
+    {
+        var stages = new List<StageResult>();
+
+        StrategyPlan plan = new StrategyBuilder(n, m, k).RunGreedyPipeline(onStageCompleted: stages.Add);
+
+        StageResult edgeStage = Assert.Single(stages, s => s.Outcome == StageOutcome.Completed);
+        Assert.Same(plan, edgeStage.Plan);
+        Assert.True(plan.SearchStatistics.SearchTreeEdges.HasValue && plan.SearchStatistics.SearchTreeEdges.Value > 0,
+            "expected edge-compact stage to report positive search-tree edge objective");
+        Assert.True(plan.SearchStatistics.CompactStatesSolved > 0,
+            "expected edge-compact stage to solve compact states");
+        Assert.True(plan.SearchStatistics.CompactGroupsEnumerated > 0,
+            "expected edge-compact stage to enumerate compact candidate groups");
+        Assert.True(plan.SearchStatistics.CompactStepOptimalGroups > 0,
+            "expected edge-compact stage to evaluate compact step-optimal groups");
+    }
+
     // Proof-tighten now auto-expands capped probes on the SAME budget (starting from
     // CompactGreedyCandidateCap, then x4 until complete), so a cap-truncated inconclusive infeasibility
     // should converge to a genuine proof when full enumeration is tractable. 12,4,4 exercises this.
