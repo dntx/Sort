@@ -16,7 +16,7 @@
 
 相关文档：
 
-- [`core-algorithm.md`](./core-algorithm.md)：搜索/剪枝/阶段语义（`step-proof`、`greedy-feasible`、`proof-tighten≤N`、`edge-compact@S`）。
+- [`core-algorithm.md`](./core-algorithm.md)：搜索/剪枝/阶段语义（`step-proof`、`greedy-feasible`、`proof-tighten≤N`、`exact-edge-compact@S`、`greedy-edge-compact@S`）。
 - [`test-strategy.md`](./test-strategy.md)：渲染相关回归与性能护栏测试策略。
 - [`ui-explorer.md`](./ui-explorer.md)：UI 中阶段占位、进度展示与停止语义。
 

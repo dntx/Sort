@@ -6,8 +6,8 @@
 
 - 无命令行参数且无 stdin 重定向时启动桌面 UI。
 - 模式与 CLI 一致：
-  - `exact`：`step-proof → edge-compact@S`
-  - `greedy`：`greedy-feasible → (optional) greedy-tighten → proof-tighten≤N (0..n 次) → edge-compact@S`
+  - `exact`：`step-proof → exact-edge-compact@S`
+  - `greedy`：`greedy-feasible → (optional) greedy-tighten → proof-tighten≤N (0..n 次) → greedy-edge-compact@S`
 
 ## 2. 阶段时间线与占位
 
@@ -17,7 +17,8 @@ UI 使用与 CLI 相同的阶段名展示进度：
 - `greedy-feasible`
 - `greedy-tighten`（可选，root-probe 通过才运行）
 - `proof-tighten≤N`
-- `edge-compact@S`
+- `exact-edge-compact@S`（exact 终段）
+- `greedy-edge-compact@S`（greedy 终段）
 
 当阶段尚在运行时，树视图会显示 `computing...` 占位；阶段完成后替换为真实结果。greedy 流水线可能产生多个 tightening 阶段，按完成顺序追加。
 

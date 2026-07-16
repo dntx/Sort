@@ -51,9 +51,9 @@ single-stage construction and multi-stage orchestration:
   `BuildEdgeCompactStage`: build one atomic stage result or plan.
 - `RunGreedyPipeline`: greedy-mode orchestrator that emits
   `greedy-feasible`, zero or more `proof-tighten≤N`, then a final
-  `edge-compact@S` stage.
+  `greedy-edge-compact@S` stage.
 - `RunExactPipeline`: exact-mode orchestrator that emits `step-proof`, then
-  `edge-compact@S`.
+  `exact-edge-compact@S`.
 - `StageResult` / `StageOutcome`: the unified stage callback model used by the
   pipelines. Terminal non-tightening stages report `StageOutcome.Completed`.
 
@@ -72,7 +72,7 @@ dotnet run -- <n> <m> <k> [--mode exact|greedy] [--stage <n>]
   - **greedy**: a fast greedy feasible strategy for step, then a budget-bounded
     compact pass for edge. Fast and interruptible, but not proven optimal.
 - `--stage <n>` stops after stage `n` (1-based):
-  - exact: `1` = step-proof, `2` = edge-compact
+  - exact: `1` = step-proof, `2` = exact-edge-compact@S
   - greedy: `1` = greedy-feasible, `2+` continues along tightening progression
 - If the edge stage does not reduce output states, only the step strategy is
   printed; otherwise both step and edge strategies are printed.
@@ -139,7 +139,7 @@ printed.
 ### Desktop UI details
 
 The WinForms explorer shares the same stage model as the CLI (`step-proof` /
-`greedy-feasible` / `proof-tighten≤N` / `edge-compact@S`) and shows live
+`greedy-feasible` / `proof-tighten≤N` / `exact-edge-compact@S` / `greedy-edge-compact@S`) and shows live
 progress, search counters, and per-stage timing. For full UI behavior and
 diagnostic panes, see `docs/ui-explorer.md`.
 
@@ -157,7 +157,7 @@ keeps the best plan found so far.
 
 - `greedy-feasible`: build an initial feasible upper bound `U`.
 - `proof-tighten≤N`: probe lower ceilings (`U-1`, `U-2`, ...) with feasibility-only compact search.
-- `edge-compact@S`: one min-edge pass at the final feasible step `S`.
+- `greedy-edge-compact@S`: one min-edge pass at the final feasible step `S`.
 
 For algorithmic details, proofs, and edge-case semantics, see
 `docs/core-algorithm.md` (sections on greedy pipeline and compact stage).
