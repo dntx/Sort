@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 // Lightweight display-layer facade for the refactor track.
 //
@@ -8,6 +9,10 @@ using System.Collections.Generic;
 // type while parity tests keep output stable.
 sealed class DisplayRenderEngine
 {
+    internal readonly record struct BranchLine<T>(List<T> Members, bool ProjectionMerged);
+
+    internal readonly record struct ProjectionOutcomeData(IReadOnlyList<int> OrderItems, ulong EliminatedMask);
+
     public StrategyOverview BuildOverview(StrategyPlan plan)
         => StrategyOverviewRenderer.Build(plan);
 
@@ -19,18 +24,21 @@ sealed class DisplayRenderEngine
 
     // Internal PR4 facade: StrategyBuilder should call display-folding behavior via this
     // render entrypoint rather than reaching helper implementations directly.
-    internal static List<DisplayBranchLinePlanner.DisplayBranchLine<T>> PlanBranchLines<T>(
+    internal static List<BranchLine<T>> PlanBranchLines<T>(
         List<T> families,
         Func<List<T>, EquivalentOrderSummary?> buildSummary,
         Func<List<T>, List<List<T>>> partitionFamiliesIntoOrbits,
         Func<List<List<T>>, List<(List<T> Members, bool ProjectionMerged)>> mergeOrbitsByProjection,
         Func<T, int> getFamilyCount)
-        => DisplayBranchLinePlanner.SplitMergedBucketIntoBranchLines(
+    {
+        List<DisplayBranchLinePlanner.DisplayBranchLine<T>> planned = DisplayBranchLinePlanner.SplitMergedBucketIntoBranchLines(
             families,
             buildSummary,
             partitionFamiliesIntoOrbits,
             mergeOrbitsByProjection,
             getFamilyCount);
+        return planned.Select(line => new BranchLine<T>(line.Members, line.ProjectionMerged)).ToList();
+    }
 
     internal static bool IsSingleMergedOrbit(EquivalentOrderSummary? summary)
         => DisplayBranchLinePlanner.MergedOrderingsFormSingleOrbit(summary);
@@ -63,8 +71,8 @@ sealed class DisplayRenderEngine
 
     internal static bool TryProjectionAutomorphism(
         ComparisonState state,
-        DisplayProjectionOrbitMerger.ProjectionOutcomeData a,
-        DisplayProjectionOrbitMerger.ProjectionOutcomeData b,
+        ProjectionOutcomeData a,
+        ProjectionOutcomeData b,
         Dictionary<ulong, (ComparisonState State, int[] Colors)>? projectionCache = null,
         Action<ProjectionAutomorphismProbeEvent>? onProbeEvent = null)
     {
@@ -86,8 +94,8 @@ sealed class DisplayRenderEngine
 
         return DisplayProjectionOrbitMerger.TryProjectionAutomorphism(
             state,
-            a,
-            b,
+            new DisplayProjectionOrbitMerger.ProjectionOutcomeData(a.OrderItems, a.EliminatedMask),
+            new DisplayProjectionOrbitMerger.ProjectionOutcomeData(b.OrderItems, b.EliminatedMask),
             projectionCache,
             bridged);
     }

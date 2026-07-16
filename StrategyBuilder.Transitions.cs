@@ -158,7 +158,7 @@ partial class StrategyBuilder
     // Splits one merged bucket's order families into the exact set of displayed branch lines.
     // The line-planning policy is now hosted in DisplayBranchLinePlanner (display layer), while this
     // adapter provides the builder-specific orbit partition/projection merge hooks.
-    private List<DisplayBranchLinePlanner.DisplayBranchLine<MergedFamilyOutcome>> SplitMergedBucketIntoBranchLines(
+    private List<DisplayRenderEngine.BranchLine<MergedFamilyOutcome>> SplitMergedBucketIntoBranchLines(
         ComparisonState state, List<MergedFamilyOutcome> families)
     {
         return DisplayRenderEngine.PlanBranchLines(
@@ -280,10 +280,10 @@ partial class StrategyBuilder
 
         return DisplayRenderEngine.TryProjectionAutomorphism(
             state,
-            new DisplayProjectionOrbitMerger.ProjectionOutcomeData(
+            new DisplayRenderEngine.ProjectionOutcomeData(
                 a.Family.RepresentativeOrderItems,
                 EliminatedMask(state, a)),
-            new DisplayProjectionOrbitMerger.ProjectionOutcomeData(
+            new DisplayRenderEngine.ProjectionOutcomeData(
                 b.Family.RepresentativeOrderItems,
                 EliminatedMask(state, b)),
             projectionCache,

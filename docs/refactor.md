@@ -38,7 +38,7 @@ This section is written as the expected repository state after the PR updating t
    - Added a lightweight `DisplayRenderEngine` skeleton as the explicit display-path facade.
    - Added parity-guard coverage to lock `DisplayRenderEngine` output equivalence with the existing renderer path for targeted cases.
 
-4. PR4 status: landed on this branch
+4. PR4 status: landed on main
    - Display folding planning / projection-orbit merge / projection-automorphism helper logic now routes through `DisplayRenderEngine`-owned display-layer helpers.
    - `StrategyBuilder.*` still owns search-state-specific adapters and shape renderers, but the display-path control flow is no longer centered in the build logic.
 
