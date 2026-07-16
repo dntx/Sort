@@ -35,6 +35,34 @@ public sealed class DisplayRenderEngineTests
         Assert.Equal(expectedText, actualText);
     }
 
+    [Theory]
+    [InlineData(7, 3, 2)]
+    [InlineData(8, 3, 3)]
+    [InlineData(9, 4, 4)]
+    [InlineData(10, 4, 5)]
+    public void RenderStrategyText_MatchesLegacyRenderer_OnProjectionSensitiveExactPlans(int n, int m, int k)
+    {
+        StrategyPlan plan = new StrategyBuilder(n, m, k).BuildStepProofStage();
+        var engine = new DisplayRenderEngine();
+
+        string expected = StrategyTextRenderer.Render(plan);
+        string actual = engine.RenderStrategyText(plan);
+
+        Assert.Equal(expected, actual);
+    }
+
+    [Fact]
+    public void RenderStrategyText_MatchesLegacyRenderer_OnRelabelingOrbitGreedyPlan()
+    {
+        StrategyPlan plan = new StrategyBuilder(20, 10, 10).BuildGreedyFeasibleStage();
+        var engine = new DisplayRenderEngine();
+
+        string expected = StrategyTextRenderer.Render(plan);
+        string actual = engine.RenderStrategyText(plan);
+
+        Assert.Equal(expected, actual);
+    }
+
     private static void AssertOverviewEqual(StrategyOverview expected, StrategyOverview actual)
     {
         Assert.Equal(expected.Rows.Count, actual.Rows.Count);
