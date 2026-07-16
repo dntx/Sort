@@ -53,7 +53,7 @@ single-stage construction and multi-stage orchestration:
   `greedy-feasible`, zero or more `proof-tighten≤N`, then a final
   `greedy-edge-compact@S` stage.
 - `RunExactPipeline`: exact-mode orchestrator that emits `step-proof`, then
-  `proof-edge-compact@S`.
+  `exact-edge-compact@S`.
 - `StageResult` / `StageOutcome`: the unified stage callback model used by the
   pipelines. Terminal non-tightening stages report `StageOutcome.Completed`.
 
@@ -72,7 +72,7 @@ dotnet run -- <n> <m> <k> [--mode exact|greedy] [--stage <n>]
   - **greedy**: a fast greedy feasible strategy for step, then a budget-bounded
     compact pass for edge. Fast and interruptible, but not proven optimal.
 - `--stage <n>` stops after stage `n` (1-based):
-  - exact: `1` = step-proof, `2` = proof-edge-compact@S
+  - exact: `1` = step-proof, `2` = exact-edge-compact@S
   - greedy: `1` = greedy-feasible, `2+` continues along tightening progression
 - If the edge stage does not reduce output states, only the step strategy is
   printed; otherwise both step and edge strategies are printed.
@@ -139,7 +139,7 @@ printed.
 ### Desktop UI details
 
 The WinForms explorer shares the same stage model as the CLI (`step-proof` /
-`greedy-feasible` / `proof-tighten≤N` / `proof-edge-compact@S` / `greedy-edge-compact@S`) and shows live
+`greedy-feasible` / `proof-tighten≤N` / `exact-edge-compact@S` / `greedy-edge-compact@S`) and shows live
 progress, search counters, and per-stage timing. For full UI behavior and
 diagnostic panes, see `docs/ui-explorer.md`.
 

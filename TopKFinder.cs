@@ -361,7 +361,7 @@ partial class StrategyBuilder
     private static string FormatProofTightenStageName(int budget)
         => $"proof-tighten\u2264{budget}";
 
-    internal const string EdgeCompactExactStagePrefix = "proof-edge-compact@";
+    internal const string EdgeCompactExactStagePrefix = "exact-edge-compact@";
     internal const string EdgeCompactGreedyStagePrefix = "greedy-edge-compact@";
 
     internal static string FormatEdgeCompactExactStageName(int step)

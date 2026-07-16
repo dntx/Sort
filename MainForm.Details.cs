@@ -233,7 +233,7 @@ partial class MainForm
         {
             double seconds = feasiblePlan.Elapsed.TotalSeconds + defaultPlan.Elapsed.TotalSeconds;
             _statusLabel.Text =
-                $"{head}, step max={defaultPlan.MaxStep}, elapsed={seconds:F3} s. Computing proof-edge-compact@S stage...";
+                $"{head}, step max={defaultPlan.MaxStep}, elapsed={seconds:F3} s. Computing exact-edge-compact@S stage...";
             return;
         }
 
@@ -503,7 +503,7 @@ partial class MainForm
         string defaultText = DisplayEngine.RenderStrategyText(defaultPlan).TrimEnd();
         var lines = new List<string>
         {
-            "Step result (proof-edge-compact@S stage in progress)",
+            "Step result (exact-edge-compact@S stage in progress)",
             $"step elapsed: {defaultPlan.Elapsed.TotalSeconds:F3} s",
             $"step total edges: {defaultPlan.TotalBranchEdges}",
             $"step output states: {defaultPlan.SearchStatistics.OutputStates}",

@@ -416,13 +416,13 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
   `RecordRootProvenLowerBound` 写入；`U =` 构造树的 `MaxStep`。于是 `L ≤ opt ≤ U`。若 `L == U` 则该可行解
   **恰好达到了已证明下界**，即**已证明最优**（显示 `max steps = U (proven optimal)`）。
 - **两种模式、各若干阶段**：编排层提供两条互斥的流水线，CLI 用 `--mode exact|greedy`、GUI 用下拉框切换。每个阶段都有一个
-  统一的**阶段名**（也是 CLI 标题、GUI 树根与进度面板共用的标签）：exact 模式为 `step-proof → proof-edge-compact@S`；greedy 模式为
+  统一的**阶段名**（也是 CLI 标题、GUI 树根与进度面板共用的标签）：exact 模式为 `step-proof → exact-edge-compact@S`；greedy 模式为
   `greedy-feasible → (optional) greedy-tighten → proof-tighten≤N → proof-tighten≤N-1 → … → greedy-edge-compact@S`（`proof-tighten≤N` 中的 `N` 是该次收紧的**目标步数上限**，并非已达到的步数；
   最后的 `greedy-edge-compact@S` 是在收紧确定的最小可行步数 `S` 上跑的**唯一一遍 min-edge 边数紧凑**）。
   收紧到某个 `N` 被证明不可行时，单独呈现一个标 **`no solution`** 的终止阶段；若收紧探测因贪心候选帽子截断而无法证明，则呈现一个
   标 **`search incomplete (candidate cap reached)`** 的终止阶段。收紧本身**不设时间上限**，会一直跑到证明为止或被用户取消
   （GUI 的 Stop 按钮 / CLI 的 Ctrl+C）。
-  - **exact 模式（默认）**：`step-proof` = 精确求解 `BuildStepProofStage`（已证明最优），`proof-edge-compact@S` = compact `BuildEdgeCompactStage`。
+  - **exact 模式（默认）**：`step-proof` = 精确求解 `BuildStepProofStage`（已证明最优），`exact-edge-compact@S` = compact `BuildEdgeCompactStage`。
     **不跑可行 feasible**。step-proof 的首阶段已是步最优，故其 edge-compact 永远无法再降低步数，**没有**向下收紧阶段。
   - **greedy 模式（快速，feasibility-first）**：`greedy-feasible` = 构造式 feasible `BuildGreedyFeasibleStage`（可行上界 `U`）。随后可选
     `greedy-tighten` 预阶段：先做 root-only 微探针（`ShouldRunGreedyTightenByRootProbe`），仅当探针判断根层存在降高机会时才运行单轮

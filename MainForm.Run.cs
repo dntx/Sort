@@ -293,8 +293,9 @@ partial class MainForm
     private static string MarkDetailsStopped(string details)
         => details
             .Replace("next stage in progress", "next stage not run (stopped)")
-            .Replace("proof-edge-compact@S stage in progress", "proof-edge-compact@S stage not run (stopped)")
-            .Replace("edge compact exact stage in progress", "proof-edge-compact@S stage not run (stopped)");
+            .Replace("exact-edge-compact@S stage in progress", "exact-edge-compact@S stage not run (stopped)")
+            .Replace("proof-edge-compact@S stage in progress", "exact-edge-compact@S stage not run (stopped)")
+            .Replace("edge compact exact stage in progress", "exact-edge-compact@S stage not run (stopped)");
 
     // Before the first stage returns a real plan, show an explicit in-progress placeholder so the tree
     // region is never visually empty during the initial compute.
@@ -361,7 +362,7 @@ partial class MainForm
         root.Nodes.Add(CreatePlanTreeRoot(stepStageName, stepPlan, "default", stepPlan.Elapsed));
 
         // Slot 1: the second stage's live placeholder. In exact mode this is the min-edge
-        // "proof-edge-compact@S" pass; in greedy mode it is whatever RunGreedyPipeline emits first --
+        // "exact-edge-compact@S" pass; in greedy mode it is whatever RunGreedyPipeline emits first --
         // a "proof-tighten<=N" tightening stage, or "greedy-edge-compact@S" directly when the greedy bound is
         // already at the lower bound.
         if (compactPlan is null)
@@ -418,7 +419,7 @@ partial class MainForm
         if (compactPlan is null)
         {
             double seconds = feasiblePlan.Elapsed.TotalSeconds + defaultPlan.Elapsed.TotalSeconds;
-            return $"{head}, max steps={defaultPlan.MaxStep}, elapsed={seconds:F3} s (computing proof-edge-compact@S stage...)";
+            return $"{head}, max steps={defaultPlan.MaxStep}, elapsed={seconds:F3} s (computing exact-edge-compact@S stage...)";
         }
         double totalSeconds = feasiblePlan.Elapsed.TotalSeconds + defaultPlan.Elapsed.TotalSeconds + compactPlan.Elapsed.TotalSeconds;
         // Lead with the optimality squeeze on the best plan: once the final tightening proves the next
