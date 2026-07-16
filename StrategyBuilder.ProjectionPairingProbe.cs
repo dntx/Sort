@@ -77,44 +77,14 @@ partial class StrategyBuilder
 
         var projectionCache = new Dictionary<ulong, (ComparisonState State, int[] Colors)>();
 
-        int n = orbits.Count;
-        var parent = Enumerable.Range(0, n).ToArray();
-        int Find(int x)
-        {
-            while (parent[x] != x)
-            {
-                parent[x] = parent[parent[x]];
-                x = parent[x];
-            }
-            return x;
-        }
+        List<List<int>> components = DisplayRenderEngine.BuildProjectionComponents(
+            orbits,
+            areProjectionEquivalent: (left, right) =>
+                TryProjectionAutomorphism(state, left, right, projectionCache));
 
-        for (int i = 0; i < n; i++)
-        {
-            for (int j = i + 1; j < n; j++)
-            {
-                if (Find(i) == Find(j))
-                    continue;
-                if (TryProjectionAutomorphism(state, orbits[i][0], orbits[j][0], projectionCache))
-                    parent[Find(i)] = Find(j);
-            }
-        }
+        _probeProjectionLines += components.Count;
 
-        var componentsByRoot = new Dictionary<int, List<int>>();
-        for (int i = 0; i < n; i++)
-        {
-            int root = Find(i);
-            if (!componentsByRoot.TryGetValue(root, out List<int>? members))
-            {
-                members = new List<int>();
-                componentsByRoot[root] = members;
-            }
-            members.Add(i);
-        }
-
-        _probeProjectionLines += componentsByRoot.Count;
-
-        foreach (List<int> component in componentsByRoot.Values)
+        foreach (List<int> component in components)
         {
             int orbitCount = component.Count;
             if (orbitCount <= 1)
@@ -149,10 +119,10 @@ partial class StrategyBuilder
             }
         }
 
-        if (componentsByRoot.Count < orbits.Count && _probeWinSamples.Count < ProjectionPairingProbeSampleLimit)
+        if (components.Count < orbits.Count && _probeWinSamples.Count < ProjectionPairingProbeSampleLimit)
         {
             string reps = string.Join(" | ", orbits.Select(orbit => orbit[0].Family.RepresentativeOrder));
-            _probeWinSamples.Add($"({_n},{_m},{_requestedK}) orbits {orbits.Count}->{componentsByRoot.Count}  [{reps}]");
+            _probeWinSamples.Add($"({_n},{_m},{_requestedK}) orbits {orbits.Count}->{components.Count}  [{reps}]");
         }
     }
 
@@ -170,7 +140,7 @@ partial class StrategyBuilder
 
         MergedFamilyOutcome representative = line[0];
         IReadOnlyList<int> repOrder = representative.Family.RepresentativeOrderItems;
-        List<int> repProjected = RestrictOrder(repOrder, common);
+        List<int> repProjected = DisplayRenderEngine.RestrictOrderByDropMask(repOrder, common);
 
         ComparisonState? projected = null;
         for (int i = 1; i < line.Count; i++)
@@ -182,21 +152,14 @@ partial class StrategyBuilder
             if (common == 0)
                 return false;
 
-            projected ??= CloneDeactivatedState(state, common);
-            List<int> memberProjected = RestrictOrder(memberOrder, common);
+            projected ??= DisplayRenderEngine.CloneDeactivated(state, common);
+            List<int> memberProjected = DisplayRenderEngine.RestrictOrderByDropMask(memberOrder, common);
             if (repProjected.Count != memberProjected.Count
                 || !projected.TryMapOrderByAutomorphism(0, repProjected, memberProjected))
                 return false;
         }
 
         return true;
-    }
-
-    private static ComparisonState CloneDeactivatedState(ComparisonState state, ulong dropMask)
-    {
-        ComparisonState clone = state.Clone();
-        clone.Deactivate(dropMask);
-        return clone;
     }
 
     private string DescribeComponent(
