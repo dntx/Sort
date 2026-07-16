@@ -481,7 +481,8 @@ partial class MainForm
 
     private static string BuildFeasibleOnlyDetails(StrategyPlan feasiblePlan)
     {
-        string feasibleText = StrategyTextRenderer.Render(feasiblePlan).TrimEnd();
+        var display = new DisplayRenderEngine();
+        string feasibleText = display.RenderStrategyText(feasiblePlan).TrimEnd();
         var lines = new List<string>
         {
             "Step strategy (greedy upper bound; next stage in progress)",
@@ -500,7 +501,8 @@ partial class MainForm
 
     private static string BuildDefaultOnlyDetails(StrategyPlan defaultPlan)
     {
-        string defaultText = StrategyTextRenderer.Render(defaultPlan).TrimEnd();
+        var display = new DisplayRenderEngine();
+        string defaultText = display.RenderStrategyText(defaultPlan).TrimEnd();
         var lines = new List<string>
         {
             "Step result (edge-compact stage in progress)",
@@ -518,8 +520,9 @@ partial class MainForm
 
     private static string BuildTwoPhaseDetails(StrategyPlan defaultPlan, StrategyPlan compactPlan, bool compactImproved)
     {
-        string defaultText = StrategyTextRenderer.Render(defaultPlan).TrimEnd();
-        string compactText = StrategyTextRenderer.Render(compactPlan).TrimEnd();
+        var display = new DisplayRenderEngine();
+        string defaultText = display.RenderStrategyText(defaultPlan).TrimEnd();
+        string compactText = display.RenderStrategyText(compactPlan).TrimEnd();
         double totalElapsedSeconds = defaultPlan.Elapsed.TotalSeconds + compactPlan.Elapsed.TotalSeconds;
         var lines = new List<string>
         {
@@ -549,7 +552,8 @@ partial class MainForm
 
     private static string BuildPlanDetails(StrategyPlan plan)
     {
-        string rendered = StrategyTextRenderer.Render(plan).TrimEnd();
+        var display = new DisplayRenderEngine();
+        string rendered = display.RenderStrategyText(plan).TrimEnd();
         string diagnostics = BuildDiagnosticsDetails(plan.SearchStatistics.Diagnostics);
         return diagnostics.Length == 0 ? rendered : $"{rendered}\n\n{diagnostics}";
     }

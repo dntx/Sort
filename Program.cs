@@ -268,6 +268,7 @@ class Program
     private static void RunHeadlessCore(StrategyBuilder builder, Mode mode, int? stageLimit, Action clearProgressLine)
     {
         void ClearProgressLine() => clearProgressLine();
+        var display = new DisplayRenderEngine();
 
         // Live per-stage status goes to stderr (the same stream as the progress line) so stdout keeps
         // only the final progression summary and tree. Clearing the progress line first stops leftover
@@ -351,9 +352,9 @@ class Program
                 Console.WriteLine();
                 Console.WriteLine($"==================== {finalName} ({FormatSqueeze(finalPlan)}) ====================");
                 Console.WriteLine("(a valid strategy that achieves the upper bound; not proven optimal)");
-                Console.Write(StrategyOverviewRenderer.RenderText(finalPlan));
+                Console.Write(display.RenderOverviewText(finalPlan));
                 Console.WriteLine();
-                Console.Write(StrategyTextRenderer.Render(finalPlan));
+                Console.Write(display.RenderStrategyText(finalPlan));
                 return;
             }
 
@@ -443,9 +444,9 @@ class Program
             Console.WriteLine(interrupted
                 ? "(best strategy found before interruption; not proven optimal)"
                 : "(a valid strategy that achieves the upper bound; not proven optimal)");
-            Console.Write(StrategyOverviewRenderer.RenderText(finalPlan));
+            Console.Write(display.RenderOverviewText(finalPlan));
             Console.WriteLine();
-            Console.Write(StrategyTextRenderer.Render(finalPlan));
+            Console.Write(display.RenderStrategyText(finalPlan));
             return;
         }
 
@@ -469,9 +470,9 @@ class Program
         WriteStageStatus($"stage step-proof: steps={defaultPlan.MaxStep}, " +
             $"edges={defaultPlan.TotalBranchEdges} ({exactStopwatch.Elapsed.TotalSeconds:F2}s)");
         Console.WriteLine($"==================== step-proof ({FormatSqueeze(defaultPlan)}) ====================");
-        Console.Write(StrategyOverviewRenderer.RenderText(defaultPlan));
+        Console.Write(display.RenderOverviewText(defaultPlan));
         Console.WriteLine();
-        Console.Write(StrategyTextRenderer.Render(defaultPlan));
+        Console.Write(display.RenderStrategyText(defaultPlan));
 
         if (stageLimit.HasValue && stageLimit.Value <= 1)
             return;
@@ -503,9 +504,9 @@ class Program
             $"edges={compactPlan.TotalBranchEdges} ({compactStopwatch.Elapsed.TotalSeconds:F2}s)");
         Console.WriteLine();
         Console.WriteLine($"==================== {edgeCompactStageName} ====================");
-        Console.Write(StrategyOverviewRenderer.RenderText(compactPlan));
+        Console.Write(display.RenderOverviewText(compactPlan));
         Console.WriteLine();
-        Console.Write(StrategyTextRenderer.Render(compactPlan));
+        Console.Write(display.RenderStrategyText(compactPlan));
     }
 
     // One-line descriptor for a single greedy stage in the progression summary: stage name plus its
