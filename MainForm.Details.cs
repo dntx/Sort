@@ -14,13 +14,13 @@ partial class MainForm
     private static string BuildBranchDetails(StrategyBranch branch)
     {
         string details = branch.OrderText;
-        string effectDetails = StrategyTextRenderer.FormatEffectDetails(branch.Effect);
+        string effectDetails = DisplayEngine.FormatEffectDetails(branch.Effect);
         if (!string.IsNullOrEmpty(effectDetails))
             details += "\n" + effectDetails;
 
         if (branch.EquivalentOrders is not null)
         {
-            details += "\n" + StrategyTextRenderer.FormatEquivalentDetails(branch.EquivalentOrders);
+            details += "\n" + DisplayEngine.FormatEquivalentDetails(branch.EquivalentOrders);
         }
 
         return details;
@@ -30,7 +30,7 @@ partial class MainForm
     {
         string stepAndGroup =
             $"Step: {node.Step}\n" +
-            $"Comparison group: ({StrategyTextRenderer.FormatSet(node.Group)})";
+            $"Comparison group: ({DisplayEngine.FormatSet(node.Group)})";
         string details = node.FinalChoice is not null
             ? stepAndGroup
             : $"State S{node.StateId}\n" + stepAndGroup;
@@ -252,14 +252,14 @@ partial class MainForm
 
     private static string BuildCompressedFinalChoiceText(FinalChoiceSummary summary, int k)
     {
-        return $"fixed ({StrategyTextRenderer.FormatSet(summary.FixedTopSet)}); choose {summary.RemainingSlots} of ({StrategyTextRenderer.FormatSet(summary.CandidatePool)}) into top {k}";
+        return $"fixed ({DisplayEngine.FormatSet(summary.FixedTopSet)}); choose {summary.RemainingSlots} of ({DisplayEngine.FormatSet(summary.CandidatePool)}) into top {k}";
     }
 
     private static string BuildCompressedFinalChoiceDetails(FinalChoiceSummary summary, int k)
     {
         return
-            $"Fixed top-{k} members: ({StrategyTextRenderer.FormatSet(summary.FixedTopSet)})\n" +
-            $"Choose {summary.RemainingSlots} of ({StrategyTextRenderer.FormatSet(summary.CandidatePool)}) to complete top {k}";
+            $"Fixed top-{k} members: ({DisplayEngine.FormatSet(summary.FixedTopSet)})\n" +
+            $"Choose {summary.RemainingSlots} of ({DisplayEngine.FormatSet(summary.CandidatePool)}) to complete top {k}";
     }
 
     private void StopStrategy()

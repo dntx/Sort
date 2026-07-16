@@ -22,6 +22,39 @@ sealed class DisplayRenderEngine
     public string RenderStrategyText(StrategyPlan plan)
         => StrategyTextRenderer.Render(plan);
 
+    public string FormatSet(IEnumerable<int> items)
+        => StrategyTextRenderer.FormatSet(items);
+
+    public string FormatOptionalSet(IEnumerable<int> items)
+        => StrategyTextRenderer.FormatOptionalSet(items);
+
+    public string FormatInEntry(IEnumerable<int> items)
+        => StrategyTextRenderer.FormatInEntry(items);
+
+    public string FormatOutEntry(IEnumerable<int> items)
+        => StrategyTextRenderer.FormatOutEntry(items);
+
+    public string FormatFixedEntry(IEnumerable<int> items)
+        => StrategyTextRenderer.FormatFixedEntry(items);
+
+    public string FormatPossibleEntry(IEnumerable<int> items)
+        => StrategyTextRenderer.FormatPossibleEntry(items);
+
+    public string FormatEffectDetails(StrategyEffect effect)
+        => StrategyTextRenderer.FormatEffectDetails(effect);
+
+    public string FormatEquivalentPatternLine(EquivalentOrderSummary summary)
+        => StrategyTextRenderer.FormatEquivalentPatternLine(summary);
+
+    public string FormatEquivalentDetails(EquivalentOrderSummary summary)
+        => StrategyTextRenderer.FormatEquivalentDetails(summary);
+
+    public string FormatRemainingSteps(int remaining)
+        => StrategyTextRenderer.FormatRemainingSteps(remaining);
+
+    public string FormatRelabeling(IReadOnlyList<ItemRelabel> relabeling)
+        => StrategyTextRenderer.FormatRelabeling(relabeling);
+
     // Internal PR4 facade: StrategyBuilder should call display-folding behavior via this
     // render entrypoint rather than reaching helper implementations directly.
     internal static List<BranchLine<T>> PlanBranchLines<T>(
