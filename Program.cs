@@ -351,9 +351,6 @@ class Program
 
             void CollectEdgeStage(StageResult stage)
             {
-                if (IsGreedyPreparationStageName(stage.Name))
-                    return;
-
                 emittedStages++;
 
                 if (!stage.HasPlan)
@@ -405,19 +402,17 @@ class Program
                     throw new StageLimitReachedException();
             }
 
-            void StartEdgeStage(string name)
-            {
-                if (IsGreedyPreparationStageName(name))
-                    return;
-
-                WriteStageStatus($"stage {name}: started");
-            }
+            void StartEdgeStage(string name) => WriteStageStatus($"stage {name}: started");
 
             bool interrupted = false;
             bool stageLimited = false;
             try
             {
-                PublicPipelineOrchestrator.RunGreedyPipeline(builder, CollectEdgeStage, StartEdgeStage);
+                PublicPipelineOrchestrator.RunGreedyPipeline(
+                    builder,
+                    CollectEdgeStage,
+                    StartEdgeStage,
+                    emitPreparationStages: false);
             }
             catch (StageLimitReachedException)
             {
@@ -545,10 +540,6 @@ class Program
         string lowerText = lower > 0 ? lower.ToString() : "?";
         return $"{lowerText} <= max steps <= {upper}";
     }
-
-    private static bool IsGreedyPreparationStageName(string name)
-        => string.Equals(name, "greedy-feasible", StringComparison.Ordinal)
-            || string.Equals(name, "greedy-tighten", StringComparison.Ordinal);
 
     public static bool TryParseAndValidate(
         string? nText,

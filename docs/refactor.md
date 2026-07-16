@@ -56,12 +56,12 @@ This section is written as the expected repository state after the PR updating t
 This section is a working reminder of unfinished items already identified in the reality-check snapshot.
 
 1. Public main-path switch (PR6 core)
-   - [ ] Route the public build/render pipeline through an explicit layered flow: search-model stage -> display-model stage.
+   - [x] Route the public build/render pipeline through an explicit layered flow: search-model stage -> display-model stage.
    - [x] Keep `BuildSearchTree()` as the canonical entry point for the search layer (instead of parallel-only status).
    - [x] Finish routing both public callers (CLI + UI) through the same unified stage-emission facade.
 
 2. Legacy glue cleanup
-   - [ ] Remove obsolete compatibility/control-flow glue that exists only for the pre-layered migration path.
+   - [x] Remove first-pass obsolete compatibility/control-flow glue in public callers (exact pipeline duplication + redundant greedy pre-stage filtering branches).
    - [ ] Keep only adapters that are still required by tests or externally supported APIs.
 
 3. Public naming rollout (exact vs greedy compact)

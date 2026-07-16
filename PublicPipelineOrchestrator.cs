@@ -42,26 +42,34 @@ static class PublicPipelineOrchestrator
     public static StrategyPlan RunGreedyPipeline(
         StrategyBuilder builder,
         Action<StageResult>? onStageCompleted = null,
-        Action<string>? onStageStart = null)
+        Action<string>? onStageStart = null,
+        bool emitPreparationStages = true)
     {
         const string feasibleStageName = "greedy-feasible";
-        onStageStart?.Invoke(feasibleStageName);
+        if (emitPreparationStages)
+            onStageStart?.Invoke(feasibleStageName);
         GreedyPreparationResult prep = PrepareGreedyUpperBound(builder);
-        onStageCompleted?.Invoke(new StageResult(
-            feasibleStageName,
-            prep.BaseFeasiblePlan,
-            prep.GreedyFeasibleElapsed,
-            StageOutcome.Completed));
+        if (emitPreparationStages)
+        {
+            onStageCompleted?.Invoke(new StageResult(
+                feasibleStageName,
+                prep.BaseFeasiblePlan,
+                prep.GreedyFeasibleElapsed,
+                StageOutcome.Completed));
+        }
 
         if (prep.GreedyTightenProbeRun && prep.GreedyTightenPlan is not null)
         {
             const string tightenStageName = "greedy-tighten";
-            onStageStart?.Invoke(tightenStageName);
-            onStageCompleted?.Invoke(new StageResult(
-                tightenStageName,
-                prep.GreedyTightenPlan,
-                prep.GreedyTightenElapsed,
-                StageOutcome.Completed));
+            if (emitPreparationStages)
+            {
+                onStageStart?.Invoke(tightenStageName);
+                onStageCompleted?.Invoke(new StageResult(
+                    tightenStageName,
+                    prep.GreedyTightenPlan,
+                    prep.GreedyTightenElapsed,
+                    StageOutcome.Completed));
+            }
         }
 
         return builder.RunGreedyPipelineCore(onStageCompleted, onStageStart);

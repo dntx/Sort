@@ -90,11 +90,8 @@ partial class MainForm
                 StrategyPlan feasibleCompactPlan = await Task.Run(
                     () => PublicPipelineOrchestrator.RunGreedyPipeline(
                         builder,
-                        stage =>
-                        {
-                            if (!IsGreedyPreparationStageName(stage.Name))
-                                MarshalProofTightenStage(stage);
-                        }),
+                        MarshalProofTightenStage,
+                        emitPreparationStages: false),
                     cancellationToken);
                 _runStopwatch?.Stop();
 
@@ -542,10 +539,6 @@ partial class MainForm
         int nextBudget = incumbentMaxStep - 1;
         return nextBudget >= lower ? $"proof-tighten\u2264{nextBudget}" : StrategyBuilder.FormatGreedyEdgeCompactStageName(incumbentMaxStep);
     }
-
-    private static bool IsGreedyPreparationStageName(string name)
-        => string.Equals(name, "greedy-feasible", StringComparison.Ordinal)
-            || string.Equals(name, "greedy-tighten", StringComparison.Ordinal);
 
     // Anytime greedy edge handler: invoked on the UI thread once per edge stage as the worker thread
     // produces it (each "proof-tighten<=N" proof-tightening stage, then the final "greedy-edge-compact@S"
