@@ -1,6 +1,10 @@
 using System;
 using System.Collections.Generic;
 
+// Display-layer planner for deciding how one merged search bucket is exposed as rendered branch
+// lines. It owns only the display-shaping policy: keep a whole bucket when the summary is honest,
+// otherwise fall back through parent orbits / projection-merged orbits / per-family lines.
+// Search-state-specific orbit construction and summary generation are supplied by the caller.
 internal static class DisplayBranchLinePlanner
 {
     internal readonly record struct DisplayBranchLine<T>(List<T> Members, bool ProjectionMerged);

@@ -2,6 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
+// Display-layer projection merge helpers. These routines own the generic control flow for
+// projection-based orbit grouping: union-find component construction, singleton fallback, and
+// projected-automorphism checks over caller-supplied representatives. Search-state-specific
+// rendering acceptance and family semantics stay outside this helper and are injected by delegates.
 internal static class DisplayProjectionOrbitMerger
 {
     internal readonly record struct ProjectionOutcomeData(IReadOnlyList<int> OrderItems, ulong EliminatedMask);
