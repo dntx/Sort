@@ -3,6 +3,20 @@ using Xunit;
 public sealed class SearchModelMapperTests
 {
     [Fact]
+    public void BuildSearchTree_ReturnsSearchModelEquivalentToMappedStepPlan()
+    {
+        var stepBuilder = new StrategyBuilder(12, 4, 5);
+        StrategyPlan stepPlan = stepBuilder.BuildStepProofStage();
+
+        var searchBuilder = new StrategyBuilder(12, 4, 5);
+        SearchStrategy built = searchBuilder.BuildSearchTree();
+
+        SearchStrategy mapped = SearchModelMapper.FromStrategyPlan(stepPlan);
+
+        AssertSearchStrategyEquivalent(mapped, built);
+    }
+
+    [Fact]
     public void FromStrategyPlan_MapsBasicMetadataAndRoot()
     {
         StrategyPlan plan = new StrategyBuilder(9, 3, 3).BuildStepProofStage();
@@ -92,5 +106,39 @@ public sealed class SearchModelMapperTests
         SearchNode right = mapped.Root.Branches[1].Next;
 
         Assert.Same(left, right);
+    }
+
+    private static void AssertSearchStrategyEquivalent(SearchStrategy expected, SearchStrategy actual)
+    {
+        Assert.Equal(expected.N, actual.N);
+        Assert.Equal(expected.M, actual.M);
+        Assert.Equal(expected.RequestedK, actual.RequestedK);
+        Assert.Equal(expected.K, actual.K);
+        AssertSearchNodeEquivalent(expected.Root, actual.Root);
+    }
+
+    private static void AssertSearchNodeEquivalent(SearchNode expected, SearchNode actual)
+    {
+        Assert.Equal(expected.Kind, actual.Kind);
+        Assert.Equal(expected.StateId, actual.StateId);
+        Assert.Equal(expected.Step, actual.Step);
+        Assert.Equal(expected.Group, actual.Group);
+        Assert.Equal(expected.TopSet, actual.TopSet);
+        Assert.Equal(expected.ReferenceRelabeling, actual.ReferenceRelabeling);
+        Assert.Equal(expected.Branches.Count, actual.Branches.Count);
+
+        for (int i = 0; i < expected.Branches.Count; i++)
+        {
+            SearchBranch expectedBranch = expected.Branches[i];
+            SearchBranch actualBranch = actual.Branches[i];
+
+            Assert.Equal(expectedBranch.OrderText, actualBranch.OrderText);
+            Assert.Equal(expectedBranch.Effect.NewlyGuaranteedTop, actualBranch.Effect.NewlyGuaranteedTop);
+            Assert.Equal(expectedBranch.Effect.NewlyExcluded, actualBranch.Effect.NewlyExcluded);
+            Assert.Equal(expectedBranch.Effect.FixedCandidates, actualBranch.Effect.FixedCandidates);
+            Assert.Equal(expectedBranch.Effect.PossibleCandidates, actualBranch.Effect.PossibleCandidates);
+
+            AssertSearchNodeEquivalent(expectedBranch.Next, actualBranch.Next);
+        }
     }
 }
