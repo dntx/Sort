@@ -64,11 +64,11 @@ This section is a working reminder of unfinished items already identified in the
    - [ ] Keep only adapters that are still required by tests or externally supported APIs.
 
 3. Public naming rollout (exact vs greedy compact)
-   - [ ] Replace remaining user-facing `edge-compact@S` labels with the agreed naming split:
+   - [x] Replace remaining user-facing `edge-compact@S` labels with the agreed naming split:
      - exact pipeline terminal compact stage: `edge compact exact`
      - greedy pipeline terminal compact stage: `edge compact greedy`
-   - [ ] Apply the split consistently across CLI/help text, UI stage labels, overview/detail panes, and docs.
-   - [ ] Re-baseline/update tests that intentionally pin stage labels.
+   - [x] Apply the split consistently across CLI/help text, UI stage labels, overview/detail panes, and docs.
+   - [x] Re-baseline/update tests that intentionally pin stage labels.
 
 4. Documentation closure
    - [ ] After PR6 lands, update this roadmap's reality-check section to reflect landed status.

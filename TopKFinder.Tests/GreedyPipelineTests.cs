@@ -178,7 +178,7 @@ public class GreedyPipelineTests
 
     // Pins the user-facing stage-name contract emitted by RunGreedyPipeline: each downward
     // tightening ceiling is announced as "proof-tighten\u2264N" and the final edge pass as
-    // "edge-compact@S" (S = the resulting plan's MaxStep). These labels are shared verbatim by the CLI
+    // "edge compact greedy". These labels are shared verbatim by the CLI
     // headers, GUI tree roots, and the progress panel, so renaming them is a real behavior change --
     // this test fails if the labels drift back to the old "feasible\u2264N" / "compact" wording. 12,4,4
     // has U > opt so its tightening probes run, exercising both the proof-tighten ceilings and the
@@ -193,14 +193,14 @@ public class GreedyPipelineTests
             onStageCompleted: stage => { if (stage.HasPlan) solvedStages.Add(stage.Name); },
             onStageStart: name => startedStages.Add(name));
 
-        string edgeCompactName = $"edge-compact@{plan.MaxStep}";
+        string edgeCompactName = StrategyBuilder.EdgeCompactGreedyStageName;
 
         // The final edge-compaction pass is always announced and always carries the returned plan.
         Assert.Contains(edgeCompactName, startedStages);
         Assert.Contains(edgeCompactName, solvedStages);
 
         // At least one downward tightening ceiling ran, and every announced stage uses either the
-        // "proof-tighten\u2264N" tightening label or the terminal "edge-compact@S" label.
+        // "proof-tighten\u2264N" tightening label or the terminal "edge compact greedy" label.
         Assert.Contains(startedStages, name => name.StartsWith("proof-tighten\u2264", StringComparison.Ordinal));
         Assert.All(startedStages, name =>
             Assert.True(

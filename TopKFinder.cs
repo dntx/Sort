@@ -238,7 +238,7 @@ partial class StrategyBuilder
         stepStopwatch.Stop();
         onStageCompleted?.Invoke(new StageResult(stepStageName, stepPlan, stepStopwatch.Elapsed, StageOutcome.Completed));
 
-        string edgeStageName = FormatEdgeCompactStageName(stepPlan.MaxStep);
+        string edgeStageName = FormatEdgeCompactExactStageName();
         onStageStart?.Invoke(edgeStageName);
         var edgeStopwatch = Stopwatch.StartNew();
         StrategyPlan edgePlan = BuildEdgeCompactStage();
@@ -280,7 +280,7 @@ partial class StrategyBuilder
     // this thread each time a downstream stage becomes available: once per successful tightening ceiling
     // ("proof-tighten≤N", carrying the smaller plan), once for the terminal ceiling that stops tightening
     // (a no-solution/incomplete stage whose plan is null), and finally once for the edge-compaction pass
-    // ("edge-compact@S"). This drives an anytime UI/CLI that surfaces the full progression as it is found; a
+    // ("edge compact greedy"). This drives an anytime UI/CLI that surfaces the full progression as it is found; a
     // user who no longer wants to wait cancels (GUI Stop / CLI Ctrl+C), which propagates out with the
     // best plan found so far already surfaced via onStageCompleted.
     public StrategyPlan RunGreedyPipeline(
@@ -347,7 +347,7 @@ partial class StrategyBuilder
         }
 
         // Phase B: one edge-compaction pass at the determined step S.
-        string edgeCompactStageName = FormatEdgeCompactStageName(bestStep);
+        string edgeCompactStageName = FormatEdgeCompactGreedyStageName();
         onStageStart?.Invoke(edgeCompactStageName);
         var edgeStopwatch = Stopwatch.StartNew();
         StrategyPlan finalPlan = BuildEdgeCompactPlanAtBudget(bestStep)
@@ -361,8 +361,14 @@ partial class StrategyBuilder
     private static string FormatProofTightenStageName(int budget)
         => $"proof-tighten\u2264{budget}";
 
-    internal static string FormatEdgeCompactStageName(int step)
-        => $"edge-compact@{step}";
+    internal const string EdgeCompactExactStageName = "edge compact exact";
+    internal const string EdgeCompactGreedyStageName = "edge compact greedy";
+
+    internal static string FormatEdgeCompactExactStageName()
+        => EdgeCompactExactStageName;
+
+    internal static string FormatEdgeCompactGreedyStageName()
+        => EdgeCompactGreedyStageName;
 
     public StageResult BuildProofTightenStage(int budget)
     {
