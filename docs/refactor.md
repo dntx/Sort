@@ -38,9 +38,9 @@ This section is written as the expected repository state after the PR updating t
    - Added a lightweight `DisplayRenderEngine` skeleton as the explicit display-path facade.
    - Added parity-guard coverage to lock `DisplayRenderEngine` output equivalence with the existing renderer path for targeted cases.
 
-4. PR4 status: not landed
-   - Folding / orbit / projection display behavior is still implemented in `StrategyBuilder.*` helpers.
-   - The search/display boundary described in this roadmap has not been structurally enforced yet.
+4. PR4 status: landed on main
+   - Display folding planning / projection-orbit merge / projection-automorphism helper logic now routes through `DisplayRenderEngine`-owned display-layer helpers.
+   - `StrategyBuilder.*` still owns search-state-specific adapters and shape renderers, but the display-path control flow is no longer centered in the build logic.
 
 5. PR5 status: landed on main
    - Compact objective now uses search-tree edge semantics and surfaces `SearchStatistics.SearchTreeEdges`.

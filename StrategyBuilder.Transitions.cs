@@ -78,7 +78,7 @@ partial class StrategyBuilder
                 RecordProjectionPairingBucket(state, merged.FamilyOutcomes);
             }
 
-            foreach (DisplayBranchLine line in SplitMergedBucketIntoBranchLines(state, merged.FamilyOutcomes))
+            foreach (var line in SplitMergedBucketIntoBranchLines(state, merged.FamilyOutcomes))
             {
                 specs.Add(BuildBranchSpecForLine(state, line.Members, line.ProjectionMerged));
             }
@@ -156,74 +156,20 @@ partial class StrategyBuilder
     }
 
     // Splits one merged bucket's order families into the exact set of displayed branch lines.
-    // Each returned inner list is the families folded onto a single line; its first element is the
-    // line's representative. BuildBranchSpecs routes through here for materialization.
-    //
-    // A merged bucket groups every order family whose outcome maps to the same display-canonical
-    // next state. If the full bucket can be summarized by one disjunction-free pattern, we render it
-    // as one line directly: this captures "comparison-before visible" equivalences (for example
-    // {A1, B1} > {A2, B2}) even when the parent-state automorphism partition is stricter. If the full
-    // bucket cannot be summarized cleanly, we fall back to parent-automorphism orbits and apply the
-    // same disjunction-free check per orbit, finally splitting to per-family lines when needed.
-    // One displayed branch line: the order families folded onto it (first element is the line's
-    // representative) plus whether the line exists only because the opt-in principle-D pass unioned
-    // two or more distinct parent-automorphism orbits. ProjectionMerged lines are rendered with an
-    // explicit "drop {...}" disclosure rather than a bare brace.
-    private readonly record struct DisplayBranchLine(List<MergedFamilyOutcome> Members, bool ProjectionMerged);
-
-    private List<DisplayBranchLine> SplitMergedBucketIntoBranchLines(
+    // The line-planning policy is now hosted in DisplayBranchLinePlanner (display layer), while this
+    // adapter provides the builder-specific orbit partition/projection merge hooks.
+    private List<DisplayRenderEngine.BranchLine<MergedFamilyOutcome>> SplitMergedBucketIntoBranchLines(
         ComparisonState state, List<MergedFamilyOutcome> families)
     {
-        if (families.Count == 1)
-            return new List<DisplayBranchLine> { new(families, false) };
-
-        EquivalentOrderSummary? fullBucketSummary = BuildEquivalentOrderSummary(
-            families.Select(outcome => outcome.Family).ToList());
-        if (MergedOrderingsFormSingleOrbit(fullBucketSummary))
-            return new List<DisplayBranchLine> { new(families, false) };
-
-        var lines = new List<DisplayBranchLine>();
-        List<List<MergedFamilyOutcome>> parentOrbits = PartitionFamiliesIntoOrbits(state, families);
-
-        List<(List<MergedFamilyOutcome> Members, bool ProjectionMerged)> orbits =
-            EnableProjectionOrbitMerging
-                ? MergeOrbitsByProjection(state, parentOrbits)
-                : parentOrbits.Select(orbit => (orbit, false)).ToList();
-
-        foreach ((List<MergedFamilyOutcome> orbit, bool projectionMerged) in orbits)
-        {
-            if (orbit.Count == 1)
-            {
-                lines.Add(new(orbit, false));
-                continue;
-            }
-
-            EquivalentOrderSummary? combinedSummary = BuildEquivalentOrderSummary(
-                orbit.Select(outcome => outcome.Family).ToList());
-
-            // The orbit is parent-automorphism-backed (interchangeable up to relabeling). Keep it on
-            // one line when it is either a clean disjunction-free template ("permute {...}") or an
-            // all-singleton relabeling orbit, which BuildBranchSpecForLine renders as one
-            // representative annotated with the relabeling. Only fall back to per-family lines when
-            // neither honest single-line form applies (e.g. a member carries its own internal
-            // permutation), which would otherwise read as a misleading "(... | ...)" disjunction.
-            bool isCleanTemplate = MergedOrderingsFormSingleOrbit(combinedSummary);
-            bool isRelabelingOrbit = orbit.All(outcome => outcome.Family.Count == 1);
-            // A multi-family projection merge is neither a clean template nor a relabeling orbit, but
-            // it renders honestly through the structural quotient notation, so keep it on one line.
-            bool isProjectionQuotient = projectionMerged && orbit.Any(outcome => outcome.Family.Count > 1);
-            if (isCleanTemplate || isRelabelingOrbit || isProjectionQuotient)
-            {
-                lines.Add(new(orbit, projectionMerged));
-            }
-            else
-            {
-                foreach (MergedFamilyOutcome outcome in orbit)
-                    lines.Add(new(new List<MergedFamilyOutcome> { outcome }, false));
-            }
-        }
-
-        return lines;
+        return DisplayRenderEngine.PlanBranchLines(
+            families,
+            buildSummary: members => BuildEquivalentOrderSummary(members.Select(outcome => outcome.Family).ToList()),
+            partitionFamiliesIntoOrbits: members => PartitionFamiliesIntoOrbits(state, members),
+            mergeOrbitsByProjection: parentOrbits =>
+                EnableProjectionOrbitMerging
+                    ? MergeOrbitsByProjection(state, parentOrbits)
+                    : parentOrbits.Select(orbit => (orbit, false)).ToList(),
+            getFamilyCount: outcome => outcome.Family.Count);
     }
 
     // Partitions a merged bucket's families into parent-automorphism orbits over the active poset.
@@ -299,77 +245,6 @@ partial class StrategyBuilder
         return order.Select(root => orbitsByRoot[root]).ToList();
     }
 
-    // Principle-D projection merge (opt-in via EnableProjectionOrbitMerging). After the strict
-    // parent-automorphism partition, fold together orbits that each consist of a single ordering
-    // (a singleton family) whenever an automorphism of the parent poset *projected by removing the
-    // items both orderings eliminate this step* maps one onto the other. Only singleton-vs-singleton
-    // orbits are eligible: a multi-ordering family carries its own internal symmetry whose members
-    // do not all share the projection witness, so merging it would overclaim a symmetry that does
-    // not hold family-wide. The doomed "drop" set is surfaced in the rendered legend. Input order is
-    // preserved so the displayed-edge count stays identical between the display and counting paths.
-    private List<(List<MergedFamilyOutcome> Members, bool ProjectionMerged)> MergeSingletonOrbitsByProjection(
-        ComparisonState state, List<List<MergedFamilyOutcome>> orbits)
-    {
-        int n = orbits.Count;
-        if (n <= 1)
-            return orbits.Select(orbit => (orbit, false)).ToList();
-
-        var projectionCache = new Dictionary<ulong, (ComparisonState State, int[] Colors)>();
-
-        var parent = new int[n];
-        for (int i = 0; i < n; i++)
-            parent[i] = i;
-
-        int Find(int x)
-        {
-            while (parent[x] != x)
-            {
-                parent[x] = parent[parent[x]];
-                x = parent[x];
-            }
-            return x;
-        }
-
-        static bool IsSingleton(List<MergedFamilyOutcome> orbit)
-            => orbit.Count == 1 && orbit[0].Family.Count == 1;
-
-        for (int i = 0; i < n; i++)
-        {
-            if (!IsSingleton(orbits[i]))
-                continue;
-            for (int j = i + 1; j < n; j++)
-            {
-                if (!IsSingleton(orbits[j]) || Find(i) == Find(j))
-                    continue;
-                if (TryProjectionAutomorphism(state, orbits[i][0], orbits[j][0], projectionCache))
-                    parent[Find(i)] = Find(j);
-            }
-        }
-
-        var byRoot = new Dictionary<int, List<MergedFamilyOutcome>>();
-        var combinedCount = new Dictionary<int, int>();
-        var order = new List<int>();
-        for (int i = 0; i < n; i++)
-        {
-            int root = Find(i);
-            if (!byRoot.TryGetValue(root, out List<MergedFamilyOutcome>? merged))
-            {
-                merged = new List<MergedFamilyOutcome>();
-                byRoot[root] = merged;
-                combinedCount[root] = 0;
-                order.Add(root);
-            }
-            merged.AddRange(orbits[i]);
-            combinedCount[root]++;
-        }
-
-        // A root that absorbed two or more original parent orbits is a genuine projection merge and
-        // must be disclosed with a "drop {...}" legend; a root that is a single pass-through orbit
-        // (singleton with no projection partner, or any multi-ordering parent orbit) keeps its exact
-        // parent-automorphism rendering.
-        return order.Select(root => (byRoot[root], combinedCount[root] > 1)).ToList();
-    }
-
     // Tests the principle-D projection symmetry between two single orderings: remove the items both
     // eliminate this step (the common drop set, which this step's comparisons determine uniquely),
     // then ask whether an automorphism of the projected parent poset maps one surviving ordering
@@ -380,58 +255,39 @@ partial class StrategyBuilder
         MergedFamilyOutcome b,
         Dictionary<ulong, (ComparisonState State, int[] Colors)>? projectionCache = null)
     {
-        ulong commonDrop = EliminatedMask(state, a) & EliminatedMask(state, b);
-        List<int> orderA = RestrictOrder(a.Family.RepresentativeOrderItems, commonDrop);
-        List<int> orderB = RestrictOrder(b.Family.RepresentativeOrderItems, commonDrop);
-        if (orderA.Count != orderB.Count)
-            return false;
-
-        if (commonDrop == 0)
-        {
-            int[] activeColors = state.GetActiveItemColors();
-            if (!OrdersHaveMatchingActiveColorSequence(activeColors, orderA, orderB))
-            {
-                if (EnableProjectionPairingProbe)
-                    _projectionOrbitColorPrefilterSkips++;
-                return false;
-            }
-
-            if (EnableProjectionPairingProbe)
-                _projectionOrbitAutomorphismChecks++;
-
-            return state.TryMapOrderByAutomorphism(0, orderA, orderB);
-        }
-
-        ComparisonState projected;
-        int[] projectedColors;
-        if (projectionCache is not null && projectionCache.TryGetValue(commonDrop, out var cached))
-        {
-            projected = cached.State;
-            projectedColors = cached.Colors;
-            if (EnableProjectionPairingProbe)
-                _projectionOrbitProjectedStateCacheHits++;
-        }
-        else
-        {
-            projected = state.Clone();
-            projected.Deactivate(commonDrop);
-            projectedColors = projected.GetActiveItemColors();
-            projectionCache?.Add(commonDrop, (projected, projectedColors));
-            if (EnableProjectionPairingProbe)
-                _projectionOrbitProjectedStateBuilds++;
-        }
-
-        if (!OrdersHaveMatchingActiveColorSequence(projectedColors, orderA, orderB))
-        {
-            if (EnableProjectionPairingProbe)
-                _projectionOrbitColorPrefilterSkips++;
-            return false;
-        }
-
+        Action<DisplayRenderEngine.ProjectionAutomorphismProbeEvent>? probeHook = null;
         if (EnableProjectionPairingProbe)
-            _projectionOrbitAutomorphismChecks++;
+        {
+            probeHook = evt =>
+            {
+                switch (evt)
+                {
+                    case DisplayRenderEngine.ProjectionAutomorphismProbeEvent.ColorPrefilterSkip:
+                        _projectionOrbitColorPrefilterSkips++;
+                        break;
+                    case DisplayRenderEngine.ProjectionAutomorphismProbeEvent.AutomorphismCheck:
+                        _projectionOrbitAutomorphismChecks++;
+                        break;
+                    case DisplayRenderEngine.ProjectionAutomorphismProbeEvent.ProjectedStateBuild:
+                        _projectionOrbitProjectedStateBuilds++;
+                        break;
+                    case DisplayRenderEngine.ProjectionAutomorphismProbeEvent.ProjectedStateCacheHit:
+                        _projectionOrbitProjectedStateCacheHits++;
+                        break;
+                }
+            };
+        }
 
-        return projected.TryMapOrderByAutomorphism(0, orderA, orderB);
+        return DisplayRenderEngine.TryProjectionAutomorphism(
+            state,
+            new DisplayRenderEngine.ProjectionOutcomeData(
+                a.Family.RepresentativeOrderItems,
+                EliminatedMask(state, a)),
+            new DisplayRenderEngine.ProjectionOutcomeData(
+                b.Family.RepresentativeOrderItems,
+                EliminatedMask(state, b)),
+            projectionCache,
+            probeHook);
     }
 
     private static bool OrdersHaveMatchingActiveColorSequence(
@@ -453,17 +309,6 @@ partial class StrategyBuilder
     private static ulong EliminatedMask(ComparisonState state, MergedFamilyOutcome outcome)
         => state.ActiveMask & ~outcome.NextState.ActiveMask & ~outcome.NextFixedTopMask;
 
-    private static List<int> RestrictOrder(IReadOnlyList<int> order, ulong dropMask)
-    {
-        var result = new List<int>(order.Count);
-        foreach (int item in order)
-        {
-            if ((dropMask & (1UL << item)) == 0)
-                result.Add(item);
-        }
-        return result;
-    }
-
     // template describes a genuine relabeling orbit, so it stays a single branch. The pattern
     // engine emits the " | " separator only when the merged orderings cannot be unified into one
     // template (distinct orderings that merely converge to isomorphic next states); those are
@@ -471,8 +316,7 @@ partial class StrategyBuilder
     // " > ").
     private static bool MergedOrderingsFormSingleOrbit(EquivalentOrderSummary? combinedSummary)
     {
-        return combinedSummary is null
-            || !combinedSummary.PatternText.Contains(" | ", StringComparison.Ordinal);
+        return DisplayRenderEngine.IsSingleMergedOrbit(combinedSummary);
     }
 
     private void AddMergedBranch(

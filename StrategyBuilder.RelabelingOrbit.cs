@@ -23,7 +23,7 @@ partial class StrategyBuilder
     {
         ulong commonDrop = EnableProjectionOrbitMerging ? CommonEliminatedMask(state, line) : 0;
         IReadOnlyList<int> repOrder = representative.Family.RepresentativeOrderItems;
-        IReadOnlyList<int> repProjected = RestrictOrder(repOrder, commonDrop);
+        IReadOnlyList<int> repProjected = DisplayRenderEngine.RestrictOrderByDropMask(repOrder, commonDrop);
 
         ComparisonState? projected = null;
         var legends = new List<string>();
@@ -50,8 +50,8 @@ partial class StrategyBuilder
             if (commonDrop == 0)
                 continue;
 
-            projected ??= CloneDeactivated(state, commonDrop);
-            IReadOnlyList<int> memberProjected = RestrictOrder(memberOrder, commonDrop);
+            projected ??= DisplayRenderEngine.CloneDeactivated(state, commonDrop);
+            IReadOnlyList<int> memberProjected = DisplayRenderEngine.RestrictOrderByDropMask(memberOrder, commonDrop);
             if (repProjected.Count == memberProjected.Count
                 && projected.TryFindOrderAutomorphism(0, repProjected, memberProjected, out Dictionary<int, int>? projMap)
                 && projMap is not null)
@@ -213,13 +213,6 @@ partial class StrategyBuilder
         string legend = FormatRelabelingMap(map);
         if (!string.IsNullOrEmpty(legend) && !legends.Contains(legend))
             legends.Add(legend);
-    }
-
-    private static ComparisonState CloneDeactivated(ComparisonState state, ulong dropMask)
-    {
-        ComparisonState projected = state.Clone();
-        projected.Deactivate(dropMask);
-        return projected;
     }
 
     private static ulong CommonEliminatedMask(ComparisonState state, List<MergedFamilyOutcome> line)
