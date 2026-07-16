@@ -51,6 +51,29 @@ This section is written as the expected repository state after the PR updating t
    - Legacy glue has not been removed because the new layered architecture is not yet present.
    - The naming split between exact edge compact and greedy edge compact has not been fully rolled out in public-facing labels/docs.
 
+## Pending Memo (Actionable)
+
+This section is a working reminder of unfinished items already identified in the reality-check snapshot.
+
+1. Public main-path switch (PR6 core)
+   - [ ] Route the public build/render pipeline through an explicit layered flow: search-model stage -> display-model stage.
+   - [ ] Keep `BuildSearchTree()` as the canonical entry point for the search layer (instead of parallel-only status).
+
+2. Legacy glue cleanup
+   - [ ] Remove obsolete compatibility/control-flow glue that exists only for the pre-layered migration path.
+   - [ ] Keep only adapters that are still required by tests or externally supported APIs.
+
+3. Public naming rollout (exact vs greedy compact)
+   - [ ] Replace remaining user-facing `edge-compact@S` labels with the agreed naming split:
+     - exact pipeline terminal compact stage: `edge compact exact`
+     - greedy pipeline terminal compact stage: `edge compact greedy`
+   - [ ] Apply the split consistently across CLI/help text, UI stage labels, overview/detail panes, and docs.
+   - [ ] Re-baseline/update tests that intentionally pin stage labels.
+
+4. Documentation closure
+   - [ ] After PR6 lands, update this roadmap's reality-check section to reflect landed status.
+   - [ ] Add a concise architecture note documenting long-term ownership and boundaries between search and display layers.
+
 ## How to Read This Roadmap
 
 - Sections "PR1..PR6" below remain the intended target plan.
