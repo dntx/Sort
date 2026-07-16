@@ -240,23 +240,7 @@ partial class StrategyBuilder
     public StrategyPlan RunExactPipeline(
         Action<StageResult>? onStageCompleted = null,
         Action<string>? onStageStart = null)
-    {
-        const string stepStageName = "step-proof";
-        onStageStart?.Invoke(stepStageName);
-        var stepStopwatch = Stopwatch.StartNew();
-        (SearchStrategy _, StrategyPlan stepPlan) = BuildLayeredStepProof();
-        stepStopwatch.Stop();
-        onStageCompleted?.Invoke(new StageResult(stepStageName, stepPlan, stepStopwatch.Elapsed, StageOutcome.Completed));
-
-        string edgeStageName = FormatExactEdgeCompactStageName(stepPlan.MaxStep);
-        onStageStart?.Invoke(edgeStageName);
-        var edgeStopwatch = Stopwatch.StartNew();
-        StrategyPlan edgePlan = BuildEdgeCompactStage();
-        edgeStopwatch.Stop();
-        onStageCompleted?.Invoke(new StageResult(edgeStageName, edgePlan, edgeStopwatch.Elapsed, StageOutcome.Completed));
-
-        return edgePlan;
-    }
+        => PublicPipelineOrchestrator.RunExactPipeline(this, onStageCompleted, onStageStart);
 
     public StrategyPlan BuildEdgeCompactStage()
     {
