@@ -125,7 +125,7 @@ partial class MainForm
         _lazyOverviewSections.Remove(sectionNode);
         _overviewTree.BeginUpdate();
         sectionNode.Nodes.Clear();
-        foreach (OverviewRow row in StrategyOverviewRenderer.Build(lazy.Plan).Rows)
+        foreach (OverviewRow row in DisplayEngine.BuildOverview(lazy.Plan).Rows)
         {
             string? key = row.LinkStateId is int id ? $"{lazy.Scope}:{id}" : null;
             var headlineNode = new TreeNode(row.Headline)

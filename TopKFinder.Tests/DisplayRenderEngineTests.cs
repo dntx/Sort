@@ -2,6 +2,8 @@ using Xunit;
 
 public sealed class DisplayRenderEngineTests
 {
+    private static readonly DisplayRenderEngine Engine = new();
+
     [Theory]
     [InlineData(9, 3, 3)]
     [InlineData(10, 3, 5)]
@@ -9,10 +11,9 @@ public sealed class DisplayRenderEngineTests
     public void RenderStrategyText_MatchesLegacyRenderer(int n, int m, int k)
     {
         StrategyPlan plan = new StrategyBuilder(n, m, k).BuildStepProofStage();
-        var engine = new DisplayRenderEngine();
 
         string expected = StrategyTextRenderer.Render(plan);
-        string actual = engine.RenderStrategyText(plan);
+        string actual = Engine.RenderStrategyText(plan);
 
         Assert.Equal(expected, actual);
     }
@@ -24,14 +25,13 @@ public sealed class DisplayRenderEngineTests
     public void OverviewRendering_MatchesLegacyRenderer(int n, int m, int k)
     {
         StrategyPlan plan = new StrategyBuilder(n, m, k).BuildStepProofStage();
-        var engine = new DisplayRenderEngine();
 
         StrategyOverview expectedOverview = StrategyOverviewRenderer.Build(plan);
-        StrategyOverview actualOverview = engine.BuildOverview(plan);
+        StrategyOverview actualOverview = Engine.BuildOverview(plan);
         AssertOverviewEqual(expectedOverview, actualOverview);
 
         string expectedText = StrategyOverviewRenderer.RenderText(plan);
-        string actualText = engine.RenderOverviewText(plan);
+        string actualText = Engine.RenderOverviewText(plan);
         Assert.Equal(expectedText, actualText);
     }
 
@@ -43,10 +43,9 @@ public sealed class DisplayRenderEngineTests
     public void RenderStrategyText_MatchesLegacyRenderer_OnProjectionSensitiveExactPlans(int n, int m, int k)
     {
         StrategyPlan plan = new StrategyBuilder(n, m, k).BuildStepProofStage();
-        var engine = new DisplayRenderEngine();
 
         string expected = StrategyTextRenderer.Render(plan);
-        string actual = engine.RenderStrategyText(plan);
+        string actual = Engine.RenderStrategyText(plan);
 
         Assert.Equal(expected, actual);
     }
@@ -55,10 +54,9 @@ public sealed class DisplayRenderEngineTests
     public void RenderStrategyText_MatchesLegacyRenderer_OnRelabelingOrbitGreedyPlan()
     {
         StrategyPlan plan = new StrategyBuilder(20, 10, 10).BuildGreedyFeasibleStage();
-        var engine = new DisplayRenderEngine();
 
         string expected = StrategyTextRenderer.Render(plan);
-        string actual = engine.RenderStrategyText(plan);
+        string actual = Engine.RenderStrategyText(plan);
 
         Assert.Equal(expected, actual);
     }
