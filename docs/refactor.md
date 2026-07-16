@@ -57,7 +57,8 @@ This section is a working reminder of unfinished items already identified in the
 
 1. Public main-path switch (PR6 core)
    - [ ] Route the public build/render pipeline through an explicit layered flow: search-model stage -> display-model stage.
-   - [ ] Keep `BuildSearchTree()` as the canonical entry point for the search layer (instead of parallel-only status).
+   - [x] Keep `BuildSearchTree()` as the canonical entry point for the search layer (instead of parallel-only status).
+   - [x] Finish routing both public callers (CLI + UI) through the same unified stage-emission facade.
 
 2. Legacy glue cleanup
    - [ ] Remove obsolete compatibility/control-flow glue that exists only for the pre-layered migration path.

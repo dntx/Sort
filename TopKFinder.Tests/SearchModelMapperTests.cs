@@ -3,6 +3,21 @@ using Xunit;
 public sealed class SearchModelMapperTests
 {
     [Fact]
+    public void BuildLayeredStepProof_ReturnsConsistentSearchAndDisplayModels()
+    {
+        var builder = new StrategyBuilder(12, 4, 5);
+        (SearchStrategy searchTree, StrategyPlan displayPlan) = builder.BuildLayeredStepProof();
+
+        SearchStrategy mapped = SearchModelMapper.FromStrategyPlan(displayPlan);
+        AssertSearchStrategyEquivalent(mapped, searchTree);
+
+        var baselineBuilder = new StrategyBuilder(12, 4, 5);
+        StrategyPlan baselinePlan = baselineBuilder.BuildStepProofStage();
+        Assert.Equal(baselinePlan.MaxStep, displayPlan.MaxStep);
+        Assert.Equal(baselinePlan.TotalBranchEdges, displayPlan.TotalBranchEdges);
+    }
+
+    [Fact]
     public void BuildSearchTree_ReturnsSearchModelEquivalentToMappedStepPlan()
     {
         var stepBuilder = new StrategyBuilder(12, 4, 5);
