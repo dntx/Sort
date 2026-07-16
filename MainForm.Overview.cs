@@ -73,13 +73,13 @@ partial class MainForm
         {
             string firstStageName = defaultPlan is null
                 ? NextProofTightenStageName(feasiblePlan, feasiblePlan.MaxStep)
-                : StrategyBuilder.FormatEdgeCompactExactStageName(feasiblePlan.MaxStep);
+                : StrategyBuilder.FormatExactEdgeCompactStageName(feasiblePlan.MaxStep);
             _overviewTree.Nodes.Add(BuildOverviewNoteNode(FormatComputingPlaceholderText(firstStageName)));
         }
         else if (compactImproved)
-            _overviewTree.Nodes.Add(BuildOverviewSectionNode(compactPlan, "compact", defaultPlan is null ? StrategyBuilder.FormatEdgeCompactGreedyStageName(compactPlan.MaxStep) : StrategyBuilder.FormatEdgeCompactExactStageName(compactPlan.MaxStep), compactPlan.Elapsed));
+            _overviewTree.Nodes.Add(BuildOverviewSectionNode(compactPlan, "compact", defaultPlan is null ? StrategyBuilder.FormatGreedyEdgeCompactStageName(compactPlan.MaxStep) : StrategyBuilder.FormatExactEdgeCompactStageName(compactPlan.MaxStep), compactPlan.Elapsed));
         else
-            _overviewTree.Nodes.Add(BuildOverviewNoteNode(FormatStageRootLabel(defaultPlan is null ? StrategyBuilder.FormatEdgeCompactGreedyStageName(compactPlan.MaxStep) : StrategyBuilder.FormatEdgeCompactExactStageName(compactPlan.MaxStep), compactPlan.Elapsed, plan: null)));
+            _overviewTree.Nodes.Add(BuildOverviewNoteNode(FormatStageRootLabel(defaultPlan is null ? StrategyBuilder.FormatGreedyEdgeCompactStageName(compactPlan.MaxStep) : StrategyBuilder.FormatExactEdgeCompactStageName(compactPlan.MaxStep), compactPlan.Elapsed, plan: null)));
 
         _overviewTree.EndUpdate();
     }
@@ -93,8 +93,8 @@ partial class MainForm
 
         bool greedyMode = _defaultPlan is null;
         string compactStageName = greedyMode
-            ? StrategyBuilder.FormatEdgeCompactGreedyStageName(compactPlan.MaxStep)
-            : StrategyBuilder.FormatEdgeCompactExactStageName(compactPlan.MaxStep);
+            ? StrategyBuilder.FormatGreedyEdgeCompactStageName(compactPlan.MaxStep)
+            : StrategyBuilder.FormatExactEdgeCompactStageName(compactPlan.MaxStep);
 
         // Drop the trailing edge-compact "computing..." placeholder root.
         if (_overviewTree.Nodes.Count > 0)

@@ -136,7 +136,7 @@ partial class MainForm
 
             // Phase 2: compact refinement.
             Interlocked.Exchange(ref _activePhase, 2);
-            _currentStageName = StrategyBuilder.FormatEdgeCompactExactStageName(defaultPlan.MaxStep);
+            _currentStageName = StrategyBuilder.FormatExactEdgeCompactStageName(defaultPlan.MaxStep);
             _stageStartMs = _runStopwatch?.ElapsedMilliseconds ?? 0;
             StrategyPlan compactPlan = await Task.Run(() => builder.BuildEdgeCompactStage(), cancellationToken);
             _runStopwatch?.Stop();
@@ -369,13 +369,13 @@ partial class MainForm
         {
             string firstStageName = defaultPlan is null
                 ? NextProofTightenStageName(feasiblePlan, feasiblePlan.MaxStep)
-                : StrategyBuilder.FormatEdgeCompactExactStageName(feasiblePlan.MaxStep);
+                : StrategyBuilder.FormatExactEdgeCompactStageName(feasiblePlan.MaxStep);
             root.Nodes.Add(CreateComputingPlaceholderNode(firstStageName));
         }
         else if (compactImproved)
-            root.Nodes.Add(CreatePlanTreeRoot(defaultPlan is null ? StrategyBuilder.FormatEdgeCompactGreedyStageName(compactPlan.MaxStep) : StrategyBuilder.FormatEdgeCompactExactStageName(compactPlan.MaxStep), compactPlan, "compact", compactPlan.Elapsed));
+            root.Nodes.Add(CreatePlanTreeRoot(defaultPlan is null ? StrategyBuilder.FormatGreedyEdgeCompactStageName(compactPlan.MaxStep) : StrategyBuilder.FormatExactEdgeCompactStageName(compactPlan.MaxStep), compactPlan, "compact", compactPlan.Elapsed));
         else
-            root.Nodes.Add(CreateNoSolutionTreeRoot(defaultPlan is null ? StrategyBuilder.FormatEdgeCompactGreedyStageName(compactPlan.MaxStep) : StrategyBuilder.FormatEdgeCompactExactStageName(compactPlan.MaxStep), compactPlan.Elapsed));
+            root.Nodes.Add(CreateNoSolutionTreeRoot(defaultPlan is null ? StrategyBuilder.FormatGreedyEdgeCompactStageName(compactPlan.MaxStep) : StrategyBuilder.FormatExactEdgeCompactStageName(compactPlan.MaxStep), compactPlan.Elapsed));
 
         _treeView.Nodes.Add(root);
         root.Expand();
@@ -466,8 +466,8 @@ partial class MainForm
         while (root.Nodes.Count > 1)
             root.Nodes.RemoveAt(root.Nodes.Count - 1);
         string compactStageName = _defaultPlan is null
-            ? StrategyBuilder.FormatEdgeCompactGreedyStageName(compactPlan.MaxStep)
-            : StrategyBuilder.FormatEdgeCompactExactStageName(compactPlan.MaxStep);
+            ? StrategyBuilder.FormatGreedyEdgeCompactStageName(compactPlan.MaxStep)
+            : StrategyBuilder.FormatExactEdgeCompactStageName(compactPlan.MaxStep);
         if (compactImproved)
             root.Nodes.Add(CreatePlanTreeRoot(compactStageName, compactPlan, "compact", compactPlan.Elapsed));
         else
@@ -508,7 +508,7 @@ partial class MainForm
     {
         int lower = Math.Max(1, feasiblePlan.SearchStatistics.RootProvenLowerBound);
         int nextBudget = incumbentMaxStep - 1;
-        return nextBudget >= lower ? $"proof-tighten\u2264{nextBudget}" : StrategyBuilder.FormatEdgeCompactGreedyStageName(incumbentMaxStep);
+        return nextBudget >= lower ? $"proof-tighten\u2264{nextBudget}" : StrategyBuilder.FormatGreedyEdgeCompactStageName(incumbentMaxStep);
     }
 
     // Anytime greedy edge handler: invoked on the UI thread once per edge stage as the worker thread
@@ -545,7 +545,7 @@ partial class MainForm
             ? null
             : stage.IsTightened
                 ? NextProofTightenStageName(_feasiblePlan, stage.Plan!.MaxStep)
-            : StrategyBuilder.FormatEdgeCompactGreedyStageName(_feasiblePlan.MaxStep); // Phase A ended (proven-infeasible/incomplete); only the edge-compaction pass remains
+            : StrategyBuilder.FormatGreedyEdgeCompactStageName(_feasiblePlan.MaxStep); // Phase A ended (proven-infeasible/incomplete); only the edge-compaction pass remains
 
         _treeView.BeginUpdate();
         TreeNode root = _treeView.Nodes[0];

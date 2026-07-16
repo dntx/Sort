@@ -193,7 +193,7 @@ public class GreedyPipelineTests
             onStageCompleted: stage => { if (stage.HasPlan) solvedStages.Add(stage.Name); },
             onStageStart: name => startedStages.Add(name));
 
-        string edgeCompactName = StrategyBuilder.FormatEdgeCompactGreedyStageName(plan.MaxStep);
+        string edgeCompactName = StrategyBuilder.FormatGreedyEdgeCompactStageName(plan.MaxStep);
 
         // The final edge-compaction pass is always announced and always carries the returned plan.
         Assert.Contains(edgeCompactName, startedStages);

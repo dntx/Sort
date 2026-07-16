@@ -26,8 +26,8 @@ partial class MainForm
     }
 
     private static bool IsEdgeCompactStageName(string stageName)
-        => stageName.StartsWith(StrategyBuilder.EdgeCompactExactStagePrefix, StringComparison.Ordinal)
-            || stageName.StartsWith(StrategyBuilder.EdgeCompactGreedyStagePrefix, StringComparison.Ordinal);
+        => stageName.StartsWith(StrategyBuilder.ExactEdgeCompactStagePrefix, StringComparison.Ordinal)
+            || stageName.StartsWith(StrategyBuilder.GreedyEdgeCompactStagePrefix, StringComparison.Ordinal);
 
     private TreeNode CreatePlanTreeRoot(string stageName, StrategyPlan plan, string scope, TimeSpan elapsed)
     {

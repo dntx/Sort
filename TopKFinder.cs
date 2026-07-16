@@ -238,7 +238,7 @@ partial class StrategyBuilder
         stepStopwatch.Stop();
         onStageCompleted?.Invoke(new StageResult(stepStageName, stepPlan, stepStopwatch.Elapsed, StageOutcome.Completed));
 
-        string edgeStageName = FormatEdgeCompactExactStageName(stepPlan.MaxStep);
+        string edgeStageName = FormatExactEdgeCompactStageName(stepPlan.MaxStep);
         onStageStart?.Invoke(edgeStageName);
         var edgeStopwatch = Stopwatch.StartNew();
         StrategyPlan edgePlan = BuildEdgeCompactStage();
@@ -347,7 +347,7 @@ partial class StrategyBuilder
         }
 
         // Phase B: one edge-compaction pass at the determined step S.
-        string edgeCompactStageName = FormatEdgeCompactGreedyStageName(bestStep);
+        string edgeCompactStageName = FormatGreedyEdgeCompactStageName(bestStep);
         onStageStart?.Invoke(edgeCompactStageName);
         var edgeStopwatch = Stopwatch.StartNew();
         StrategyPlan finalPlan = BuildEdgeCompactPlanAtBudget(bestStep)
@@ -361,14 +361,14 @@ partial class StrategyBuilder
     private static string FormatProofTightenStageName(int budget)
         => $"proof-tighten\u2264{budget}";
 
-    internal const string EdgeCompactExactStagePrefix = "exact-edge-compact@";
-    internal const string EdgeCompactGreedyStagePrefix = "greedy-edge-compact@";
+    internal const string ExactEdgeCompactStagePrefix = "exact-edge-compact@";
+    internal const string GreedyEdgeCompactStagePrefix = "greedy-edge-compact@";
 
-    internal static string FormatEdgeCompactExactStageName(int step)
-        => $"{EdgeCompactExactStagePrefix}{step}";
+    internal static string FormatExactEdgeCompactStageName(int step)
+        => $"{ExactEdgeCompactStagePrefix}{step}";
 
-    internal static string FormatEdgeCompactGreedyStageName(int step)
-        => $"{EdgeCompactGreedyStagePrefix}{step}";
+    internal static string FormatGreedyEdgeCompactStageName(int step)
+        => $"{GreedyEdgeCompactStagePrefix}{step}";
 
     public StageResult BuildProofTightenStage(int budget)
     {

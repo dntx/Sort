@@ -480,7 +480,7 @@ class Program
 
         StrategyPlan incumbent = defaultPlan;
         StrategyPlan compactPlan;
-        string edgeCompactStageName = StrategyBuilder.FormatEdgeCompactExactStageName(defaultPlan.MaxStep);
+        string edgeCompactStageName = StrategyBuilder.FormatExactEdgeCompactStageName(defaultPlan.MaxStep);
         WriteStageStatus($"stage {edgeCompactStageName}: started");
         var compactStopwatch = System.Diagnostics.Stopwatch.StartNew();
         try

@@ -336,7 +336,7 @@ partial class MainForm : Form
         _statesTextBox = CreateStatTextBox(
             "searched: 0\npending: 0 (peak 0)\noutput: 0\nlower-bound: 0\ntop-set: 0");
         _workTextBox = CreateStatTextBox(
-            "outcomes: 0\nduplicate skips: 0\nmerged collisions: 0\nprunes: 0\ncache: 0/0/0/0\n[edge compact] -");
+            "outcomes: 0\nduplicate skips: 0\nmerged collisions: 0\nprunes: 0\ncache: 0/0/0/0\n[edge-compact] -");
         var inputsPanel = new FlowLayoutPanel
         {
             AutoSize = true,
