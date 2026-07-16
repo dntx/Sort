@@ -5,13 +5,14 @@ using Xunit;
 
 public sealed class MainFormRenderingTests
 {
+    private static readonly DisplayRenderEngine Engine = new();
+
     [Fact]
     public void BuildPlanDetails_EmitsDisplayEngineRenderedText()
     {
         StrategyPlan plan = new StrategyBuilder(9, 3, 3).BuildStepProofStage();
-        var display = new DisplayRenderEngine();
 
-        string expectedText = display.RenderStrategyText(plan).TrimEnd();
+        string expectedText = Engine.RenderStrategyText(plan).TrimEnd();
         string actualText = InvokePrivateStatic<string>(typeof(MainForm), "BuildPlanDetails", plan);
 
         Assert.StartsWith(expectedText, actualText);
@@ -21,9 +22,8 @@ public sealed class MainFormRenderingTests
     public void BuildFeasibleOnlyDetails_EmitsDisplayEngineRenderedText()
     {
         StrategyPlan plan = new StrategyBuilder(9, 3, 3).BuildStepProofStage();
-        var display = new DisplayRenderEngine();
 
-        string expectedText = display.RenderStrategyText(plan).TrimEnd();
+        string expectedText = Engine.RenderStrategyText(plan).TrimEnd();
         string actualText = InvokePrivateStatic<string>(typeof(MainForm), "BuildFeasibleOnlyDetails", plan);
 
         Assert.Contains(expectedText, actualText);
@@ -33,8 +33,7 @@ public sealed class MainFormRenderingTests
     public void OverviewMaterialization_EmitsDisplayEngineOverviewRows()
     {
         StrategyPlan plan = new StrategyBuilder(9, 3, 3).BuildStepProofStage();
-        var display = new DisplayRenderEngine();
-        StrategyOverview expectedOverview = display.BuildOverview(plan);
+        StrategyOverview expectedOverview = Engine.BuildOverview(plan);
 
         using var form = new MainForm();
         InvokePrivateInstanceVoid(form, "RebuildOverview", plan, null, null, false, false);

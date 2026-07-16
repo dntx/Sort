@@ -109,6 +109,7 @@ partial class MainForm : Form
     private CancellationTokenSource? _runCancellationSource;
     private CancellationTokenSource? _stopEscalationSource;
     private StrategyBuilder? _activeBuilder;
+    private static readonly DisplayRenderEngine DisplayEngine = new();
     private readonly Dictionary<string, TreeNode> _stateNodesByKey = new();
     private readonly Dictionary<TreeNode, string> _referenceTargets = new();
     private readonly Stack<TreeNode> _navigationHistory = new();

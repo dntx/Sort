@@ -7,6 +7,7 @@ using Xunit;
 public sealed class ProgramHeadlessRenderingTests
 {
     private static readonly object ConsoleLock = new();
+    private static readonly DisplayRenderEngine Engine = new();
 
     [Fact]
     public void RunHeadlessCore_ExactStageOne_EmitsDisplayEngineRenderedOutput()
@@ -16,14 +17,13 @@ public sealed class ProgramHeadlessRenderingTests
         const int k = 3;
 
         StrategyPlan plan = new StrategyBuilder(n, m, k).BuildStepProofStage();
-        var display = new DisplayRenderEngine();
         string squeeze = InvokePrivateStatic<string>(typeof(Program), "FormatSqueeze", plan);
 
         string expected =
             $"==================== step-proof ({squeeze}) ===================={Environment.NewLine}" +
-            display.RenderOverviewText(plan) +
+            Engine.RenderOverviewText(plan) +
             Environment.NewLine +
-            display.RenderStrategyText(plan);
+            Engine.RenderStrategyText(plan);
 
         var builder = new StrategyBuilder(n, m, k);
         string actual = CaptureStdout(() =>
