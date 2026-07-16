@@ -222,10 +222,20 @@ partial class StrategyBuilder
         return BuildPlan(useCompactSelection: false);
     }
 
-    // Parallel search-tree entry point for the refactor track: materialize the existing step-proof
-    // plan and project it into the search model without changing the underlying search behavior.
+    // Explicit layered exact-stage entrypoint: first materialize the step-proof display plan, then
+    // project it into the search model. This keeps behavior unchanged while making the public
+    // search->display flow explicit for PR6 migration.
+    public (SearchStrategy SearchTree, StrategyPlan DisplayPlan) BuildLayeredStepProof()
+    {
+        StrategyPlan displayPlan = BuildStepProofStage();
+        SearchStrategy searchTree = SearchModelMapper.FromStrategyPlan(displayPlan);
+        return (searchTree, displayPlan);
+    }
+
+    // Search-model entrypoint used by public callers; implemented via the layered exact-stage path so
+    // the search model no longer sits as a disconnected parallel utility.
     public SearchStrategy BuildSearchTree()
-        => SearchModelMapper.FromStrategyPlan(BuildStepProofStage());
+        => BuildLayeredStepProof().SearchTree;
 
     public StrategyPlan RunExactPipeline(
         Action<StageResult>? onStageCompleted = null,
@@ -234,7 +244,7 @@ partial class StrategyBuilder
         const string stepStageName = "step-proof";
         onStageStart?.Invoke(stepStageName);
         var stepStopwatch = Stopwatch.StartNew();
-        StrategyPlan stepPlan = BuildStepProofStage();
+        (SearchStrategy _, StrategyPlan stepPlan) = BuildLayeredStepProof();
         stepStopwatch.Stop();
         onStageCompleted?.Invoke(new StageResult(stepStageName, stepPlan, stepStopwatch.Elapsed, StageOutcome.Completed));
 
@@ -284,6 +294,11 @@ partial class StrategyBuilder
     // user who no longer wants to wait cancels (GUI Stop / CLI Ctrl+C), which propagates out with the
     // best plan found so far already surfaced via onStageCompleted.
     public StrategyPlan RunGreedyPipeline(
+        Action<StageResult>? onStageCompleted = null,
+        Action<string>? onStageStart = null)
+        => RunGreedyPipelineCore(onStageCompleted, onStageStart);
+
+    internal StrategyPlan RunGreedyPipelineCore(
         Action<StageResult>? onStageCompleted = null,
         Action<string>? onStageStart = null)
     {

@@ -285,32 +285,22 @@ class Program
             // Greedy mode: GreedyFeasible gives a valid upper bound, then ProofTighten lowers the
             // step ceiling when it can, and EdgeCompact minimizes edges at the final step.
             WriteStageStatus("stage greedy-feasible: started");
-            var greedyStopwatch = System.Diagnostics.Stopwatch.StartNew();
-            StrategyPlan feasiblePlan = builder.BuildGreedyFeasibleStage();
-            StrategyPlan baseFeasiblePlan = feasiblePlan;
-            greedyStopwatch.Stop();
+            GreedyPreparationResult prep = PublicPipelineOrchestrator.PrepareGreedyUpperBound(builder);
+            StrategyPlan feasiblePlan = prep.EffectiveFeasiblePlan;
+            StrategyPlan baseFeasiblePlan = prep.BaseFeasiblePlan;
             WriteStageStatus($"stage greedy-feasible: steps={feasiblePlan.MaxStep}, " +
-                $"edges={feasiblePlan.TotalBranchEdges} ({greedyStopwatch.Elapsed.TotalSeconds:F2}s)");
+                $"edges={feasiblePlan.TotalBranchEdges} ({prep.GreedyFeasibleElapsed.TotalSeconds:F2}s)");
 
             // Optional GT pre-step (root-probe gated): only run single-round GreedyTighten when the
             // root micro-probe sees a possible root-height drop.
-            bool gtProbeRun = builder.ShouldRunGreedyTightenByRootProbe();
-            StrategyPlan? gtPlan = null;
-            bool gtImproved = false;
-            if (gtProbeRun)
+            bool gtProbeRun = prep.GreedyTightenProbeRun;
+            StrategyPlan? gtPlan = prep.GreedyTightenPlan;
+            bool gtImproved = prep.GreedyTightenImproved;
+            if (gtProbeRun && gtPlan is not null)
             {
                 WriteStageStatus("stage greedy-tighten: started (root probe passed)");
-                var gtStopwatch = System.Diagnostics.Stopwatch.StartNew();
-                gtPlan = builder.BuildGreedyTightenPlan();
-                gtStopwatch.Stop();
                 WriteStageStatus($"stage greedy-tighten: steps={gtPlan.MaxStep}, " +
-                    $"edges={gtPlan.TotalBranchEdges} ({gtStopwatch.Elapsed.TotalSeconds:F2}s)");
-                gtImproved = gtPlan.IsStrictRefinementOver(baseFeasiblePlan);
-                if (gtImproved)
-                {
-                    feasiblePlan = gtPlan;
-                    builder.OverrideGreedyPipelineUpperBound(feasiblePlan.MaxStep);
-                }
+                    $"edges={gtPlan.TotalBranchEdges} ({prep.GreedyTightenElapsed.TotalSeconds:F2}s)");
             }
 
             // The anytime stages (each "proof-tighten≤N" tightening, a terminal no-solution ceiling,
@@ -361,6 +351,9 @@ class Program
 
             void CollectEdgeStage(StageResult stage)
             {
+                if (IsGreedyPreparationStageName(stage.Name))
+                    return;
+
                 emittedStages++;
 
                 if (!stage.HasPlan)
@@ -412,13 +405,19 @@ class Program
                     throw new StageLimitReachedException();
             }
 
-            void StartEdgeStage(string name) => WriteStageStatus($"stage {name}: started");
+            void StartEdgeStage(string name)
+            {
+                if (IsGreedyPreparationStageName(name))
+                    return;
+
+                WriteStageStatus($"stage {name}: started");
+            }
 
             bool interrupted = false;
             bool stageLimited = false;
             try
             {
-                builder.RunGreedyPipeline(CollectEdgeStage, StartEdgeStage);
+                PublicPipelineOrchestrator.RunGreedyPipeline(builder, CollectEdgeStage, StartEdgeStage);
             }
             catch (StageLimitReachedException)
             {
@@ -452,57 +451,72 @@ class Program
         }
 
         // Exact mode: no feasible phase. StepProof proves the optimum step, then EdgeCompact trims
-        // displayed edges among equally optimal groups. A Ctrl+C here has
-        // no partial tree to show (the exact search is all-or-nothing), so report the interruption.
-        WriteStageStatus("stage step-proof: started");
-        StrategyPlan defaultPlan;
-        var exactStopwatch = System.Diagnostics.Stopwatch.StartNew();
+        // displayed edges among equally optimal groups.
+        StrategyPlan? defaultPlan = null;
+        StrategyPlan? compactPlan = null;
+        bool compactImproved = false;
+        bool exactStageLimited = false;
         try
         {
-            defaultPlan = builder.BuildStepProofStage();
+            PublicPipelineOrchestrator.RunExactPipeline(
+                builder,
+                stage =>
+                {
+                    if (string.Equals(stage.Name, "step-proof", StringComparison.Ordinal))
+                    {
+                        StrategyPlan stepPlan = stage.Plan!;
+                        defaultPlan = stepPlan;
+                        WriteStageStatus($"stage step-proof: steps={stepPlan.MaxStep}, " +
+                            $"edges={stepPlan.TotalBranchEdges} ({stage.Elapsed.TotalSeconds:F2}s)");
+                        Console.WriteLine($"==================== step-proof ({FormatSqueeze(stepPlan)}) ====================");
+                        Console.Write(DisplayEngine.RenderOverviewText(stepPlan));
+                        Console.WriteLine();
+                        Console.Write(DisplayEngine.RenderStrategyText(stepPlan));
+
+                        if (stageLimit.HasValue && stageLimit.Value <= 1)
+                            throw new StageLimitReachedException();
+
+                        return;
+                    }
+
+                    StrategyPlan exactCompact = stage.Plan!;
+                    compactPlan = exactCompact;
+                    compactImproved = defaultPlan is not null && exactCompact.IsStrictRefinementOver(defaultPlan);
+                    if (!compactImproved)
+                    {
+                        WriteStageStatus($"stage {stage.Name}: steps={exactCompact.MaxStep}, " +
+                            $"edges={exactCompact.TotalBranchEdges} ({stage.Elapsed.TotalSeconds:F2}s), no improvement");
+                    }
+                    else
+                    {
+                        WriteStageStatus($"stage {stage.Name}: steps={exactCompact.MaxStep}, " +
+                            $"edges={exactCompact.TotalBranchEdges} ({stage.Elapsed.TotalSeconds:F2}s)");
+                    }
+                },
+                name => WriteStageStatus($"stage {name}: started"));
+        }
+        catch (StageLimitReachedException)
+        {
+            exactStageLimited = true;
         }
         catch (OperationCanceledException)
         {
-            ClearProgressLine();
-            Console.WriteLine("interrupted before the exact search proved an optimum (no result).");
-            return;
-        }
-        exactStopwatch.Stop();
-        WriteStageStatus($"stage step-proof: steps={defaultPlan.MaxStep}, " +
-            $"edges={defaultPlan.TotalBranchEdges} ({exactStopwatch.Elapsed.TotalSeconds:F2}s)");
-        Console.WriteLine($"==================== step-proof ({FormatSqueeze(defaultPlan)}) ====================");
-        Console.Write(DisplayEngine.RenderOverviewText(defaultPlan));
-        Console.WriteLine();
-        Console.Write(DisplayEngine.RenderStrategyText(defaultPlan));
+            if (defaultPlan is null)
+            {
+                ClearProgressLine();
+                Console.WriteLine("interrupted before the exact search proved an optimum (no result).");
+            }
 
-        if (stageLimit.HasValue && stageLimit.Value <= 1)
-            return;
-
-        StrategyPlan incumbent = defaultPlan;
-        StrategyPlan compactPlan;
-        string edgeCompactStageName = StrategyBuilder.FormatExactEdgeCompactStageName(defaultPlan.MaxStep);
-        WriteStageStatus($"stage {edgeCompactStageName}: started");
-        var compactStopwatch = System.Diagnostics.Stopwatch.StartNew();
-        try
-        {
-            compactPlan = builder.BuildEdgeCompactStage();
-        }
-        catch (OperationCanceledException)
-        {
             // Interrupted while trimming edges; the proven-optimal exact tree above already printed.
             return;
         }
-        compactStopwatch.Stop();
-        bool compactImproved = compactPlan.IsStrictRefinementOver(incumbent);
-        if (!compactImproved)
-        {
-            WriteStageStatus($"stage {edgeCompactStageName}: steps={compactPlan.MaxStep}, " +
-                $"edges={compactPlan.TotalBranchEdges} ({compactStopwatch.Elapsed.TotalSeconds:F2}s), no improvement");
-            return;
-        }
 
-        WriteStageStatus($"stage {edgeCompactStageName}: steps={compactPlan.MaxStep}, " +
-            $"edges={compactPlan.TotalBranchEdges} ({compactStopwatch.Elapsed.TotalSeconds:F2}s)");
+        if (exactStageLimited)
+            return;
+        if (defaultPlan is null || compactPlan is null || !compactImproved)
+            return;
+
+        string edgeCompactStageName = StrategyBuilder.FormatExactEdgeCompactStageName(defaultPlan.MaxStep);
         Console.WriteLine();
         Console.WriteLine($"==================== {edgeCompactStageName} ====================");
         Console.Write(DisplayEngine.RenderOverviewText(compactPlan));
@@ -531,6 +545,10 @@ class Program
         string lowerText = lower > 0 ? lower.ToString() : "?";
         return $"{lowerText} <= max steps <= {upper}";
     }
+
+    private static bool IsGreedyPreparationStageName(string name)
+        => string.Equals(name, "greedy-feasible", StringComparison.Ordinal)
+            || string.Equals(name, "greedy-tighten", StringComparison.Ordinal);
 
     public static bool TryParseAndValidate(
         string? nText,
