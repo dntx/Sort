@@ -184,7 +184,7 @@ enum StageOutcome
 
 // One stage of the proof-tighten progression as it is produced by RunGreedyPipeline: the final
 // edge-compaction pass, each successful downward tightening, or a terminal ceiling. Name is the stage
-// label (e.g. "edge compact exact", "proof-tighten<=4"); Plan is the materialized strategy for Tightened
+// label (e.g. "proof-edge-compact@6", "proof-tighten<=4"); Plan is the materialized strategy for Tightened
 // and Completed, or null for ProvenInfeasible/Incomplete. Elapsed is the stage's own wall time, not a
 // cumulative total. {Outcome, Plan} together are the stage's complete output.
 readonly struct StageResult

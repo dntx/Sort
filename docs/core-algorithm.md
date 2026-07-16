@@ -416,13 +416,13 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
   `RecordRootProvenLowerBound` 写入；`U =` 构造树的 `MaxStep`。于是 `L ≤ opt ≤ U`。若 `L == U` 则该可行解
   **恰好达到了已证明下界**，即**已证明最优**（显示 `max steps = U (proven optimal)`）。
 - **两种模式、各若干阶段**：编排层提供两条互斥的流水线，CLI 用 `--mode exact|greedy`、GUI 用下拉框切换。每个阶段都有一个
-  统一的**阶段名**（也是 CLI 标题、GUI 树根与进度面板共用的标签）：exact 模式为 `step-proof → edge compact exact`；greedy 模式为
-  `greedy-feasible → (optional) greedy-tighten → proof-tighten≤N → proof-tighten≤N-1 → … → edge compact greedy`（`proof-tighten≤N` 中的 `N` 是该次收紧的**目标步数上限**，并非已达到的步数；
-  最后的 `edge compact greedy` 是在收紧确定的最小可行步数 `S` 上跑的**唯一一遍 min-edge 边数紧凑**）。
+  统一的**阶段名**（也是 CLI 标题、GUI 树根与进度面板共用的标签）：exact 模式为 `step-proof → proof-edge-compact@S`；greedy 模式为
+  `greedy-feasible → (optional) greedy-tighten → proof-tighten≤N → proof-tighten≤N-1 → … → greedy-edge-compact@S`（`proof-tighten≤N` 中的 `N` 是该次收紧的**目标步数上限**，并非已达到的步数；
+  最后的 `greedy-edge-compact@S` 是在收紧确定的最小可行步数 `S` 上跑的**唯一一遍 min-edge 边数紧凑**）。
   收紧到某个 `N` 被证明不可行时，单独呈现一个标 **`no solution`** 的终止阶段；若收紧探测因贪心候选帽子截断而无法证明，则呈现一个
   标 **`search incomplete (candidate cap reached)`** 的终止阶段。收紧本身**不设时间上限**，会一直跑到证明为止或被用户取消
   （GUI 的 Stop 按钮 / CLI 的 Ctrl+C）。
-  - **exact 模式（默认）**：`step-proof` = 精确求解 `BuildStepProofStage`（已证明最优），`edge compact exact` = compact `BuildEdgeCompactStage`。
+  - **exact 模式（默认）**：`step-proof` = 精确求解 `BuildStepProofStage`（已证明最优），`proof-edge-compact@S` = compact `BuildEdgeCompactStage`。
     **不跑可行 feasible**。step-proof 的首阶段已是步最优，故其 edge-compact 永远无法再降低步数，**没有**向下收紧阶段。
   - **greedy 模式（快速，feasibility-first）**：`greedy-feasible` = 构造式 feasible `BuildGreedyFeasibleStage`（可行上界 `U`）。随后可选
     `greedy-tighten` 预阶段：先做 root-only 微探针（`ShouldRunGreedyTightenByRootProbe`），仅当探针判断根层存在降高机会时才运行单轮
@@ -430,7 +430,7 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     改为更紧的 `U'`。再进入
     `RunGreedyPipeline` 分两段：**Phase A** 用**只判可行、不计边数**的 compact 探测依次以 `U−1, U−2, …` 为根预算
     收紧步数（每个成功的更小步数解发一个 `proof-tighten≤N` 阶段）；**Phase B** 在收紧确定的最小可行步数 `S` 上跑**唯一一遍
-    min-edge** compact（`ProbeFeasibleCompact(S)`，发一个 `edge compact greedy` 阶段）以最小化边数。若这一步恰好被
+    min-edge** compact（`ProbeFeasibleCompact(S)`，发一个 `greedy-edge-compact@S` 阶段）以最小化边数。若这一步恰好被
     `CompactGreedyCandidateCap` 截断，本轮 probe 留下的 partial phase-1b cache 会先被标记为**不可物化并立即丢弃**；
     编排层不会再做更重的 uncapped 重跑，而是**保守地保留最近一个完整 incumbent plan**，把最终 edge 阶段记为
     `no improvement`。也就是说，greedy 模式宁可放弃这最后一次边数优化机会，也不把尾部 runtime 升格成一次大枚举。快速、可中断、非证明最优。
@@ -507,10 +507,10 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     `IsTightened`＝是否可继续收紧（仅 `Tightened`）；
     `HasPlan`＝是否附带物化树（`Tightened` 与 `Completed` 均为真，仅供显示，**不**代表改进）；`ProvesOptimal`＝`ProvenInfeasible`；
     `IsCompleted`＝`Completed`。`Tightened`/`Completed` 携带计划，`ProvenInfeasible`/`Incomplete` 计划为 `null`。先是若干 `proof-tighten≤N` 收紧阶段（每次成功各一个），
-    随后是在最小可行步数 `S` 上的**唯一一遍 min-edge** `edge compact greedy` 阶段，中途可能穿插一个 `no solution` 或 `search incomplete` 终止阶段。
+    随后是在最小可行步数 `S` 上的**唯一一遍 min-edge** `greedy-edge-compact@S` 阶段，中途可能穿插一个 `no solution` 或 `search incomplete` 终止阶段。
     **呈现以「是否
     严格优于当前 incumbent」为准**（incumbent 初值为 `greedy-feasible` 可行解，按 `IsStrictRefinementOver`＝先比步数再比边数）：
-    只有严格更优的阶段才被画成完整的可浏览树并更新 incumbent；**有解但不更优**的阶段（例如最终 `edge compact greedy` 步数与边数都与
+    只有严格更优的阶段才被画成完整的可浏览树并更新 incumbent；**有解但不更优**的阶段（例如最终 `greedy-edge-compact@S` 步数与边数都与
     上一 `proof-tighten≤S` 阶段相同、无法再降边，见 `20,5,5`）记录下来、标 **`no improvement`**，但只渲染成一行注记、不画那棵重复的树；
     收紧**仍照常继续**（下一个天花板由步数决定）。收到 **`no solution`（证明不可行）** 终止时，编排层把当前
     incumbent 计划用 `WithRootProvenLowerBound(incumbent.MaxStep)` 闭合挤压（CLI 改写 `finalPlan`；GUI 走
@@ -518,7 +518,7 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     于是详情面板显示 `max steps = S (proven optimal)`；**`search incomplete (candidate cap reached)`**
     （即 `Incomplete`）终止则只标注、不闭合（文案强调是帽子截断导致的「没算完」，属「未证明」）。**CLI 与 GUI 在此分道**：CLI 是批处理工具，逐棵打印中间树
     太啰嗦，故只收集各阶段、打印一行
-    `progression: greedy-feasible(steps=, edges=) -> proof-tighten≤N(...) -> … -> edge compact greedy(...)[: no improvement][ -> proof-tighten≤M: no solution|search incomplete (candidate cap reached)]`
+    `progression: greedy-feasible(steps=, edges=) -> proof-tighten≤N(...) -> … -> greedy-edge-compact@S(...)[: no improvement][ -> proof-tighten≤M: no solution|search incomplete (candidate cap reached)]`
     总结，随后**只打印最终（最优=incumbent）那一棵树**（若没有任何阶段更优，最终树就是 `greedy-feasible` 本身）。**CLI 的 Ctrl+C**：
     `RunHeadless` 挂一个 `Console.CancelKeyPress` 处理器（`e.Cancel = true` 阻止进程被硬杀、转而取消一个
     `CancellationTokenSource`，其 token 传入 builder），greedy 构建外包一层 `try/catch OperationCanceledException`——
@@ -541,7 +541,7 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     overview 的 round 折叠规则按「连续、单分支、同组大小、且各步分组彼此不重叠」聚合；因此除首轮
     `steps 1–X` 的全量分组外，后续复用旧元素但仍呈现规则分块的波次（如 `20,2,6` 的 `steps 11–15`）也会被折叠成单个 round。
     GUI 的「`<stage>: computing...`」占位提示在实现上统一为一套生命周期（生成 / 识别 / 替换 / stop 改写）：不仅用于
-    `proof-tighten≤N` 与 `edge compact greedy` 之间的探测过渡，也用于首阶段（`greedy-feasible` / `step-proof`）尚未产出首棵树时的
+    `proof-tighten≤N` 与 `greedy-edge-compact@S` 之间的探测过渡，也用于首阶段（`greedy-feasible` / `step-proof`）尚未产出首棵树时的
     初始占位，保证树区与 overview 在整个运行期都不会出现空白且文案行为一致。
     进度面板恒为四行：总 `elapsed` 秒数、
     `阶段名: 本阶段秒数`、`progress: 本阶段百分数`、第四行 **`eta`**（UI 直接由 `elapsed` 与 `progress` 按
@@ -579,7 +579,7 @@ Finish · step 24: choose 1 of (#1, #25) for the last slot
 **流水线位置**：可选插在 `greedy-feasible(U)` 与 `proof-tighten≤N` 之间：
 
 ```text
-greedy-feasible(U) → (optional) greedy-tighten → proof-tighten≤N → edge compact greedy
+greedy-feasible(U) → (optional) greedy-tighten → proof-tighten≤N → greedy-edge-compact@S
 ```
 
 `greedy-feasible` 用单层构造式选择器给出可行上界 `U`；`GreedyTighten` 在**已有可行树**上做**局部分组替换**，把最长路径
