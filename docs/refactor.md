@@ -34,9 +34,9 @@ This section is written as the expected repository state after the PR updating t
    - Added a parallel `BuildSearchTree()` entry point that projects the existing step-proof plan into `SearchStrategy`.
    - The underlying build pipeline still runs through `BuildState`-based logic; this PR is additive and does not switch the primary path yet.
 
-3. PR3 status: not landed
-   - There is no `DisplayRenderEngine` type in the codebase.
-   - Display parity checks exist, but not through a standalone render-engine skeleton.
+3. PR3 status: landed on main
+   - Added a lightweight `DisplayRenderEngine` skeleton as the explicit display-path facade.
+   - Added parity-guard coverage to lock `DisplayRenderEngine` output equivalence with the existing renderer path for targeted cases.
 
 4. PR4 status: not landed
    - Folding / orbit / projection display behavior is still implemented in `StrategyBuilder.*` helpers.
