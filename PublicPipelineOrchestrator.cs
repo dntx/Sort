@@ -33,32 +33,36 @@ static class PublicPipelineOrchestrator
         StrategyBuilder builder,
         Action<StageResult>? onStageCompleted = null,
         Action<string>? onStageStart = null,
-        bool emitPreparationStages = true)
+        bool emitPreparationStages = true,
+        bool preparationAlreadyApplied = false)
     {
-        const string feasibleStageName = "greedy-feasible";
-        if (emitPreparationStages)
-            onStageStart?.Invoke(feasibleStageName);
-        GreedyPreparationResult prep = PrepareGreedyUpperBound(builder);
-        if (emitPreparationStages)
+        if (!preparationAlreadyApplied)
         {
-            onStageCompleted?.Invoke(new StageResult(
-                feasibleStageName,
-                prep.BaseFeasiblePlan,
-                prep.GreedyFeasibleElapsed,
-                StageOutcome.Completed));
-        }
-
-        if (prep.GreedyTightenProbeRun && prep.GreedyTightenPlan is not null)
-        {
-            const string tightenStageName = "greedy-tighten";
+            const string feasibleStageName = "greedy-feasible";
+            if (emitPreparationStages)
+                onStageStart?.Invoke(feasibleStageName);
+            GreedyPreparationResult prep = PrepareGreedyUpperBound(builder);
             if (emitPreparationStages)
             {
-                onStageStart?.Invoke(tightenStageName);
                 onStageCompleted?.Invoke(new StageResult(
-                    tightenStageName,
-                    prep.GreedyTightenPlan,
-                    prep.GreedyTightenElapsed,
+                    feasibleStageName,
+                    prep.BaseFeasiblePlan,
+                    prep.GreedyFeasibleElapsed,
                     StageOutcome.Completed));
+            }
+
+            if (prep.GreedyTightenProbeRun && prep.GreedyTightenPlan is not null)
+            {
+                const string tightenStageName = "greedy-tighten";
+                if (emitPreparationStages)
+                {
+                    onStageStart?.Invoke(tightenStageName);
+                    onStageCompleted?.Invoke(new StageResult(
+                        tightenStageName,
+                        prep.GreedyTightenPlan,
+                        prep.GreedyTightenElapsed,
+                        StageOutcome.Completed));
+                }
             }
         }
 

@@ -63,7 +63,9 @@ This section is a working reminder of unfinished items already identified in the
 
 2. Legacy glue cleanup
    - [x] Remove first-pass obsolete compatibility/control-flow glue in public callers (exact pipeline duplication + redundant greedy pre-stage filtering branches).
-   - [ ] Keep only adapters that are still required by tests or externally supported APIs.
+   - [x] Keep only adapters that are still required by tests or externally supported APIs.
+     - Retained: `StrategyBuilder.RunExactPipeline` / `StrategyBuilder.RunGreedyPipeline` as stable public entry points used by tests and external callers.
+     - Removed/compacted: duplicated caller-side pre-stage orchestration paths that no longer add behavior.
 
 3. Public naming rollout (exact vs greedy compact)
    - [x] Replace remaining user-facing `edge-compact@S` labels with the agreed naming split:
