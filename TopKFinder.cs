@@ -258,12 +258,7 @@ partial class StrategyBuilder
     {
         DisplayTree sourceDisplayTree = BuildStepProofStage();
         SearchTree searchTree = DisplayToSearchExpander.FromStrategyPlan(sourceDisplayTree);
-        DisplayTree projectedDisplayTree = SearchToDisplayProjector.FromSearchStrategy(
-            searchTree,
-            sourceDisplayTree.SearchStatistics,
-            sourceDisplayTree.Elapsed,
-            sourceDisplayTree.IsFeasibleUpperBound);
-        return (searchTree, projectedDisplayTree);
+        return (searchTree, sourceDisplayTree);
     }
 
     // Greedy mode: proof tightening followed by a single edge-compaction pass.
