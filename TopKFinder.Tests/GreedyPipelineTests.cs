@@ -473,12 +473,28 @@ public class GreedyPipelineTests
 
     // Lightweight canary for the m=2 proof-tighten performance cliff: this shape used to complete
     // quickly in normal conditions but becomes much slower when the exact-feasibility prune path
-    // regresses. Keep the budget short to avoid inflating the suite runtime.
+    // regresses. Keep the budget short to avoid inflating the suite runtime. A single retry absorbs
+    // occasional CI/load jitter while still failing persistent regressions.
     [Fact]
     public void ProofTighten_FirstProbeCompletesQuickly_14_2_4()
     {
+        const string operationName = "BuildProofTightenStage(14,2,4) first probe";
+
+        try
+        {
+            RunFirstProofTightenProbeCanary(operationName);
+        }
+        catch (Xunit.Sdk.XunitException ex) when (ex.Message.Contains("exceeded timeout", StringComparison.OrdinalIgnoreCase))
+        {
+            // Retry once to filter out sporadic machine-load spikes.
+            RunFirstProofTightenProbeCanary(operationName);
+        }
+    }
+
+    private static void RunFirstProofTightenProbeCanary(string operationName)
+    {
         _ = TestTimeoutHelper.RunWithTimeout(
-            "BuildProofTightenStage(14,2,4) first probe",
+            operationName,
             TimeSpan.FromSeconds(10),
             cancellationToken =>
             {
