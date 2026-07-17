@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
-using System.Runtime.CompilerServices;
 using System.Threading;
 
 partial class StrategyBuilder
@@ -258,78 +257,132 @@ partial class StrategyBuilder
     internal (SearchTree SearchTree, DisplayTree DisplayTree) BuildExactSearchProjection()
     {
         DisplayTree sourceDisplayTree = BuildStepProofStage();
-        SearchTree searchTree = BuildSearchTreeFromMaterializedDisplayTree(sourceDisplayTree);
+        SearchTree searchTree = BuildSearchTreeFromSolverState(sourceDisplayTree);
         return (searchTree, sourceDisplayTree);
     }
 
-    // Transitional search-side skeleton: today we still start from a materialized display tree,
-    // but the recursive mapper below is the same shape the future direct search builder will use.
-    private SearchTree BuildSearchTreeFromMaterializedDisplayTree(DisplayTree displayTree)
+    // Transitional solver-sourced search builder: phase-1 group selection still comes from the
+    // same exact caches, but the search tree is now materialized directly from solver state
+    // recursion instead of mapping from an already-materialized display tree.
+    private SearchTree BuildSearchTreeFromSolverState(DisplayTree sourceDisplayTree)
     {
-        var memo = new Dictionary<StrategyNode, SearchNode>(ReferenceComparer<StrategyNode>.Instance);
-        SearchNode root = MapDisplayNodeToSearchNode(displayTree.Root, memo);
-        return new SearchStrategy(displayTree.N, displayTree.M, displayTree.RequestedK, displayTree.K, root);
+        var expandedStates = new Dictionary<IntSequenceKey, ExpandedStateSnapshot>();
+        var displayPath = new HashSet<IntSequenceKey>();
+        SearchNode root = BuildSearchState(new ComparisonState(_n), 0, _k, 1, expandedStates, displayPath);
+        return new SearchStrategy(
+            sourceDisplayTree.N,
+            sourceDisplayTree.M,
+            sourceDisplayTree.RequestedK,
+            sourceDisplayTree.K,
+            root);
     }
 
-    private static SearchNode MapDisplayNodeToSearchNode(
-        StrategyNode source,
-        Dictionary<StrategyNode, SearchNode> memo)
+    private SearchNode BuildSearchState(
+        ComparisonState state,
+        ulong fixedTopMask,
+        int remainingSlots,
+        int step,
+        Dictionary<IntSequenceKey, ExpandedStateSnapshot> expandedStates,
+        HashSet<IntSequenceKey> displayPath)
     {
-        if (memo.TryGetValue(source, out SearchNode? cached))
-            return cached;
+        ThrowIfCancellationRequested();
+        NormalizeState(state, ref fixedTopMask, ref remainingSlots);
 
-        SearchNode mapped;
-        switch (source.Kind)
+        IntSequenceKey displayKey = GetDisplayStateKey(state, fixedTopMask);
+        int stateId = GetStateId(displayKey);
+
+        if (remainingSlots == 0)
+            return SearchNode.Terminal(stateId, ComparisonState.MaskToOrderedList(fixedTopMask));
+
+        if (TryGetDeterminedTopSet(state, remainingSlots, out ulong determinedTopMask))
+            return SearchNode.Terminal(stateId, ComparisonState.MaskToOrderedList(fixedTopMask | determinedTopMask));
+
+        if (state.ActiveCount <= remainingSlots)
+            return SearchNode.Terminal(stateId, ComparisonState.MaskToOrderedList(fixedTopMask | state.ActiveMask));
+
+        var possibleCandidates = GetPossibleCandidates(state);
+        if (state.ActiveCount <= _m)
+            return SearchNode.Decision(stateId, step, possibleCandidates, Array.Empty<SearchBranch>());
+
+        if (expandedStates.TryGetValue(displayKey, out ExpandedStateSnapshot snapshot))
         {
-            case StrategyNodeKind.Terminal:
-                mapped = SearchNode.Terminal(source.StateId, source.TopSet);
-                break;
-            case StrategyNodeKind.Reference:
-                mapped = SearchNode.Reference(source.StateId, source.ReferenceRelabeling);
-                break;
-            default:
-                mapped = SearchNode.Decision(
-                    source.StateId,
-                    source.Step ?? 0,
-                    source.Group,
-                    Array.Empty<SearchBranch>());
-                break;
+            IReadOnlyList<ItemRelabel>? relabeling =
+                snapshot.State.TryBuildDisplayRelabeling(snapshot.FixedTopMask, state, fixedTopMask);
+            return SearchNode.Reference(stateId, relabeling);
         }
 
-        memo[source] = mapped;
+        expandedStates.Add(displayKey, new ExpandedStateSnapshot(state.Clone(), fixedTopMask));
+        if (!displayPath.Add(displayKey))
+            throw new InvalidOperationException("Search materialization detected a recursive display-state expansion path.");
 
-        if (source.Kind != StrategyNodeKind.Decision)
-            return mapped;
-
-        var branches = new SearchBranch[source.Branches.Count];
-        for (int i = 0; i < source.Branches.Count; i++)
+        try
         {
-            StrategyBranch branch = source.Branches[i];
-            branches[i] = new SearchBranch(
-                branch.OrderText,
-                new SearchEffect(
-                    branch.Effect.NewlyGuaranteedTop,
-                    branch.Effect.NewlyExcluded,
-                    branch.Effect.FixedCandidates,
-                    branch.Effect.PossibleCandidates),
-                MapDisplayNodeToSearchNode(branch.Next, memo));
+            SelectedComparisonGroup chosenGroup = ChooseGroup(state, fixedTopMask, remainingSlots, default);
+            IReadOnlyList<SearchBranch> branches = BuildSearchBranches(
+                state,
+                fixedTopMask,
+                remainingSlots,
+                chosenGroup,
+                step + 1,
+                expandedStates,
+                displayPath);
+            return SearchNode.Decision(stateId, step, chosenGroup.Group, branches);
         }
-
-        SearchNode rebuilt = SearchNode.Decision(source.StateId, source.Step ?? 0, source.Group, branches);
-        memo[source] = rebuilt;
-        return rebuilt;
+        finally
+        {
+            displayPath.Remove(displayKey);
+        }
     }
 
-    private sealed class ReferenceComparer<T> : IEqualityComparer<T>
-        where T : class
+    private IReadOnlyList<SearchBranch> BuildSearchBranches(
+        ComparisonState state,
+        ulong fixedTopMask,
+        int remainingSlots,
+        SelectedComparisonGroup chosenGroup,
+        int nextStep,
+        Dictionary<IntSequenceKey, ExpandedStateSnapshot> expandedStates,
+        HashSet<IntSequenceKey> displayPath)
     {
-        public static ReferenceComparer<T> Instance { get; } = new();
+        return BuildBranchSpecs(state, remainingSlots, chosenGroup)
+            .Select(spec => BuildSearchTransitionBranch(
+                state,
+                fixedTopMask,
+                spec,
+                nextStep,
+                expandedStates,
+                displayPath))
+            .ToList();
+    }
 
-        public bool Equals(T? x, T? y)
-            => ReferenceEquals(x, y);
+    private SearchBranch BuildSearchTransitionBranch(
+        ComparisonState state,
+        ulong fixedTopMask,
+        BranchSpec spec,
+        int nextStep,
+        Dictionary<IntSequenceKey, ExpandedStateSnapshot> expandedStates,
+        HashSet<IntSequenceKey> displayPath)
+    {
+        MergedFamilyOutcome outcome = spec.Outcome;
+        StrategyEffect effect = BuildComparisonEffect(
+            state,
+            fixedTopMask,
+            outcome.NextState,
+            outcome.NextFixedTopMask);
 
-        public int GetHashCode(T obj)
-            => RuntimeHelpers.GetHashCode(obj);
+        return new SearchBranch(
+            spec.OrderText,
+            new SearchEffect(
+                effect.NewlyGuaranteedTop,
+                effect.NewlyExcluded,
+                effect.FixedCandidates,
+                effect.PossibleCandidates),
+            BuildSearchState(
+                outcome.NextState,
+                outcome.NextFixedTopMask,
+                outcome.NextRemainingSlots,
+                nextStep,
+                expandedStates,
+                displayPath));
     }
 
     // Greedy mode: proof tightening followed by a single edge-compaction pass.
