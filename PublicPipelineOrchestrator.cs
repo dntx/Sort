@@ -10,16 +10,6 @@ readonly record struct GreedyPreparationResult(
     TimeSpan GreedyFeasibleElapsed,
     TimeSpan GreedyTightenElapsed);
 
-readonly record struct ExactStepStageResult(
-    SearchStrategy SearchTree,
-    StrategyPlan StepPlan,
-    TimeSpan Elapsed);
-
-readonly record struct ExactCompactStageResult(
-    StrategyPlan CompactPlan,
-    bool Improved,
-    TimeSpan Elapsed);
-
 static class PublicPipelineOrchestrator
 {
     public static StrategyPlan RunExactPipeline(
@@ -29,14 +19,14 @@ static class PublicPipelineOrchestrator
     {
         const string stepStageName = "step-proof";
         onStageStart?.Invoke(stepStageName);
-        ExactStepStageResult step = PrepareExactStepStage(builder);
-        onStageCompleted?.Invoke(new StageResult(stepStageName, step.StepPlan, step.Elapsed, StageOutcome.Completed));
+        (StrategyPlan stepPlan, TimeSpan stepElapsed) = ExecuteExactStepStage(builder);
+        onStageCompleted?.Invoke(new StageResult(stepStageName, stepPlan, stepElapsed, StageOutcome.Completed));
 
-        string compactStageName = StrategyBuilder.FormatExactEdgeCompactStageName(step.StepPlan.MaxStep);
+        string compactStageName = StrategyBuilder.FormatExactEdgeCompactStageName(stepPlan.MaxStep);
         onStageStart?.Invoke(compactStageName);
-        ExactCompactStageResult compact = PrepareExactCompactStage(builder, step.StepPlan);
-        onStageCompleted?.Invoke(new StageResult(compactStageName, compact.CompactPlan, compact.Elapsed, StageOutcome.Completed));
-        return compact.CompactPlan;
+        (StrategyPlan compactPlan, TimeSpan compactElapsed) = ExecuteExactCompactStage(builder);
+        onStageCompleted?.Invoke(new StageResult(compactStageName, compactPlan, compactElapsed, StageOutcome.Completed));
+        return compactPlan;
     }
 
     public static StrategyPlan RunGreedyPipeline(
@@ -75,28 +65,23 @@ static class PublicPipelineOrchestrator
         return builder.RunGreedyPipelineCore(onStageCompleted, onStageStart);
     }
 
-    // Shared exact stage-1 orchestration used by public callers (CLI/UI): materialize the exact
-    // step-proof display plan together with its projected search model through the explicit layered
-    // entrypoint.
-    public static ExactStepStageResult PrepareExactStepStage(StrategyBuilder builder)
+    // Executes exact stage-1 inside the shared orchestrator. The layered exact entrypoint is kept so
+    // the canonical search->display flow remains explicit.
+    private static (StrategyPlan StepPlan, TimeSpan Elapsed) ExecuteExactStepStage(StrategyBuilder builder)
     {
         var stopwatch = Stopwatch.StartNew();
-        (SearchStrategy searchTree, StrategyPlan stepPlan) = builder.BuildLayeredStepProof();
+        (SearchStrategy _, StrategyPlan stepPlan) = builder.BuildLayeredStepProof();
         stopwatch.Stop();
-        return new ExactStepStageResult(searchTree, stepPlan, stopwatch.Elapsed);
+        return (stepPlan, stopwatch.Elapsed);
     }
 
-    // Shared exact stage-2 orchestration used by public callers (CLI/UI): run one compact pass and
-    // classify whether it is a strict refinement over the exact step-stage incumbent.
-    public static ExactCompactStageResult PrepareExactCompactStage(StrategyBuilder builder, StrategyPlan incumbent)
+    // Executes exact stage-2 inside the shared orchestrator.
+    private static (StrategyPlan CompactPlan, TimeSpan Elapsed) ExecuteExactCompactStage(StrategyBuilder builder)
     {
         var stopwatch = Stopwatch.StartNew();
         StrategyPlan compactPlan = builder.BuildEdgeCompactStage();
         stopwatch.Stop();
-        return new ExactCompactStageResult(
-            compactPlan,
-            compactPlan.IsStrictRefinementOver(incumbent),
-            stopwatch.Elapsed);
+        return (compactPlan, stopwatch.Elapsed);
     }
 
     // Shared greedy pre-stage orchestration used by public callers (CLI/UI): build a feasible upper
