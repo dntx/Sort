@@ -69,12 +69,11 @@ static class PublicPipelineOrchestrator
         return builder.RunGreedyPipelineCore(onStageCompleted, onStageStart);
     }
 
-    // Executes exact stage-1 inside the shared orchestrator. The layered exact entrypoint is kept so
-    // the canonical search->display flow remains explicit.
+    // Executes exact stage-1 inside the shared orchestrator via the shared search projection helper.
     private static (StrategyPlan StepPlan, TimeSpan Elapsed) ExecuteExactStepStage(StrategyBuilder builder)
     {
         var stopwatch = Stopwatch.StartNew();
-        (SearchTree _, DisplayTree stepPlan) = builder.BuildDisplayTreeAndExpandedSearch();
+        (SearchTree _, DisplayTree stepPlan) = builder.BuildExactSearchProjection();
         stopwatch.Stop();
         return (stepPlan, stopwatch.Elapsed);
     }
