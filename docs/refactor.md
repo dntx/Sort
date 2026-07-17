@@ -50,7 +50,7 @@ This section is written as the expected repository state after the PR updating t
    - Public callers (CLI + UI) now route through `PublicPipelineOrchestrator` as the shared stage-emission facade.
    - Exact stage flow is unified as `step-proof -> exact-edge-compact@S`; greedy terminal stage naming is unified as `greedy-edge-compact@S`.
    - `BuildSearchTree()` is now implemented via the explicit layered exact entrypoint (`BuildLayeredStepProof`), making the search->display projection path canonical.
-   - Legacy glue cleanup is in progress and has removed duplicated public exact orchestration plus redundant caller-side pre-stage filtering branches.
+   - Legacy glue cleanup is complete; only stable public adapters required by tests/external callers are retained.
 
 ## Pending Memo (Actionable)
 
@@ -205,7 +205,7 @@ Acceptance:
 - Compact work counters remain stable relative to the agreed baseline.
 - Greedy edge-compact coverage explicitly asserts the new objective.
 
-### PR6 — Main-path switch + cleanup
+### PR6 — Main-path switch + cleanup (landed on main)
 
 Objective:
 - Switch the public pipeline to the new layered model and remove obsolete legacy glue.
