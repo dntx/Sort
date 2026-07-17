@@ -228,11 +228,12 @@ partial class StrategyBuilder
     public (SearchTree SearchTree, DisplayTree DisplayTree) BuildDisplayTreeAndExpandedSearch()
     {
         DisplayTree displayTree = BuildStepProofStage();
-        SearchTree searchTree = SearchModelMapper.FromStrategyPlan(displayTree);
+        SearchTree searchTree = DisplayToSearchExpander.FromStrategyPlan(displayTree);
         return (searchTree, displayTree);
     }
 
     // Backward-compatible alias kept while callers migrate to the clearer name above.
+    [Obsolete("Use BuildDisplayTreeAndExpandedSearch instead.")]
     public (SearchStrategy SearchTree, StrategyPlan DisplayPlan) BuildLayeredStepProof()
     {
         (SearchTree searchTree, DisplayTree displayTree) = BuildDisplayTreeAndExpandedSearch();

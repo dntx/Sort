@@ -1,6 +1,6 @@
 using Xunit;
 
-public sealed class SearchModelMapperTests
+public sealed class DisplayToSearchExpanderTests
 {
     [Fact]
     public void BuildDisplayTreeAndExpandedSearch_ReturnsConsistentSearchAndDisplayModels()
@@ -8,7 +8,7 @@ public sealed class SearchModelMapperTests
         var builder = new StrategyBuilder(12, 4, 5);
         (SearchTree searchTree, DisplayTree displayPlan) = builder.BuildDisplayTreeAndExpandedSearch();
 
-        SearchStrategy mapped = SearchModelMapper.FromStrategyPlan(displayPlan);
+        SearchStrategy mapped = DisplayToSearchExpander.FromStrategyPlan(displayPlan);
         AssertSearchStrategyEquivalent(mapped, searchTree);
 
         var baselineBuilder = new StrategyBuilder(12, 4, 5);
@@ -26,7 +26,7 @@ public sealed class SearchModelMapperTests
         var searchBuilder = new StrategyBuilder(12, 4, 5);
         SearchStrategy built = searchBuilder.BuildSearchTree();
 
-        SearchStrategy mapped = SearchModelMapper.FromStrategyPlan(stepPlan);
+        SearchStrategy mapped = DisplayToSearchExpander.FromStrategyPlan(stepPlan);
 
         AssertSearchStrategyEquivalent(mapped, built);
     }
@@ -36,7 +36,7 @@ public sealed class SearchModelMapperTests
     {
         StrategyPlan plan = new StrategyBuilder(9, 3, 3).BuildStepProofStage();
 
-        SearchStrategy mapped = SearchModelMapper.FromStrategyPlan(plan);
+        SearchStrategy mapped = DisplayToSearchExpander.FromStrategyPlan(plan);
 
         Assert.Equal(plan.N, mapped.N);
         Assert.Equal(plan.M, mapped.M);
@@ -116,7 +116,7 @@ public sealed class SearchModelMapperTests
                 compactStepOptimalGroups: 0,
                 rootProvenLowerBound: 0));
 
-        SearchStrategy mapped = SearchModelMapper.FromStrategyPlan(plan);
+        SearchStrategy mapped = DisplayToSearchExpander.FromStrategyPlan(plan);
         SearchNode left = mapped.Root.Branches[0].Next;
         SearchNode right = mapped.Root.Branches[1].Next;
 

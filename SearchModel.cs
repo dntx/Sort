@@ -103,7 +103,7 @@ sealed class SearchEffect
     }
 }
 
-static class SearchModelMapper
+static class DisplayToSearchExpander
 {
     public static SearchStrategy FromStrategyPlan(StrategyPlan plan)
     {
@@ -172,4 +172,11 @@ static class SearchModelMapper
         public int GetHashCode(T obj)
             => RuntimeHelpers.GetHashCode(obj);
     }
+}
+
+[Obsolete("Use DisplayToSearchExpander instead.")]
+static class SearchModelMapper
+{
+    public static SearchStrategy FromStrategyPlan(StrategyPlan plan)
+        => DisplayToSearchExpander.FromStrategyPlan(plan);
 }
