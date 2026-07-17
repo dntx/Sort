@@ -34,6 +34,20 @@ public sealed class DisplayToSearchExpanderTests
         AssertSearchStrategyEquivalent(mapped, built);
     }
 
+    [Theory]
+    [InlineData(9, 3, 3)]
+    [InlineData(12, 4, 5)]
+    public void BuildDisplayTreeAndExpandedSearch_And_BuildSearchTree_ProduceEquivalentSearchModels(int n, int m, int k)
+    {
+        var layeredBuilder = new StrategyBuilder(n, m, k);
+        (SearchTree layeredSearch, DisplayTree _) = layeredBuilder.BuildDisplayTreeAndExpandedSearch();
+
+        var directBuilder = new StrategyBuilder(n, m, k);
+        SearchStrategy directSearch = directBuilder.BuildSearchTree();
+
+        AssertSearchStrategyEquivalent(layeredSearch, directSearch);
+    }
+
     [Fact]
     public void FromStrategyPlan_MapsBasicMetadataAndRoot()
     {

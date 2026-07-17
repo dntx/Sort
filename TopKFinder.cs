@@ -343,46 +343,22 @@ partial class StrategyBuilder
         Dictionary<IntSequenceKey, ExpandedStateSnapshot> expandedStates,
         HashSet<IntSequenceKey> displayPath)
     {
-        return BuildBranchSpecs(state, remainingSlots, chosenGroup)
-            .Select(spec => BuildSearchTransitionBranch(
-                state,
-                fixedTopMask,
-                spec,
-                nextStep,
-                expandedStates,
-                displayPath))
+        return BuildTransitionSpecs(state, fixedTopMask, remainingSlots, chosenGroup)
+            .Select(spec => new SearchBranch(
+                spec.OrderText,
+                new SearchEffect(
+                    spec.Effect.NewlyGuaranteedTop,
+                    spec.Effect.NewlyExcluded,
+                    spec.Effect.FixedCandidates,
+                    spec.Effect.PossibleCandidates),
+                BuildSearchState(
+                    spec.NextState,
+                    spec.NextFixedTopMask,
+                    spec.NextRemainingSlots,
+                    nextStep,
+                    expandedStates,
+                    displayPath)))
             .ToList();
-    }
-
-    private SearchBranch BuildSearchTransitionBranch(
-        ComparisonState state,
-        ulong fixedTopMask,
-        BranchSpec spec,
-        int nextStep,
-        Dictionary<IntSequenceKey, ExpandedStateSnapshot> expandedStates,
-        HashSet<IntSequenceKey> displayPath)
-    {
-        MergedFamilyOutcome outcome = spec.Outcome;
-        StrategyEffect effect = BuildComparisonEffect(
-            state,
-            fixedTopMask,
-            outcome.NextState,
-            outcome.NextFixedTopMask);
-
-        return new SearchBranch(
-            spec.OrderText,
-            new SearchEffect(
-                effect.NewlyGuaranteedTop,
-                effect.NewlyExcluded,
-                effect.FixedCandidates,
-                effect.PossibleCandidates),
-            BuildSearchState(
-                outcome.NextState,
-                outcome.NextFixedTopMask,
-                outcome.NextRemainingSlots,
-                nextStep,
-                expandedStates,
-                displayPath));
     }
 
     // Greedy mode: proof tightening followed by a single edge-compaction pass.

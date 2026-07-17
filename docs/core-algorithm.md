@@ -23,6 +23,8 @@ minimax 搜索、对称性约减，以及三种剪枝下界（信息论下界、
 
 其中 `BuildSearchTree()` 现通过 `BuildExactSearchProjection()` 走显式 layered 入口：当前实现先产出 display tree，再由 `StrategyBuilder` 基于 solver 状态递归直接构建 search tree（过渡形态，目标仍是 search -> display）。
 
+display/search 两条物化路径当前共用 `BuildTransitionSpecs(...)` 生成过渡分支语义（顺序文本、effect、后继状态），以保证两侧 transition 语义一致并降低后续继续解耦时的漂移风险。
+
 实现注记：
 
 - 对称等价分支的组合计数在大规模输入上可能超过 `Int32`（例如 `(20,19,19)` 对偶化后会触发 `19!` 级别计数）。

@@ -24,13 +24,36 @@ partial class StrategyBuilder
         int nextStep,
         MaterializationContext context)
     {
+        return BuildTransitionSpecs(state, fixedTopMask, remainingSlots, chosenGroup)
+            .Select(spec => new StrategyBranch(
+                spec.OrderText,
+                spec.Summary,
+                spec.Effect,
+                BuildState(
+                    spec.NextState,
+                    spec.NextFixedTopMask,
+                    spec.NextRemainingSlots,
+                    nextStep,
+                    context)))
+            .ToList();
+    }
+
+    // Shared transition primitive for both display and search materializers.
+    // It computes the ordered branch line identity plus semantic transition payload once.
+    private IReadOnlyList<TransitionSpec> BuildTransitionSpecs(
+        ComparisonState state,
+        ulong fixedTopMask,
+        int remainingSlots,
+        SelectedComparisonGroup chosenGroup)
+    {
         return BuildBranchSpecs(state, remainingSlots, chosenGroup)
-            .Select(spec => BuildTransitionBranch(
-                state,
-                fixedTopMask,
-                spec,
-                nextStep,
-                context))
+            .Select(spec => new TransitionSpec(
+                spec.OrderText,
+                spec.Summary,
+                BuildComparisonEffect(state, fixedTopMask, spec.Outcome.NextState, spec.Outcome.NextFixedTopMask),
+                spec.Outcome.NextState,
+                spec.Outcome.NextFixedTopMask,
+                spec.Outcome.NextRemainingSlots))
             .ToList();
     }
 
@@ -343,26 +366,6 @@ partial class StrategyBuilder
         _mergedOutcomeCollisions++;
     }
 
-    private StrategyBranch BuildTransitionBranch(
-        ComparisonState state,
-        ulong fixedTopMask,
-        BranchSpec spec,
-        int nextStep,
-        MaterializationContext context)
-    {
-        MergedFamilyOutcome outcome = spec.Outcome;
-        return new StrategyBranch(
-            spec.OrderText,
-            spec.Summary,
-            BuildComparisonEffect(state, fixedTopMask, outcome.NextState, outcome.NextFixedTopMask),
-            BuildState(
-                outcome.NextState,
-                outcome.NextFixedTopMask,
-                outcome.NextRemainingSlots,
-                nextStep,
-                context));
-    }
-
     private StrategyEffect BuildComparisonEffect(ComparisonState before, ulong beforeFixedTopMask, ComparisonState after, ulong afterFixedTopMask)
     {
         var newlyGuaranteedTop = ComparisonState.MaskToOrderedList(afterFixedTopMask & ~beforeFixedTopMask);
@@ -470,6 +473,32 @@ partial class StrategyBuilder
         public string OrderText { get; }
         public MergedFamilyOutcome Outcome { get; }
         public EquivalentOrderSummary? Summary { get; }
+    }
+
+    private readonly struct TransitionSpec
+    {
+        public TransitionSpec(
+            string orderText,
+            EquivalentOrderSummary? summary,
+            StrategyEffect effect,
+            ComparisonState nextState,
+            ulong nextFixedTopMask,
+            int nextRemainingSlots)
+        {
+            OrderText = orderText;
+            Summary = summary;
+            Effect = effect;
+            NextState = nextState;
+            NextFixedTopMask = nextFixedTopMask;
+            NextRemainingSlots = nextRemainingSlots;
+        }
+
+        public string OrderText { get; }
+        public EquivalentOrderSummary? Summary { get; }
+        public StrategyEffect Effect { get; }
+        public ComparisonState NextState { get; }
+        public ulong NextFixedTopMask { get; }
+        public int NextRemainingSlots { get; }
     }
 
     private sealed class MergedBranch
