@@ -42,6 +42,20 @@ The program has three entry points that share the same input validation
 - `docs/ui-explorer.md`: WinForms explorer behavior, stage timeline UI, and
   cancellation/progress semantics.
 
+### Pipeline architecture (post-refactor)
+
+The refactor track is complete. The runtime now follows a stable layered boundary:
+
+- Search layer (`StrategyBuilder`): owns search semantics, feasibility/optimality
+  reasoning, and stage solving.
+- Public orchestration layer (`PublicPipelineOrchestrator`): owns shared stage
+  orchestration for CLI/UI and stage-emission contracts.
+- Display layer (`DisplayRenderEngine` + UI/text renderers): owns rendering,
+  folding, and presentation-only behavior.
+
+Exact search-model projection is now canonical via
+`StrategyBuilder.BuildLayeredStepProof()` and `BuildSearchTree()`.
+
 ### Builder API naming
 
 The in-process builder API uses a consistent naming split between

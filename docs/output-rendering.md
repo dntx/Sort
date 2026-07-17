@@ -20,6 +20,12 @@
 - [`test-strategy.md`](./test-strategy.md)：渲染相关回归与性能护栏测试策略。
 - [`ui-explorer.md`](./ui-explorer.md)：UI 中阶段占位、进度展示与停止语义。
 
+当前代码边界（PR6 后）：
+
+- CLI/UI 的公共阶段编排统一走 `PublicPipelineOrchestrator`。
+- 本文档所述 `pattern` 与折叠逻辑只属于显示层（`DisplayRenderEngine` / 文本渲染），
+  不承担搜索阶段顺序或最优性决策。
+
 ---
 
 ## 1. 为什么需要「pattern」

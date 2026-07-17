@@ -177,11 +177,17 @@ GitHub Actions 侧提供了手动门槛工作流：
 | 文件 | 职责 |
 | --- | --- |
 | `ComparisonStateTests.cs` | 偏序集状态：传递闭包、祖先 / 后代计数等底层不变量 |
+| `ExactPipelineTests.cs` | exact 公共流水线契约：阶段顺序 / 阶段命名 / 返回计划一致性（`step-proof -> exact-edge-compact@S`） |
 | `FreeSymmetryClassTests.cs` | 对称性感知组生成的核心不变量：按 free-symmetry-class 枚举一个代表 == 扫描全部 m-子集得到的轨道集合 |
 | `DominanceMetricTests.cs` | phase-1 支配（subsumption）下界剪枝的**正确性**（下界 bracket 真值）与**有效性**（剪枝确实触发） |
 | `StrategyOverviewTests.cs` | `StrategyOverview` 概览汇总的正确性 |
 | `StrategyTextRendererTests.cs` | 文本渲染器的格式化逻辑 |
 | `InputValidationTests.cs` / `CliArgsTests.cs` | 输入校验与命令行参数解析 |
+
+补充（2026-07，稳定性）：
+
+- `GreedyPipelineTests.ProofTighten_FirstProbeCompletesQuickly_14_2_4` 为 m=2 前瞻性能 canary。
+- 该 canary 保持 10 秒门槛，同时在超时时允许一次重试，以吸收偶发机器负载抖动并降低误报。
 
 ---
 

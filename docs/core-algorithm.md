@@ -15,6 +15,14 @@ minimax 搜索、对称性约减，以及三种剪枝下界（信息论下界、
 - `.github/workflows/nightly-proof-tighten-gate.yml` 与 `.github/workflows/nightly-full-strategy-matrix.yml`：夜间性能巡检与报警入口。
   - 其中 nightly proof-tighten gate 的默认超时为 `150s`，用于降低 hosted runner 抖动带来的压线误报。
 
+架构边界（PR6 收官，2026-07）：
+
+- `StrategyBuilder`（搜索层）负责求解语义、阶段可行性/最优性与 `StrategyPlan` 产物。
+- `PublicPipelineOrchestrator`（公共编排层）负责 CLI/UI 共用的阶段顺序与 stage-emission 契约。
+- `DisplayRenderEngine` 与 UI/文本渲染器（显示层）负责折叠与展示语义，不改变搜索求解语义。
+
+其中 `BuildSearchTree()` 现通过 `BuildLayeredStepProof()` 走显式 layered 入口，search -> display 的投影路径已固定为主路径。
+
 实现注记（2026-07）：
 
 - 对称等价分支的组合计数在大规模输入上可能超过 `Int32`（例如 `(20,19,19)` 对偶化后会触发 `19!` 级别计数）。

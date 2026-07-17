@@ -9,6 +9,11 @@
   - `exact`：`step-proof → exact-edge-compact@S`
   - `greedy`：`greedy-feasible → (optional) greedy-tighten → proof-tighten≤N (0..n 次) → greedy-edge-compact@S`
 
+实现归属（PR6 后）：
+
+- UI 与 CLI 共用 `PublicPipelineOrchestrator` 的阶段编排与阶段名契约。
+- UI 侧的 `MainForm.Run.cs` 只负责线程切换、占位/树更新与交互，不再维护独立的并行编排路径。
+
 ## 2. 阶段时间线与占位
 
 UI 使用与 CLI 相同的阶段名展示进度：
