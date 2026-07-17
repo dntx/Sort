@@ -3,10 +3,10 @@ using Xunit;
 public sealed class SearchModelMapperTests
 {
     [Fact]
-    public void BuildLayeredStepProof_ReturnsConsistentSearchAndDisplayModels()
+    public void BuildDisplayTreeAndExpandedSearch_ReturnsConsistentSearchAndDisplayModels()
     {
         var builder = new StrategyBuilder(12, 4, 5);
-        (SearchStrategy searchTree, StrategyPlan displayPlan) = builder.BuildLayeredStepProof();
+        (SearchTree searchTree, DisplayTree displayPlan) = builder.BuildDisplayTreeAndExpandedSearch();
 
         SearchStrategy mapped = SearchModelMapper.FromStrategyPlan(displayPlan);
         AssertSearchStrategyEquivalent(mapped, searchTree);

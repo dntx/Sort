@@ -54,7 +54,7 @@ The refactor track is complete. The runtime now follows a stable layered boundar
   folding, and presentation-only behavior.
 
 Exact search-model projection is now canonical via
-`StrategyBuilder.BuildLayeredStepProof()` and `BuildSearchTree()`.
+`StrategyBuilder.BuildDisplayTreeAndExpandedSearch()` and `BuildSearchTree()`.
 
 ### Builder API naming
 
