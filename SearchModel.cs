@@ -173,10 +173,3 @@ static class DisplayToSearchExpander
             => RuntimeHelpers.GetHashCode(obj);
     }
 }
-
-[Obsolete("Use DisplayToSearchExpander instead.")]
-static class SearchModelMapper
-{
-    public static SearchStrategy FromStrategyPlan(StrategyPlan plan)
-        => DisplayToSearchExpander.FromStrategyPlan(plan);
-}

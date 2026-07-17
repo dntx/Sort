@@ -232,14 +232,6 @@ partial class StrategyBuilder
         return (searchTree, displayTree);
     }
 
-    // Backward-compatible alias kept while callers migrate to the clearer name above.
-    [Obsolete("Use BuildDisplayTreeAndExpandedSearch instead.")]
-    public (SearchStrategy SearchTree, StrategyPlan DisplayPlan) BuildLayeredStepProof()
-    {
-        (SearchTree searchTree, DisplayTree displayTree) = BuildDisplayTreeAndExpandedSearch();
-        return (searchTree, displayTree);
-    }
-
     // Search-model entrypoint used by public callers; implemented via the layered exact-stage path so
     // the search model no longer sits as a disconnected parallel utility.
     public SearchStrategy BuildSearchTree()
