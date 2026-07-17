@@ -222,20 +222,16 @@ partial class StrategyBuilder
         return BuildPlan(useCompactSelection: false);
     }
 
-    // Explicit current layered exact-stage entrypoint: first materialize the step-proof display tree,
-    // then expand/project it into the search model. This is a behavior-preserving transition shape;
-    // the long-term target remains a pure search-first pipeline.
+    // Transitional exact-stage entrypoint: build the exact tree once, project it to the search model,
+    // and then project the public display plan back from that search tree. The solver itself is still
+    // display-materialization based, but callers now observe the exact path as search -> display.
     public (SearchTree SearchTree, DisplayTree DisplayTree) BuildDisplayTreeAndExpandedSearch()
-    {
-        DisplayTree displayTree = BuildStepProofStage();
-        SearchTree searchTree = DisplayToSearchExpander.FromStrategyPlan(displayTree);
-        return (searchTree, displayTree);
-    }
+        => BuildExactSearchProjection();
 
-    // Search-model entrypoint used by public callers; implemented via the layered exact-stage path so
-    // the search model no longer sits as a disconnected parallel utility.
+    // Search-model entrypoint used by public callers; it now shares the same exact search projection
+    // as the display entrypoint instead of re-running a separate bridge.
     public SearchStrategy BuildSearchTree()
-        => BuildDisplayTreeAndExpandedSearch().SearchTree;
+        => BuildExactSearchProjection().SearchTree;
 
     public StrategyPlan RunExactPipeline(
         Action<StageResult>? onStageCompleted = null,
@@ -256,6 +252,13 @@ partial class StrategyBuilder
             ? ProgressScope.CompactPrimaryInCombinedRun
             : ProgressScope.DefaultStandalone;
         return BuildPlan(useCompactSelection: true, useFeasibleBudget: false);
+    }
+
+    internal (SearchTree SearchTree, DisplayTree DisplayTree) BuildExactSearchProjection()
+    {
+        DisplayTree sourceDisplayTree = BuildStepProofStage();
+        SearchTree searchTree = DisplayToSearchExpander.FromStrategyPlan(sourceDisplayTree);
+        return (searchTree, sourceDisplayTree);
     }
 
     // Greedy mode: proof tightening followed by a single edge-compaction pass.

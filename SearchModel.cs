@@ -173,3 +173,88 @@ static class DisplayToSearchExpander
             => RuntimeHelpers.GetHashCode(obj);
     }
 }
+
+// Structural inverse of DisplayToSearchExpander: it reconstructs the tree backbone,
+// order text, effects, and shared references. Display-only equivalence summaries are
+// intentionally left out here and remain a later display-layer concern.
+static class SearchToDisplayProjector
+{
+    public static StrategyPlan FromSearchStrategy(
+        SearchStrategy searchTree,
+        SearchStatistics searchStatistics,
+        TimeSpan elapsed,
+        bool isFeasibleUpperBound = false)
+    {
+        var memo = new Dictionary<SearchNode, StrategyNode>(ReferenceComparer<SearchNode>.Instance);
+        StrategyNode root = MapNode(searchTree.Root, memo);
+        return new StrategyPlan(
+            searchTree.N,
+            searchTree.M,
+            searchTree.RequestedK,
+            searchTree.K,
+            root,
+            elapsed,
+            searchStatistics,
+            isFeasibleUpperBound);
+    }
+
+    private static StrategyNode MapNode(SearchNode source, Dictionary<SearchNode, StrategyNode> memo)
+    {
+        if (memo.TryGetValue(source, out StrategyNode? cached))
+            return cached;
+
+        StrategyNode mapped;
+        switch (source.Kind)
+        {
+            case SearchNodeKind.Terminal:
+                mapped = StrategyNode.Terminal(source.StateId, source.TopSet);
+                break;
+            case SearchNodeKind.Reference:
+                mapped = StrategyNode.Reference(source.StateId, source.ReferenceRelabeling);
+                break;
+            default:
+                mapped = StrategyNode.Decision(
+                    source.StateId,
+                    source.Step ?? 0,
+                    source.Group,
+                    Array.Empty<StrategyBranch>());
+                break;
+        }
+
+        memo[source] = mapped;
+
+        if (source.Kind != SearchNodeKind.Decision)
+            return mapped;
+
+        var branches = new StrategyBranch[source.Branches.Count];
+        for (int i = 0; i < source.Branches.Count; i++)
+        {
+            SearchBranch branch = source.Branches[i];
+            branches[i] = new StrategyBranch(
+                branch.OrderText,
+                null,
+                new StrategyEffect(
+                    branch.Effect.NewlyGuaranteedTop,
+                    branch.Effect.NewlyExcluded,
+                    branch.Effect.FixedCandidates,
+                    branch.Effect.PossibleCandidates),
+                MapNode(branch.Next, memo));
+        }
+
+        StrategyNode rebuilt = StrategyNode.Decision(source.StateId, source.Step ?? 0, source.Group, branches);
+        memo[source] = rebuilt;
+        return rebuilt;
+    }
+
+    private sealed class ReferenceComparer<T> : IEqualityComparer<T>
+        where T : class
+    {
+        public static ReferenceComparer<T> Instance { get; } = new();
+
+        public bool Equals(T? x, T? y)
+            => ReferenceEquals(x, y);
+
+        public int GetHashCode(T obj)
+            => RuntimeHelpers.GetHashCode(obj);
+    }
+}
