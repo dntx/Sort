@@ -17,13 +17,16 @@ public sealed class DisplayToSearchExpanderTests
         Assert.Equal(baselinePlan.TotalBranchEdges, displayPlan.TotalBranchEdges);
     }
 
-    [Fact]
-    public void BuildSearchTree_ReturnsSearchModelEquivalentToMappedStepPlan()
+    [Theory]
+    [InlineData(9, 3, 3)]
+    [InlineData(10, 4, 8)]
+    [InlineData(12, 4, 5)]
+    public void BuildSearchTree_ReturnsSearchModelEquivalentToMappedStepPlan(int n, int m, int k)
     {
-        var stepBuilder = new StrategyBuilder(12, 4, 5);
+        var stepBuilder = new StrategyBuilder(n, m, k);
         StrategyPlan stepPlan = stepBuilder.BuildStepProofStage();
 
-        var searchBuilder = new StrategyBuilder(12, 4, 5);
+        var searchBuilder = new StrategyBuilder(n, m, k);
         SearchStrategy built = searchBuilder.BuildSearchTree();
 
         SearchStrategy mapped = DisplayToSearchExpander.FromStrategyPlan(stepPlan);
