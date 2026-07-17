@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Threading;
 
 partial class StrategyBuilder
@@ -257,8 +258,78 @@ partial class StrategyBuilder
     internal (SearchTree SearchTree, DisplayTree DisplayTree) BuildExactSearchProjection()
     {
         DisplayTree sourceDisplayTree = BuildStepProofStage();
-        SearchTree searchTree = DisplayToSearchExpander.FromStrategyPlan(sourceDisplayTree);
+        SearchTree searchTree = BuildSearchTreeFromMaterializedDisplayTree(sourceDisplayTree);
         return (searchTree, sourceDisplayTree);
+    }
+
+    // Transitional search-side skeleton: today we still start from a materialized display tree,
+    // but the recursive mapper below is the same shape the future direct search builder will use.
+    private SearchTree BuildSearchTreeFromMaterializedDisplayTree(DisplayTree displayTree)
+    {
+        var memo = new Dictionary<StrategyNode, SearchNode>(ReferenceComparer<StrategyNode>.Instance);
+        SearchNode root = MapDisplayNodeToSearchNode(displayTree.Root, memo);
+        return new SearchStrategy(displayTree.N, displayTree.M, displayTree.RequestedK, displayTree.K, root);
+    }
+
+    private static SearchNode MapDisplayNodeToSearchNode(
+        StrategyNode source,
+        Dictionary<StrategyNode, SearchNode> memo)
+    {
+        if (memo.TryGetValue(source, out SearchNode? cached))
+            return cached;
+
+        SearchNode mapped;
+        switch (source.Kind)
+        {
+            case StrategyNodeKind.Terminal:
+                mapped = SearchNode.Terminal(source.StateId, source.TopSet);
+                break;
+            case StrategyNodeKind.Reference:
+                mapped = SearchNode.Reference(source.StateId, source.ReferenceRelabeling);
+                break;
+            default:
+                mapped = SearchNode.Decision(
+                    source.StateId,
+                    source.Step ?? 0,
+                    source.Group,
+                    Array.Empty<SearchBranch>());
+                break;
+        }
+
+        memo[source] = mapped;
+
+        if (source.Kind != StrategyNodeKind.Decision)
+            return mapped;
+
+        var branches = new SearchBranch[source.Branches.Count];
+        for (int i = 0; i < source.Branches.Count; i++)
+        {
+            StrategyBranch branch = source.Branches[i];
+            branches[i] = new SearchBranch(
+                branch.OrderText,
+                new SearchEffect(
+                    branch.Effect.NewlyGuaranteedTop,
+                    branch.Effect.NewlyExcluded,
+                    branch.Effect.FixedCandidates,
+                    branch.Effect.PossibleCandidates),
+                MapDisplayNodeToSearchNode(branch.Next, memo));
+        }
+
+        SearchNode rebuilt = SearchNode.Decision(source.StateId, source.Step ?? 0, source.Group, branches);
+        memo[source] = rebuilt;
+        return rebuilt;
+    }
+
+    private sealed class ReferenceComparer<T> : IEqualityComparer<T>
+        where T : class
+    {
+        public static ReferenceComparer<T> Instance { get; } = new();
+
+        public bool Equals(T? x, T? y)
+            => ReferenceEquals(x, y);
+
+        public int GetHashCode(T obj)
+            => RuntimeHelpers.GetHashCode(obj);
     }
 
     // Greedy mode: proof tightening followed by a single edge-compaction pass.

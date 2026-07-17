@@ -21,7 +21,7 @@ minimax 搜索、对称性约减，以及三种剪枝下界（信息论下界、
 - `PublicPipelineOrchestrator`（公共编排层）负责 CLI/UI 共用的阶段顺序与 stage-emission 契约。
 - `DisplayRenderEngine` 与 UI/文本渲染器（显示层）负责折叠与展示语义，不改变搜索求解语义。
 
-其中 `BuildSearchTree()` 现通过 `BuildDisplayTreeAndExpandedSearch()` 走显式 layered 入口：当前实现先产出 display tree，再展开/映射为 search tree（过渡形态，目标仍是 search -> display）。
+其中 `BuildSearchTree()` 现通过 `BuildExactSearchProjection()` 走显式 layered 入口：当前实现先产出 display tree，再由 `StrategyBuilder` 内的递归映射骨架生成 search tree（过渡形态，目标仍是 search -> display）。
 
 实现注记：
 
