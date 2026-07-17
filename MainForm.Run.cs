@@ -91,7 +91,8 @@ partial class MainForm
                     () => PublicPipelineOrchestrator.RunGreedyPipeline(
                         builder,
                         MarshalProofTightenStage,
-                        emitPreparationStages: false),
+                        emitPreparationStages: false,
+                        preparationAlreadyApplied: true),
                     cancellationToken);
                 _runStopwatch?.Stop();
 

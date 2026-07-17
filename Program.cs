@@ -412,7 +412,8 @@ class Program
                     builder,
                     CollectEdgeStage,
                     StartEdgeStage,
-                    emitPreparationStages: false);
+                    emitPreparationStages: false,
+                    preparationAlreadyApplied: true);
             }
             catch (StageLimitReachedException)
             {

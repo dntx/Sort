@@ -95,6 +95,25 @@ public class GreedyPipelineTests
             "expected edge-compact stage to evaluate compact step-optimal groups");
     }
 
+    [Fact]
+    public void GreedyPipeline_SkippingAlreadyAppliedPreparation_PreservesFinalPlan()
+    {
+        var preparedBuilder = new StrategyBuilder(12, 4, 4);
+        _ = PublicPipelineOrchestrator.PrepareGreedyUpperBound(preparedBuilder);
+        StrategyPlan preparedPath = PublicPipelineOrchestrator.RunGreedyPipeline(
+            preparedBuilder,
+            emitPreparationStages: false,
+            preparationAlreadyApplied: true);
+
+        var baselineBuilder = new StrategyBuilder(12, 4, 4);
+        StrategyPlan baselinePath = PublicPipelineOrchestrator.RunGreedyPipeline(
+            baselineBuilder,
+            emitPreparationStages: false);
+
+        Assert.Equal(baselinePath.MaxStep, preparedPath.MaxStep);
+        Assert.Equal(baselinePath.TotalBranchEdges, preparedPath.TotalBranchEdges);
+    }
+
     // Proof-tighten now auto-expands capped probes on the SAME budget (starting from
     // CompactGreedyCandidateCap, then x4 until complete), so a cap-truncated inconclusive infeasibility
     // should converge to a genuine proof when full enumeration is tractable. 12,4,4 exercises this.
