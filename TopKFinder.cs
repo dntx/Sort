@@ -222,20 +222,27 @@ partial class StrategyBuilder
         return BuildPlan(useCompactSelection: false);
     }
 
-    // Explicit layered exact-stage entrypoint: first materialize the step-proof display plan, then
-    // project it into the search model. This keeps behavior unchanged while keeping the public
-    // search->display flow explicit.
+    // Explicit current layered exact-stage entrypoint: first materialize the step-proof display tree,
+    // then expand/project it into the search model. This is a behavior-preserving transition shape;
+    // the long-term target remains a pure search-first pipeline.
+    public (SearchTree SearchTree, DisplayTree DisplayTree) BuildDisplayTreeAndExpandedSearch()
+    {
+        DisplayTree displayTree = BuildStepProofStage();
+        SearchTree searchTree = SearchModelMapper.FromStrategyPlan(displayTree);
+        return (searchTree, displayTree);
+    }
+
+    // Backward-compatible alias kept while callers migrate to the clearer name above.
     public (SearchStrategy SearchTree, StrategyPlan DisplayPlan) BuildLayeredStepProof()
     {
-        StrategyPlan displayPlan = BuildStepProofStage();
-        SearchStrategy searchTree = SearchModelMapper.FromStrategyPlan(displayPlan);
-        return (searchTree, displayPlan);
+        (SearchTree searchTree, DisplayTree displayTree) = BuildDisplayTreeAndExpandedSearch();
+        return (searchTree, displayTree);
     }
 
     // Search-model entrypoint used by public callers; implemented via the layered exact-stage path so
     // the search model no longer sits as a disconnected parallel utility.
     public SearchStrategy BuildSearchTree()
-        => BuildLayeredStepProof().SearchTree;
+        => BuildDisplayTreeAndExpandedSearch().SearchTree;
 
     public StrategyPlan RunExactPipeline(
         Action<StageResult>? onStageCompleted = null,
