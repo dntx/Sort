@@ -223,8 +223,8 @@ partial class StrategyBuilder
     }
 
     // Explicit layered exact-stage entrypoint: first materialize the step-proof display plan, then
-    // project it into the search model. This keeps behavior unchanged while making the public
-    // search->display flow explicit for PR6 migration.
+    // project it into the search model. This keeps behavior unchanged while keeping the public
+    // search->display flow explicit.
     public (SearchStrategy SearchTree, StrategyPlan DisplayPlan) BuildLayeredStepProof()
     {
         StrategyPlan displayPlan = BuildStepProofStage();
