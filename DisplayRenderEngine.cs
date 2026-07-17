@@ -55,7 +55,7 @@ sealed class DisplayRenderEngine
     public string FormatRelabeling(IReadOnlyList<ItemRelabel> relabeling)
         => StrategyTextRenderer.FormatRelabeling(relabeling);
 
-    // Internal PR4 facade: StrategyBuilder should call display-folding behavior via this
+    // Internal facade: StrategyBuilder should call display-folding behavior via this
     // render entrypoint rather than reaching helper implementations directly.
     internal static List<BranchLine<T>> PlanBranchLines<T>(
         List<T> families,
