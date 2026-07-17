@@ -1,6 +1,6 @@
 # 6-PR Refactor Roadmap
 
-Last updated: 2026-07-16
+Last updated: 2026-07-17
 
 This document is the source-of-truth for the 6-PR refactor track that decouples search-tree construction from display/render behavior.
 
@@ -21,7 +21,7 @@ The long-term target is a cleaner layered architecture, while keeping behavior s
 4. Treat this document as the canonical roadmap for the refactor track.
 5. Any behavior change must be documented here and reflected in the relevant tests.
 
-## Implementation Reality Check (2026-07-16)
+## Implementation Reality Check (2026-07-17)
 
 This section is written as the expected repository state after the PR updating this file is merged to main.
 
@@ -46,10 +46,11 @@ This section is written as the expected repository state after the PR updating t
    - Compact objective now uses search-tree edge semantics and surfaces `SearchStatistics.SearchTreeEdges`.
    - This is an existing main-branch baseline status, not a change introduced by this PR1 document/update PR.
 
-6. PR6 status: not landed
-   - Public pipeline has not switched to a new layered search-model + display-model architecture.
-   - Legacy glue has not been removed because the new layered architecture is not yet present.
-   - The naming split between exact-edge-compact@S and greedy-edge-compact@S has not been fully rolled out in public-facing labels/docs.
+6. PR6 status: landed on main
+   - Public callers (CLI + UI) now route through `PublicPipelineOrchestrator` as the shared stage-emission facade.
+   - Exact stage flow is unified as `step-proof -> exact-edge-compact@S`; greedy terminal stage naming is unified as `greedy-edge-compact@S`.
+   - `BuildSearchTree()` is now implemented via the explicit layered exact entrypoint (`BuildLayeredStepProof`), making the search->display projection path canonical.
+   - Legacy glue cleanup is in progress and has removed duplicated public exact orchestration plus redundant caller-side pre-stage filtering branches.
 
 ## Pending Memo (Actionable)
 
@@ -72,8 +73,27 @@ This section is a working reminder of unfinished items already identified in the
    - [x] Re-baseline/update tests that intentionally pin stage labels.
 
 4. Documentation closure
-   - [ ] After PR6 lands, update this roadmap's reality-check section to reflect landed status.
-   - [ ] Add a concise architecture note documenting long-term ownership and boundaries between search and display layers.
+   - [x] After PR6 lands, update this roadmap's reality-check section to reflect landed status.
+   - [x] Add a concise architecture note documenting long-term ownership and boundaries between search and display layers.
+
+## Architecture Note (Post-PR6 Baseline)
+
+This note captures the ownership boundary the code now follows after the public-pipeline switch.
+
+1. Search layer (`StrategyBuilder`, search-state logic)
+   - Owns strategy search semantics, feasibility/optimality reasoning, and stage solving.
+   - Emits canonical strategy artifacts (`StrategyPlan`, `SearchStatistics`) and stage outcomes.
+   - Must not encode UI-specific folding/presentation policy.
+
+2. Public orchestration layer (`PublicPipelineOrchestrator`)
+   - Owns stage orchestration and public stage-emission contracts shared by CLI/UI.
+   - Coordinates exact/greedy stage order and stage naming contracts.
+   - Should stay thin: compose existing search stages instead of duplicating search logic.
+
+3. Display layer (`DisplayRenderEngine` and display helpers)
+   - Owns rendering/folding/projection presentation semantics.
+   - Consumes plans/models from search/orchestration layers and converts to user-facing text/tree output.
+   - Must not mutate search semantics to satisfy presentation-only concerns.
 
 ## How to Read This Roadmap
 
