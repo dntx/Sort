@@ -20,7 +20,7 @@
 - [`test-strategy.md`](./test-strategy.md)：渲染相关回归与性能护栏测试策略。
 - [`ui-explorer.md`](./ui-explorer.md)：UI 中阶段占位、进度展示与停止语义。
 
-当前代码边界（PR6 后）：
+当前代码边界：
 
 - CLI/UI 的公共阶段编排统一走 `PublicPipelineOrchestrator`。
 - 本文档所述 `pattern` 与折叠逻辑只属于显示层（`DisplayRenderEngine` / 文本渲染），
@@ -269,10 +269,10 @@ pattern: #1 > #11 > ... > #5 ; (#1 ~ #10) ↔ (#11 ~ #20)
 **与搜索的关系**：投影合并只折叠「本就收敛到同一规范搜索后继」的排序，所以它是搜索的**严格细化**——
 `CheckDisplaySearchParity`（`StrategyBuilder.OptimalityGap.cs`）处处无残差。
 
-> **历史注记（PR5 前）**：旧版 compact 目标曾通过显示层分支线口径（CountDisplayBranches）近似边数，
+> **历史注记（旧版实现）**：旧版 compact 目标曾通过显示层分支线口径（CountDisplayBranches）近似边数，
 > 在 fixed/doomed 上下文相关形状中会与最终渲染边数出现偏差。
 >
-> **当前状态（PR5 后）**：compact 已切换为搜索层目标（search-tree edges，children.Count 递归口径），
+> **当前状态**：compact 已切换为搜索层目标（search-tree edges，children.Count 递归口径），
 > 本文档此处不再作为待修 TODO。显示层文案中的 edge-compact 表示阶段名称，不代表 display-edge 目标函数。
 > 评估 compact 行为时应优先参考搜索口径指标（例如 SearchStatistics.SearchTreeEdges）与对应回归测试。
 

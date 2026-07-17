@@ -15,7 +15,7 @@ minimax 搜索、对称性约减，以及三种剪枝下界（信息论下界、
 - `.github/workflows/nightly-proof-tighten-gate.yml` 与 `.github/workflows/nightly-full-strategy-matrix.yml`：夜间性能巡检与报警入口。
   - 其中 nightly proof-tighten gate 的默认超时为 `150s`，用于降低 hosted runner 抖动带来的压线误报。
 
-架构边界（PR6 收官，2026-07）：
+架构边界：
 
 - `StrategyBuilder`（搜索层）负责求解语义、阶段可行性/最优性与 `StrategyPlan` 产物。
 - `PublicPipelineOrchestrator`（公共编排层）负责 CLI/UI 共用的阶段顺序与 stage-emission 契约。
@@ -23,7 +23,7 @@ minimax 搜索、对称性约减，以及三种剪枝下界（信息论下界、
 
 其中 `BuildSearchTree()` 现通过 `BuildLayeredStepProof()` 走显式 layered 入口，search -> display 的投影路径已固定为主路径。
 
-实现注记（2026-07）：
+实现注记：
 
 - 对称等价分支的组合计数在大规模输入上可能超过 `Int32`（例如 `(20,19,19)` 对偶化后会触发 `19!` 级别计数）。
 - 这类计数用于展示与汇总时采用**饱和语义**：超过上限时钳制到 `int.MaxValue`，避免 `BigInteger -> int` 转换溢出中断 greedy 流程。
@@ -633,7 +633,7 @@ greedy-feasible(U) → (optional) greedy-tighten → proof-tighten≤N → greed
 
 **soundness 校验（独立于精确搜索）**：GreedyTighten 只保证可行上界（`U' >= opt`）。在 `n <= 10` 用精确 `opt`（`BuildStepProofStage`）对照即可验证，但更大形状下精确搜索不可行。为此提供独立校验 `ValidateGreedyTightenPolicyDepthForTesting`：物化后从根**重放已提交策略**（不复用高度 memo），逐状态断言分组有未决对（progress）、对抗路径无环（必然终止）、每条路径都停在受信任的 top-k 终止条件，并重算最坏深度；返回深度 == 计划的 `MaxStep` 即证明该 `MaxStep` 是一棵**真实合法策略**的最坏步数（因而是 opt 的可靠上界）。这把 GreedyTighten 的正确性锁到精确搜索够不到的规模（例如 `20,4,6`：GT 给出并被验证的合法 `U'=14`）。
 
-**当前定位（2026-07-10）**：已并入 greedy 生产管线，但通过 root-probe 做保守 gate，避免在明显无收益形状上支付 GT 成本。流水线层面的回归测试同时锁定两类行为：
+**当前定位**：已并入 greedy 生产管线，但通过 root-probe 做保守 gate，避免在明显无收益形状上支付 GT 成本。流水线层面的回归测试同时锁定两类行为：
 
 1. 有收益路径：当提供更紧的可行上界种子时，proof-tighten 首个预算更紧，且最终结果不劣于基线。
 2. 无收益路径：probe 判 skip 时，起始预算与最终结果均与基线一致。

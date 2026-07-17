@@ -9,7 +9,7 @@
   - `exact`：`step-proof → exact-edge-compact@S`
   - `greedy`：`greedy-feasible → (optional) greedy-tighten → proof-tighten≤N (0..n 次) → greedy-edge-compact@S`
 
-实现归属（PR6 后）：
+实现归属：
 
 - UI 与 CLI 共用 `PublicPipelineOrchestrator` 的阶段编排与阶段名契约。
 - UI 侧的 `MainForm.Run.cs` 只负责线程切换、占位/树更新与交互，不再维护独立的并行编排路径。
@@ -62,7 +62,7 @@ UI 使用与 CLI 相同的阶段名展示进度：
 - 系统周期性地轮询进度（间隔 100ms），确保在长时间运行的阶段（如 feasible 阶段）中持续显示更新
 - 在大规模递归搜索期间（BuildState 递推），进度报告在每个递归深度被触发，而不只在阶段边界被触发
 
-**可视化改进** (2026-07):
+**可视化改进**:
 - 通过在递归内部报告进度，消除了"进度跳跃后停滞"的问题
 - feasible 阶段现在从 0% 平滑增长到 10%，而不是跳到 4-7% 后冻结
 - 保守的剩余时间估计（最小 500ms）确保进度条永不完全停滞

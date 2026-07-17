@@ -184,7 +184,7 @@ GitHub Actions 侧提供了手动门槛工作流：
 | `StrategyTextRendererTests.cs` | 文本渲染器的格式化逻辑 |
 | `InputValidationTests.cs` / `CliArgsTests.cs` | 输入校验与命令行参数解析 |
 
-补充（2026-07，稳定性）：
+补充（稳定性）：
 
 - `GreedyPipelineTests.ProofTighten_FirstProbeCompletesQuickly_14_2_4` 为 m=2 前瞻性能 canary。
 - 该 canary 保持 10 秒门槛，同时在超时时允许一次重试，以吸收偶发机器负载抖动并降低误报。
