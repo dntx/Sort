@@ -28,7 +28,7 @@ $profileMethods = @{
         "Compact_DuplicateOutcomeSkipsStaysWithinBaseline"
     )
     "full-counter-suite" = @(
-        "*StaysWithinBaseline",
+        "StaysWithinBaseline",
         "Default_IterativeDeepeningBaselineRemainsStable",
         "Default_IterativeDeepening_BeatsExactPath"
     )
