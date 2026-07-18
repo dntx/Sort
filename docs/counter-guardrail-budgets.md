@@ -6,6 +6,10 @@ Use this with:
 - `scripts/run-counter-guardrails.ps1`
 - `.github/workflows/manual-counter-guardrails.yml`
 
+Runner behavior:
+- prints selected method selectors for the chosen profile before execution.
+- supports dry-run listing via `-ListOnly`.
+
 ## Profiles
 
 | Profile | Primary test methods | Purpose |
@@ -52,4 +56,7 @@ pwsh .\scripts\run-counter-guardrails.ps1 -Profile compact
 
 # Pre-merge deterministic full audit
 pwsh .\scripts\run-counter-guardrails.ps1 -Profile full-counter-suite
+
+# Dry-run (show selectors only)
+pwsh .\scripts\run-counter-guardrails.ps1 -Profile compact -ListOnly
 ```

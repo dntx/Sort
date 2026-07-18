@@ -223,6 +223,7 @@ GitHub Actions 入口：
 建议：PR 日常开发优先 `fast-default`；涉及 ID 门控改动时补跑 `iterative-frontier`；涉及 compact 逻辑时补跑 `compact`；收口前或专项巡检跑 `full-counter-suite`。
 
 profile 语义、shape 锚点与 cap ratchet 规则见 `docs/counter-guardrail-budgets.md`。
+`scripts/run-counter-guardrails.ps1` 会在执行前打印 profile 对应的方法选择器，支持 `-ListOnly` 做 dry-run 检查。
 
 Lane 决策表（先选信号，再选车道）：
 
