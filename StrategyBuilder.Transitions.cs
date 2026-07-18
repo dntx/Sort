@@ -209,12 +209,7 @@ partial class StrategyBuilder
         ulong fixedTopMask,
         IReadOnlyList<BranchSpec> branchSpecs)
     {
-        IReadOnlyList<TransitionTargetFields> targets = BuildTransitionTargetFields(
-            branchSpecs,
-            spec => spec.OrderText,
-            spec => spec.Outcome.NextState,
-            spec => spec.Outcome.NextFixedTopMask,
-            spec => spec.Outcome.NextRemainingSlots);
+        IReadOnlyList<TransitionTargetFields> targets = BuildTransitionTargetFields(branchSpecs);
 
         var specs = new List<TransitionSpec>(targets.Count);
         for (int i = 0; i < targets.Count; i++)
@@ -238,12 +233,7 @@ partial class StrategyBuilder
         ulong fixedTopMask,
         IReadOnlyList<SearchBranchSpec> branchSpecs)
     {
-        IReadOnlyList<TransitionTargetFields> targets = BuildTransitionTargetFields(
-            branchSpecs,
-            spec => spec.OrderText,
-            spec => spec.NextState,
-            spec => spec.NextFixedTopMask,
-            spec => spec.NextRemainingSlots);
+        IReadOnlyList<TransitionTargetFields> targets = BuildTransitionTargetFields(branchSpecs);
 
         return BuildTransitionSpecsFromTargets(
             targets,
@@ -269,6 +259,28 @@ partial class StrategyBuilder
                 getNextFixedTopMask(spec),
                 getNextRemainingSlots(spec)))
             .ToList();
+    }
+
+    private static IReadOnlyList<TransitionTargetFields> BuildTransitionTargetFields(
+        IReadOnlyList<BranchSpec> branchSpecs)
+    {
+        return BuildTransitionTargetFields(
+            branchSpecs,
+            spec => spec.OrderText,
+            spec => spec.Outcome.NextState,
+            spec => spec.Outcome.NextFixedTopMask,
+            spec => spec.Outcome.NextRemainingSlots);
+    }
+
+    private static IReadOnlyList<TransitionTargetFields> BuildTransitionTargetFields(
+        IReadOnlyList<SearchBranchSpec> branchSpecs)
+    {
+        return BuildTransitionTargetFields(
+            branchSpecs,
+            spec => spec.OrderText,
+            spec => spec.NextState,
+            spec => spec.NextFixedTopMask,
+            spec => spec.NextRemainingSlots);
     }
 
     private static IReadOnlyList<TTransitionSpec> BuildTransitionSpecsFromTargets<TTransitionSpec>(
