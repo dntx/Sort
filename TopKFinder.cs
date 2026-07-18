@@ -257,20 +257,28 @@ partial class StrategyBuilder
     internal (SearchTree SearchTree, DisplayTree DisplayTree) BuildExactSearchProjection()
     {
         DisplayTree sourceDisplayTree = BuildStepProofStage();
-        SearchTree searchTree = BuildSearchTreeFromSolverState();
+        SearchTree searchTree = BuildSearchTreeFromExactCaches(prepareSession: false);
         return (searchTree, sourceDisplayTree);
     }
 
     // Mainline-A seam: keep a dedicated exact-search core that does not depend on display
     // materialization, so search-first callers can remain independent from display projection.
     private SearchTree BuildSearchTreeFromExactSolverState()
+        => BuildSearchTreeFromExactCaches(prepareSession: true);
+
+    // Shared search materialization path over exact solver caches. `prepareSession` controls
+    // whether this call should bootstrap the exact session (public search entrypoint) or reuse
+    // an already-materialized display session (layered exact projection entrypoint).
+    private SearchTree BuildSearchTreeFromExactCaches(bool prepareSession)
     {
         ComparisonState.SetThreadCancellationToken(_cancellationToken);
         try
         {
-            InitializeExactSolverSession(useFeasibleBudget: false);
+            if (prepareSession)
+                InitializeExactSolverSession(useFeasibleBudget: false);
+
             _useCompact = false;
-            return BuildSearchTreeFromSolverState();
+            return BuildSearchTreeFromCurrentExactCaches();
         }
         finally
         {
@@ -281,7 +289,7 @@ partial class StrategyBuilder
     // Transitional solver-sourced search builder: phase-1 group selection still comes from the
     // same exact caches, but the search tree is now materialized directly from solver state
     // recursion instead of mapping from an already-materialized display tree.
-    private SearchTree BuildSearchTreeFromSolverState()
+    private SearchTree BuildSearchTreeFromCurrentExactCaches()
     {
         var context = new SearchMaterializationContext(
             new Dictionary<IntSequenceKey, ExpandedStateSnapshot>(),

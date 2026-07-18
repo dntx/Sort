@@ -11,6 +11,7 @@ Goal:
 Current progress:
 - `BuildSearchTree()` now goes through a dedicated solver-state exact core path, no longer through `BuildExactSearchProjection()`.
 - Search tree materialization no longer depends on `DisplayTree` metadata transport.
+- Exact entrypoints now share one explicit search-materialization path over exact caches, with a clear `prepareSession` split between standalone search entry and layered exact projection.
 
 Next A slices:
 - Extract a shared exact-core session builder that can emit both search tree and display projection from one solver session.
