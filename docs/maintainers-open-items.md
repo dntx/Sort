@@ -80,6 +80,11 @@ What remains:
   - deterministic counter regression,
   - infra flake/runtime failure.
 
+2026-07-18 observation note:
+
+- Latest run succeeded on `main` (`workflow_dispatch`): https://github.com/dntx/Sort/actions/runs/29642273138
+- Continue collecting consecutive-run evidence before changing status.
+
 Exit criterion:
 
 - Nightly lane demonstrates stable behavior over a meaningful run window, and handling guidance is validated by at least one real or simulated failure investigation.
