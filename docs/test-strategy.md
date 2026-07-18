@@ -213,6 +213,15 @@ GitHub Actions 入口：
 - `manual-counter-guardrails`：手动触发确定性计数器护栏（counter-cap tests）。
 - `manual-perf-gate`：手动触发 baseline 回归门槛。
 
+`manual-counter-guardrails` 支持 profile 输入（`workflow_dispatch`）：
+
+- `fast-default`：默认路径计数器护栏（searched/outcomes/candidate-groups/duplicate-skips）。
+- `iterative-frontier`：迭代加深门控前沿护栏（含与 exact 路径对比）。
+- `compact`：compact 阶段计数器护栏（work/searched/outcomes/duplicate-skips）。
+- `full-counter-suite`：合并运行 `*StaysWithinBaseline` + 关键 iterative 前沿用例。
+
+建议：PR 日常开发优先 `fast-default`；涉及 ID 门控改动时补跑 `iterative-frontier`；涉及 compact 逻辑时补跑 `compact`；收口前或专项巡检跑 `full-counter-suite`。
+
 ---
 
 ## 5. 其它正确性 / 单元测试

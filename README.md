@@ -60,6 +60,13 @@ GitHub Actions lanes:
 - `manual-counter-guardrails` (manual deterministic counter-cap guardrails)
 - `manual-perf-gate` (manual perf baseline gate)
 
+Counter guardrail profiles (`manual-counter-guardrails` input `profile`):
+
+- `fast-default`: default-path deterministic caps (daily default)
+- `iterative-frontier`: iterative-deepening frontier caps
+- `compact`: compact-phase deterministic caps
+- `full-counter-suite`: all baseline-cap suites + key iterative checks
+
 ### Pipeline architecture (post-refactor)
 
 The refactor track is complete. The runtime now follows a stable layered boundary:

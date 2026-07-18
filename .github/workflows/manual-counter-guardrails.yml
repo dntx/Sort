@@ -2,6 +2,16 @@ name: manual-counter-guardrails
 
 on:
   workflow_dispatch:
+    inputs:
+      profile:
+        description: Counter guardrail profile to run
+        type: choice
+        options:
+          - fast-default
+          - iterative-frontier
+          - compact
+          - full-counter-suite
+        default: fast-default
 
 permissions:
   contents: read
@@ -21,5 +31,27 @@ jobs:
           dotnet-version: 8.0.x
 
       - name: Run deterministic counter-cap guardrails
+        shell: pwsh
         run: |
-          dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --configuration Release --nologo --filter "FullyQualifiedName~StaysWithinBaseline|FullyQualifiedName~Compact_WorkCountersStayWithinBaseline"
+          $profile = "${{ inputs.profile }}"
+          $filter = switch ($profile) {
+            "fast-default" {
+              "FullyQualifiedName~Default_SearchedStateCountStaysWithinBaseline|FullyQualifiedName~Default_OutcomesConstructedStaysWithinBaseline|FullyQualifiedName~Default_CandidateGroupsEnumeratedStaysWithinBaseline|FullyQualifiedName~Default_DuplicateOutcomeSkipsStaysWithinBaseline"
+            }
+            "iterative-frontier" {
+              "FullyQualifiedName~Default_IterativeDeepeningBaselineRemainsStable|FullyQualifiedName~Default_IterativeDeepening_BeatsExactPath"
+            }
+            "compact" {
+              "FullyQualifiedName~Compact_WorkCountersStayWithinBaseline|FullyQualifiedName~Compact_SearchedStateCountStaysWithinBaseline|FullyQualifiedName~Compact_OutcomesConstructedStaysWithinBaseline|FullyQualifiedName~Compact_DuplicateOutcomeSkipsStaysWithinBaseline"
+            }
+            "full-counter-suite" {
+              "FullyQualifiedName~StaysWithinBaseline|FullyQualifiedName~Default_IterativeDeepeningBaselineRemainsStable|FullyQualifiedName~Default_IterativeDeepening_BeatsExactPath"
+            }
+            default {
+              throw "Unknown profile: $profile"
+            }
+          }
+
+          Write-Host "Running counter guardrail profile '$profile'"
+          Write-Host "Filter: $filter"
+          dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --configuration Release --nologo --filter $filter
