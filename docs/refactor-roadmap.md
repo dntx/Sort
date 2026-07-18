@@ -2,7 +2,7 @@
 
 This note tracks the medium-sized roadmap so we do not lose direction between small slices.
 
-## Mainline A: Search-First Boundary Closure (in progress)
+## Mainline A: Search-First Boundary Closure (completed)
 
 Goal:
 - Make exact search entrypoints independent from display materialization.
@@ -13,11 +13,16 @@ Current progress:
 - Search tree materialization no longer depends on `DisplayTree` metadata transport.
 - Exact entrypoints now share one explicit search-materialization path over exact caches, with a clear `prepareSession` split between standalone search entry and layered exact projection.
 - Exact projection now builds display/search artifacts inside one active solver session (single token/session scope), instead of nested entrypoint hand-offs.
+- Exact search entry APIs now use explicit standalone/current-session helpers (no bool mode switches), reducing misuse risk and clarifying boundary semantics.
 
-Next A slices:
-- Extract a shared exact-core session builder that can emit both search tree and display projection from one solver session.
-- Reduce display-specific state/planner coupling in transition/branch materialization seams.
-- Document final search-first contract and invariants in `docs/core-algorithm.md`.
+Mainline A exit status:
+- Exact projection and search-only exact entry are both solver-session based and no longer depend on bridge-style nested entrypoints.
+- Shared exact session/bootstrap and shared expansion tracking are in place.
+- Core algorithm doc and roadmap reflect the current boundary contract.
+
+Next strategic focus:
+- Mainline B (test layering governance)
+- Mainline C (performance baseline governance)
 
 ## Mainline B: Test Layering Governance (TODO)
 
