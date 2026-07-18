@@ -138,7 +138,15 @@ partial class StrategyBuilder
             return true;
 
         EquivalentOrderSummary? summary = BuildEquivalentOrderSummary(families);
-        return summary is not null && summary.PatternText.Contains(" | ", StringComparison.Ordinal);
+        return ShouldFoldSingletonOrbitRepresentative(summary);
+    }
+
+    private static bool ShouldFoldSingletonOrbitRepresentative(EquivalentOrderSummary? summary)
+    {
+        if (summary is null)
+            return false;
+
+        return !MergedOrderingsFormSingleOrbit(summary);
     }
 
     private BranchRepresentativeSelection SelectBranchRepresentativeForLine(
@@ -163,7 +171,7 @@ partial class StrategyBuilder
 
         if (allSingleton
             && summary is not null
-            && (projectionMerged || summary.PatternText.Contains(" | ", StringComparison.Ordinal)))
+            && (projectionMerged || ShouldFoldSingletonOrbitRepresentative(summary)))
         {
             return BranchRepresentativeSelection.RelabelOrbit(SelectOrbitRepresentative(line));
         }
