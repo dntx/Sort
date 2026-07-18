@@ -346,11 +346,7 @@ partial class StrategyBuilder
         return BuildSearchTransitionSpecs(state, fixedTopMask, remainingSlots, chosenGroup)
             .Select(spec => new SearchBranch(
                 spec.OrderText,
-                new SearchEffect(
-                    spec.Effect.NewlyGuaranteedTop,
-                    spec.Effect.NewlyExcluded,
-                    spec.Effect.FixedCandidates,
-                    spec.Effect.PossibleCandidates),
+                spec.Effect,
                 BuildSearchState(
                     spec.NextState,
                     spec.NextFixedTopMask,
