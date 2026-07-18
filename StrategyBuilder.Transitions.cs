@@ -209,14 +209,21 @@ partial class StrategyBuilder
         ulong fixedTopMask,
         IReadOnlyList<BranchSpec> branchSpecs)
     {
-        return branchSpecs
-            .Select(spec => new TransitionSpec(
-                spec.OrderText,
+        IReadOnlyList<TransitionTargetFields> targets = BuildTransitionTargetFields(
+            branchSpecs,
+            spec => spec.OrderText,
+            spec => spec.Outcome.NextState,
+            spec => spec.Outcome.NextFixedTopMask,
+            spec => spec.Outcome.NextRemainingSlots);
+
+        return targets
+            .Zip(branchSpecs, (target, spec) => new TransitionSpec(
+                target.OrderText,
                 spec.Summary,
-                BuildComparisonEffect(state, fixedTopMask, spec.Outcome.NextState, spec.Outcome.NextFixedTopMask),
-                spec.Outcome.NextState,
-                spec.Outcome.NextFixedTopMask,
-                spec.Outcome.NextRemainingSlots))
+                BuildComparisonEffect(state, fixedTopMask, target.NextState, target.NextFixedTopMask),
+                target.NextState,
+                target.NextFixedTopMask,
+                target.NextRemainingSlots))
             .ToList();
     }
 
@@ -225,13 +232,36 @@ partial class StrategyBuilder
         ulong fixedTopMask,
         IReadOnlyList<SearchBranchSpec> branchSpecs)
     {
+        IReadOnlyList<TransitionTargetFields> targets = BuildTransitionTargetFields(
+            branchSpecs,
+            spec => spec.OrderText,
+            spec => spec.NextState,
+            spec => spec.NextFixedTopMask,
+            spec => spec.NextRemainingSlots);
+
+        return targets
+            .Select(target => new SearchTransitionSpec(
+                target.OrderText,
+                BuildSearchComparisonEffect(state, fixedTopMask, target.NextState, target.NextFixedTopMask),
+                target.NextState,
+                target.NextFixedTopMask,
+                target.NextRemainingSlots))
+            .ToList();
+    }
+
+    private static IReadOnlyList<TransitionTargetFields> BuildTransitionTargetFields<TSpec>(
+        IReadOnlyList<TSpec> branchSpecs,
+        Func<TSpec, string> getOrderText,
+        Func<TSpec, ComparisonState> getNextState,
+        Func<TSpec, ulong> getNextFixedTopMask,
+        Func<TSpec, int> getNextRemainingSlots)
+    {
         return branchSpecs
-            .Select(spec => new SearchTransitionSpec(
-                spec.OrderText,
-                BuildSearchComparisonEffect(state, fixedTopMask, spec.NextState, spec.NextFixedTopMask),
-                spec.NextState,
-                spec.NextFixedTopMask,
-                spec.NextRemainingSlots))
+            .Select(spec => new TransitionTargetFields(
+                getOrderText(spec),
+                getNextState(spec),
+                getNextFixedTopMask(spec),
+                getNextRemainingSlots(spec)))
             .ToList();
     }
 
@@ -790,6 +820,26 @@ partial class StrategyBuilder
         public IReadOnlyList<int> NewlyExcluded { get; }
         public IReadOnlyList<int> FixedCandidates { get; }
         public IReadOnlyList<int> PossibleCandidates { get; }
+    }
+
+    private readonly struct TransitionTargetFields
+    {
+        public TransitionTargetFields(
+            string orderText,
+            ComparisonState nextState,
+            ulong nextFixedTopMask,
+            int nextRemainingSlots)
+        {
+            OrderText = orderText;
+            NextState = nextState;
+            NextFixedTopMask = nextFixedTopMask;
+            NextRemainingSlots = nextRemainingSlots;
+        }
+
+        public string OrderText { get; }
+        public ComparisonState NextState { get; }
+        public ulong NextFixedTopMask { get; }
+        public int NextRemainingSlots { get; }
     }
 
     private readonly struct TransitionSpec
