@@ -11,12 +11,27 @@ on:
         description: Measured runs for benchmark script
         type: number
         default: 5
+      build_configuration:
+        description: Build configuration for benchmark runs
+        type: choice
+        options:
+          - Release
+          - Debug
+        default: Release
       regression_tolerance_percent:
         description: Allowed median slowdown percent vs baseline
         type: number
         default: 5
+      baseline_csv_path:
+        description: Baseline CSV path for comparison
+        type: string
+        default: .\\scripts\\benchmark-greedy-stage1-baseline.csv
       list_only:
         description: If true, print resolved command and exit without running benchmark
+        type: boolean
+        default: false
+      collect_benchmark_rows:
+        description: If true, export per-case benchmark rows and upload as artifact
         type: boolean
         default: false
 
@@ -26,6 +41,7 @@ permissions:
 jobs:
   perf-gate:
     runs-on: windows-latest
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -42,15 +58,23 @@ jobs:
         run: |
           $listOnly = "${{ inputs.list_only }}"
           $listOnlyArg = if ($listOnly -eq "true") { "-ListOnly" } else { "" }
+          $collectRows = "${{ inputs.collect_benchmark_rows }}"
+          $collectRowsArg = if ($collectRows -eq "true") { "-CollectBenchmarkRows" } else { "" }
           $summaryPath = Join-Path $env:RUNNER_TEMP "perf-gate-summary.json"
+          $rowsCsvPath = Join-Path $env:RUNNER_TEMP "perf-gate-benchmark-rows.csv"
           pwsh .\scripts\run-perf-gate.ps1 `
+            -Configuration "${{ inputs.build_configuration }}" `
             -WarmupRuns ${{ inputs.warmup_runs }} `
             -MeasuredRuns ${{ inputs.measured_runs }} `
             -RegressionTolerancePercent ${{ inputs.regression_tolerance_percent }} `
+            -BaselineCsvPath "${{ inputs.baseline_csv_path }}" `
             -EnforceBaseline `
+            -BenchmarkRowsCsvPath $rowsCsvPath `
             -SummaryJsonPath $summaryPath `
+            $collectRowsArg `
             $listOnlyArg
           "summary_path=$summaryPath" >> $env:GITHUB_OUTPUT
+          "rows_csv_path=$rowsCsvPath" >> $env:GITHUB_OUTPUT
 
       - name: Upload perf gate summary
         if: always()
@@ -58,3 +82,10 @@ jobs:
         with:
           name: perf-gate-summary
           path: ${{ steps.run_perf_gate.outputs.summary_path }}
+
+      - name: Upload perf gate benchmark rows
+        if: ${{ always() && inputs.collect_benchmark_rows && !inputs.list_only }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-gate-benchmark-rows
+          path: ${{ steps.run_perf_gate.outputs.rows_csv_path }}

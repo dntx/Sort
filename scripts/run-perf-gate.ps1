@@ -1,9 +1,13 @@
 param(
+    [ValidateSet("Debug", "Release")]
+    [string]$Configuration = "Release",
     [int]$WarmupRuns = 1,
     [int]$MeasuredRuns = 5,
     [double]$RegressionTolerancePercent = 5,
     [string]$BaselineCsvPath = ".\\scripts\\benchmark-greedy-stage1-baseline.csv",
     [switch]$EnforceBaseline,
+    [switch]$CollectBenchmarkRows,
+    [string]$BenchmarkRowsCsvPath,
     [switch]$ListOnly,
     [string]$SummaryJsonPath
 )
@@ -23,9 +27,13 @@ if ($RegressionTolerancePercent -lt 0) {
 if ([string]::IsNullOrWhiteSpace($BaselineCsvPath)) {
     throw "BaselineCsvPath must be non-empty."
 }
+if ($CollectBenchmarkRows -and [string]::IsNullOrWhiteSpace($BenchmarkRowsCsvPath)) {
+    throw "BenchmarkRowsCsvPath must be non-empty when CollectBenchmarkRows is set."
+}
 
 $args = @(
     '.\\scripts\\benchmark-greedy-stage1.ps1',
+    '-Configuration', $Configuration,
     '-WarmupRuns', $WarmupRuns,
     '-MeasuredRuns', $MeasuredRuns,
     '-BaselineCsvPath', $BaselineCsvPath,
@@ -34,6 +42,9 @@ $args = @(
 
 if ($EnforceBaseline) {
     $args += '-EnforceBaseline'
+}
+if ($CollectBenchmarkRows) {
+    $args += @('-AsCsv', '-CsvPath', $BenchmarkRowsCsvPath)
 }
 
 function Write-SummaryJson {
@@ -60,18 +71,21 @@ $resolvedCommand = "pwsh $($args -join ' ')"
 $summary = [ordered]@{
     runner = "run-perf-gate"
     timestampUtc = [DateTime]::UtcNow.ToString("o")
+    configuration = $Configuration
     warmupRuns = $WarmupRuns
     measuredRuns = $MeasuredRuns
     regressionTolerancePercent = $RegressionTolerancePercent
     baselineCsvPath = $BaselineCsvPath
     enforceBaseline = [bool]$EnforceBaseline
+    collectBenchmarkRows = [bool]$CollectBenchmarkRows
+    benchmarkRowsCsvPath = if ($CollectBenchmarkRows) { $BenchmarkRowsCsvPath } else { $null }
     listOnly = [bool]$ListOnly
     command = $resolvedCommand
 }
 
 Write-Host "Running perf baseline gate"
-Write-Host "WarmupRuns=$WarmupRuns MeasuredRuns=$MeasuredRuns RegressionTolerancePercent=$RegressionTolerancePercent"
-Write-Host "BaselineCsvPath=$BaselineCsvPath EnforceBaseline=$EnforceBaseline ListOnly=$ListOnly"
+Write-Host "Configuration=$Configuration WarmupRuns=$WarmupRuns MeasuredRuns=$MeasuredRuns RegressionTolerancePercent=$RegressionTolerancePercent"
+Write-Host "BaselineCsvPath=$BaselineCsvPath EnforceBaseline=$EnforceBaseline CollectBenchmarkRows=$CollectBenchmarkRows ListOnly=$ListOnly"
 Write-Host "Resolved command: $resolvedCommand"
 
 if ($ListOnly) {

@@ -72,3 +72,6 @@ Current C progress:
 - used the combined summary to ratchet one residual default outcomes cap (`9,4,3`) that still had positive headroom.
 - added `scripts/collect-all-counter-snapshots.ps1` to run default/compact/iterative collectors and emit one combined summary artifact for review.
 - enhanced `manual-counter-guardrails` workflow with optional unified snapshot collection/upload so reviewers can inspect summary and per-snapshot rows in one dispatch run.
+- enhanced `manual-perf-gate` workflow with optional benchmark-row CSV artifact upload so wall-clock smoke runs are auditable beyond pass/fail summary.
+- enhanced `manual-perf-gate` workflow with `baseline_csv_path` input and explicit job timeout to make baseline switching safer and long-run behavior bounded.
+- enhanced perf runner/workflow with explicit build configuration (`Release`/`Debug`) input so benchmark lanes can switch configuration without script edits.
