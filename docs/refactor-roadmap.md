@@ -74,3 +74,4 @@ Current C progress:
 - enhanced `manual-counter-guardrails` workflow with optional unified snapshot collection/upload so reviewers can inspect summary and per-snapshot rows in one dispatch run.
 - enhanced `manual-perf-gate` workflow with optional benchmark-row CSV artifact upload so wall-clock smoke runs are auditable beyond pass/fail summary.
 - enhanced `manual-perf-gate` workflow with `baseline_csv_path` input and explicit job timeout to make baseline switching safer and long-run behavior bounded.
+- enhanced perf runner/workflow with explicit build configuration (`Release`/`Debug`) input so benchmark lanes can switch configuration without script edits.

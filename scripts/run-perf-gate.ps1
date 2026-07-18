@@ -1,4 +1,6 @@
 param(
+    [ValidateSet("Debug", "Release")]
+    [string]$Configuration = "Release",
     [int]$WarmupRuns = 1,
     [int]$MeasuredRuns = 5,
     [double]$RegressionTolerancePercent = 5,
@@ -31,6 +33,7 @@ if ($CollectBenchmarkRows -and [string]::IsNullOrWhiteSpace($BenchmarkRowsCsvPat
 
 $args = @(
     '.\\scripts\\benchmark-greedy-stage1.ps1',
+    '-Configuration', $Configuration,
     '-WarmupRuns', $WarmupRuns,
     '-MeasuredRuns', $MeasuredRuns,
     '-BaselineCsvPath', $BaselineCsvPath,
@@ -68,6 +71,7 @@ $resolvedCommand = "pwsh $($args -join ' ')"
 $summary = [ordered]@{
     runner = "run-perf-gate"
     timestampUtc = [DateTime]::UtcNow.ToString("o")
+    configuration = $Configuration
     warmupRuns = $WarmupRuns
     measuredRuns = $MeasuredRuns
     regressionTolerancePercent = $RegressionTolerancePercent
@@ -80,7 +84,7 @@ $summary = [ordered]@{
 }
 
 Write-Host "Running perf baseline gate"
-Write-Host "WarmupRuns=$WarmupRuns MeasuredRuns=$MeasuredRuns RegressionTolerancePercent=$RegressionTolerancePercent"
+Write-Host "Configuration=$Configuration WarmupRuns=$WarmupRuns MeasuredRuns=$MeasuredRuns RegressionTolerancePercent=$RegressionTolerancePercent"
 Write-Host "BaselineCsvPath=$BaselineCsvPath EnforceBaseline=$EnforceBaseline CollectBenchmarkRows=$CollectBenchmarkRows ListOnly=$ListOnly"
 Write-Host "Resolved command: $resolvedCommand"
 

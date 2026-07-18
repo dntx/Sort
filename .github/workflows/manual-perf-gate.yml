@@ -11,6 +11,13 @@ on:
         description: Measured runs for benchmark script
         type: number
         default: 5
+      build_configuration:
+        description: Build configuration for benchmark runs
+        type: choice
+        options:
+          - Release
+          - Debug
+        default: Release
       regression_tolerance_percent:
         description: Allowed median slowdown percent vs baseline
         type: number
@@ -56,6 +63,7 @@ jobs:
           $summaryPath = Join-Path $env:RUNNER_TEMP "perf-gate-summary.json"
           $rowsCsvPath = Join-Path $env:RUNNER_TEMP "perf-gate-benchmark-rows.csv"
           pwsh .\scripts\run-perf-gate.ps1 `
+            -Configuration "${{ inputs.build_configuration }}" `
             -WarmupRuns ${{ inputs.warmup_runs }} `
             -MeasuredRuns ${{ inputs.measured_runs }} `
             -RegressionTolerancePercent ${{ inputs.regression_tolerance_percent }} `
