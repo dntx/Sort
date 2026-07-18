@@ -114,14 +114,15 @@ partial class StrategyBuilder
 
         List<OrderFamilyDescriptor> families = CollectLineFamilies(line);
         bool allSingleton = HasOnlySingletonFamilies(families);
-        if (projectionMerged && !allSingleton)
+        if (TrySelectProjectionQuotientRepresentativeForLine(
+                state,
+                line,
+                projectionMerged,
+                allSingleton,
+                out MergedFamilyOutcome quotientRepresentative,
+                out _))
         {
-            if (TryBuildProjectionQuotientSummaryForLine(
-                    state,
-                    line,
-                    out MergedFamilyOutcome quotientRepresentative,
-                    out _))
-                return quotientRepresentative;
+            return quotientRepresentative;
         }
 
         if (!allSingleton)
@@ -188,6 +189,28 @@ partial class StrategyBuilder
         representative = SelectOrbitRepresentative(line);
         quotientSummary = BuildProjectionQuotientSummary(state, line, representative);
         return quotientSummary is not null;
+    }
+
+    private bool TrySelectProjectionQuotientRepresentativeForLine(
+        ComparisonState state,
+        List<MergedFamilyOutcome> line,
+        bool projectionMerged,
+        bool allSingleton,
+        out MergedFamilyOutcome representative,
+        out EquivalentOrderSummary? quotientSummary)
+    {
+        if (!projectionMerged || allSingleton)
+        {
+            representative = line[0];
+            quotientSummary = null;
+            return false;
+        }
+
+        return TryBuildProjectionQuotientSummaryForLine(
+            state,
+            line,
+            out representative,
+            out quotientSummary);
     }
 
     private IReadOnlyList<TransitionSpec> BuildTransitionSpecsFromBranchSpecs(
@@ -329,11 +352,11 @@ partial class StrategyBuilder
     {
         List<OrderFamilyDescriptor> families = CollectLineFamilies(line);
         bool allSingleton = HasOnlySingletonFamilies(families);
-        if (projectionMerged
-            && !allSingleton
-            && TryBuildProjectionQuotientSummaryForLine(
+        if (TrySelectProjectionQuotientRepresentativeForLine(
                 state,
                 line,
+                projectionMerged,
+                allSingleton,
                 out MergedFamilyOutcome quotientRepresentative,
                 out EquivalentOrderSummary? quotientSummary))
         {
