@@ -67,14 +67,6 @@ public sealed class DisplayToSearchExpanderTests
     [InlineData(12, 4, 6)]
     [InlineData(13, 4, 6)]
     [InlineData(13, 4, 7)]
-    [InlineData(13, 4, 8)]
-    [InlineData(14, 4, 7)]
-    [InlineData(14, 4, 8)]
-    [InlineData(15, 4, 8)]
-    [InlineData(15, 4, 9)]
-    [InlineData(16, 4, 9)]
-    [InlineData(16, 4, 10)]
-    [InlineData(10, 4, 8)]
     public void BuildDisplayTreeAndExpandedSearch_And_BuildSearchTree_RemainEquivalentAcrossProjectionMergingModes(int n, int m, int k)
     {
         AssertEquivalentAcrossProjectionMergingMode(n, m, k, projectionMerging: false);
@@ -173,7 +165,7 @@ public sealed class DisplayToSearchExpanderTests
         Assert.Same(left, right);
     }
 
-    private static void AssertSearchStrategyEquivalent(SearchStrategy expected, SearchStrategy actual)
+    internal static void AssertSearchStrategyEquivalent(SearchStrategy expected, SearchStrategy actual)
     {
         Assert.Equal(expected.N, actual.N);
         Assert.Equal(expected.M, actual.M);
@@ -182,7 +174,7 @@ public sealed class DisplayToSearchExpanderTests
         AssertSearchNodeEquivalent(expected.Root, actual.Root);
     }
 
-    private static void AssertEquivalentAcrossProjectionMergingMode(int n, int m, int k, bool projectionMerging)
+    internal static void AssertEquivalentAcrossProjectionMergingMode(int n, int m, int k, bool projectionMerging)
     {
         var layeredBuilder = new StrategyBuilder(n, m, k)
         {
@@ -199,7 +191,7 @@ public sealed class DisplayToSearchExpanderTests
         AssertSearchStrategyEquivalent(layeredSearch, directSearch);
     }
 
-    private static void AssertSearchNodeEquivalent(SearchNode expected, SearchNode actual)
+    internal static void AssertSearchNodeEquivalent(SearchNode expected, SearchNode actual)
     {
         Assert.Equal(expected.Kind, actual.Kind);
         Assert.Equal(expected.StateId, actual.StateId);
@@ -222,5 +214,24 @@ public sealed class DisplayToSearchExpanderTests
 
             AssertSearchNodeEquivalent(expectedBranch.Next, actualBranch.Next);
         }
+    }
+}
+
+public sealed class SearchParitySlowMatrixTests
+{
+    [Theory]
+    [Trait("Category", "Slow")]
+    [InlineData(13, 4, 8)]
+    [InlineData(14, 4, 7)]
+    [InlineData(14, 4, 8)]
+    [InlineData(15, 4, 8)]
+    [InlineData(15, 4, 9)]
+    [InlineData(16, 4, 9)]
+    [InlineData(16, 4, 10)]
+    [InlineData(17, 4, 10)]
+    public void BuildDisplayTreeAndExpandedSearch_And_BuildSearchTree_RemainEquivalentAcrossProjectionMergingModes_Slow(int n, int m, int k)
+    {
+        DisplayToSearchExpanderTests.AssertEquivalentAcrossProjectionMergingMode(n, m, k, projectionMerging: false);
+        DisplayToSearchExpanderTests.AssertEquivalentAcrossProjectionMergingMode(n, m, k, projectionMerging: true);
     }
 }

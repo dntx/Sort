@@ -75,7 +75,6 @@ partial class StrategyBuilder
     {
         return BuildOrderedBranchSpecsWithDoomedTailFallback(
             state,
-            remainingSlots,
             chosenGroup,
             tryBuildDoomedTailSpecs: group => TryBuildSearchDoomedTailSpecs(state, remainingSlots, group),
             line => BuildSearchBranchSpecForLine(state, line.Members, line.ProjectionMerged),
@@ -324,7 +323,6 @@ partial class StrategyBuilder
         // otherwise spell out each tail permutation as its own misleading branch.
         return BuildOrderedBranchSpecsWithDoomedTailFallback(
             state,
-            remainingSlots,
             chosenGroup,
             tryBuildDoomedTailSpecs: group => TryBuildDoomedTailSpecs(state, remainingSlots, group),
             line => BuildBranchSpecForLine(state, line.Members, line.ProjectionMerged),
@@ -333,7 +331,6 @@ partial class StrategyBuilder
 
     private List<TSpec> BuildOrderedBranchSpecsWithDoomedTailFallback<TSpec>(
         ComparisonState state,
-        int remainingSlots,
         SelectedComparisonGroup chosenGroup,
         Func<SelectedComparisonGroup, List<TSpec>?> tryBuildDoomedTailSpecs,
         Func<PlannedBranchLine, TSpec> buildSpec,
