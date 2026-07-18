@@ -18,8 +18,8 @@ $cases = @(
 	@{ n = 8;  m = 4; k = 2; searchedCap = 7; outcomesCap = 26; duplicateCap = 12; compactStatesCap = -1;         compactGroupsCap = -1;     compactStepOptimalCap = -1 },
 	@{ n = 10; m = 3; k = 5; searchedCap = 623; outcomesCap = 9656; duplicateCap = 622; compactStatesCap = -1;     compactGroupsCap = -1;     compactStepOptimalCap = -1 },
 	@{ n = 13; m = 4; k = 3; searchedCap = 138; outcomesCap = 1456; duplicateCap = 367; compactStatesCap = -1;     compactGroupsCap = -1;     compactStepOptimalCap = -1 },
-	@{ n = 12; m = 3; k = 4; searchedCap = -1; outcomesCap = -1; duplicateCap = -1; compactStatesCap = 677;        compactGroupsCap = 39691;  compactStepOptimalCap = 5770 },
-	@{ n = 10; m = 2; k = 4; searchedCap = -1; outcomesCap = -1; duplicateCap = -1; compactStatesCap = 4118;       compactGroupsCap = 120336; compactStepOptimalCap = 29291 }
+	@{ n = 12; m = 3; k = 4; searchedCap = 5962; outcomesCap = 233774; duplicateCap = 18563; compactStatesCap = 677;        compactGroupsCap = 39691;  compactStepOptimalCap = 5770 },
+	@{ n = 10; m = 2; k = 4; searchedCap = 17104; outcomesCap = 471864; duplicateCap = 469; compactStatesCap = 4118;       compactGroupsCap = 120336; compactStepOptimalCap = 29291 }
 )
 
 dotnet build .\TopKFinder.csproj -c $Configuration --nologo | Out-Null

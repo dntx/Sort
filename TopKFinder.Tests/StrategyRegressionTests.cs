@@ -1079,6 +1079,10 @@ public sealed class StrategyRegressionTests
     [InlineData(8, 4, 2, 7)]
     [InlineData(10, 3, 5, 623)]
     [InlineData(13, 4, 3, 138)]
+    // These two rows were previously only covered by compact work counters; keep the main compact
+    // searched-state proxy pinned as well because they are among the heaviest compact-only shapes.
+    [InlineData(12, 3, 4, 5962)]
+    [InlineData(10, 2, 4, 17104)]
     public void Compact_SearchedStateCountStaysWithinBaseline(int n, int m, int k, int searchedStateCap)
     {
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
@@ -1194,6 +1198,8 @@ public sealed class StrategyRegressionTests
     [InlineData(8, 4, 2, 26)]
     [InlineData(10, 3, 5, 9656)]
     [InlineData(13, 4, 3, 1456)]
+    [InlineData(12, 3, 4, 233774)]
+    [InlineData(10, 2, 4, 471864)]
     public void Compact_OutcomesConstructedStaysWithinBaseline(int n, int m, int k, int outcomesCap)
     {
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
@@ -1320,6 +1326,8 @@ public sealed class StrategyRegressionTests
     [InlineData(8, 4, 2, 12)]
     [InlineData(10, 3, 5, 622)]
     [InlineData(13, 4, 3, 367)]
+    [InlineData(12, 3, 4, 18563)]
+    [InlineData(10, 2, 4, 469)]
     public void Compact_DuplicateOutcomeSkipsStaysWithinBaseline(int n, int m, int k, int duplicateSkipCap)
     {
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
