@@ -59,3 +59,5 @@ Current C progress:
 - added lane decision table in `docs/test-strategy.md` to standardize when to run counter lanes vs wall-clock perf lane.
 - added perf runner dry-run support (`-ListOnly`) and workflow passthrough (`manual-perf-gate` input `list_only`) for parameter-chain validation.
 - added machine-readable summary output (`-SummaryJsonPath`) for counter/perf runners and artifact upload in manual workflows.
+- fixed `full-counter-suite` selector matching so deterministic full audit runs the intended `StaysWithinBaseline` family.
+- added matched-test preflight counting in `run-counter-guardrails.ps1`; `full-counter-suite` now enforces a minimum matched-test threshold to catch selector drift early.

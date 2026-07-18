@@ -9,6 +9,7 @@ Use this with:
 Runner behavior:
 - prints selected method selectors for the chosen profile before execution.
 - supports dry-run listing via `-ListOnly`.
+- runs a preflight `--list-tests` count check; `full-counter-suite` enforces a minimum matched-test threshold to catch selector drift.
 
 ## Profiles
 
