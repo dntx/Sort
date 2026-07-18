@@ -263,7 +263,7 @@ partial class StrategyBuilder
     private List<TSpec> BuildPlannedBranchSpecsForChosenGroup<TSpec>(
         ComparisonState state,
         SelectedComparisonGroup chosenGroup,
-        Func<DisplayRenderEngine.BranchLine<MergedFamilyOutcome>, TSpec> buildSpec,
+        Func<PlannedBranchLine, TSpec> buildSpec,
         Func<TSpec, string> getOrderText)
     {
         var specs = new List<TSpec>();
@@ -275,11 +275,11 @@ partial class StrategyBuilder
             .ToList();
     }
 
-    private List<DisplayRenderEngine.BranchLine<MergedFamilyOutcome>> PlanBranchLinesForChosenGroup(
+    private List<PlannedBranchLine> PlanBranchLinesForChosenGroup(
         ComparisonState state,
         SelectedComparisonGroup chosenGroup)
     {
-        var plannedLines = new List<DisplayRenderEngine.BranchLine<MergedFamilyOutcome>>();
+        var plannedLines = new List<PlannedBranchLine>();
         foreach (MergedBranch merged in chosenGroup.Branches)
         {
             if (EnableProjectionPairingProbe)
@@ -356,18 +356,20 @@ partial class StrategyBuilder
     // Splits one merged bucket's order families into the exact set of displayed branch lines.
     // The line-planning policy is now hosted in DisplayBranchLinePlanner (display layer), while this
     // adapter provides the builder-specific orbit partition/projection merge hooks.
-    private List<DisplayRenderEngine.BranchLine<MergedFamilyOutcome>> SplitMergedBucketIntoBranchLines(
+    private List<PlannedBranchLine> SplitMergedBucketIntoBranchLines(
         ComparisonState state, List<MergedFamilyOutcome> families)
     {
         return DisplayRenderEngine.PlanBranchLines(
-            families,
-            buildSummary: members => BuildEquivalentOrderSummary(members.Select(outcome => outcome.Family).ToList()),
-            partitionFamiliesIntoOrbits: members => PartitionFamiliesIntoOrbits(state, members),
-            mergeOrbitsByProjection: parentOrbits =>
-                EnableProjectionOrbitMerging
-                    ? MergeOrbitsByProjection(state, parentOrbits)
-                    : parentOrbits.Select(orbit => (orbit, false)).ToList(),
-            getFamilyCount: outcome => outcome.Family.Count);
+                families,
+                buildSummary: members => BuildEquivalentOrderSummary(members.Select(outcome => outcome.Family).ToList()),
+                partitionFamiliesIntoOrbits: members => PartitionFamiliesIntoOrbits(state, members),
+                mergeOrbitsByProjection: parentOrbits =>
+                    EnableProjectionOrbitMerging
+                        ? MergeOrbitsByProjection(state, parentOrbits)
+                        : parentOrbits.Select(orbit => (orbit, false)).ToList(),
+                getFamilyCount: outcome => outcome.Family.Count)
+            .Select(line => new PlannedBranchLine(line.Members, line.ProjectionMerged))
+            .ToList();
     }
 
     // Partitions a merged bucket's families into parent-automorphism orbits over the active poset.
@@ -670,6 +672,18 @@ partial class StrategyBuilder
         public string OrderText { get; }
         public MergedFamilyOutcome Outcome { get; }
         public EquivalentOrderSummary? Summary { get; }
+    }
+
+    private readonly struct PlannedBranchLine
+    {
+        public PlannedBranchLine(List<MergedFamilyOutcome> members, bool projectionMerged)
+        {
+            Members = members;
+            ProjectionMerged = projectionMerged;
+        }
+
+        public List<MergedFamilyOutcome> Members { get; }
+        public bool ProjectionMerged { get; }
     }
 
     private readonly struct BranchRepresentativeSelection
