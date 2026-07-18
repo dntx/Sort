@@ -77,7 +77,7 @@ partial class StrategyBuilder
 
         var projectionCache = new Dictionary<ulong, (ComparisonState State, int[] Colors)>();
 
-        List<List<int>> components = DisplayRenderEngine.BuildProjectionComponents(
+        List<List<int>> components = ProjectionKernel.BuildProjectionComponents(
             orbits,
             areProjectionEquivalent: (left, right) =>
                 TryProjectionAutomorphism(state, left, right, projectionCache));
@@ -140,7 +140,7 @@ partial class StrategyBuilder
 
         MergedFamilyOutcome representative = line[0];
         IReadOnlyList<int> repOrder = representative.Family.RepresentativeOrderItems;
-        List<int> repProjected = DisplayRenderEngine.RestrictOrderByDropMask(repOrder, common);
+        List<int> repProjected = ProjectionKernel.RestrictOrderByDropMask(repOrder, common);
 
         ComparisonState? projected = null;
         for (int i = 1; i < line.Count; i++)
@@ -152,8 +152,8 @@ partial class StrategyBuilder
             if (common == 0)
                 return false;
 
-            projected ??= DisplayRenderEngine.CloneDeactivated(state, common);
-            List<int> memberProjected = DisplayRenderEngine.RestrictOrderByDropMask(memberOrder, common);
+            projected ??= ProjectionKernel.CloneDeactivated(state, common);
+            List<int> memberProjected = ProjectionKernel.RestrictOrderByDropMask(memberOrder, common);
             if (repProjected.Count != memberProjected.Count
                 || !projected.TryMapOrderByAutomorphism(0, repProjected, memberProjected))
                 return false;

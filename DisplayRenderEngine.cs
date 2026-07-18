@@ -11,8 +11,6 @@ sealed class DisplayRenderEngine
 {
     internal readonly record struct BranchLine<T>(List<T> Members, bool ProjectionMerged);
 
-    internal readonly record struct ProjectionOutcomeData(IReadOnlyList<int> OrderItems, ulong EliminatedMask);
-
     public StrategyOverview BuildOverview(StrategyPlan plan)
         => StrategyOverviewRenderer.Build(plan);
 
@@ -76,21 +74,13 @@ sealed class DisplayRenderEngine
     internal static bool IsSingleMergedOrbit(EquivalentOrderSummary? summary)
         => DisplayBranchLinePlanner.MergedOrderingsFormSingleOrbit(summary);
 
-    internal enum ProjectionAutomorphismProbeEvent
-    {
-        ColorPrefilterSkip,
-        AutomorphismCheck,
-        ProjectedStateBuild,
-        ProjectedStateCacheHit,
-    }
-
     internal static List<(List<T> Members, bool ProjectionMerged)> MergeProjectionOrbits<T>(
         List<List<T>> orbits,
         Func<T, T, bool> areProjectionEquivalent,
         Func<List<T>, bool> canFoldMultiFamilyComponent,
         Func<List<T>, List<T>> orderRepresentativeFirst,
         Func<T, int> getFamilyCount)
-        => DisplayProjectionOrbitMerger.MergeOrbitsByProjection(
+        => ProjectionKernel.MergeProjectionOrbits(
             orbits,
             areProjectionEquivalent,
             canFoldMultiFamilyComponent,
@@ -100,42 +90,19 @@ sealed class DisplayRenderEngine
     internal static List<List<int>> BuildProjectionComponents<T>(
         List<List<T>> orbits,
         Func<T, T, bool> areProjectionEquivalent)
-        => DisplayProjectionOrbitMerger.BuildProjectionComponents(orbits, areProjectionEquivalent);
+        => ProjectionKernel.BuildProjectionComponents(orbits, areProjectionEquivalent);
 
     internal static bool TryProjectionAutomorphism(
         ComparisonState state,
-        ProjectionOutcomeData a,
-        ProjectionOutcomeData b,
+        ProjectionKernel.ProjectionOutcomeData a,
+        ProjectionKernel.ProjectionOutcomeData b,
         Dictionary<ulong, (ComparisonState State, int[] Colors)>? projectionCache = null,
-        Action<ProjectionAutomorphismProbeEvent>? onProbeEvent = null)
-    {
-        Action<DisplayProjectionOrbitMerger.ProjectionAutomorphismProbeEvent>? bridged = null;
-        if (onProbeEvent is not null)
-        {
-            bridged = evt =>
-            {
-                onProbeEvent(evt switch
-                {
-                    DisplayProjectionOrbitMerger.ProjectionAutomorphismProbeEvent.ColorPrefilterSkip => ProjectionAutomorphismProbeEvent.ColorPrefilterSkip,
-                    DisplayProjectionOrbitMerger.ProjectionAutomorphismProbeEvent.AutomorphismCheck => ProjectionAutomorphismProbeEvent.AutomorphismCheck,
-                    DisplayProjectionOrbitMerger.ProjectionAutomorphismProbeEvent.ProjectedStateBuild => ProjectionAutomorphismProbeEvent.ProjectedStateBuild,
-                    DisplayProjectionOrbitMerger.ProjectionAutomorphismProbeEvent.ProjectedStateCacheHit => ProjectionAutomorphismProbeEvent.ProjectedStateCacheHit,
-                    _ => throw new ArgumentOutOfRangeException(nameof(evt), evt, null)
-                });
-            };
-        }
-
-        return DisplayProjectionOrbitMerger.TryProjectionAutomorphism(
-            state,
-            new DisplayProjectionOrbitMerger.ProjectionOutcomeData(a.OrderItems, a.EliminatedMask),
-            new DisplayProjectionOrbitMerger.ProjectionOutcomeData(b.OrderItems, b.EliminatedMask),
-            projectionCache,
-            bridged);
-    }
+        Action<ProjectionKernel.ProjectionAutomorphismProbeEvent>? onProbeEvent = null)
+        => ProjectionKernel.TryProjectionAutomorphism(state, a, b, projectionCache, onProbeEvent);
 
     internal static List<int> RestrictOrderByDropMask(IReadOnlyList<int> order, ulong dropMask)
-        => DisplayProjectionOrbitMerger.RestrictOrderByDropMask(order, dropMask);
+        => ProjectionKernel.RestrictOrderByDropMask(order, dropMask);
 
     internal static ComparisonState CloneDeactivated(ComparisonState state, ulong dropMask)
-        => DisplayProjectionOrbitMerger.CloneDeactivated(state, dropMask);
+        => ProjectionKernel.CloneDeactivated(state, dropMask);
 }
