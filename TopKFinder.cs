@@ -231,7 +231,7 @@ partial class StrategyBuilder
     // Search-model entrypoint used by public callers; it now shares the same exact search projection
     // as the display entrypoint instead of re-running a separate bridge.
     public SearchStrategy BuildSearchTree()
-        => BuildExactSearchProjection().SearchTree;
+        => BuildSearchTreeFromExactSolverState();
 
     public StrategyPlan RunExactPipeline(
         Action<StageResult>? onStageCompleted = null,
@@ -257,23 +257,41 @@ partial class StrategyBuilder
     internal (SearchTree SearchTree, DisplayTree DisplayTree) BuildExactSearchProjection()
     {
         DisplayTree sourceDisplayTree = BuildStepProofStage();
-        SearchTree searchTree = BuildSearchTreeFromSolverState(sourceDisplayTree);
+        SearchTree searchTree = BuildSearchTreeFromSolverState();
         return (searchTree, sourceDisplayTree);
+    }
+
+    // Mainline-A seam: keep a dedicated exact-search core that does not depend on display
+    // materialization, so search-first callers can remain independent from display projection.
+    private SearchTree BuildSearchTreeFromExactSolverState()
+    {
+        ComparisonState.SetThreadCancellationToken(_cancellationToken);
+        try
+        {
+            ResetPerBuildTransientState();
+            EnsurePhase1Solved();
+            _useCompact = false;
+            return BuildSearchTreeFromSolverState();
+        }
+        finally
+        {
+            ComparisonState.SetThreadCancellationToken(default);
+        }
     }
 
     // Transitional solver-sourced search builder: phase-1 group selection still comes from the
     // same exact caches, but the search tree is now materialized directly from solver state
     // recursion instead of mapping from an already-materialized display tree.
-    private SearchTree BuildSearchTreeFromSolverState(DisplayTree sourceDisplayTree)
+    private SearchTree BuildSearchTreeFromSolverState()
     {
         var expandedStates = new Dictionary<IntSequenceKey, ExpandedStateSnapshot>();
         var displayPath = new HashSet<IntSequenceKey>();
         SearchNode root = BuildSearchState(new ComparisonState(_n), 0, _k, 1, expandedStates, displayPath);
         return new SearchStrategy(
-            sourceDisplayTree.N,
-            sourceDisplayTree.M,
-            sourceDisplayTree.RequestedK,
-            sourceDisplayTree.K,
+            _n,
+            _m,
+            _requestedK,
+            _k,
             root);
     }
 
