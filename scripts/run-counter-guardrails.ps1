@@ -4,6 +4,7 @@ param(
     [ValidateSet("Debug", "Release")]
     [string]$Configuration = "Release",
     [switch]$ListOnly,
+    [string]$MatchedTestsPath,
     [string]$SummaryJsonPath
 )
 
@@ -47,7 +48,7 @@ $minimumMatchedTestsByProfile = @{
     "full-counter-suite" = 80
 }
 
-function Get-MatchedTestCount {
+function Get-MatchedTests {
     param(
         [Parameter(Mandatory = $true)]
         [string]$Configuration,
@@ -61,7 +62,7 @@ function Get-MatchedTestCount {
     }
 
     $matchedTests = @($listOutput | Where-Object { $_ -match '^\s*StrategyRegressionTests\.' })
-    return $matchedTests.Count
+    return $matchedTests
 }
 
 function Write-SummaryJson {
@@ -84,6 +85,26 @@ function Write-SummaryJson {
     Write-Host "Wrote summary JSON: $Path"
 }
 
+function Write-MatchedTests {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$MatchedTests,
+        [string]$Path
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        return
+    }
+
+    $parent = Split-Path -Parent $Path
+    if (-not [string]::IsNullOrWhiteSpace($parent)) {
+        New-Item -ItemType Directory -Force -Path $parent | Out-Null
+    }
+
+    $MatchedTests | Set-Content -Encoding utf8NoBOM -Path $Path
+    Write-Host "Wrote matched test list: $Path"
+}
+
 $summary = [ordered]@{
     runner = "run-counter-guardrails"
     timestampUtc = [DateTime]::UtcNow.ToString("o")
@@ -104,9 +125,11 @@ foreach ($method in $profileMethods[$Profile]) {
 }
 Write-Host "Filter: $filter"
 
-$matchedTestCount = Get-MatchedTestCount -Configuration $Configuration -Filter $filter
+$matchedTests = @(Get-MatchedTests -Configuration $Configuration -Filter $filter)
+$matchedTestCount = $matchedTests.Count
 Write-Host "Matched tests (preflight): $matchedTestCount" -ForegroundColor Cyan
 $summary["matchedTestsCount"] = $matchedTestCount
+Write-MatchedTests -MatchedTests $matchedTests -Path $MatchedTestsPath
 
 if ($minimumMatchedTestsByProfile.ContainsKey($Profile)) {
     $minimumExpected = [int]$minimumMatchedTestsByProfile[$Profile]

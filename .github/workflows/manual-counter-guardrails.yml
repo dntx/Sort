@@ -52,8 +52,10 @@ jobs:
           $listOnly = "${{ inputs.list_only }}"
           $listOnlyArg = if ($listOnly -eq "true") { "-ListOnly" } else { "" }
           $summaryPath = Join-Path $env:RUNNER_TEMP "counter-guardrails-summary.json"
-          pwsh .\scripts\run-counter-guardrails.ps1 -Profile "${{ inputs.profile }}" -Configuration "${{ inputs.build_configuration }}" -SummaryJsonPath $summaryPath $listOnlyArg
+          $matchedTestsPath = Join-Path $env:RUNNER_TEMP "counter-guardrails-matched-tests.txt"
+          pwsh .\scripts\run-counter-guardrails.ps1 -Profile "${{ inputs.profile }}" -Configuration "${{ inputs.build_configuration }}" -MatchedTestsPath $matchedTestsPath -SummaryJsonPath $summaryPath $listOnlyArg
           "summary_path=$summaryPath" >> $env:GITHUB_OUTPUT
+          "matched_tests_path=$matchedTestsPath" >> $env:GITHUB_OUTPUT
 
       - name: Collect deterministic counter snapshots
         if: ${{ inputs.collect_snapshots && !inputs.list_only }}
@@ -74,6 +76,13 @@ jobs:
         with:
           name: counter-guardrails-summary
           path: ${{ steps.run_guardrails.outputs.summary_path }}
+
+      - name: Upload counter guardrail matched tests
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: counter-guardrails-matched-tests
+          path: ${{ steps.run_guardrails.outputs.matched_tests_path }}
 
       - name: Upload counter snapshot summary
         if: ${{ always() && inputs.collect_snapshots && !inputs.list_only }}
