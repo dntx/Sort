@@ -2,7 +2,7 @@ param(
     [ValidateSet("Debug", "Release")]
     [string]$Configuration = "Release",
     [string]$ArtifactsDir = ".\\artifacts\\counter-full-audit",
-    [string]$MatchedTestsBaselinePath = ".\\scripts\\counter-guardrails-full-counter-suite-baseline.txt",
+    [string]$MatchedTestsBaselinePath = ".\\docs\\counter-guardrails-full-counter-suite-baseline.txt",
     [switch]$ListOnly
 )
 

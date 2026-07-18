@@ -25,7 +25,7 @@ Outputs land in one artifact directory, so reviewer triage does not require stit
 
 The repository baseline for matched test coverage is:
 
-- `scripts/counter-guardrails-full-counter-suite-baseline.txt`
+- `docs/counter-guardrails-full-counter-suite-baseline.txt`
 
 This file is the expected `full-counter-suite` selector expansion at the time of baseline capture.
 

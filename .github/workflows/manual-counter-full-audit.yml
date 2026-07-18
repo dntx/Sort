@@ -13,7 +13,7 @@ on:
       matched_tests_baseline_path:
         description: Repository path to the matched-tests baseline file
         type: string
-        default: .\\scripts\\counter-guardrails-full-counter-suite-baseline.txt
+        default: .\\docs\\counter-guardrails-full-counter-suite-baseline.txt
       list_only:
         description: If true, validate guardrail selector coverage and matched-test diff without running tests or snapshots
         type: boolean
