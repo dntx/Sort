@@ -343,7 +343,7 @@ partial class StrategyBuilder
         Dictionary<IntSequenceKey, ExpandedStateSnapshot> expandedStates,
         HashSet<IntSequenceKey> displayPath)
     {
-        return BuildTransitionSpecs(state, fixedTopMask, remainingSlots, chosenGroup)
+        return BuildSearchTransitionSpecs(state, fixedTopMask, remainingSlots, chosenGroup)
             .Select(spec => new SearchBranch(
                 spec.OrderText,
                 new SearchEffect(

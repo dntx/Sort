@@ -36,6 +36,7 @@ public sealed class DisplayToSearchExpanderTests
 
     [Theory]
     [InlineData(9, 3, 3)]
+    [InlineData(10, 4, 8)]
     [InlineData(12, 4, 5)]
     public void BuildDisplayTreeAndExpandedSearch_And_BuildSearchTree_ProduceEquivalentSearchModels(int n, int m, int k)
     {

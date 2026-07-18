@@ -24,7 +24,7 @@ partial class StrategyBuilder
         int nextStep,
         MaterializationContext context)
     {
-        return BuildTransitionSpecs(state, fixedTopMask, remainingSlots, chosenGroup)
+        return BuildDisplayTransitionSpecs(state, fixedTopMask, remainingSlots, chosenGroup)
             .Select(spec => new StrategyBranch(
                 spec.OrderText,
                 spec.Summary,
@@ -38,15 +38,40 @@ partial class StrategyBuilder
             .ToList();
     }
 
-    // Shared transition primitive for both display and search materializers.
-    // It computes the ordered branch line identity plus semantic transition payload once.
-    private IReadOnlyList<TransitionSpec> BuildTransitionSpecs(
+    // Display transition planner: consumes display branch-line specs (including equivalence-summary
+    // shaping) and projects them into transition payloads.
+    private IReadOnlyList<TransitionSpec> BuildDisplayTransitionSpecs(
         ComparisonState state,
         ulong fixedTopMask,
         int remainingSlots,
         SelectedComparisonGroup chosenGroup)
     {
-        return BuildBranchSpecs(state, remainingSlots, chosenGroup)
+        return BuildTransitionSpecsFromBranchSpecs(
+            state,
+            fixedTopMask,
+            BuildBranchSpecs(state, remainingSlots, chosenGroup));
+    }
+
+    // Search transition planner seam: currently reuses the display branch-line planner so behavior
+    // stays stable while search-side planning is being decoupled incrementally.
+    private IReadOnlyList<TransitionSpec> BuildSearchTransitionSpecs(
+        ComparisonState state,
+        ulong fixedTopMask,
+        int remainingSlots,
+        SelectedComparisonGroup chosenGroup)
+    {
+        return BuildTransitionSpecsFromBranchSpecs(
+            state,
+            fixedTopMask,
+            BuildBranchSpecs(state, remainingSlots, chosenGroup));
+    }
+
+    private IReadOnlyList<TransitionSpec> BuildTransitionSpecsFromBranchSpecs(
+        ComparisonState state,
+        ulong fixedTopMask,
+        IReadOnlyList<BranchSpec> branchSpecs)
+    {
+        return branchSpecs
             .Select(spec => new TransitionSpec(
                 spec.OrderText,
                 spec.Summary,
