@@ -222,16 +222,14 @@ partial class StrategyBuilder
         return BuildPlan(useCompactSelection: false);
     }
 
-    // Transitional exact-stage entrypoint: build the exact tree once, project it to the search model,
-    // and then project the public display plan back from that search tree. The solver itself is still
-    // display-materialization based, but callers now observe the exact path as search -> display.
+    // Exact-stage entrypoint: materialize display/search artifacts in one solver session.
     public (SearchTree SearchTree, DisplayTree DisplayTree) BuildDisplayTreeAndExpandedSearch()
-        => BuildExactSearchProjection();
+        => BuildExactProjectionFromCurrentSession();
 
-    // Search-model entrypoint used by public callers; it now shares the same exact search projection
-    // as the display entrypoint instead of re-running a separate bridge.
+    // Search-model entrypoint used by public callers. It shares the same exact solver caches
+    // as the display entrypoint while staying independent from display materialization.
     public SearchStrategy BuildSearchTree()
-        => BuildExactSearchProjection().SearchTree;
+        => BuildSearchTreeFromStandaloneExactSession();
 
     public StrategyPlan RunExactPipeline(
         Action<StageResult>? onStageCompleted = null,
@@ -254,26 +252,67 @@ partial class StrategyBuilder
         return BuildPlan(useCompactSelection: true, useFeasibleBudget: false);
     }
 
-    internal (SearchTree SearchTree, DisplayTree DisplayTree) BuildExactSearchProjection()
+    // Mainline-A seam: build exact display + search artifacts inside one active solver session
+    // so both materializers consume the same phase-1 caches without nested entrypoint hand-offs.
+    private (SearchTree SearchTree, DisplayTree DisplayTree) BuildExactProjectionFromCurrentSession()
     {
-        DisplayTree sourceDisplayTree = BuildStepProofStage();
-        SearchTree searchTree = BuildSearchTreeFromSolverState(sourceDisplayTree);
-        return (searchTree, sourceDisplayTree);
+        ComparisonState.SetThreadCancellationToken(_cancellationToken);
+        try
+        {
+            _progressScope = _reportCombinedRunProgress
+                ? ProgressScope.DefaultInCombinedRun
+                : ProgressScope.DefaultStandalone;
+
+            DisplayTree displayTree = BuildPlanWithinSession(
+                useCompactSelection: false,
+                useFeasibleBudget: false,
+                initializeSession: true);
+            SearchTree searchTree = BuildSearchTreeFromCurrentExactSession();
+            return (searchTree, displayTree);
+        }
+        finally
+        {
+            ComparisonState.SetThreadCancellationToken(default);
+        }
     }
 
-    // Transitional solver-sourced search builder: phase-1 group selection still comes from the
-    // same exact caches, but the search tree is now materialized directly from solver state
-    // recursion instead of mapping from an already-materialized display tree.
-    private SearchTree BuildSearchTreeFromSolverState(DisplayTree sourceDisplayTree)
+    // Standalone search-only exact entry: starts its own solver session and materializes
+    // the search tree from that session's exact caches.
+    private SearchTree BuildSearchTreeFromStandaloneExactSession()
     {
-        var expandedStates = new Dictionary<IntSequenceKey, ExpandedStateSnapshot>();
-        var displayPath = new HashSet<IntSequenceKey>();
-        SearchNode root = BuildSearchState(new ComparisonState(_n), 0, _k, 1, expandedStates, displayPath);
+        ComparisonState.SetThreadCancellationToken(_cancellationToken);
+        try
+        {
+            InitializeExactSolverSession(useFeasibleBudget: false);
+            return BuildSearchTreeFromCurrentExactSession();
+        }
+        finally
+        {
+            ComparisonState.SetThreadCancellationToken(default);
+        }
+    }
+
+    // Current-session search materialization path shared by layered exact projection
+    // and standalone search-only exact entry after session initialization.
+    private SearchTree BuildSearchTreeFromCurrentExactSession()
+    {
+        _useCompact = false;
+        return BuildSearchTreeFromCurrentExactCaches();
+    }
+
+    // Solver-sourced search builder: phase-1 group selection comes from exact caches,
+    // and the search tree is materialized directly from solver state recursion.
+    private SearchTree BuildSearchTreeFromCurrentExactCaches()
+    {
+        var context = new SearchMaterializationContext(
+            new Dictionary<IntSequenceKey, ExpandedStateSnapshot>(),
+            new HashSet<IntSequenceKey>());
+        SearchNode root = BuildSearchState(new ComparisonState(_n), 0, _k, 1, context);
         return new SearchStrategy(
-            sourceDisplayTree.N,
-            sourceDisplayTree.M,
-            sourceDisplayTree.RequestedK,
-            sourceDisplayTree.K,
+            _n,
+            _m,
+            _requestedK,
+            _k,
             root);
     }
 
@@ -282,14 +321,13 @@ partial class StrategyBuilder
         ulong fixedTopMask,
         int remainingSlots,
         int step,
-        Dictionary<IntSequenceKey, ExpandedStateSnapshot> expandedStates,
-        HashSet<IntSequenceKey> displayPath)
+        SearchMaterializationContext context)
     {
         ThrowIfCancellationRequested();
         NormalizeState(state, ref fixedTopMask, ref remainingSlots);
 
-        IntSequenceKey displayKey = GetDisplayStateKey(state, fixedTopMask);
-        int stateId = GetStateId(displayKey);
+        IntSequenceKey expansionKey = GetDisplayStateKey(state, fixedTopMask);
+        int stateId = GetStateId(expansionKey);
 
         if (remainingSlots == 0)
             return SearchNode.Terminal(stateId, ComparisonState.MaskToOrderedList(fixedTopMask));
@@ -304,16 +342,20 @@ partial class StrategyBuilder
         if (state.ActiveCount <= _m)
             return SearchNode.Decision(stateId, step, possibleCandidates, Array.Empty<SearchBranch>());
 
-        if (expandedStates.TryGetValue(displayKey, out ExpandedStateSnapshot snapshot))
+        if (context.ExpandedStates.TryGetValue(expansionKey, out ExpandedStateSnapshot snapshot))
         {
             IReadOnlyList<ItemRelabel>? relabeling =
                 snapshot.State.TryBuildDisplayRelabeling(snapshot.FixedTopMask, state, fixedTopMask);
             return SearchNode.Reference(stateId, relabeling);
         }
 
-        expandedStates.Add(displayKey, new ExpandedStateSnapshot(state.Clone(), fixedTopMask));
-        if (!displayPath.Add(displayKey))
-            throw new InvalidOperationException("Search materialization detected a recursive display-state expansion path.");
+        bool trackingExpansionPath = TryTrackExpandedState(
+            expansionKey,
+            state,
+            fixedTopMask,
+            context.ExpandedStates,
+            context.ExpansionPath,
+            "Search materialization detected a recursive display-state expansion path.");
 
         try
         {
@@ -324,13 +366,13 @@ partial class StrategyBuilder
                 remainingSlots,
                 chosenGroup,
                 step + 1,
-                expandedStates,
-                displayPath);
+                context);
             return SearchNode.Decision(stateId, step, chosenGroup.Group, branches);
         }
         finally
         {
-            displayPath.Remove(displayKey);
+            if (trackingExpansionPath)
+                context.ExpansionPath!.Remove(expansionKey);
         }
     }
 
@@ -340,8 +382,7 @@ partial class StrategyBuilder
         int remainingSlots,
         SelectedComparisonGroup chosenGroup,
         int nextStep,
-        Dictionary<IntSequenceKey, ExpandedStateSnapshot> expandedStates,
-        HashSet<IntSequenceKey> displayPath)
+        SearchMaterializationContext context)
     {
         return BuildSearchTransitionSpecs(state, fixedTopMask, remainingSlots, chosenGroup)
             .Select(spec => new SearchBranch(
@@ -352,8 +393,7 @@ partial class StrategyBuilder
                     spec.NextFixedTopMask,
                     spec.NextRemainingSlots,
                     nextStep,
-                    expandedStates,
-                    displayPath)))
+                        context)))
             .ToList();
     }
 
@@ -623,41 +663,57 @@ partial class StrategyBuilder
         ComparisonState.SetThreadCancellationToken(_cancellationToken);
         try
         {
-            ResetPerBuildTransientState();
-            var stopwatch = Stopwatch.StartNew();
-            ReportProgress(force: true);
-
-            _compactUsesFeasibleBudget = useFeasibleBudget;
-            if (!useFeasibleBudget)
-                EnsurePhase1Solved();
-            _phase1Milliseconds = stopwatch.ElapsedMilliseconds;
-
-            if (useCompactSelection)
-                EnsureCompactSolved();
-            _phase1bMilliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds;
-
-            // Phase 2: materialize the strategy tree, reusing the cached group patterns.
-            _useCompact = useCompactSelection;
-            var root = BuildState(new ComparisonState(_n), 0, _k, 1);
-            _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds - _phase1bMilliseconds;
-            stopwatch.Stop();
-            ReportProgress(force: true);
-            bool feasible = useFeasibleBudget;
-            int? searchTreeEdges = useCompactSelection ? _compactRootCost : null;
-            return new StrategyPlan(
-                _n,
-                _m,
-                _requestedK,
-                _k,
-                root,
-                stopwatch.Elapsed,
-                CreateSearchStatistics(searchTreeEdges),
-                isFeasibleUpperBound: feasible);
+            return BuildPlanWithinSession(useCompactSelection, useFeasibleBudget, initializeSession: true);
         }
         finally
         {
             ComparisonState.SetThreadCancellationToken(default);
         }
+    }
+
+    private StrategyPlan BuildPlanWithinSession(
+        bool useCompactSelection,
+        bool useFeasibleBudget,
+        bool initializeSession)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        if (initializeSession)
+            InitializeExactSolverSession(useFeasibleBudget);
+        _phase1Milliseconds = stopwatch.ElapsedMilliseconds;
+
+        if (useCompactSelection)
+            EnsureCompactSolved();
+        _phase1bMilliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds;
+
+        // Phase 2: materialize the strategy tree, reusing the cached group patterns.
+        _useCompact = useCompactSelection;
+        var root = BuildState(new ComparisonState(_n), 0, _k, 1);
+        _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds - _phase1bMilliseconds;
+        stopwatch.Stop();
+        ReportProgress(force: true);
+        bool feasible = useFeasibleBudget;
+        int? searchTreeEdges = useCompactSelection ? _compactRootCost : null;
+        return new StrategyPlan(
+            _n,
+            _m,
+            _requestedK,
+            _k,
+            root,
+            stopwatch.Elapsed,
+            CreateSearchStatistics(searchTreeEdges),
+            isFeasibleUpperBound: feasible);
+    }
+
+    // Shared exact-session bootstrap used by both display and search entrypoints.
+    // Mainline-A objective: keep phase-1 cache initialization semantics in one place.
+    private void InitializeExactSolverSession(bool useFeasibleBudget)
+    {
+        ResetPerBuildTransientState();
+        ReportProgress(force: true);
+
+        _compactUsesFeasibleBudget = useFeasibleBudget;
+        if (!useFeasibleBudget)
+            EnsurePhase1Solved();
     }
 
     private readonly record struct MaterializationContext(
@@ -675,8 +731,8 @@ partial class StrategyBuilder
         NormalizeState(state, ref fixedTopMask, ref remainingSlots);
         ObserveSearchState(state, remainingSlots);
 
-        IntSequenceKey displayKey = GetDisplayStateKey(state, fixedTopMask);
-        int stateId = GetStateId(displayKey);
+        IntSequenceKey expansionKey = GetDisplayStateKey(state, fixedTopMask);
+        int stateId = GetStateId(expansionKey);
 
         if (remainingSlots == 0)
             return StrategyNode.Terminal(stateId, ComparisonState.MaskToOrderedList(fixedTopMask));
@@ -701,21 +757,21 @@ partial class StrategyBuilder
                     remainingSlots));
         }
 
-        if (_expandedStates.TryGetValue(displayKey, out ExpandedStateSnapshot snapshot))
+        if (_expandedStates.TryGetValue(expansionKey, out ExpandedStateSnapshot snapshot))
         {
             IReadOnlyList<ItemRelabel>? relabeling =
                 snapshot.State.TryBuildDisplayRelabeling(snapshot.FixedTopMask, state, fixedTopMask);
             return StrategyNode.Reference(stateId, relabeling);
         }
 
-        _expandedStates.Add(displayKey, new ExpandedStateSnapshot(state.Clone(), fixedTopMask));
-
         bool trackingDisplayPath = _useGreedyTightenSelection;
-        if (trackingDisplayPath && !_materializationDisplayPath.Add(displayKey))
-        {
-            throw new InvalidOperationException(
-                "GreedyTighten materialization detected a recursive display-state expansion path.");
-        }
+        TryTrackExpandedState(
+            expansionKey,
+            state,
+            fixedTopMask,
+            _expandedStates,
+            trackingDisplayPath ? _materializationDisplayPath : null,
+            "GreedyTighten materialization detected a recursive display-state expansion path.");
 
         try
         {
@@ -736,7 +792,7 @@ partial class StrategyBuilder
         finally
         {
             if (trackingDisplayPath)
-                _materializationDisplayPath.Remove(displayKey);
+                _materializationDisplayPath.Remove(expansionKey);
         }
     }
 
@@ -1810,6 +1866,28 @@ partial class StrategyBuilder
 
         public ComparisonState State { get; }
         public ulong FixedTopMask { get; }
+    }
+
+    private readonly record struct SearchMaterializationContext(
+        Dictionary<IntSequenceKey, ExpandedStateSnapshot> ExpandedStates,
+        HashSet<IntSequenceKey> ExpansionPath);
+
+    private static bool TryTrackExpandedState(
+        IntSequenceKey expansionKey,
+        ComparisonState state,
+        ulong fixedTopMask,
+        Dictionary<IntSequenceKey, ExpandedStateSnapshot> expandedStates,
+        HashSet<IntSequenceKey>? expansionPath,
+        string cycleMessage)
+    {
+        expandedStates.Add(expansionKey, new ExpandedStateSnapshot(state.Clone(), fixedTopMask));
+        if (expansionPath is null)
+            return false;
+
+        if (!expansionPath.Add(expansionKey))
+            throw new InvalidOperationException(cycleMessage);
+
+        return true;
     }
 
     private sealed class OutcomeTraversalSummary
