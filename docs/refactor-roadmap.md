@@ -66,3 +66,5 @@ Current C progress:
 - ratcheted down a batch of default-path counter caps (searched/outcomes/candidate/duplicate) using the collected snapshot as the source of truth.
 - added `scripts/collect-compact-counter-snapshot.ps1` to automate compact-path counter snapshot collection (including compact-specific work counters).
 - ratcheted down compact-path counter caps (`Compact_WorkCounters*`, `Compact_Searched*`, `Compact_Outcomes*`, `Compact_Duplicate*`) from measured snapshot values.
+- added `scripts/collect-iterative-counter-snapshot.ps1` to automate iterative-frontier counter snapshot collection with structural-anchor verification.
+- ratcheted down iterative-frontier counter caps in `Default_IterativeDeepeningBaselineRemainsStable` from measured snapshot values.

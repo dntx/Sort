@@ -138,12 +138,12 @@ public sealed class StrategyRegressionTests
     // and docs/core-algorithm.md sec 4.3). This theory therefore locks the ID path's own tree, not
     // cross-path identity.
     [Theory]
-    [InlineData(14, 5, 5, 5, 5, 72, 36, 8, 329, 22686, 30137)]
-    [InlineData(16, 5, 5, 6, 5, 122, 29, 12, 2573, 416162, 488630)]
-    [InlineData(17, 5, 5, 6, 5, 135, 40, 13, 2714, 393047, 534261)]
-    [InlineData(18, 5, 5, 6, 5, 227, 66, 14, 3855, 680812, 836413)]
-    [InlineData(12, 6, 6, 3, 6, 16, 17, 2, 34, 1172, 1753)]
-    [InlineData(14, 6, 6, 4, 6, 92, 23, 3, 94, 4117, 6423)]
+    [InlineData(14, 5, 5, 5, 5, 72, 36, 8, 174, 2768, 7474)]
+    [InlineData(16, 5, 5, 6, 5, 122, 29, 12, 1633, 66249, 73060)]
+    [InlineData(17, 5, 5, 6, 5, 135, 40, 13, 1309, 42641, 67024)]
+    [InlineData(18, 5, 5, 6, 5, 227, 66, 14, 1758, 78787, 88908)]
+    [InlineData(12, 6, 6, 3, 6, 16, 17, 2, 25, 66, 65)]
+    [InlineData(14, 6, 6, 4, 6, 92, 23, 3, 45, 404, 2341)]
     public void Default_IterativeDeepeningBaselineRemainsStable(
         int n, int m, int k, int maxStep, int rootGroupCount, int totalEdges,
         int outputStates, int expandedOutputStates,
