@@ -15,6 +15,10 @@ on:
         description: Allowed median slowdown percent vs baseline
         type: number
         default: 5
+      baseline_csv_path:
+        description: Baseline CSV path for comparison
+        type: string
+        default: .\\scripts\\benchmark-greedy-stage1-baseline.csv
       list_only:
         description: If true, print resolved command and exit without running benchmark
         type: boolean
@@ -30,6 +34,7 @@ permissions:
 jobs:
   perf-gate:
     runs-on: windows-latest
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -54,6 +59,7 @@ jobs:
             -WarmupRuns ${{ inputs.warmup_runs }} `
             -MeasuredRuns ${{ inputs.measured_runs }} `
             -RegressionTolerancePercent ${{ inputs.regression_tolerance_percent }} `
+            -BaselineCsvPath "${{ inputs.baseline_csv_path }}" `
             -EnforceBaseline `
             -BenchmarkRowsCsvPath $rowsCsvPath `
             -SummaryJsonPath $summaryPath `

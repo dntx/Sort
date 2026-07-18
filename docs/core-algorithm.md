@@ -503,6 +503,7 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     约束取消到退出的延迟不回到分钟级卡顿（anti-regression guardrail，而非严格性能基准）。
     工程治理层面，`manual-counter-guardrails` 手动 lane 现可选联动 `collect-all-counter-snapshots`，一次派发同时产出 guardrail 结果与 default/compact/iterative 统一快照摘要，便于按同一批运行结果做 cap ratchet 审阅。
     与其配套，`manual-perf-gate` 手动 lane 也支持可选导出当次 benchmark case 明细 CSV（rows artifact），让墙钟烟雾检查除 pass/fail 外还能复盘中位数样本与结构稳定性。
+    该 lane 还支持在派发时指定 `baseline_csv_path` 并设置 job 超时上限，保证手动基线切换无需改脚本默认值且长跑任务可控收敛。
   - **Anytime 呈现**：`RunGreedyPipeline(onStageCompleted)` 接受一个回调，在**每次**产出一个阶段结果时**同步**触发——
     回调参数是 `StageResult`（阶段名 + 该阶段**自身**耗时 + 可空的计划 + `Outcome` 枚举）。**强输出契约**：每个被
     `onStageStart` 宣布的探测都**恰好**由一次 `onStageCompleted` 完成、携带一个 `{Outcome, Plan}` 整体——driver 任何分支都不会
