@@ -17,7 +17,7 @@ Runner behavior:
 | `fast-default` | `Default_SearchedStateCountStaysWithinBaseline`, `Default_OutcomesConstructedStaysWithinBaseline`, `Default_CandidateGroupsEnumeratedStaysWithinBaseline`, `Default_DuplicateOutcomeSkipsStaysWithinBaseline` | Daily deterministic guard for default path work |
 | `iterative-frontier` | `Default_IterativeDeepeningBaselineRemainsStable`, `Default_IterativeDeepening_BeatsExactPath` | ID gate/frontier stability and expected win over exact path |
 | `compact` | `Compact_WorkCountersStayWithinBaseline`, `Compact_SearchedStateCountStaysWithinBaseline`, `Compact_OutcomesConstructedStaysWithinBaseline`, `Compact_DuplicateOutcomeSkipsStaysWithinBaseline` | Compact-phase deterministic work guardrails |
-| `full-counter-suite` | `*StaysWithinBaseline` + iterative frontier pair above | Full deterministic counter audit before major merges |
+| `full-counter-suite` | `StaysWithinBaseline` + iterative frontier pair above | Full deterministic counter audit before major merges |
 
 ## Shape Coverage Anchors
 
