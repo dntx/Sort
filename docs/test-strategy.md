@@ -181,6 +181,35 @@ GitHub Actions 侧提供了手动门槛工作流：
 
 ---
 
+## 4.2 Contributor Run Matrix（Fast / Slow / Perf）
+
+为避免日常开发被重型 case 拖慢，仓库按以下规则分层：
+
+- PR 必跑（required gate）：仅跑 fast 套件（`Category!=Slow`）+ 轻量 perf tests。
+- Slow parity 矩阵：不进 required gate，改为按需触发。
+- perf baseline gate：按需触发 `manual-perf-gate`（对比基线 CSV）。
+
+推荐命令：
+
+```powershell
+# Fast（默认日常回归）
+dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --filter "Category!=Slow"
+
+# Slow parity（收口前 / 专项回归）
+dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --filter "Category=Slow"
+
+# 手动 perf gate（本地脚本）
+pwsh .\scripts\benchmark-greedy-stage1.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-stage1-baseline.csv -RegressionTolerancePercent 5 -EnforceBaseline
+```
+
+GitHub Actions 入口：
+
+- `required-pr-tests`：PR 自动触发（fast only）。
+- `manual-slow-parity`：手动触发 slow parity 矩阵。
+- `manual-perf-gate`：手动触发 baseline 回归门槛。
+
+---
+
 ## 5. 其它正确性 / 单元测试
 
 | 文件 | 职责 |
