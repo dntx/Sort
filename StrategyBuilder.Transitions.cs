@@ -173,7 +173,8 @@ partial class StrategyBuilder
         ComparisonState after,
         ulong afterFixedTopMask)
     {
-        StrategyEffect effect = BuildComparisonEffect(before, beforeFixedTopMask, after, afterFixedTopMask);
+        ComparisonEffectFields effect =
+            BuildComparisonEffectFields(before, beforeFixedTopMask, after, afterFixedTopMask);
         return new SearchEffect(
             effect.NewlyGuaranteedTop,
             effect.NewlyExcluded,
@@ -507,12 +508,34 @@ partial class StrategyBuilder
 
     private StrategyEffect BuildComparisonEffect(ComparisonState before, ulong beforeFixedTopMask, ComparisonState after, ulong afterFixedTopMask)
     {
-        var newlyGuaranteedTop = ComparisonState.MaskToOrderedList(afterFixedTopMask & ~beforeFixedTopMask);
-        var newlyExcluded = ComparisonState.MaskToOrderedList(before.ActiveMask & ~after.ActiveMask & ~afterFixedTopMask);
-        var fixedCandidates = ComparisonState.MaskToOrderedList(afterFixedTopMask);
-        var possibleCandidates = after.GetActiveItemsOrdered();
+        ComparisonEffectFields effect =
+            BuildComparisonEffectFields(before, beforeFixedTopMask, after, afterFixedTopMask);
 
-        return new StrategyEffect(newlyGuaranteedTop, newlyExcluded, fixedCandidates, possibleCandidates);
+        return new StrategyEffect(
+            effect.NewlyGuaranteedTop,
+            effect.NewlyExcluded,
+            effect.FixedCandidates,
+            effect.PossibleCandidates);
+    }
+
+    private static ComparisonEffectFields BuildComparisonEffectFields(
+        ComparisonState before,
+        ulong beforeFixedTopMask,
+        ComparisonState after,
+        ulong afterFixedTopMask)
+    {
+        IReadOnlyList<int> newlyGuaranteedTop =
+            ComparisonState.MaskToOrderedList(afterFixedTopMask & ~beforeFixedTopMask);
+        IReadOnlyList<int> newlyExcluded =
+            ComparisonState.MaskToOrderedList(before.ActiveMask & ~after.ActiveMask & ~afterFixedTopMask);
+        IReadOnlyList<int> fixedCandidates = ComparisonState.MaskToOrderedList(afterFixedTopMask);
+        IReadOnlyList<int> possibleCandidates = after.GetActiveItemsOrdered();
+
+        return new ComparisonEffectFields(
+            newlyGuaranteedTop,
+            newlyExcluded,
+            fixedCandidates,
+            possibleCandidates);
     }
 
     private ComparisonOutcome CreateComparisonOutcome(
@@ -683,6 +706,26 @@ partial class StrategyBuilder
         public ComparisonState NextState { get; }
         public ulong NextFixedTopMask { get; }
         public int NextRemainingSlots { get; }
+    }
+
+    private readonly struct ComparisonEffectFields
+    {
+        public ComparisonEffectFields(
+            IReadOnlyList<int> newlyGuaranteedTop,
+            IReadOnlyList<int> newlyExcluded,
+            IReadOnlyList<int> fixedCandidates,
+            IReadOnlyList<int> possibleCandidates)
+        {
+            NewlyGuaranteedTop = newlyGuaranteedTop;
+            NewlyExcluded = newlyExcluded;
+            FixedCandidates = fixedCandidates;
+            PossibleCandidates = possibleCandidates;
+        }
+
+        public IReadOnlyList<int> NewlyGuaranteedTop { get; }
+        public IReadOnlyList<int> NewlyExcluded { get; }
+        public IReadOnlyList<int> FixedCandidates { get; }
+        public IReadOnlyList<int> PossibleCandidates { get; }
     }
 
     private readonly struct TransitionSpec
