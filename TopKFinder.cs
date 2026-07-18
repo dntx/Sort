@@ -226,7 +226,7 @@ partial class StrategyBuilder
     // and then project the public display plan back from that search tree. The solver itself is still
     // display-materialization based, but callers now observe the exact path as search -> display.
     public (SearchTree SearchTree, DisplayTree DisplayTree) BuildDisplayTreeAndExpandedSearch()
-        => BuildExactSearchProjection();
+        => BuildExactProjectionFromCurrentSession();
 
     // Search-model entrypoint used by public callers; it now shares the same exact search projection
     // as the display entrypoint instead of re-running a separate bridge.
@@ -256,9 +256,31 @@ partial class StrategyBuilder
 
     internal (SearchTree SearchTree, DisplayTree DisplayTree) BuildExactSearchProjection()
     {
-        DisplayTree sourceDisplayTree = BuildStepProofStage();
-        SearchTree searchTree = BuildSearchTreeFromExactCaches(prepareSession: false);
-        return (searchTree, sourceDisplayTree);
+        return BuildExactProjectionFromCurrentSession();
+    }
+
+    // Mainline-A seam: build exact display + search artifacts inside one active solver session
+    // so both materializers consume the same phase-1 caches without nested entrypoint hand-offs.
+    private (SearchTree SearchTree, DisplayTree DisplayTree) BuildExactProjectionFromCurrentSession()
+    {
+        ComparisonState.SetThreadCancellationToken(_cancellationToken);
+        try
+        {
+            _progressScope = _reportCombinedRunProgress
+                ? ProgressScope.DefaultInCombinedRun
+                : ProgressScope.DefaultStandalone;
+
+            DisplayTree displayTree = BuildPlanWithinSession(
+                useCompactSelection: false,
+                useFeasibleBudget: false,
+                initializeSession: true);
+            SearchTree searchTree = BuildSearchTreeFromCurrentExactCaches();
+            return (searchTree, displayTree);
+        }
+        finally
+        {
+            ComparisonState.SetThreadCancellationToken(default);
+        }
     }
 
     // Mainline-A seam: keep a dedicated exact-search core that does not depend on display
@@ -650,36 +672,45 @@ partial class StrategyBuilder
         ComparisonState.SetThreadCancellationToken(_cancellationToken);
         try
         {
-            var stopwatch = Stopwatch.StartNew();
-            InitializeExactSolverSession(useFeasibleBudget);
-            _phase1Milliseconds = stopwatch.ElapsedMilliseconds;
-
-            if (useCompactSelection)
-                EnsureCompactSolved();
-            _phase1bMilliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds;
-
-            // Phase 2: materialize the strategy tree, reusing the cached group patterns.
-            _useCompact = useCompactSelection;
-            var root = BuildState(new ComparisonState(_n), 0, _k, 1);
-            _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds - _phase1bMilliseconds;
-            stopwatch.Stop();
-            ReportProgress(force: true);
-            bool feasible = useFeasibleBudget;
-            int? searchTreeEdges = useCompactSelection ? _compactRootCost : null;
-            return new StrategyPlan(
-                _n,
-                _m,
-                _requestedK,
-                _k,
-                root,
-                stopwatch.Elapsed,
-                CreateSearchStatistics(searchTreeEdges),
-                isFeasibleUpperBound: feasible);
+            return BuildPlanWithinSession(useCompactSelection, useFeasibleBudget, initializeSession: true);
         }
         finally
         {
             ComparisonState.SetThreadCancellationToken(default);
         }
+    }
+
+    private StrategyPlan BuildPlanWithinSession(
+        bool useCompactSelection,
+        bool useFeasibleBudget,
+        bool initializeSession)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        if (initializeSession)
+            InitializeExactSolverSession(useFeasibleBudget);
+        _phase1Milliseconds = stopwatch.ElapsedMilliseconds;
+
+        if (useCompactSelection)
+            EnsureCompactSolved();
+        _phase1bMilliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds;
+
+        // Phase 2: materialize the strategy tree, reusing the cached group patterns.
+        _useCompact = useCompactSelection;
+        var root = BuildState(new ComparisonState(_n), 0, _k, 1);
+        _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds - _phase1bMilliseconds;
+        stopwatch.Stop();
+        ReportProgress(force: true);
+        bool feasible = useFeasibleBudget;
+        int? searchTreeEdges = useCompactSelection ? _compactRootCost : null;
+        return new StrategyPlan(
+            _n,
+            _m,
+            _requestedK,
+            _k,
+            root,
+            stopwatch.Elapsed,
+            CreateSearchStatistics(searchTreeEdges),
+            isFeasibleUpperBound: feasible);
     }
 
     // Shared exact-session bootstrap used by both display and search entrypoints.
