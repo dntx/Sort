@@ -31,6 +31,16 @@ jobs:
           dotnet-version: 8.0.x
 
       - name: Run deterministic counter-cap guardrails
+        id: run_guardrails
         shell: pwsh
         run: |
-          pwsh .\scripts\run-counter-guardrails.ps1 -Profile "${{ inputs.profile }}" -Configuration Release
+          $summaryPath = Join-Path $env:RUNNER_TEMP "counter-guardrails-summary.json"
+          pwsh .\scripts\run-counter-guardrails.ps1 -Profile "${{ inputs.profile }}" -Configuration Release -SummaryJsonPath $summaryPath
+          "summary_path=$summaryPath" >> $env:GITHUB_OUTPUT
+
+      - name: Upload counter guardrail summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: counter-guardrails-summary
+          path: ${{ steps.run_guardrails.outputs.summary_path }}

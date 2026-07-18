@@ -52,9 +52,11 @@ The program has three entry points that share the same input validation
   - `dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --filter "Category=Slow"`
 - Deterministic counter guardrail lane (machine-independent budgets):
   - `pwsh .\scripts\run-counter-guardrails.ps1 -Profile fast-default`
+  - dry-run + summary: `pwsh .\scripts\run-counter-guardrails.ps1 -Profile compact -ListOnly -SummaryJsonPath .\artifacts\counter-guardrails-summary.json`
 - Perf baseline lane (manual regression gate):
   - `pwsh .\scripts\run-perf-gate.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-stage1-baseline.csv -RegressionTolerancePercent 5 -EnforceBaseline`
   - dry-run: `pwsh .\scripts\run-perf-gate.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-stage1-baseline.csv -ListOnly`
+  - dry-run + summary: `pwsh .\scripts\run-perf-gate.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-stage1-baseline.csv -ListOnly -SummaryJsonPath .\artifacts\perf-gate-summary.json`
 
 GitHub Actions lanes:
 

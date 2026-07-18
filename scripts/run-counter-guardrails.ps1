@@ -3,8 +3,12 @@ param(
     [string]$Profile = "fast-default",
     [ValidateSet("Debug", "Release")]
     [string]$Configuration = "Release",
-    [switch]$ListOnly
+    [switch]$ListOnly,
+    [string]$SummaryJsonPath
 )
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
 
 $profileMethods = @{
     "fast-default" = @(
@@ -37,6 +41,38 @@ if (-not $profileMethods.ContainsKey($Profile)) {
 $selectors = @($profileMethods[$Profile] | ForEach-Object { "FullyQualifiedName~$_" })
 $filter = ($selectors -join "|")
 
+function Write-SummaryJson {
+    param(
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Summary,
+        [string]$Path
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        return
+    }
+
+    $parent = Split-Path -Parent $Path
+    if (-not [string]::IsNullOrWhiteSpace($parent)) {
+        New-Item -ItemType Directory -Force -Path $parent | Out-Null
+    }
+
+    $Summary | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8NoBOM -Path $Path
+    Write-Host "Wrote summary JSON: $Path"
+}
+
+$summary = [ordered]@{
+    runner = "run-counter-guardrails"
+    timestampUtc = [DateTime]::UtcNow.ToString("o")
+    profile = $Profile
+    configuration = $Configuration
+    listOnly = [bool]$ListOnly
+    methods = @($profileMethods[$Profile])
+    selectors = @($selectors)
+    filter = $filter
+    command = "dotnet test .\\TopKFinder.Tests\\TopKFinder.Tests.csproj --configuration $Configuration --nologo --filter $filter"
+}
+
 Write-Host "Counter guardrail profile '$Profile'" -ForegroundColor Cyan
 Write-Host "Configuration=$Configuration ListOnly=$ListOnly" -ForegroundColor Cyan
 Write-Host "Method selectors:" -ForegroundColor Cyan
@@ -46,11 +82,19 @@ foreach ($method in $profileMethods[$Profile]) {
 Write-Host "Filter: $filter"
 
 if ($ListOnly) {
+    $summary["executed"] = $false
+    $summary["exitCode"] = 0
+    Write-SummaryJson -Summary $summary -Path $SummaryJsonPath
     Write-Host "ListOnly set; no tests executed." -ForegroundColor Yellow
     exit 0
 }
 
 dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --configuration $Configuration --nologo --filter $filter
-if ($LASTEXITCODE -ne 0) {
-    exit $LASTEXITCODE
+$exitCode = $LASTEXITCODE
+$summary["executed"] = $true
+$summary["exitCode"] = $exitCode
+Write-SummaryJson -Summary $summary -Path $SummaryJsonPath
+
+if ($exitCode -ne 0) {
+    exit $exitCode
 }

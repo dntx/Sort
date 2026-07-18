@@ -202,11 +202,17 @@ dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --filter "Category=Slow"
 # 手动计数器护栏（机器无关）
 pwsh .\scripts\run-counter-guardrails.ps1 -Profile fast-default
 
+# 计数器护栏 dry-run + 机器可读摘要
+pwsh .\scripts\run-counter-guardrails.ps1 -Profile compact -ListOnly -SummaryJsonPath .\artifacts\counter-guardrails-summary.json
+
 # 手动 perf gate（本地脚本）
 pwsh .\scripts\run-perf-gate.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-stage1-baseline.csv -RegressionTolerancePercent 5 -EnforceBaseline
 
 # Perf gate dry-run（只打印命令，不执行）
 pwsh .\scripts\run-perf-gate.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-stage1-baseline.csv -ListOnly
+
+# Perf gate dry-run + 机器可读摘要
+pwsh .\scripts\run-perf-gate.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-stage1-baseline.csv -ListOnly -SummaryJsonPath .\artifacts\perf-gate-summary.json
 ```
 
 GitHub Actions 入口：
@@ -217,6 +223,8 @@ GitHub Actions 入口：
 - `manual-perf-gate`：手动触发 baseline 回归门槛。
 
 `manual-perf-gate` 支持 `list_only=true`，用于只验证参数与命令链路，不执行基准。
+
+`manual-counter-guardrails` 与 `manual-perf-gate` 都会上传 machine-readable summary artifact，便于后续做自动报表或历史对比。
 
 `manual-counter-guardrails` 支持 profile 输入（`workflow_dispatch`）：
 
