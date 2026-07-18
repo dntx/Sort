@@ -283,9 +283,10 @@ partial class StrategyBuilder
     // recursion instead of mapping from an already-materialized display tree.
     private SearchTree BuildSearchTreeFromSolverState()
     {
-        var expandedStates = new Dictionary<IntSequenceKey, ExpandedStateSnapshot>();
-        var displayPath = new HashSet<IntSequenceKey>();
-        SearchNode root = BuildSearchState(new ComparisonState(_n), 0, _k, 1, expandedStates, displayPath);
+        var context = new SearchMaterializationContext(
+            new Dictionary<IntSequenceKey, ExpandedStateSnapshot>(),
+            new HashSet<IntSequenceKey>());
+        SearchNode root = BuildSearchState(new ComparisonState(_n), 0, _k, 1, context);
         return new SearchStrategy(
             _n,
             _m,
@@ -299,8 +300,7 @@ partial class StrategyBuilder
         ulong fixedTopMask,
         int remainingSlots,
         int step,
-        Dictionary<IntSequenceKey, ExpandedStateSnapshot> expandedStates,
-        HashSet<IntSequenceKey> displayPath)
+        SearchMaterializationContext context)
     {
         ThrowIfCancellationRequested();
         NormalizeState(state, ref fixedTopMask, ref remainingSlots);
@@ -321,16 +321,20 @@ partial class StrategyBuilder
         if (state.ActiveCount <= _m)
             return SearchNode.Decision(stateId, step, possibleCandidates, Array.Empty<SearchBranch>());
 
-        if (expandedStates.TryGetValue(displayKey, out ExpandedStateSnapshot snapshot))
+        if (context.ExpandedStates.TryGetValue(displayKey, out ExpandedStateSnapshot snapshot))
         {
             IReadOnlyList<ItemRelabel>? relabeling =
                 snapshot.State.TryBuildDisplayRelabeling(snapshot.FixedTopMask, state, fixedTopMask);
             return SearchNode.Reference(stateId, relabeling);
         }
 
-        expandedStates.Add(displayKey, new ExpandedStateSnapshot(state.Clone(), fixedTopMask));
-        if (!displayPath.Add(displayKey))
-            throw new InvalidOperationException("Search materialization detected a recursive display-state expansion path.");
+        bool trackingDisplayPath = TryTrackExpandedDisplayState(
+            displayKey,
+            state,
+            fixedTopMask,
+            context.ExpandedStates,
+            context.DisplayPath,
+            "Search materialization detected a recursive display-state expansion path.");
 
         try
         {
@@ -341,13 +345,13 @@ partial class StrategyBuilder
                 remainingSlots,
                 chosenGroup,
                 step + 1,
-                expandedStates,
-                displayPath);
+                context);
             return SearchNode.Decision(stateId, step, chosenGroup.Group, branches);
         }
         finally
         {
-            displayPath.Remove(displayKey);
+            if (trackingDisplayPath)
+                context.DisplayPath!.Remove(displayKey);
         }
     }
 
@@ -357,8 +361,7 @@ partial class StrategyBuilder
         int remainingSlots,
         SelectedComparisonGroup chosenGroup,
         int nextStep,
-        Dictionary<IntSequenceKey, ExpandedStateSnapshot> expandedStates,
-        HashSet<IntSequenceKey> displayPath)
+        SearchMaterializationContext context)
     {
         return BuildSearchTransitionSpecs(state, fixedTopMask, remainingSlots, chosenGroup)
             .Select(spec => new SearchBranch(
@@ -369,8 +372,7 @@ partial class StrategyBuilder
                     spec.NextFixedTopMask,
                     spec.NextRemainingSlots,
                     nextStep,
-                    expandedStates,
-                    displayPath)))
+                        context)))
             .ToList();
     }
 
@@ -732,14 +734,14 @@ partial class StrategyBuilder
             return StrategyNode.Reference(stateId, relabeling);
         }
 
-        _expandedStates.Add(displayKey, new ExpandedStateSnapshot(state.Clone(), fixedTopMask));
-
         bool trackingDisplayPath = _useGreedyTightenSelection;
-        if (trackingDisplayPath && !_materializationDisplayPath.Add(displayKey))
-        {
-            throw new InvalidOperationException(
-                "GreedyTighten materialization detected a recursive display-state expansion path.");
-        }
+        TryTrackExpandedDisplayState(
+            displayKey,
+            state,
+            fixedTopMask,
+            _expandedStates,
+            trackingDisplayPath ? _materializationDisplayPath : null,
+            "GreedyTighten materialization detected a recursive display-state expansion path.");
 
         try
         {
@@ -1834,6 +1836,28 @@ partial class StrategyBuilder
 
         public ComparisonState State { get; }
         public ulong FixedTopMask { get; }
+    }
+
+    private readonly record struct SearchMaterializationContext(
+        Dictionary<IntSequenceKey, ExpandedStateSnapshot> ExpandedStates,
+        HashSet<IntSequenceKey> DisplayPath);
+
+    private static bool TryTrackExpandedDisplayState(
+        IntSequenceKey displayKey,
+        ComparisonState state,
+        ulong fixedTopMask,
+        Dictionary<IntSequenceKey, ExpandedStateSnapshot> expandedStates,
+        HashSet<IntSequenceKey>? displayPath,
+        string cycleMessage)
+    {
+        expandedStates.Add(displayKey, new ExpandedStateSnapshot(state.Clone(), fixedTopMask));
+        if (displayPath is null)
+            return false;
+
+        if (!displayPath.Add(displayKey))
+            throw new InvalidOperationException(cycleMessage);
+
+        return true;
     }
 
     private sealed class OutcomeTraversalSummary
