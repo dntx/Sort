@@ -88,13 +88,11 @@ partial class StrategyBuilder
                 .ToList();
         }
 
-        var specs = new List<SearchBranchSpec>();
-        foreach (var line in PlanBranchLinesForChosenGroup(state, chosenGroup))
-            specs.Add(BuildSearchBranchSpecForLine(state, line.Members, line.ProjectionMerged));
-
-        return specs
-            .OrderBy(spec => spec.OrderText, StringComparer.Ordinal)
-            .ToList();
+        return BuildPlannedBranchSpecsForChosenGroup(
+            state,
+            chosenGroup,
+            line => BuildSearchBranchSpecForLine(state, line.Members, line.ProjectionMerged),
+            spec => spec.OrderText);
     }
 
     private SearchBranchSpec BuildSearchBranchSpecForLine(
@@ -212,12 +210,25 @@ partial class StrategyBuilder
                 .ToList();
         }
 
-        var specs = new List<BranchSpec>();
+        return BuildPlannedBranchSpecsForChosenGroup(
+            state,
+            chosenGroup,
+            line => BuildBranchSpecForLine(state, line.Members, line.ProjectionMerged),
+            spec => spec.OrderText);
+    }
+
+    private List<TSpec> BuildPlannedBranchSpecsForChosenGroup<TSpec>(
+        ComparisonState state,
+        SelectedComparisonGroup chosenGroup,
+        Func<DisplayRenderEngine.BranchLine<MergedFamilyOutcome>, TSpec> buildSpec,
+        Func<TSpec, string> getOrderText)
+    {
+        var specs = new List<TSpec>();
         foreach (var line in PlanBranchLinesForChosenGroup(state, chosenGroup))
-            specs.Add(BuildBranchSpecForLine(state, line.Members, line.ProjectionMerged));
+            specs.Add(buildSpec(line));
 
         return specs
-            .OrderBy(spec => spec.OrderText, StringComparer.Ordinal)
+            .OrderBy(getOrderText, StringComparer.Ordinal)
             .ToList();
     }
 

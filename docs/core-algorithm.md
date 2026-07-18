@@ -23,7 +23,7 @@ minimax 搜索、对称性约减，以及三种剪枝下界（信息论下界、
 
 其中 `BuildSearchTree()` 现通过 `BuildExactSearchProjection()` 走显式 layered 入口：当前实现先产出 display tree，再由 `StrategyBuilder` 基于 solver 状态递归直接构建 search tree（过渡形态，目标仍是 search -> display）。
 
-display/search 两条物化路径当前通过独立 planner 入口（`BuildDisplayTransitionSpecs(...)` / `BuildSearchTransitionSpecs(...)`）生成过渡分支语义（顺序文本、effect、后继状态）；search 侧已切到 search-only branch payload（不再携带 display summary 字段），且两侧已共享同一“代表分支选择”策略 helper 以及 chosen-group line-planning 循环骨架，以降低后续拆分时语义漂移风险。branch-line 划分策略仍委托 display planner，以保证行为稳定并为后续继续解耦预留落点。
+display/search 两条物化路径当前通过独立 planner 入口（`BuildDisplayTransitionSpecs(...)` / `BuildSearchTransitionSpecs(...)`）生成过渡分支语义（顺序文本、effect、后继状态）；search 侧已切到 search-only branch payload（不再携带 display summary 字段），且两侧已共享同一“代表分支选择”策略 helper、chosen-group line-planning 循环骨架，以及 branch-line->spec 的物化/排序骨架，以降低后续拆分时语义漂移风险。branch-line 划分策略仍委托 display planner，以保证行为稳定并为后续继续解耦预留落点。
 
 实现注记：
 
