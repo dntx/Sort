@@ -91,9 +91,9 @@ Refactoring rule:
 
 ### 4.3 Compatibility window
 
-- Keep old public names as forwarding wrappers for one iteration only.
-- Mark forwarding wrappers with clear deprecation comments.
-- Remove wrappers at the end of the transition iteration.
+- Transition window has closed.
+- First-party call sites now use Execute*/Project* names.
+- Legacy Build* wrappers have been removed.
 
 ---
 
@@ -141,22 +141,22 @@ Reason for order:
 
 ### 7.1 Boundary checklist
 
-- [ ] No StrategyBuilder file calls DisplayRenderEngine helpers for search semantics.
-- [ ] Shared projection/orbit helpers live in neutral module, not display facade.
-- [ ] Display layer consumes neutral helpers but does not own search semantics.
+- [x] No StrategyBuilder file calls DisplayRenderEngine helpers for search semantics.
+- [x] Shared projection/orbit helpers live in neutral module, not display facade.
+- [x] Display layer consumes neutral helpers but does not own search semantics.
 
 ### 7.2 Naming checklist
 
-- [ ] Execute*Stage names exist and are used by primary call paths.
-- [ ] Run*Pipeline names remain orchestrator entrypoints.
-- [ ] Project* names are used for cross-model projection entrypoints.
-- [ ] Render* names remain display-only.
+- [x] Execute*Stage names exist and are used by primary call paths.
+- [x] Run*Pipeline names remain orchestrator entrypoints.
+- [x] Project* names are used for cross-model projection entrypoints.
+- [x] Render* names remain display-only.
 
 ### 7.3 Transition checklist
 
-- [ ] Forwarding wrappers exist with deprecation notice.
-- [ ] All first-party call sites migrated to new names.
-- [ ] Old names removed at transition close.
+- [x] Transition wrappers were removed at transition close.
+- [x] All first-party call sites migrated to new names.
+- [x] Old names removed at transition close.
 
 ---
 

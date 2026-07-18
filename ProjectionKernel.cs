@@ -4,6 +4,8 @@ using System.Linq;
 
 static class ProjectionKernel
 {
+    internal readonly record struct BranchLine<T>(List<T> Members, bool ProjectionMerged);
+
     internal readonly record struct ProjectionOutcomeData(IReadOnlyList<int> OrderItems, ulong EliminatedMask);
 
     internal enum ProjectionAutomorphismProbeEvent
@@ -14,6 +16,66 @@ static class ProjectionKernel
         ProjectedStateCacheHit,
     }
 
+    internal static List<BranchLine<T>> PlanBranchLines<T>(
+        List<T> families,
+        Func<List<T>, EquivalentOrderSummary?> buildSummary,
+        Func<List<T>, List<List<T>>> partitionFamiliesIntoOrbits,
+        Func<List<List<T>>, List<(List<T> Members, bool ProjectionMerged)>> mergeOrbitsByProjection,
+        Func<T, int> getFamilyCount)
+    {
+        ArgumentNullException.ThrowIfNull(families);
+        ArgumentNullException.ThrowIfNull(buildSummary);
+        ArgumentNullException.ThrowIfNull(partitionFamiliesIntoOrbits);
+        ArgumentNullException.ThrowIfNull(mergeOrbitsByProjection);
+        ArgumentNullException.ThrowIfNull(getFamilyCount);
+
+        if (families.Count == 1)
+            return new List<BranchLine<T>> { new(families, false) };
+
+        EquivalentOrderSummary? fullBucketSummary = buildSummary(families);
+        if (IsSingleMergedOrbit(fullBucketSummary))
+            return new List<BranchLine<T>> { new(families, false) };
+
+        var lines = new List<BranchLine<T>>();
+        List<List<T>> parentOrbits = partitionFamiliesIntoOrbits(families);
+        List<(List<T> Members, bool ProjectionMerged)>? orbits = mergeOrbitsByProjection(parentOrbits);
+        if (orbits is null)
+        {
+            throw new InvalidOperationException(
+                "ProjectionKernel requires mergeOrbitsByProjection to return a non-null orbit list.");
+        }
+
+        foreach ((List<T> orbit, bool projectionMerged) in orbits)
+        {
+            if (orbit.Count == 1)
+            {
+                lines.Add(new(orbit, false));
+                continue;
+            }
+
+            EquivalentOrderSummary? combinedSummary = buildSummary(orbit);
+
+            bool isCleanTemplate = IsSingleMergedOrbit(combinedSummary);
+            bool isRelabelingOrbit = orbit.TrueForAll(member => GetFamilyCountOrThrow(getFamilyCount, member) == 1);
+            bool isProjectionQuotient = projectionMerged && orbit.Exists(member => GetFamilyCountOrThrow(getFamilyCount, member) > 1);
+            if (isCleanTemplate || isRelabelingOrbit || isProjectionQuotient)
+                lines.Add(new(orbit, projectionMerged));
+            else
+            {
+                foreach (T outcome in orbit)
+                    lines.Add(new(new List<T> { outcome }, false));
+            }
+        }
+
+        return lines;
+    }
+
+    internal static bool IsSingleMergedOrbit(EquivalentOrderSummary? summary)
+    {
+        return summary is null
+            || !summary.PatternText.Contains(" | ", StringComparison.Ordinal);
+    }
+
     internal static List<(List<T> Members, bool ProjectionMerged)> MergeProjectionOrbits<T>(
         List<List<T>> orbits,
         Func<T, T, bool> areProjectionEquivalent,
@@ -21,6 +83,12 @@ static class ProjectionKernel
         Func<List<T>, List<T>> orderRepresentativeFirst,
         Func<T, int> getFamilyCount)
     {
+        ArgumentNullException.ThrowIfNull(orbits);
+        ArgumentNullException.ThrowIfNull(areProjectionEquivalent);
+        ArgumentNullException.ThrowIfNull(canFoldMultiFamilyComponent);
+        ArgumentNullException.ThrowIfNull(orderRepresentativeFirst);
+        ArgumentNullException.ThrowIfNull(getFamilyCount);
+
         int n = orbits.Count;
         if (n <= 1)
             return orbits.Select(orbit => (orbit, false)).ToList();
@@ -40,7 +108,7 @@ static class ProjectionKernel
             foreach (int orbitIndex in component)
                 flattened.AddRange(orbits[orbitIndex]);
 
-            bool multiFamily = flattened.Any(outcome => getFamilyCount(outcome) > 1);
+            bool multiFamily = flattened.Any(outcome => GetFamilyCountOrThrow(getFamilyCount, outcome) > 1);
             bool fold = !multiFamily || canFoldMultiFamilyComponent(orderRepresentativeFirst(flattened));
 
             if (fold)
@@ -223,7 +291,7 @@ static class ProjectionKernel
         }
 
         bool IsSingleton(List<T> orbit)
-            => orbit.Count == 1 && getFamilyCount(orbit[0]) == 1;
+            => orbit.Count == 1 && GetFamilyCountOrThrow(getFamilyCount, orbit[0]) == 1;
 
         for (int i = 0; i < n; i++)
         {
@@ -259,5 +327,19 @@ static class ProjectionKernel
         }
 
         return order.Select(root => (byRoot[root], combinedCount[root] > 1)).ToList();
+    }
+
+    private static int GetFamilyCountOrThrow<T>(Func<T, int> getFamilyCount, T member)
+    {
+        try
+        {
+            return getFamilyCount(member);
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                "ProjectionKernel requires getFamilyCount to succeed for every branch member.",
+                ex);
+        }
     }
 }
