@@ -20,6 +20,13 @@ Runner behavior:
 | `compact` | `Compact_WorkCountersStayWithinBaseline`, `Compact_SearchedStateCountStaysWithinBaseline`, `Compact_OutcomesConstructedStaysWithinBaseline`, `Compact_DuplicateOutcomeSkipsStaysWithinBaseline` | Compact-phase deterministic work guardrails |
 | `full-counter-suite` | `StaysWithinBaseline` + iterative frontier pair above | Full deterministic counter audit before major merges |
 
+Preflight matched-test minimums (guarding against selector drift):
+
+- `fast-default`: 60
+- `iterative-frontier`: 6
+- `compact`: 25
+- `full-counter-suite`: 80
+
 ## Shape Coverage Anchors
 
 These shape families are intentionally present in counter-cap tests and should remain represented when ratcheting:
