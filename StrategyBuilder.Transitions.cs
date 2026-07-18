@@ -95,15 +95,50 @@ partial class StrategyBuilder
         bool projectionMerged)
     {
         var families = line.Select(outcome => outcome.Family).ToList();
-        EquivalentOrderSummary? summary = BuildEquivalentOrderSummary(families);
-        BranchRepresentativeSelection selection =
-            SelectBranchRepresentativeForLine(state, line, projectionMerged, summary, families);
+        MergedFamilyOutcome representative =
+            SelectSearchRepresentativeForLine(state, line, projectionMerged, families);
 
         return new SearchBranchSpec(
-            selection.Representative.Family.RepresentativeOrder,
-            selection.Representative.NextState,
-            selection.Representative.NextFixedTopMask,
-            selection.Representative.NextRemainingSlots);
+            representative.Family.RepresentativeOrder,
+            representative.NextState,
+            representative.NextFixedTopMask,
+            representative.NextRemainingSlots);
+    }
+
+    private MergedFamilyOutcome SelectSearchRepresentativeForLine(
+        ComparisonState state,
+        List<MergedFamilyOutcome> line,
+        bool projectionMerged,
+        List<OrderFamilyDescriptor> families)
+    {
+        if (line.Count <= 1)
+            return line[0];
+
+        bool allSingleton = families.All(family => family.Count == 1);
+        if (projectionMerged && !allSingleton)
+        {
+            MergedFamilyOutcome quotientRepresentative = SelectOrbitRepresentative(line);
+            EquivalentOrderSummary? quotientSummary =
+                BuildProjectionQuotientSummary(state, line, quotientRepresentative);
+            if (quotientSummary is not null)
+                return quotientRepresentative;
+        }
+
+        if (allSingleton && ShouldUseOrbitRepresentativeForSingletonFamilies(families, projectionMerged))
+            return SelectOrbitRepresentative(line);
+
+        return line[0];
+    }
+
+    private bool ShouldUseOrbitRepresentativeForSingletonFamilies(
+        List<OrderFamilyDescriptor> families,
+        bool projectionMerged)
+    {
+        if (projectionMerged)
+            return true;
+
+        EquivalentOrderSummary? summary = BuildEquivalentOrderSummary(families);
+        return summary is not null && summary.PatternText.Contains(" | ", StringComparison.Ordinal);
     }
 
     private BranchRepresentativeSelection SelectBranchRepresentativeForLine(
