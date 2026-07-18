@@ -211,21 +211,15 @@ partial class StrategyBuilder
     {
         IReadOnlyList<TransitionTargetFields> targets = BuildTransitionTargetFields(branchSpecs);
 
-        var specs = new List<TransitionSpec>(targets.Count);
-        for (int i = 0; i < targets.Count; i++)
-        {
-            TransitionTargetFields target = targets[i];
-            BranchSpec branchSpec = branchSpecs[i];
-            specs.Add(new TransitionSpec(
+        return BuildTransitionSpecsFromTargets(
+            targets,
+            (index, target) => new TransitionSpec(
                 target.OrderText,
-                branchSpec.Summary,
+                branchSpecs[index].Summary,
                 BuildComparisonEffect(state, fixedTopMask, target.NextState, target.NextFixedTopMask),
                 target.NextState,
                 target.NextFixedTopMask,
                 target.NextRemainingSlots));
-        }
-
-        return specs;
     }
 
     private IReadOnlyList<SearchTransitionSpec> BuildTransitionSpecsFromSearchBranchSpecs(
@@ -237,7 +231,7 @@ partial class StrategyBuilder
 
         return BuildTransitionSpecsFromTargets(
             targets,
-            target => new SearchTransitionSpec(
+            (_, target) => new SearchTransitionSpec(
                 target.OrderText,
                 BuildSearchComparisonEffect(state, fixedTopMask, target.NextState, target.NextFixedTopMask),
                 target.NextState,
@@ -285,11 +279,13 @@ partial class StrategyBuilder
 
     private static IReadOnlyList<TTransitionSpec> BuildTransitionSpecsFromTargets<TTransitionSpec>(
         IReadOnlyList<TransitionTargetFields> targets,
-        Func<TransitionTargetFields, TTransitionSpec> buildSpec)
+        Func<int, TransitionTargetFields, TTransitionSpec> buildSpec)
     {
-        return targets
-            .Select(buildSpec)
-            .ToList();
+        var specs = new List<TTransitionSpec>(targets.Count);
+        for (int i = 0; i < targets.Count; i++)
+            specs.Add(buildSpec(i, targets[i]));
+
+        return specs;
     }
 
     private SearchEffect BuildSearchComparisonEffect(
