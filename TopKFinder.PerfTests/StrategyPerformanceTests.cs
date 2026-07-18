@@ -76,9 +76,9 @@ public sealed class StrategyPerformanceTests
     public void N28M3K6_GreedyFeasibleCompletesWithinBudget()
     {
         double medianMs = MeasureMedianElapsedMilliseconds(
-            "StrategyBuilder.BuildGreedyFeasibleStage(28, 3, 6)",
+            "StrategyBuilder.ExecuteGreedyFeasibleStage(28, 3, 6)",
             iterations: 1,
-            cancellationToken => new StrategyBuilder(28, 3, 6, cancellationToken).BuildGreedyFeasibleStage());
+            cancellationToken => new StrategyBuilder(28, 3, 6, cancellationToken).ExecuteGreedyFeasibleStage());
 
         Assert.True(medianMs <= 15000, $"Median elapsed regressed to {medianMs:F1} ms.");
     }
@@ -87,7 +87,7 @@ public sealed class StrategyPerformanceTests
         => MeasureMedianElapsedMilliseconds(
             $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k})",
             iterations,
-            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildStepProofStage());
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).ExecuteStepProofStage());
 
     private static double MeasureMedianElapsedMilliseconds(
         string description,

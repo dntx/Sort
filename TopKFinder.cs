@@ -214,7 +214,7 @@ partial class StrategyBuilder
         return scaledCap >= int.MaxValue ? int.MaxValue : (int)scaledCap;
     }
 
-    public StrategyPlan BuildStepProofStage()
+    public StrategyPlan ExecuteStepProofStage()
     {
         _progressScope = _reportCombinedRunProgress
             ? ProgressScope.DefaultInCombinedRun
@@ -223,20 +223,20 @@ partial class StrategyBuilder
     }
 
     // Exact-stage entrypoint: materialize display/search artifacts in one solver session.
-    public (SearchTree SearchTree, DisplayTree DisplayTree) BuildDisplayTreeAndExpandedSearch()
+    public (SearchTree SearchTree, DisplayTree DisplayTree) ProjectDisplayAndSearchTrees()
         => BuildExactProjectionFromCurrentSession();
 
     // Search-model entrypoint used by public callers. It shares the same exact solver caches
     // as the display entrypoint while staying independent from display materialization.
-    public SearchStrategy BuildSearchTree()
-        => BuildSearchTreeFromStandaloneExactSession();
+    public SearchStrategy ProjectSearchTree()
+        => ProjectSearchTreeFromStandaloneExactSession();
 
     public StrategyPlan RunExactPipeline(
         Action<StageResult>? onStageCompleted = null,
         Action<string>? onStageStart = null)
         => PublicPipelineOrchestrator.RunExactPipeline(this, onStageCompleted, onStageStart);
 
-    public StrategyPlan BuildEdgeCompactStage()
+    public StrategyPlan ExecuteEdgeCompactStage()
     {
         // Returns the raw compact candidate: the compact DP keeps the optimal worst-case step count
         // (so MaxStep always matches default) and, among equally-optimal groups, minimizes a per-state
@@ -267,7 +267,7 @@ partial class StrategyBuilder
                 useCompactSelection: false,
                 useFeasibleBudget: false,
                 initializeSession: true);
-            SearchTree searchTree = BuildSearchTreeFromCurrentExactSession();
+            SearchTree searchTree = ProjectSearchTreeFromCurrentExactSession();
             return (searchTree, displayTree);
         }
         finally
@@ -278,13 +278,13 @@ partial class StrategyBuilder
 
     // Standalone search-only exact entry: starts its own solver session and materializes
     // the search tree from that session's exact caches.
-    private SearchTree BuildSearchTreeFromStandaloneExactSession()
+    private SearchTree ProjectSearchTreeFromStandaloneExactSession()
     {
         ComparisonState.SetThreadCancellationToken(_cancellationToken);
         try
         {
             InitializeExactSolverSession(useFeasibleBudget: false);
-            return BuildSearchTreeFromCurrentExactSession();
+            return ProjectSearchTreeFromCurrentExactSession();
         }
         finally
         {
@@ -294,15 +294,15 @@ partial class StrategyBuilder
 
     // Current-session search materialization path shared by layered exact projection
     // and standalone search-only exact entry after session initialization.
-    private SearchTree BuildSearchTreeFromCurrentExactSession()
+    private SearchTree ProjectSearchTreeFromCurrentExactSession()
     {
         _useCompact = false;
-        return BuildSearchTreeFromCurrentExactCaches();
+        return ProjectSearchTreeFromCurrentExactCaches();
     }
 
     // Solver-sourced search builder: phase-1 group selection comes from exact caches,
     // and the search tree is materialized directly from solver state recursion.
-    private SearchTree BuildSearchTreeFromCurrentExactCaches()
+    private SearchTree ProjectSearchTreeFromCurrentExactCaches()
     {
         var context = new SearchMaterializationContext(
             new Dictionary<IntSequenceKey, ExpandedStateSnapshot>(),
@@ -432,10 +432,10 @@ partial class StrategyBuilder
         // The step ceiling U comes from the greedy feasible plan. Production callers (Program.cs /
         // MainForm.cs) build it first and reuse this builder, so _feasibleRootBudget is already set;
         // standalone callers (e.g. tests invoking RunGreedyPipeline directly) have not, so
-        // establish it here. BuildGreedyFeasibleStage deliberately does not clear _feasibleRootBudget, so this
+        // establish it here. ExecuteGreedyFeasibleStage deliberately does not clear _feasibleRootBudget, so this
         // never double-builds when the caller already ran the step phase.
         if (_feasibleRootBudget < 0)
-            BuildGreedyFeasibleStage();
+            ExecuteGreedyFeasibleStage();
 
         int U = _feasibleRootBudget;
         int provenLowerBound = Math.Max(1, _rootProvenLowerBound);
@@ -457,7 +457,7 @@ partial class StrategyBuilder
                 _proofTightenCurrentBudget = budget;
                 string stageName = FormatProofTightenStageName(budget);
                 onStageStart?.Invoke(stageName);
-                StageResult stage = BuildProofTightenStage(budget);
+                StageResult stage = ExecuteProofTightenStage(budget);
                 onStageCompleted?.Invoke(stage);
 
                 if (stage.Outcome == StageOutcome.Tightened)
@@ -508,7 +508,7 @@ partial class StrategyBuilder
     internal static string FormatGreedyEdgeCompactStageName(int step)
         => $"{GreedyEdgeCompactStagePrefix}{step}";
 
-    public StageResult BuildProofTightenStage(int budget)
+    public StageResult ExecuteProofTightenStage(int budget)
     {
         _progressScope = _reportCombinedRunProgress
             ? ProgressScope.CompactFeasibleInCombinedRun

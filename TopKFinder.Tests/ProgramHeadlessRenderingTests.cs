@@ -16,7 +16,7 @@ public sealed class ProgramHeadlessRenderingTests
         const int m = 3;
         const int k = 3;
 
-        StrategyPlan plan = new StrategyBuilder(n, m, k).BuildStepProofStage();
+        StrategyPlan plan = new StrategyBuilder(n, m, k).ExecuteStepProofStage();
         string squeeze = InvokePrivateStatic<string>(typeof(Program), "FormatSqueeze", plan);
 
         string expected =

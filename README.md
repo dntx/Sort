@@ -89,15 +89,15 @@ The refactor track is complete. The runtime now follows a stable layered boundar
   folding, and presentation-only behavior.
 
 Exact search-model projection is now canonical via
-`StrategyBuilder.BuildDisplayTreeAndExpandedSearch()` and `BuildSearchTree()`.
+`StrategyBuilder.ProjectDisplayAndSearchTrees()` and `ProjectSearchTree()`.
 
 ### Builder API naming
 
 The in-process builder API uses a consistent naming split between
 single-stage construction and multi-stage orchestration:
 
-- `BuildGreedyFeasibleStage`, `BuildStepProofStage`, `BuildProofTightenStage`,
-  `BuildEdgeCompactStage`: build one atomic stage result or plan.
+- `ExecuteGreedyFeasibleStage`, `ExecuteStepProofStage`, `ExecuteProofTightenStage`,
+  `ExecuteEdgeCompactStage`: execute one atomic stage result or plan.
 - `RunGreedyPipeline`: greedy-mode orchestrator that emits
   `greedy-feasible`, zero or more `proof-tighten≤N`, then a final
   `greedy-edge-compact@S` stage.

@@ -47,7 +47,7 @@ function Get-CompactCounters {
 	)
 
 	$builder = New-Builder -N $N -M $M -K $K
-	$plan = $builderType.GetMethod("BuildEdgeCompactStage").Invoke($builder, @())
+	$plan = $builderType.GetMethod("ExecuteEdgeCompactStage").Invoke($builder, @())
 	$stats = $plan.GetType().GetProperty("SearchStatistics").GetValue($plan)
 	$statsType = $stats.GetType()
 	$diag = $statsType.GetProperty("Diagnostics").GetValue($stats)

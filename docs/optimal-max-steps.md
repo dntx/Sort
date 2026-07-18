@@ -15,7 +15,7 @@
   `k' = n−k`（见 `Program.RunHeadless` 的 `canonicalK`），所以本表里凡是 `k > n/2` 的行，其值与
   对应的 `n−k` 行一致。
 - **来源**：
-  - `tests`：来自 `TopKFinder.Tests/StrategyRegressionTests.cs` 的 `InlineData`（`BuildStepProofStage`，
+  - `tests`：来自 `TopKFinder.Tests/StrategyRegressionTests.cs` 的 `InlineData`（`ExecuteStepProofStage`，
     已 pin 为回归基线）。
   - `exact-run`：通过 `TopKFinder <n> <m> <k> --mode exact` 实测，输出为
     `max steps = N (proven optimal)`。

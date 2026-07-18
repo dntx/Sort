@@ -12,16 +12,16 @@ public sealed class StrategyOverviewTests
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
             $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k})",
             OverviewTestTimeout,
-            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildStepProofStage());
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).ExecuteStepProofStage());
         return StrategyOverviewRenderer.Build(plan);
     }
 
     private static StrategyOverview BuildGreedyOverview(int n, int m, int k)
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            $"StrategyBuilder.BuildGreedyFeasibleStage({n}, {m}, {k})",
+            $"StrategyBuilder.ExecuteGreedyFeasibleStage({n}, {m}, {k})",
             OverviewTestTimeout,
-            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildGreedyFeasibleStage());
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).ExecuteGreedyFeasibleStage());
         return StrategyOverviewRenderer.Build(plan);
     }
 
@@ -147,7 +147,7 @@ public sealed class StrategyOverviewTests
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
             "StrategyBuilder.BuildDefaultPlan(25, 5, 3)",
             OverviewTestTimeout,
-            cancellationToken => new StrategyBuilder(25, 5, 3, cancellationToken).BuildStepProofStage());
+            cancellationToken => new StrategyBuilder(25, 5, 3, cancellationToken).ExecuteStepProofStage());
 
         var stateIds = CollectStateIds(plan.Root).ToHashSet();
         foreach (OverviewRow row in StrategyOverviewRenderer.Build(plan).Rows)

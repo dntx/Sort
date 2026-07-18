@@ -16,7 +16,7 @@ public class GreedyTightenTests
     [InlineData(9, 3, 3)]
     public void GreedyTightenPlan_IsValidStrategy(int n, int m, int k)
     {
-        StrategyPlan plan = new StrategyBuilder(n, m, k).BuildGreedyTightenPlan();
+        StrategyPlan plan = new StrategyBuilder(n, m, k).ExecuteGreedyTightenStage();
 
         Assert.True(plan.IsFeasibleUpperBound);
         Assert.True(plan.MaxStep > 0, "greedy-tighten plan should take at least one comparison");
@@ -34,8 +34,8 @@ public class GreedyTightenTests
     [InlineData(12, 4, 4)]
     public void GreedyTightenPlan_StepNeverBelowOptimum(int n, int m, int k)
     {
-        int optimum = new StrategyBuilder(n, m, k).BuildStepProofStage().MaxStep;
-        int tightened = new StrategyBuilder(n, m, k).BuildGreedyTightenPlan().MaxStep;
+        int optimum = new StrategyBuilder(n, m, k).ExecuteStepProofStage().MaxStep;
+        int tightened = new StrategyBuilder(n, m, k).ExecuteGreedyTightenStage().MaxStep;
 
         Assert.True(tightened >= optimum,
             $"greedy-tighten step {tightened} was below the true optimum {optimum}");
@@ -52,8 +52,8 @@ public class GreedyTightenTests
     [InlineData(12, 4, 4)]
     public void GreedyTightenPlan_NeverWorseThanFeasible(int n, int m, int k)
     {
-        int feasible = new StrategyBuilder(n, m, k).BuildGreedyFeasibleStage().MaxStep;
-        int tightened = new StrategyBuilder(n, m, k).BuildGreedyTightenPlan().MaxStep;
+        int feasible = new StrategyBuilder(n, m, k).ExecuteGreedyFeasibleStage().MaxStep;
+        int tightened = new StrategyBuilder(n, m, k).ExecuteGreedyTightenStage().MaxStep;
 
         Assert.True(tightened <= feasible,
             $"greedy-tighten step {tightened} was worse than the greedy-feasible upper bound {feasible}");
@@ -69,8 +69,8 @@ public class GreedyTightenTests
     [InlineData(16, 4, 4, 7)]
     public void GreedyTightenPlan_KnownValueCases_ReachThresholdOnlyWithGt(int n, int m, int k, int threshold)
     {
-        int feasible = new StrategyBuilder(n, m, k).BuildGreedyFeasibleStage().MaxStep;
-        int tightened = new StrategyBuilder(n, m, k).BuildGreedyTightenPlan().MaxStep;
+        int feasible = new StrategyBuilder(n, m, k).ExecuteGreedyFeasibleStage().MaxStep;
+        int tightened = new StrategyBuilder(n, m, k).ExecuteGreedyTightenStage().MaxStep;
 
         Assert.True(feasible > threshold,
             $"expected greedy-feasible step to stay above threshold {threshold}, got {feasible}");
@@ -79,7 +79,7 @@ public class GreedyTightenTests
     }
 
     // Independent soundness lock, valid even where the exact search is intractable (unlike
-    // StepNeverBelowOptimum, which needs BuildStepProofStage). Re-simulates the committed policy from the
+    // StepNeverBelowOptimum, which needs ExecuteStepProofStage). Re-simulates the committed policy from the
     // root, checking every state makes progress, no adversary path cycles, and every path ends at a
     // trusted top-k terminal; it throws on any violation. A returned depth equal to the plan's MaxStep
     // confirms MaxStep is the true worst case of a genuinely valid strategy -- so the greedy-tighten
@@ -96,7 +96,7 @@ public class GreedyTightenTests
     public void GreedyTightenPlan_PolicyIsValidAndDepthMatchesMaxStep(int n, int m, int k)
     {
         var builder = new StrategyBuilder(n, m, k);
-        int maxStep = builder.BuildGreedyTightenPlan().MaxStep;
+        int maxStep = builder.ExecuteGreedyTightenStage().MaxStep;
 
         // Throws if the committed policy is not a valid terminating strategy.
         int validatedDepth = builder.ValidateGreedyTightenPolicyDepthForTesting();
@@ -112,7 +112,7 @@ public class GreedyTightenTests
     [InlineData(7, 2, 3)]
     public void GreedyTightenPlan_DoesNotCreateReferenceCycles(int n, int m, int k)
     {
-        StrategyPlan plan = new StrategyBuilder(n, m, k).BuildGreedyTightenPlan();
+        StrategyPlan plan = new StrategyBuilder(n, m, k).ExecuteGreedyTightenStage();
 
         Assert.False(HasReferenceCycle(plan.Root),
             $"greedy-tighten produced a reference cycle for ({n},{m},{k})");
@@ -132,7 +132,7 @@ public class GreedyTightenTests
             GreedyTightenMaxRoundsForTesting = 1,
         };
 
-        StrategyPlan plan = builder.BuildGreedyTightenPlan();
+        StrategyPlan plan = builder.ExecuteGreedyTightenStage();
 
         Assert.True(plan.IsFeasibleUpperBound);
         Assert.Equal(1, builder.GreedyTightenRounds);
@@ -147,7 +147,7 @@ public class GreedyTightenTests
     {
         var builder = new StrategyBuilder(10, 2, 5);
 
-        StrategyPlan plan = builder.BuildGreedyTightenPlan();
+        StrategyPlan plan = builder.ExecuteGreedyTightenStage();
 
         Assert.True(plan.IsFeasibleUpperBound);
         Assert.Equal(1, builder.GreedyTightenRounds);
@@ -199,7 +199,7 @@ public class GreedyTightenTests
         const int k = 4;
 
         var builder = new StrategyBuilder(n, m, k);
-        _ = builder.BuildGreedyTightenPlan();
+        _ = builder.ExecuteGreedyTightenStage();
 
         Assert.NotEmpty(builder.GreedyTightenRoundTrace);
         Assert.Equal(builder.GreedyTightenRounds, builder.GreedyTightenRoundTrace.Count);

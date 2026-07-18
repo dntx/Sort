@@ -46,7 +46,7 @@ public class GreedyPipelineTests
     public void GreedyPipeline_StepNeverExceedsFeasibleUpperBound(int n, int m, int k)
     {
         var builder = new StrategyBuilder(n, m, k);
-        int stepU = builder.BuildGreedyFeasibleStage().MaxStep;
+        int stepU = builder.ExecuteGreedyFeasibleStage().MaxStep;
         int edgeStep = builder.RunGreedyPipeline().MaxStep;
 
         Assert.True(edgeStep <= stepU,
@@ -64,7 +64,7 @@ public class GreedyPipelineTests
     [InlineData(12, 4, 4)]
     public void GreedyPipeline_StepNeverBelowOptimum(int n, int m, int k)
     {
-        int optimum = new StrategyBuilder(n, m, k).BuildStepProofStage().MaxStep;
+        int optimum = new StrategyBuilder(n, m, k).ExecuteStepProofStage().MaxStep;
         int edgeStep = new StrategyBuilder(n, m, k).RunGreedyPipeline().MaxStep;
 
         Assert.True(edgeStep >= optimum,
@@ -162,9 +162,9 @@ public class GreedyPipelineTests
     public void ProofTightenProbe_TinyStartingCap_AutoExpandsToConclusiveOutcome()
     {
         var builder = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 1 };
-        int budget = builder.BuildGreedyFeasibleStage().MaxStep - 1;
+        int budget = builder.ExecuteGreedyFeasibleStage().MaxStep - 1;
 
-        StageResult stage = builder.BuildProofTightenStage(budget);
+        StageResult stage = builder.ExecuteProofTightenStage(budget);
 
         Assert.Equal($"proof-tighten\u2264{budget}", stage.Name);
         Assert.NotEqual(StageOutcome.Incomplete, stage.Outcome);
@@ -188,9 +188,9 @@ public class GreedyPipelineTests
     {
         var builder = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 1 };
         int originalCap = builder.CompactGreedyCandidateCap;
-        int budget = builder.BuildGreedyFeasibleStage().MaxStep - 1;
+        int budget = builder.ExecuteGreedyFeasibleStage().MaxStep - 1;
 
-        _ = builder.BuildProofTightenStage(budget);
+        _ = builder.ExecuteProofTightenStage(budget);
 
         Assert.Equal(originalCap, builder.CompactGreedyCandidateCap);
     }
@@ -350,9 +350,9 @@ public class GreedyPipelineTests
     public void ProofTighten_Budget14TightensInsteadOfOvershooting_20_4_6()
     {
         var builder = new StrategyBuilder(20, 4, 6);
-        int budget = builder.BuildGreedyFeasibleStage().MaxStep - 1;
+        int budget = builder.ExecuteGreedyFeasibleStage().MaxStep - 1;
 
-        StageResult probe = builder.BuildProofTightenStage(budget);
+        StageResult probe = builder.ExecuteProofTightenStage(budget);
 
         Assert.Equal($"proof-tighten\u2264{budget}", probe.Name);
         Assert.Equal(StageOutcome.Tightened, probe.Outcome);
@@ -364,7 +364,7 @@ public class GreedyPipelineTests
         Assert.False(probe.ProvesOptimal);
     }
 
-    // Single-probe API contract: a direct BuildProofTightenStage(U-1) call must report the same first
+    // Single-probe API contract: a direct ExecuteProofTightenStage(U-1) call must report the same first
     // tightening-stage result as RunGreedyPipeline (which internally drives the same probe). The pipeline
     // is cancelled as soon as that first stage is observed: with the overshoot fixed the pipeline no
     // longer stops early at <=14 but keeps tightening toward the optimum, so running it to completion
@@ -373,9 +373,9 @@ public class GreedyPipelineTests
     public void ProofTighten_SingleProbeMatchesPipelineFirstStage_20_4_6()
     {
         var probeBuilder = new StrategyBuilder(20, 4, 6);
-        int budget = probeBuilder.BuildGreedyFeasibleStage().MaxStep - 1;
+        int budget = probeBuilder.ExecuteGreedyFeasibleStage().MaxStep - 1;
 
-        StageResult probe = probeBuilder.BuildProofTightenStage(budget);
+        StageResult probe = probeBuilder.ExecuteProofTightenStage(budget);
 
         Assert.Equal($"proof-tighten\u2264{budget}", probe.Name);
         Assert.Equal(StageOutcome.Tightened, probe.Outcome);
@@ -435,12 +435,12 @@ public class GreedyPipelineTests
     public void GreedyPipeline_WithTighterSeededUpperBound_StartsFromTighterBudget_AndFinalIsNotWorse_10_2_5()
     {
         var baselineBuilder = new StrategyBuilder(10, 2, 5);
-        _ = baselineBuilder.BuildGreedyFeasibleStage();
+        _ = baselineBuilder.ExecuteGreedyFeasibleStage();
         int baselineFirstBudget = FirstProofTightenBudget(baselineBuilder, out StrategyPlan baselinePlan);
 
         var gatedBuilder = new StrategyBuilder(10, 2, 5);
-        StrategyPlan feasible = gatedBuilder.BuildGreedyFeasibleStage();
-        StrategyPlan gt = gatedBuilder.BuildGreedyTightenPlan();
+        StrategyPlan feasible = gatedBuilder.ExecuteGreedyFeasibleStage();
+        StrategyPlan gt = gatedBuilder.ExecuteGreedyTightenStage();
         Assert.True(gt.IsStrictRefinementOver(feasible),
             "expected GT pre-step to improve the feasible bound on (10,2,5)");
         gatedBuilder.OverrideGreedyPipelineUpperBound(gt.MaxStep);
@@ -459,11 +459,11 @@ public class GreedyPipelineTests
     public void GreedyPipeline_RootProbeSkip_PathMatchesBaseline_12_4_4()
     {
         var baselineBuilder = new StrategyBuilder(12, 4, 4);
-        _ = baselineBuilder.BuildGreedyFeasibleStage();
+        _ = baselineBuilder.ExecuteGreedyFeasibleStage();
         int baselineFirstBudget = FirstProofTightenBudget(baselineBuilder, out StrategyPlan baselinePlan);
 
         var gatedBuilder = new StrategyBuilder(12, 4, 4);
-        _ = gatedBuilder.BuildGreedyFeasibleStage();
+        _ = gatedBuilder.ExecuteGreedyFeasibleStage();
         Assert.False(gatedBuilder.ShouldRunGreedyTightenByRootProbe());
         int gatedFirstBudget = FirstProofTightenBudget(gatedBuilder, out StrategyPlan gatedPlan);
 
@@ -478,7 +478,7 @@ public class GreedyPipelineTests
     [Fact]
     public void ProofTighten_FirstProbeCompletesQuickly_14_2_4()
     {
-        const string operationName = "BuildProofTightenStage(14,2,4) first probe";
+        const string operationName = "ExecuteProofTightenStage(14,2,4) first probe";
 
         try
         {
@@ -499,8 +499,8 @@ public class GreedyPipelineTests
             cancellationToken =>
             {
                 var builder = new StrategyBuilder(14, 2, 4, cancellationToken);
-                int budget = builder.BuildGreedyFeasibleStage().MaxStep - 1;
-                StageResult stage = builder.BuildProofTightenStage(budget);
+                int budget = builder.ExecuteGreedyFeasibleStage().MaxStep - 1;
+                StageResult stage = builder.ExecuteProofTightenStage(budget);
 
                 Assert.Equal($"proof-tighten\u2264{budget}", stage.Name);
                 Assert.True(
@@ -535,7 +535,7 @@ public class GreedyPipelineTests
                     CompactGreedyCandidateCap = 1,
                 };
 
-                StageResult incumbent = builder.BuildProofTightenStage(5);
+                StageResult incumbent = builder.ExecuteProofTightenStage(5);
                 Assert.Equal(StageOutcome.Tightened, incumbent.Outcome);
                 Assert.NotNull(incumbent.Plan);
                 Assert.Equal(5, incumbent.Plan!.MaxStep);
