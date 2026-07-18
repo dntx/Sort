@@ -187,6 +187,7 @@ GitHub Actions 侧提供了手动门槛工作流：
 
 - PR 必跑（required gate）：仅跑 fast 套件（`Category!=Slow`）+ 轻量 perf tests。
 - Slow parity 矩阵：不进 required gate，改为按需触发。
+- deterministic counter guardrails：按需触发 `manual-counter-guardrails`（机器无关计数器门槛）。
 - perf baseline gate：按需触发 `manual-perf-gate`（对比基线 CSV）。
 
 推荐命令：
@@ -198,15 +199,54 @@ dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --filter "Category!=Slow"
 # Slow parity（收口前 / 专项回归）
 dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --filter "Category=Slow"
 
+# 手动计数器护栏（机器无关）
+pwsh .\scripts\run-counter-guardrails.ps1 -Profile fast-default
+
+# 计数器护栏 dry-run + 机器可读摘要
+pwsh .\scripts\run-counter-guardrails.ps1 -Profile compact -ListOnly -SummaryJsonPath .\artifacts\counter-guardrails-summary.json
+
 # 手动 perf gate（本地脚本）
-pwsh .\scripts\benchmark-greedy-stage1.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-stage1-baseline.csv -RegressionTolerancePercent 5 -EnforceBaseline
+pwsh .\scripts\run-perf-gate.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-stage1-baseline.csv -RegressionTolerancePercent 5 -EnforceBaseline
+
+# Perf gate dry-run（只打印命令，不执行）
+pwsh .\scripts\run-perf-gate.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-stage1-baseline.csv -ListOnly
+
+# Perf gate dry-run + 机器可读摘要
+pwsh .\scripts\run-perf-gate.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-stage1-baseline.csv -ListOnly -SummaryJsonPath .\artifacts\perf-gate-summary.json
 ```
 
 GitHub Actions 入口：
 
 - `required-pr-tests`：PR 自动触发（fast only）。
 - `manual-slow-parity`：手动触发 slow parity 矩阵。
+- `manual-counter-guardrails`：手动触发确定性计数器护栏（counter-cap tests）。
 - `manual-perf-gate`：手动触发 baseline 回归门槛。
+
+`manual-perf-gate` 支持 `list_only=true`，用于只验证参数与命令链路，不执行基准。
+
+`manual-counter-guardrails` 与 `manual-perf-gate` 都会上传 machine-readable summary artifact，便于后续做自动报表或历史对比。
+
+`manual-counter-guardrails` 支持 profile 输入（`workflow_dispatch`）：
+
+- `fast-default`：默认路径计数器护栏（searched/outcomes/candidate-groups/duplicate-skips）。
+- `iterative-frontier`：迭代加深门控前沿护栏（含与 exact 路径对比）。
+- `compact`：compact 阶段计数器护栏（work/searched/outcomes/duplicate-skips）。
+- `full-counter-suite`：合并运行 `*StaysWithinBaseline` + 关键 iterative 前沿用例。
+
+建议：PR 日常开发优先 `fast-default`；涉及 ID 门控改动时补跑 `iterative-frontier`；涉及 compact 逻辑时补跑 `compact`；收口前或专项巡检跑 `full-counter-suite`。
+
+profile 语义、shape 锚点与 cap ratchet 规则见 `docs/counter-guardrail-budgets.md`。
+`scripts/run-counter-guardrails.ps1` 会在执行前打印 profile 对应的方法选择器，支持 `-ListOnly` 做 dry-run 检查。
+
+Lane 决策表（先选信号，再选车道）：
+
+| 目标 | 首选车道 | 核心信号 | 何时升级 |
+| --- | --- | --- | --- |
+| 日常 PR 回归 | `required-pr-tests` + `fast-default` | 快速确定性计数器 + 关键 fast 功能 | 触及 ID/compact 逻辑时升级到对应 profile |
+| 迭代加深（ID）改动验证 | `iterative-frontier` | ID 前沿计数器上限 + 对 exact 的收益约束 | 收口前补跑 `full-counter-suite` |
+| compact 改动验证 | `compact` | compact work/searched/outcomes/duplicate-skips | 收口前补跑 `full-counter-suite` |
+| 机器无关性能回归审计 | `full-counter-suite` | 全量 deterministic counter caps | 大改动前后都跑一遍并做 ratchet 记录 |
+| 墙钟性能烟雾诊断 | `manual-perf-gate` | 中位数时间对比（机器相关） | 仅用于诊断，不替代计数器护栏 |
 
 ---
 

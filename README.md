@@ -39,6 +39,8 @@ The program has three entry points that share the same input validation
 - `docs/output-rendering.md`: branch/pattern rendering and equivalence folding
   rules.
 - `docs/test-strategy.md`: regression/perf testing strategy and guardrails.
+- `docs/counter-guardrail-budgets.md`: deterministic counter guardrail profiles,
+  shape anchors, and ratchet protocol.
 - `docs/ui-explorer.md`: WinForms explorer behavior, stage timeline UI, and
   cancellation/progress semantics.
 
@@ -48,14 +50,29 @@ The program has three entry points that share the same input validation
   - `dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --filter "Category!=Slow"`
 - Slow parity lane (opt-in before merge or dedicated audits):
   - `dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --filter "Category=Slow"`
+- Deterministic counter guardrail lane (machine-independent budgets):
+  - `pwsh .\scripts\run-counter-guardrails.ps1 -Profile fast-default`
+  - dry-run + summary: `pwsh .\scripts\run-counter-guardrails.ps1 -Profile compact -ListOnly -SummaryJsonPath .\artifacts\counter-guardrails-summary.json`
 - Perf baseline lane (manual regression gate):
-  - `pwsh .\scripts\benchmark-greedy-stage1.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-stage1-baseline.csv -RegressionTolerancePercent 5 -EnforceBaseline`
+  - `pwsh .\scripts\run-perf-gate.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-stage1-baseline.csv -RegressionTolerancePercent 5 -EnforceBaseline`
+  - dry-run: `pwsh .\scripts\run-perf-gate.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-stage1-baseline.csv -ListOnly`
+  - dry-run + summary: `pwsh .\scripts\run-perf-gate.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-stage1-baseline.csv -ListOnly -SummaryJsonPath .\artifacts\perf-gate-summary.json`
 
 GitHub Actions lanes:
 
 - `required-pr-tests` (automatic PR gate, fast-only test filter)
 - `manual-slow-parity` (manual slow parity matrix)
+- `manual-counter-guardrails` (manual deterministic counter-cap guardrails)
 - `manual-perf-gate` (manual perf baseline gate)
+
+Counter guardrail profiles (`manual-counter-guardrails` input `profile`):
+
+- `fast-default`: default-path deterministic caps (daily default)
+- `iterative-frontier`: iterative-deepening frontier caps
+- `compact`: compact-phase deterministic caps
+- `full-counter-suite`: all baseline-cap suites + key iterative checks
+
+Lane selection decision table is documented in `docs/test-strategy.md`.
 
 ### Pipeline architecture (post-refactor)
 

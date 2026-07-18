@@ -1,0 +1,46 @@
+name: manual-counter-guardrails
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Counter guardrail profile to run
+        type: choice
+        options:
+          - fast-default
+          - iterative-frontier
+          - compact
+          - full-counter-suite
+        default: fast-default
+
+permissions:
+  contents: read
+
+jobs:
+  counter-guardrails:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Run deterministic counter-cap guardrails
+        id: run_guardrails
+        shell: pwsh
+        run: |
+          $summaryPath = Join-Path $env:RUNNER_TEMP "counter-guardrails-summary.json"
+          pwsh .\scripts\run-counter-guardrails.ps1 -Profile "${{ inputs.profile }}" -Configuration Release -SummaryJsonPath $summaryPath
+          "summary_path=$summaryPath" >> $env:GITHUB_OUTPUT
+
+      - name: Upload counter guardrail summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: counter-guardrails-summary
+          path: ${{ steps.run_guardrails.outputs.summary_path }}

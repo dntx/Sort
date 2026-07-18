@@ -15,6 +15,10 @@ on:
         description: Allowed median slowdown percent vs baseline
         type: number
         default: 5
+      list_only:
+        description: If true, print resolved command and exit without running benchmark
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -33,10 +37,24 @@ jobs:
           dotnet-version: 8.0.x
 
       - name: Run greedy stage-1 baseline gate
+        id: run_perf_gate
         shell: pwsh
         run: |
-          pwsh .\scripts\benchmark-greedy-stage1.ps1 `
+          $listOnly = "${{ inputs.list_only }}"
+          $listOnlyArg = if ($listOnly -eq "true") { "-ListOnly" } else { "" }
+          $summaryPath = Join-Path $env:RUNNER_TEMP "perf-gate-summary.json"
+          pwsh .\scripts\run-perf-gate.ps1 `
             -WarmupRuns ${{ inputs.warmup_runs }} `
             -MeasuredRuns ${{ inputs.measured_runs }} `
             -RegressionTolerancePercent ${{ inputs.regression_tolerance_percent }} `
-            -EnforceBaseline
+            -EnforceBaseline `
+            -SummaryJsonPath $summaryPath `
+            $listOnlyArg
+          "summary_path=$summaryPath" >> $env:GITHUB_OUTPUT
+
+      - name: Upload perf gate summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-gate-summary
+          path: ${{ steps.run_perf_gate.outputs.summary_path }}
