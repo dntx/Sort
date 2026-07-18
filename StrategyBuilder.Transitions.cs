@@ -94,9 +94,8 @@ partial class StrategyBuilder
         List<MergedFamilyOutcome> line,
         bool projectionMerged)
     {
-        var families = line.Select(outcome => outcome.Family).ToList();
         MergedFamilyOutcome representative =
-            SelectSearchRepresentativeForLine(state, line, projectionMerged, families);
+            SelectSearchRepresentativeForLine(state, line, projectionMerged);
 
         return new SearchBranchSpec(
             representative.Family.RepresentativeOrder,
@@ -108,12 +107,12 @@ partial class StrategyBuilder
     private MergedFamilyOutcome SelectSearchRepresentativeForLine(
         ComparisonState state,
         List<MergedFamilyOutcome> line,
-        bool projectionMerged,
-        List<OrderFamilyDescriptor> families)
+        bool projectionMerged)
     {
         if (line.Count <= 1)
             return line[0];
 
+        var families = line.Select(outcome => outcome.Family).ToList();
         bool allSingleton = families.All(family => family.Count == 1);
         if (projectionMerged && !allSingleton)
         {
@@ -125,20 +124,25 @@ partial class StrategyBuilder
                 return quotientRepresentative;
         }
 
-        if (allSingleton && ShouldUseOrbitRepresentativeForSingletonFamilies(families, projectionMerged))
+        if (!allSingleton)
+            return line[0];
+
+        EquivalentOrderSummary? summary = projectionMerged
+            ? null
+            : BuildEquivalentOrderSummary(families);
+        if (ShouldUseOrbitRepresentativeForSingletonLine(summary, projectionMerged))
             return SelectOrbitRepresentative(line);
 
         return line[0];
     }
 
-    private bool ShouldUseOrbitRepresentativeForSingletonFamilies(
-        List<OrderFamilyDescriptor> families,
+    private bool ShouldUseOrbitRepresentativeForSingletonLine(
+        EquivalentOrderSummary? summary,
         bool projectionMerged)
     {
         if (projectionMerged)
             return true;
 
-        EquivalentOrderSummary? summary = BuildEquivalentOrderSummary(families);
         return ShouldFoldSingletonOrbitRepresentative(summary);
     }
 
@@ -316,8 +320,7 @@ partial class StrategyBuilder
         }
 
         if (allSingleton
-            && summary is not null
-            && (projectionMerged || ShouldFoldSingletonOrbitRepresentative(summary)))
+            && ShouldUseOrbitRepresentativeForSingletonLine(summary, projectionMerged))
         {
             MergedFamilyOutcome representative = SelectOrbitRepresentative(line);
             EquivalentOrderSummary relabelSummary =

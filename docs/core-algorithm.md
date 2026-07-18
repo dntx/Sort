@@ -23,7 +23,7 @@ minimax 搜索、对称性约减，以及三种剪枝下界（信息论下界、
 
 其中 `BuildSearchTree()` 现通过 `BuildExactSearchProjection()` 走显式 layered 入口：当前实现先产出 display tree，再由 `StrategyBuilder` 基于 solver 状态递归直接构建 search tree（过渡形态，目标仍是 search -> display）。
 
-display/search 两条物化路径当前通过独立 planner 入口（`BuildDisplayTransitionSpecs(...)` / `BuildSearchTransitionSpecs(...)`）生成过渡分支语义（顺序文本、effect、后继状态）；search 侧已切到 search-only branch payload（不再携带 display summary 字段），并进一步使用 search-only transition payload（不再复用 display 的 `TransitionSpec` 载体）。两侧共享 chosen-group line-planning 循环骨架，以及 branch-line->spec 的物化/排序骨架；branch-line 结果在 builder 内部也已统一为中性 line 模型，不再在共享路径上暴露 display 专用 `BranchLine` 类型。effect 字段改为先走共享原始字段计算，再分别生成 display/search effect 载体。代表分支选择已改为 display/search 各自规划：display 保留 summary 驱动渲染语义，search 仅保留代表选择所需逻辑；单轨道/多轨道判断从文本分隔符判定切换为语义判定，并去除中间选择载体结构，改为按语义分支直接构造输出。doomed-tail 视图也已改为先产出共享 line 模型，再分别投影到 display/search payload，以降低后续拆分时语义漂移风险。branch-line 划分策略仍委托 display planner，以保证行为稳定并为后续继续解耦预留落点。
+display/search 两条物化路径当前通过独立 planner 入口（`BuildDisplayTransitionSpecs(...)` / `BuildSearchTransitionSpecs(...)`）生成过渡分支语义（顺序文本、effect、后继状态）；search 侧已切到 search-only branch payload（不再携带 display summary 字段），并进一步使用 search-only transition payload（不再复用 display 的 `TransitionSpec` 载体）。两侧共享 chosen-group line-planning 循环骨架，以及 branch-line->spec 的物化/排序骨架；branch-line 结果在 builder 内部也已统一为中性 line 模型，不再在共享路径上暴露 display 专用 `BranchLine` 类型。effect 字段改为先走共享原始字段计算，再分别生成 display/search effect 载体。代表分支选择已改为 display/search 各自规划：display 保留 summary 驱动渲染语义，search 仅保留代表选择所需逻辑；单轨道/多轨道判断从文本分隔符判定切换为语义判定，并去除中间选择载体结构，改为按语义分支直接构造输出。本轮进一步把 singleton line 的代表选择判定抽为 display/search 共用 helper，避免两侧出现语义分叉。doomed-tail 视图也已改为先产出共享 line 模型，再分别投影到 display/search payload，以降低后续拆分时语义漂移风险。branch-line 划分策略仍委托 display planner，以保证行为稳定并为后续继续解耦预留落点。
 
 实现注记：
 
