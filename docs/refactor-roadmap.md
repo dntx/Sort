@@ -61,3 +61,4 @@ Current C progress:
 - added machine-readable summary output (`-SummaryJsonPath`) for counter/perf runners and artifact upload in manual workflows.
 - fixed `full-counter-suite` selector matching so deterministic full audit runs the intended `StaysWithinBaseline` family.
 - added matched-test preflight counting in `run-counter-guardrails.ps1`; `full-counter-suite` now enforces a minimum matched-test threshold to catch selector drift early.
+- extended matched-test threshold enforcement to `fast-default`, `iterative-frontier`, and `compact` profiles to catch partial selector drift before execution.

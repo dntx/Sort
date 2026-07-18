@@ -41,6 +41,9 @@ if (-not $profileMethods.ContainsKey($Profile)) {
 $selectors = @($profileMethods[$Profile] | ForEach-Object { "FullyQualifiedName~$_" })
 $filter = ($selectors -join "|")
 $minimumMatchedTestsByProfile = @{
+    "fast-default" = 60
+    "iterative-frontier" = 6
+    "compact" = 25
     "full-counter-suite" = 80
 }
 
