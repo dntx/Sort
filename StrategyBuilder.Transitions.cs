@@ -216,15 +216,21 @@ partial class StrategyBuilder
             spec => spec.Outcome.NextFixedTopMask,
             spec => spec.Outcome.NextRemainingSlots);
 
-        return targets
-            .Zip(branchSpecs, (target, spec) => new TransitionSpec(
+        var specs = new List<TransitionSpec>(targets.Count);
+        for (int i = 0; i < targets.Count; i++)
+        {
+            TransitionTargetFields target = targets[i];
+            BranchSpec branchSpec = branchSpecs[i];
+            specs.Add(new TransitionSpec(
                 target.OrderText,
-                spec.Summary,
+                branchSpec.Summary,
                 BuildComparisonEffect(state, fixedTopMask, target.NextState, target.NextFixedTopMask),
                 target.NextState,
                 target.NextFixedTopMask,
-                target.NextRemainingSlots))
-            .ToList();
+                target.NextRemainingSlots));
+        }
+
+        return specs;
     }
 
     private IReadOnlyList<SearchTransitionSpec> BuildTransitionSpecsFromSearchBranchSpecs(
@@ -239,14 +245,14 @@ partial class StrategyBuilder
             spec => spec.NextFixedTopMask,
             spec => spec.NextRemainingSlots);
 
-        return targets
-            .Select(target => new SearchTransitionSpec(
+        return BuildTransitionSpecsFromTargets(
+            targets,
+            target => new SearchTransitionSpec(
                 target.OrderText,
                 BuildSearchComparisonEffect(state, fixedTopMask, target.NextState, target.NextFixedTopMask),
                 target.NextState,
                 target.NextFixedTopMask,
-                target.NextRemainingSlots))
-            .ToList();
+                target.NextRemainingSlots));
     }
 
     private static IReadOnlyList<TransitionTargetFields> BuildTransitionTargetFields<TSpec>(
@@ -262,6 +268,15 @@ partial class StrategyBuilder
                 getNextState(spec),
                 getNextFixedTopMask(spec),
                 getNextRemainingSlots(spec)))
+            .ToList();
+    }
+
+    private static IReadOnlyList<TTransitionSpec> BuildTransitionSpecsFromTargets<TTransitionSpec>(
+        IReadOnlyList<TransitionTargetFields> targets,
+        Func<TransitionTargetFields, TTransitionSpec> buildSpec)
+    {
+        return targets
+            .Select(buildSpec)
             .ToList();
     }
 
