@@ -1,0 +1,69 @@
+name: manual-counter-full-audit
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_configuration:
+        description: Build configuration for deterministic counter audit
+        type: choice
+        options:
+          - Release
+          - Debug
+        default: Release
+      matched_tests_baseline_path:
+        description: Repository path to the matched-tests baseline file
+        type: string
+        default: .\\docs\\counter-guardrails-full-counter-suite-baseline.txt
+      list_only:
+        description: If true, validate guardrail selector coverage and matched-test diff without running tests or snapshots
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  counter-full-audit:
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Run counter full audit
+        id: run_audit
+        shell: pwsh
+        run: |
+          $listOnly = "${{ inputs.list_only }}"
+          $listOnlyArg = if ($listOnly -eq "true") { "-ListOnly" } else { "" }
+          $artifactsDir = Join-Path $env:RUNNER_TEMP "counter-full-audit"
+          pwsh .\scripts\run-counter-full-audit.ps1 `
+            -Configuration "${{ inputs.build_configuration }}" `
+            -ArtifactsDir $artifactsDir `
+            -MatchedTestsBaselinePath "${{ inputs.matched_tests_baseline_path }}" `
+            $listOnlyArg
+          "artifacts_dir=$artifactsDir" >> $env:GITHUB_OUTPUT
+          "summary_json_path=$(Join-Path $artifactsDir 'counter-full-audit-summary.json')" >> $env:GITHUB_OUTPUT
+          "summary_md_path=$(Join-Path $artifactsDir 'counter-full-audit-summary.md')" >> $env:GITHUB_OUTPUT
+
+      - name: Upload counter full audit summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: counter-full-audit-summary
+          path: |
+            ${{ steps.run_audit.outputs.summary_json_path }}
+            ${{ steps.run_audit.outputs.summary_md_path }}
+
+      - name: Upload counter full audit bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: counter-full-audit-bundle
+          path: ${{ steps.run_audit.outputs.artifacts_dir }}

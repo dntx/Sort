@@ -220,6 +220,7 @@ GitHub Actions 入口：
 - `required-pr-tests`：PR 自动触发（fast only）。
 - `manual-slow-parity`：手动触发 slow parity 矩阵。
 - `manual-counter-guardrails`：手动触发确定性计数器护栏（counter-cap tests）。
+- `manual-counter-full-audit`：手动触发 full-counter-suite + matched-tests drift diff + unified snapshots 的组合审计。
 - `manual-perf-gate`：手动触发 baseline 回归门槛。
 
 `manual-perf-gate` 支持 `list_only=true`，用于只验证参数与命令链路，不执行基准。
@@ -238,8 +239,11 @@ GitHub Actions 入口：
 
 建议：PR 日常开发优先 `fast-default`；涉及 ID 门控改动时补跑 `iterative-frontier`；涉及 compact 逻辑时补跑 `compact`；收口前或专项巡检跑 `full-counter-suite`。
 
+`manual-counter-full-audit` 适合收口前或怀疑 selector 漂移时使用：一次输出 `full-counter-suite` 结果、matched-tests baseline diff、snapshot 汇总与单份总览摘要。
+
 profile 语义、shape 锚点与 cap ratchet 规则见 `docs/counter-guardrail-budgets.md`。
 `scripts/run-counter-guardrails.ps1` 会在执行前打印 profile 对应的方法选择器，支持 `-ListOnly` 做 dry-run 检查。
+完整操作步骤与产物说明见 `docs/counter-audit-operations.md`。
 
 Lane 决策表（先选信号，再选车道）：
 
