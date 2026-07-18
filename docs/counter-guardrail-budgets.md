@@ -52,6 +52,7 @@ These shape families are intentionally present in counter-cap tests and should r
 - Compact phase:
   - includes heavier compact rows such as `10,2,4`
   - includes compact-heavy cross-check rows such as `12,3,4`
+  - compact work-counter coverage now also includes lighter-but-distinct compact rows such as `12,3,3`, `8,4,2`, `10,3,5`, `13,4,3`
   - tie/anomaly guard rows such as `8,4,2`, `10,3,5`, `13,4,3`
 
 ## Ratchet Protocol
