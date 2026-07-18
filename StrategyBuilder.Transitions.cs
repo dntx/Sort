@@ -325,6 +325,18 @@ partial class StrategyBuilder
                 quotientSummary);
         }
 
+        if (allSingleton
+            && projectionMerged)
+        {
+            MergedFamilyOutcome representative = SelectOrbitRepresentative(line);
+            EquivalentOrderSummary relabelSummary =
+                BuildRelabelingOrbitSummary(state, line, representative);
+            return new BranchSpec(
+                representative.Family.RepresentativeOrder,
+                representative,
+                relabelSummary);
+        }
+
         EquivalentOrderSummary? summary = BuildEquivalentOrderSummary(families);
 
         if (allSingleton

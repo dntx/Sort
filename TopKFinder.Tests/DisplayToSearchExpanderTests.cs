@@ -60,6 +60,7 @@ public sealed class DisplayToSearchExpanderTests
     [InlineData(11, 3, 3)]
     [InlineData(11, 3, 4)]
     [InlineData(12, 3, 4)]
+    [InlineData(12, 3, 5)]
     [InlineData(11, 4, 3)]
     [InlineData(11, 4, 4)]
     [InlineData(12, 4, 5)]
