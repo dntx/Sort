@@ -81,6 +81,7 @@ Current C progress:
 - added `scripts/run-counter-full-audit.ps1`, `manual-counter-full-audit` workflow, and a repository matched-tests baseline so full deterministic audits now produce one combined review bundle.
 - enhanced `manual-counter-full-audit` to publish summary content directly in Actions and optionally update a PR comment.
 - added `counter-baseline-drift-review` so matched-tests baseline changes require an explicit PR-body explanation.
+- expanded compact deterministic counter coverage to include the previously snapshot-only heavy rows `(12,3,4)` and `(10,2,4)` for searched/outcomes/duplicate monitoring.
 
 Mainline C foundation status:
 - deterministic governance lanes now exist for focused counter checks, full bundled audits, and wall-clock smoke diagnostics.

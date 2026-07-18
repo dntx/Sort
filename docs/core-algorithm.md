@@ -507,6 +507,7 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     每次运行还会输出 matched-tests artifact（`counter-guardrails-matched-tests`），用于追踪 profile 选择器实际覆盖的测试清单。
     收口场景下可改用 `manual-counter-full-audit` 组合 lane：它把 `full-counter-suite`、matched-tests baseline diff、统一 snapshots 与总览报告打包为一份审计产物，减少 reviewer 手工拼接多个 lane 的成本。
     该组合 lane 现在还会把摘要写入 Actions summary，并可选回写 PR comment；若 matched-tests baseline 本身发生变化，则另有 PR 检查要求在 PR body 中显式解释 drift。
+    最新一轮 ratchet 维护把先前仅在 compact snapshot 里观测的重型 shape `(12,3,4)` 与 `(10,2,4)` 纳入 searched/outcomes/duplicate 三类 deterministic compact counter 监控，减少“脚本已覆盖但 theory 未锁住”的空档。
     与其配套，`manual-perf-gate` 手动 lane 也支持可选导出当次 benchmark case 明细 CSV（rows artifact），让墙钟烟雾检查除 pass/fail 外还能复盘中位数样本与结构稳定性。
     该 lane 还支持在派发时指定 `baseline_csv_path` 并设置 job 超时上限，保证手动基线切换无需改脚本默认值且长跑任务可控收敛。
     此外，perf lane 现支持显式 `build_configuration`（Debug/Release）透传到基准脚本，避免在流程外手改脚本默认配置。
