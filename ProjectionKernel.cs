@@ -2,11 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-// Display-layer projection merge helpers. These routines own the generic control flow for
-// projection-based orbit grouping: union-find component construction, singleton fallback, and
-// projected-automorphism checks over caller-supplied representatives. Search-state-specific
-// rendering acceptance and family semantics stay outside this helper and are injected by delegates.
-internal static class DisplayProjectionOrbitMerger
+static class ProjectionKernel
 {
     internal readonly record struct ProjectionOutcomeData(IReadOnlyList<int> OrderItems, ulong EliminatedMask);
 
@@ -18,69 +14,7 @@ internal static class DisplayProjectionOrbitMerger
         ProjectedStateCacheHit,
     }
 
-    internal static List<(List<T> Members, bool ProjectionMerged)> MergeSingletonOrbitsByProjection<T>(
-        List<List<T>> orbits,
-        Func<T, T, bool> areProjectionEquivalent,
-        Func<T, int> getFamilyCount)
-    {
-        int n = orbits.Count;
-        if (n <= 1)
-            return orbits.Select(orbit => (orbit, false)).ToList();
-
-        var parent = new int[n];
-        for (int i = 0; i < n; i++)
-            parent[i] = i;
-
-        int Find(int x)
-        {
-            while (parent[x] != x)
-            {
-                parent[x] = parent[parent[x]];
-                x = parent[x];
-            }
-            return x;
-        }
-
-        bool IsSingleton(List<T> orbit)
-            => orbit.Count == 1 && getFamilyCount(orbit[0]) == 1;
-
-        for (int i = 0; i < n; i++)
-        {
-            if (!IsSingleton(orbits[i]))
-                continue;
-
-            for (int j = i + 1; j < n; j++)
-            {
-                if (!IsSingleton(orbits[j]) || Find(i) == Find(j))
-                    continue;
-
-                if (areProjectionEquivalent(orbits[i][0], orbits[j][0]))
-                    parent[Find(i)] = Find(j);
-            }
-        }
-
-        var byRoot = new Dictionary<int, List<T>>();
-        var combinedCount = new Dictionary<int, int>();
-        var order = new List<int>();
-        for (int i = 0; i < n; i++)
-        {
-            int root = Find(i);
-            if (!byRoot.TryGetValue(root, out List<T>? merged))
-            {
-                merged = new List<T>();
-                byRoot[root] = merged;
-                combinedCount[root] = 0;
-                order.Add(root);
-            }
-
-            merged.AddRange(orbits[i]);
-            combinedCount[root]++;
-        }
-
-        return order.Select(root => (byRoot[root], combinedCount[root] > 1)).ToList();
-    }
-
-    internal static List<(List<T> Members, bool ProjectionMerged)> MergeOrbitsByProjection<T>(
+    internal static List<(List<T> Members, bool ProjectionMerged)> MergeProjectionOrbits<T>(
         List<List<T>> orbits,
         Func<T, T, bool> areProjectionEquivalent,
         Func<List<T>, bool> canFoldMultiFamilyComponent,
@@ -107,9 +41,7 @@ internal static class DisplayProjectionOrbitMerger
                 flattened.AddRange(orbits[orbitIndex]);
 
             bool multiFamily = flattened.Any(outcome => getFamilyCount(outcome) > 1);
-
-            bool fold = !multiFamily
-                || canFoldMultiFamilyComponent(orderRepresentativeFirst(flattened));
+            bool fold = !multiFamily || canFoldMultiFamilyComponent(orderRepresentativeFirst(flattened));
 
             if (fold)
             {
@@ -147,6 +79,7 @@ internal static class DisplayProjectionOrbitMerger
                 parent[x] = parent[parent[x]];
                 x = parent[x];
             }
+
             return x;
         }
 
@@ -263,5 +196,68 @@ internal static class DisplayProjectionOrbitMerger
         ComparisonState clone = state.Clone();
         clone.Deactivate(dropMask);
         return clone;
+    }
+
+    private static List<(List<T> Members, bool ProjectionMerged)> MergeSingletonOrbitsByProjection<T>(
+        List<List<T>> orbits,
+        Func<T, T, bool> areProjectionEquivalent,
+        Func<T, int> getFamilyCount)
+    {
+        int n = orbits.Count;
+        if (n <= 1)
+            return orbits.Select(orbit => (orbit, false)).ToList();
+
+        var parent = new int[n];
+        for (int i = 0; i < n; i++)
+            parent[i] = i;
+
+        int Find(int x)
+        {
+            while (parent[x] != x)
+            {
+                parent[x] = parent[parent[x]];
+                x = parent[x];
+            }
+
+            return x;
+        }
+
+        bool IsSingleton(List<T> orbit)
+            => orbit.Count == 1 && getFamilyCount(orbit[0]) == 1;
+
+        for (int i = 0; i < n; i++)
+        {
+            if (!IsSingleton(orbits[i]))
+                continue;
+
+            for (int j = i + 1; j < n; j++)
+            {
+                if (!IsSingleton(orbits[j]) || Find(i) == Find(j))
+                    continue;
+
+                if (areProjectionEquivalent(orbits[i][0], orbits[j][0]))
+                    parent[Find(i)] = Find(j);
+            }
+        }
+
+        var byRoot = new Dictionary<int, List<T>>();
+        var combinedCount = new Dictionary<int, int>();
+        var order = new List<int>();
+        for (int i = 0; i < n; i++)
+        {
+            int root = Find(i);
+            if (!byRoot.TryGetValue(root, out List<T>? merged))
+            {
+                merged = new List<T>();
+                byRoot[root] = merged;
+                combinedCount[root] = 0;
+                order.Add(root);
+            }
+
+            merged.AddRange(orbits[i]);
+            combinedCount[root]++;
+        }
+
+        return order.Select(root => (byRoot[root], combinedCount[root] > 1)).ToList();
     }
 }

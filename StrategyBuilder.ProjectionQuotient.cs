@@ -33,7 +33,7 @@ partial class StrategyBuilder
         ComparisonState state, List<List<MergedFamilyOutcome>> orbits)
     {
         var projectionCache = new Dictionary<ulong, (ComparisonState State, int[] Colors)>();
-        return DisplayRenderEngine.MergeProjectionOrbits(
+        return ProjectionKernel.MergeProjectionOrbits(
             orbits,
             areProjectionEquivalent: (left, right) =>
                 TryProjectionAutomorphism(state, left, right, projectionCache),

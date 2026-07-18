@@ -23,7 +23,7 @@ partial class StrategyBuilder
     {
         ulong commonDrop = EnableProjectionOrbitMerging ? CommonEliminatedMask(state, line) : 0;
         IReadOnlyList<int> repOrder = representative.Family.RepresentativeOrderItems;
-        IReadOnlyList<int> repProjected = DisplayRenderEngine.RestrictOrderByDropMask(repOrder, commonDrop);
+        IReadOnlyList<int> repProjected = ProjectionKernel.RestrictOrderByDropMask(repOrder, commonDrop);
 
         ComparisonState? projected = null;
         var legends = new List<string>();
@@ -50,8 +50,8 @@ partial class StrategyBuilder
             if (commonDrop == 0)
                 continue;
 
-            projected ??= DisplayRenderEngine.CloneDeactivated(state, commonDrop);
-            IReadOnlyList<int> memberProjected = DisplayRenderEngine.RestrictOrderByDropMask(memberOrder, commonDrop);
+            projected ??= ProjectionKernel.CloneDeactivated(state, commonDrop);
+            IReadOnlyList<int> memberProjected = ProjectionKernel.RestrictOrderByDropMask(memberOrder, commonDrop);
             if (repProjected.Count == memberProjected.Count
                 && projected.TryFindOrderAutomorphism(0, repProjected, memberProjected, out Dictionary<int, int>? projMap)
                 && projMap is not null)

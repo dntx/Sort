@@ -556,23 +556,23 @@ partial class StrategyBuilder
         MergedFamilyOutcome b,
         Dictionary<ulong, (ComparisonState State, int[] Colors)>? projectionCache = null)
     {
-        Action<DisplayRenderEngine.ProjectionAutomorphismProbeEvent>? probeHook = null;
+        Action<ProjectionKernel.ProjectionAutomorphismProbeEvent>? probeHook = null;
         if (EnableProjectionPairingProbe)
         {
             probeHook = evt =>
             {
                 switch (evt)
                 {
-                    case DisplayRenderEngine.ProjectionAutomorphismProbeEvent.ColorPrefilterSkip:
+                    case ProjectionKernel.ProjectionAutomorphismProbeEvent.ColorPrefilterSkip:
                         _projectionOrbitColorPrefilterSkips++;
                         break;
-                    case DisplayRenderEngine.ProjectionAutomorphismProbeEvent.AutomorphismCheck:
+                    case ProjectionKernel.ProjectionAutomorphismProbeEvent.AutomorphismCheck:
                         _projectionOrbitAutomorphismChecks++;
                         break;
-                    case DisplayRenderEngine.ProjectionAutomorphismProbeEvent.ProjectedStateBuild:
+                    case ProjectionKernel.ProjectionAutomorphismProbeEvent.ProjectedStateBuild:
                         _projectionOrbitProjectedStateBuilds++;
                         break;
-                    case DisplayRenderEngine.ProjectionAutomorphismProbeEvent.ProjectedStateCacheHit:
+                    case ProjectionKernel.ProjectionAutomorphismProbeEvent.ProjectedStateCacheHit:
                         _projectionOrbitProjectedStateCacheHits++;
                         break;
                 }
@@ -581,10 +581,10 @@ partial class StrategyBuilder
 
         return DisplayRenderEngine.TryProjectionAutomorphism(
             state,
-            new DisplayRenderEngine.ProjectionOutcomeData(
+            new ProjectionKernel.ProjectionOutcomeData(
                 a.Family.RepresentativeOrderItems,
                 EliminatedMask(state, a)),
-            new DisplayRenderEngine.ProjectionOutcomeData(
+            new ProjectionKernel.ProjectionOutcomeData(
                 b.Family.RepresentativeOrderItems,
                 EliminatedMask(state, b)),
             projectionCache,
