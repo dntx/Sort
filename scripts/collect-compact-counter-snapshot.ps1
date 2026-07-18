@@ -9,16 +9,16 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $cases = @(
-	@{ n = 9;  m = 3; k = 3; searchedCap = 159; outcomesCap = 5473; duplicateCap = 800;  compactStatesCap = 78;   compactGroupsCap = 1219;   compactStepOptimalCap = 368 },
-	@{ n = 11; m = 3; k = 3; searchedCap = 540; outcomesCap = 16220; duplicateCap = 1743; compactStatesCap = 131;  compactGroupsCap = 2847;   compactStepOptimalCap = 647 },
-	@{ n = 12; m = 4; k = 4; searchedCap = 471; outcomesCap = 20854; duplicateCap = 5538; compactStatesCap = 46;   compactGroupsCap = 1395;   compactStepOptimalCap = 165 },
-	@{ n = 10; m = 3; k = 4; searchedCap = 1088; outcomesCap = 47634; duplicateCap = 5242; compactStatesCap = 324; compactGroupsCap = 11228;  compactStepOptimalCap = 2777 },
-	@{ n = 12; m = 4; k = 3; searchedCap = 131; outcomesCap = 6321; duplicateCap = 2566; compactStatesCap = 43;   compactGroupsCap = 811;    compactStepOptimalCap = 199 },
-	@{ n = 12; m = 3; k = 3; searchedCap = 538; outcomesCap = 8550; duplicateCap = 622;  compactStatesCap = -1;   compactGroupsCap = -1;     compactStepOptimalCap = -1 },
-	@{ n = 8;  m = 4; k = 2; searchedCap = 7; outcomesCap = 30; duplicateCap = 12; compactStatesCap = -1;         compactGroupsCap = -1;     compactStepOptimalCap = -1 },
-	@{ n = 10; m = 3; k = 5; searchedCap = 623; outcomesCap = 9835; duplicateCap = 625; compactStatesCap = -1;     compactGroupsCap = -1;     compactStepOptimalCap = -1 },
-	@{ n = 13; m = 4; k = 3; searchedCap = 142; outcomesCap = 2385; duplicateCap = 563; compactStatesCap = -1;     compactGroupsCap = -1;     compactStepOptimalCap = -1 },
-	@{ n = 12; m = 3; k = 4; searchedCap = -1; outcomesCap = -1; duplicateCap = -1; compactStatesCap = 690;        compactGroupsCap = 40377;  compactStepOptimalCap = 5931 },
+	@{ n = 9;  m = 3; k = 3; searchedCap = 159; outcomesCap = 5047; duplicateCap = 711;  compactStatesCap = 77;   compactGroupsCap = 1214;   compactStepOptimalCap = 366 },
+	@{ n = 11; m = 3; k = 3; searchedCap = 511; outcomesCap = 14860; duplicateCap = 1569; compactStatesCap = 129;  compactGroupsCap = 2762;   compactStepOptimalCap = 645 },
+	@{ n = 12; m = 4; k = 4; searchedCap = 471; outcomesCap = 16867; duplicateCap = 4687; compactStatesCap = 46;   compactGroupsCap = 1395;   compactStepOptimalCap = 165 },
+	@{ n = 10; m = 3; k = 4; searchedCap = 1081; outcomesCap = 45433; duplicateCap = 4821; compactStatesCap = 321; compactGroupsCap = 11055;  compactStepOptimalCap = 2772 },
+	@{ n = 12; m = 4; k = 3; searchedCap = 130; outcomesCap = 3955; duplicateCap = 1605; compactStatesCap = 36;   compactGroupsCap = 639;    compactStepOptimalCap = 175 },
+	@{ n = 12; m = 3; k = 3; searchedCap = 538; outcomesCap = 8346; duplicateCap = 599;  compactStatesCap = -1;   compactGroupsCap = -1;     compactStepOptimalCap = -1 },
+	@{ n = 8;  m = 4; k = 2; searchedCap = 7; outcomesCap = 26; duplicateCap = 12; compactStatesCap = -1;         compactGroupsCap = -1;     compactStepOptimalCap = -1 },
+	@{ n = 10; m = 3; k = 5; searchedCap = 623; outcomesCap = 9656; duplicateCap = 622; compactStatesCap = -1;     compactGroupsCap = -1;     compactStepOptimalCap = -1 },
+	@{ n = 13; m = 4; k = 3; searchedCap = 138; outcomesCap = 1456; duplicateCap = 367; compactStatesCap = -1;     compactGroupsCap = -1;     compactStepOptimalCap = -1 },
+	@{ n = 12; m = 3; k = 4; searchedCap = -1; outcomesCap = -1; duplicateCap = -1; compactStatesCap = 677;        compactGroupsCap = 39691;  compactStepOptimalCap = 5770 },
 	@{ n = 10; m = 2; k = 4; searchedCap = -1; outcomesCap = -1; duplicateCap = -1; compactStatesCap = 4118;       compactGroupsCap = 120336; compactStepOptimalCap = 29291 }
 )
 

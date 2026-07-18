@@ -1156,7 +1156,7 @@ public sealed class StrategyRegressionTests
     [InlineData(10, 3, 5, 5269)]
     [InlineData(13, 4, 3, 506)]
     [InlineData(8, 4, 2, 4)]
-    [InlineData(9, 4, 3, 93)]
+    [InlineData(9, 4, 3, 36)]
     [InlineData(8, 3, 4, 457)]
     [InlineData(9, 3, 4, 2533)]
     [InlineData(10, 3, 6, 6360)]

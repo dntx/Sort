@@ -9,12 +9,12 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $cases = @(
-    @{ n = 14; m = 5; k = 5; maxStep = 5; rootGroupCount = 5; totalEdges = 72; outputStates = 36; expandedOutputStates = 8; searchedCap = 329; outcomesCap = 22686; candidateCap = 30137 },
-    @{ n = 16; m = 5; k = 5; maxStep = 6; rootGroupCount = 5; totalEdges = 122; outputStates = 29; expandedOutputStates = 12; searchedCap = 2573; outcomesCap = 416162; candidateCap = 488630 },
-    @{ n = 17; m = 5; k = 5; maxStep = 6; rootGroupCount = 5; totalEdges = 135; outputStates = 40; expandedOutputStates = 13; searchedCap = 2714; outcomesCap = 393047; candidateCap = 534261 },
-    @{ n = 18; m = 5; k = 5; maxStep = 6; rootGroupCount = 5; totalEdges = 227; outputStates = 66; expandedOutputStates = 14; searchedCap = 3855; outcomesCap = 680812; candidateCap = 836413 },
-    @{ n = 12; m = 6; k = 6; maxStep = 3; rootGroupCount = 6; totalEdges = 16; outputStates = 17; expandedOutputStates = 2; searchedCap = 34; outcomesCap = 1172; candidateCap = 1753 },
-    @{ n = 14; m = 6; k = 6; maxStep = 4; rootGroupCount = 6; totalEdges = 92; outputStates = 23; expandedOutputStates = 3; searchedCap = 94; outcomesCap = 4117; candidateCap = 6423 }
+    @{ n = 14; m = 5; k = 5; maxStep = 5; rootGroupCount = 5; totalEdges = 72; outputStates = 36; expandedOutputStates = 8; searchedCap = 174; outcomesCap = 2768; candidateCap = 7474 },
+    @{ n = 16; m = 5; k = 5; maxStep = 6; rootGroupCount = 5; totalEdges = 122; outputStates = 29; expandedOutputStates = 12; searchedCap = 1633; outcomesCap = 66249; candidateCap = 73060 },
+    @{ n = 17; m = 5; k = 5; maxStep = 6; rootGroupCount = 5; totalEdges = 135; outputStates = 40; expandedOutputStates = 13; searchedCap = 1309; outcomesCap = 42641; candidateCap = 67024 },
+    @{ n = 18; m = 5; k = 5; maxStep = 6; rootGroupCount = 5; totalEdges = 227; outputStates = 66; expandedOutputStates = 14; searchedCap = 1758; outcomesCap = 78787; candidateCap = 88908 },
+    @{ n = 12; m = 6; k = 6; maxStep = 3; rootGroupCount = 6; totalEdges = 16; outputStates = 17; expandedOutputStates = 2; searchedCap = 25; outcomesCap = 66; candidateCap = 65 },
+    @{ n = 14; m = 6; k = 6; maxStep = 4; rootGroupCount = 6; totalEdges = 92; outputStates = 23; expandedOutputStates = 3; searchedCap = 45; outcomesCap = 404; candidateCap = 2341 }
 )
 
 dotnet build .\TopKFinder.csproj -c $Configuration --nologo | Out-Null

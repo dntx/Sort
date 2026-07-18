@@ -15,6 +15,7 @@ Snapshot utility:
 - `scripts/collect-default-counter-snapshot.ps1` collects deterministic default-path counters for ratchet anchor shapes and emits JSON/CSV with cap deltas.
 - `scripts/collect-compact-counter-snapshot.ps1` collects compact-path counters (including compact-specific work counters) via reflection and emits JSON/CSV with cap deltas.
 - `scripts/collect-iterative-counter-snapshot.ps1` collects iterative-frontier counters and verifies structural anchors before reporting cap deltas.
+- `scripts/collect-all-counter-snapshots.ps1` runs all three collectors and writes a combined summary (`counter-snapshot-summary.json/.md`).
 
 ## Profiles
 
@@ -81,4 +82,7 @@ pwsh .\scripts\collect-compact-counter-snapshot.ps1 -Configuration Release
 
 # Collect iterative-frontier counter snapshot + ratchet opportunities
 pwsh .\scripts\collect-iterative-counter-snapshot.ps1 -Configuration Release
+
+# Collect all snapshots + combined summary
+pwsh .\scripts\collect-all-counter-snapshots.ps1 -Configuration Release
 ```

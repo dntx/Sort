@@ -68,3 +68,6 @@ Current C progress:
 - ratcheted down compact-path counter caps (`Compact_WorkCounters*`, `Compact_Searched*`, `Compact_Outcomes*`, `Compact_Duplicate*`) from measured snapshot values.
 - added `scripts/collect-iterative-counter-snapshot.ps1` to automate iterative-frontier counter snapshot collection with structural-anchor verification.
 - ratcheted down iterative-frontier counter caps in `Default_IterativeDeepeningBaselineRemainsStable` from measured snapshot values.
+- added `scripts/collect-all-counter-snapshots.ps1` as a unified entrypoint that emits one combined summary artifact across default/compact/iterative snapshots.
+- used the combined summary to ratchet one residual default outcomes cap (`9,4,3`) that still had positive headroom.
+- added `scripts/collect-all-counter-snapshots.ps1` to run default/compact/iterative collectors and emit one combined summary artifact for review.

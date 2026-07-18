@@ -10,27 +10,27 @@ $ErrorActionPreference = "Stop"
 
 # Mirrors default-path counter-cap rows in StrategyRegressionTests.
 $cases = @(
-	@{ n = 9;  m = 3; k = 3; searchedCap = 95;   outcomesCap = 991;    candidateCap = 1286;   duplicateCap = 104 },
-	@{ n = 11; m = 3; k = 3; searchedCap = 267;  outcomesCap = 3532;   candidateCap = 5114;   duplicateCap = 276 },
-	@{ n = 12; m = 3; k = 3; searchedCap = 486;  outcomesCap = 7303;   candidateCap = 10909;  duplicateCap = 550 },
-	@{ n = 12; m = 4; k = 4; searchedCap = 242;  outcomesCap = 9809;   candidateCap = 9776;   duplicateCap = 2232 },
-	@{ n = 12; m = 4; k = 3; searchedCap = 63;   outcomesCap = 492;    candidateCap = 544;    duplicateCap = 111 },
+	@{ n = 9;  m = 3; k = 3; searchedCap = 95;   outcomesCap = 845;    candidateCap = 1236;   duplicateCap = 87 },
+	@{ n = 11; m = 3; k = 3; searchedCap = 267;  outcomesCap = 3373;   candidateCap = 5053;   duplicateCap = 250 },
+	@{ n = 12; m = 3; k = 3; searchedCap = 486;  outcomesCap = 7118;   candidateCap = 10862;  duplicateCap = 532 },
+	@{ n = 12; m = 4; k = 4; searchedCap = 210;  outcomesCap = 3052;   candidateCap = 4636;   duplicateCap = 844 },
+	@{ n = 12; m = 4; k = 3; searchedCap = 48;   outcomesCap = 207;    candidateCap = 463;    duplicateCap = 73 },
 	@{ n = 10; m = 3; k = 4; searchedCap = 409;  outcomesCap = 6360;   candidateCap = 7882;   duplicateCap = 495 },
-	@{ n = 10; m = 3; k = 5; searchedCap = 323;  outcomesCap = 5521;   candidateCap = 5634;   duplicateCap = 360 },
-	@{ n = 12; m = 4; k = 5; searchedCap = 710;  outcomesCap = 32512;  candidateCap = 33855;  duplicateCap = -1 },
+	@{ n = 10; m = 3; k = 5; searchedCap = 323;  outcomesCap = 5269;   candidateCap = 5593;   duplicateCap = 352 },
+	@{ n = 12; m = 4; k = 5; searchedCap = 710;  outcomesCap = 22593;  candidateCap = 28811;  duplicateCap = -1 },
 	@{ n = 16; m = 4; k = 4; searchedCap = 5650; outcomesCap = 328532; candidateCap = 464319; duplicateCap = -1 },
-	@{ n = 20; m = 5; k = 4; searchedCap = 3587; outcomesCap = 304457; candidateCap = 379108; duplicateCap = -1 },
-	@{ n = 13; m = 4; k = 3; searchedCap = 97;   outcomesCap = 1346;   candidateCap = 1542;   duplicateCap = 329 },
+	@{ n = 20; m = 5; k = 4; searchedCap = 3272; outcomesCap = 149648; candidateCap = 266517; duplicateCap = -1 },
+	@{ n = 13; m = 4; k = 3; searchedCap = 92;   outcomesCap = 506;    candidateCap = 871;    duplicateCap = 133 },
 	@{ n = 8;  m = 4; k = 2; searchedCap = 3;    outcomesCap = 4;      candidateCap = 5;      duplicateCap = 0 },
-	@{ n = 9;  m = 4; k = 3; searchedCap = 16;   outcomesCap = 93;     candidateCap = 68;     duplicateCap = 29 },
-	@{ n = 8;  m = 3; k = 4; searchedCap = 53;   outcomesCap = 591;    candidateCap = 546;    duplicateCap = 73 },
+	@{ n = 9;  m = 4; k = 3; searchedCap = 13;   outcomesCap = 36;     candidateCap = 44;     duplicateCap = 18 },
+	@{ n = 8;  m = 3; k = 4; searchedCap = 53;   outcomesCap = 457;    candidateCap = 484;    duplicateCap = 58 },
 	@{ n = 8;  m = 2; k = 3; searchedCap = 317;  outcomesCap = -1;     candidateCap = 4232;   duplicateCap = -1 },
-	@{ n = 9;  m = 3; k = 4; searchedCap = 173;  outcomesCap = 2759;   candidateCap = 3008;   duplicateCap = 254 },
+	@{ n = 9;  m = 3; k = 4; searchedCap = 173;  outcomesCap = 2533;   candidateCap = 2952;   duplicateCap = 245 },
 	@{ n = 10; m = 3; k = 6; searchedCap = 409;  outcomesCap = 6360;   candidateCap = 7882;   duplicateCap = 495 },
-	@{ n = 5;  m = 3; k = 2; searchedCap = 4;    outcomesCap = 12;     candidateCap = 4;      duplicateCap = 3 },
+	@{ n = 5;  m = 3; k = 2; searchedCap = 4;    outcomesCap = 8;      candidateCap = 4;      duplicateCap = 2 },
 	@{ n = 6;  m = 2; k = 2; searchedCap = 21;   outcomesCap = 72;     candidateCap = 85;     duplicateCap = -1 },
 	@{ n = 10; m = 2; k = 2; searchedCap = 106;  outcomesCap = 740;    candidateCap = 1115;   duplicateCap = 2 },
-	@{ n = 25; m = 5; k = 3; searchedCap = 247;  outcomesCap = 759;    candidateCap = 7261;   duplicateCap = -1 }
+	@{ n = 25; m = 5; k = 3; searchedCap = 173;  outcomesCap = 469;    candidateCap = 7254;   duplicateCap = -1 }
 )
 
 function Parse-IntMatch {
