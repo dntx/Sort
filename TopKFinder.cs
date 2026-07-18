@@ -268,8 +268,7 @@ partial class StrategyBuilder
         ComparisonState.SetThreadCancellationToken(_cancellationToken);
         try
         {
-            ResetPerBuildTransientState();
-            EnsurePhase1Solved();
+            InitializeExactSolverSession(useFeasibleBudget: false);
             _useCompact = false;
             return BuildSearchTreeFromSolverState();
         }
@@ -641,13 +640,8 @@ partial class StrategyBuilder
         ComparisonState.SetThreadCancellationToken(_cancellationToken);
         try
         {
-            ResetPerBuildTransientState();
             var stopwatch = Stopwatch.StartNew();
-            ReportProgress(force: true);
-
-            _compactUsesFeasibleBudget = useFeasibleBudget;
-            if (!useFeasibleBudget)
-                EnsurePhase1Solved();
+            InitializeExactSolverSession(useFeasibleBudget);
             _phase1Milliseconds = stopwatch.ElapsedMilliseconds;
 
             if (useCompactSelection)
@@ -676,6 +670,18 @@ partial class StrategyBuilder
         {
             ComparisonState.SetThreadCancellationToken(default);
         }
+    }
+
+    // Shared exact-session bootstrap used by both display and search entrypoints.
+    // Mainline-A objective: keep phase-1 cache initialization semantics in one place.
+    private void InitializeExactSolverSession(bool useFeasibleBudget)
+    {
+        ResetPerBuildTransientState();
+        ReportProgress(force: true);
+
+        _compactUsesFeasibleBudget = useFeasibleBudget;
+        if (!useFeasibleBudget)
+            EnsurePhase1Solved();
     }
 
     private readonly record struct MaterializationContext(
