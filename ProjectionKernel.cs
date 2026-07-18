@@ -38,7 +38,12 @@ static class ProjectionKernel
 
         var lines = new List<BranchLine<T>>();
         List<List<T>> parentOrbits = partitionFamiliesIntoOrbits(families);
-        List<(List<T> Members, bool ProjectionMerged)> orbits = mergeOrbitsByProjection(parentOrbits);
+        List<(List<T> Members, bool ProjectionMerged)>? orbits = mergeOrbitsByProjection(parentOrbits);
+        if (orbits is null)
+        {
+            throw new InvalidOperationException(
+                "ProjectionKernel requires mergeOrbitsByProjection to return a non-null orbit list.");
+        }
 
         foreach ((List<T> orbit, bool projectionMerged) in orbits)
         {

@@ -39,10 +39,35 @@ public sealed class ProjectionKernelTests
                 [1, 2, 3],
             ],
             parentOrbits => parentOrbits.Select(orbit => (orbit, true)).ToList(),
-            family => family == 2 ? throw new InvalidOperationException("boom") : 1));
+            family => family == 2 ? throw new InvalidOperationException("getFamilyCount delegate failure") : 1));
 
         Assert.Contains("getFamilyCount", ex.Message, StringComparison.Ordinal);
         Assert.NotNull(ex.InnerException);
+    }
+
+    [Fact]
+    public void PlanBranchLines_ThrowsWhenMergeOrbitsByProjectionReturnsNull()
+    {
+        List<int> families =
+        [
+            1,
+            2,
+            3,
+        ];
+
+        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() => ProjectionKernel.PlanBranchLines(
+            families,
+            members => new EquivalentOrderSummary(members.Count, "x | y", members.Count.ToString()),
+            _ =>
+            [
+                [1],
+                [2],
+                [3],
+            ],
+            _ => null!,
+            _ => 1));
+
+        Assert.Contains("mergeOrbitsByProjection", ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]
