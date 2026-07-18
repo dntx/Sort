@@ -119,20 +119,28 @@ These are architecture-level questions intentionally left open.
 
 ### 4.1 Search model purity vs pragmatic shared-reference model
 
-Decision needed:
+Status: Resolved (2026-07-18)
 
-- Should the long-term target force a fully expanded search model (no reference nodes),
-  or keep the current reference-capable model as intentional design?
+Decision:
 
-Why this matters:
+- Do NOT force a fully expanded explicit search tree.
+- Keep the reference-capable/shared-subtree model as intentional design.
+- Treat SearchStrategy as conceptually implicit (state -> best-group function via caches),
+  while allowing explicit nodes where needed for projection/testing tooling.
 
-- Affects model simplicity, memory/runtime behavior, and projection semantics.
-- Influences how strictly the original two-layer draft should be pursued.
+Rationale and context:
 
-Current state:
+- Fully expanding repeated subtrees turns a DAG-like structure into a pure tree and can cause large blow-ups.
+- Example class: if `s3` transitions to the same subtree as `s2`, no-reuse expansion duplicates an entire subtree of size `M`.
+- On realistic top-k shapes this can amplify memory/time significantly (often multi-x, potentially order-of-magnitude scale),
+  so full expansion is not an acceptable default representation.
 
-- Search and display are logically separated,
-- but reference-capable search nodes and existing projection paths remain by design.
+Operational interpretation:
+
+- Search phase should remain cache-driven first (implicit strategy semantics).
+- Display/materialization phase may construct explicit trees, but must continue using display-key-based sharing/reference semantics
+  to avoid unnecessary expansion.
+- This is a deliberate engineering trade-off, not unfinished work.
 
 ### 4.2 Display projection contract strictness
 
@@ -215,6 +223,10 @@ Change log convention:
 
 - Add a one-line dated note under the relevant section when status changes.
 - Prefer appending over rewriting history unless information is wrong.
+
+Recent decision log:
+
+- 2026-07-18: Section 4.1 resolved in favor of reference-capable/implicit search strategy semantics; fully expanded explicit trees are not the target default due to DAG-to-tree blow-up risk.
 
 ---
 
