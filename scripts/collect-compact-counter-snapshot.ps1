@@ -14,10 +14,10 @@ $cases = @(
 	@{ n = 12; m = 4; k = 4; searchedCap = 471; outcomesCap = 16867; duplicateCap = 4687; compactStatesCap = 46;   compactGroupsCap = 1395;   compactStepOptimalCap = 165 },
 	@{ n = 10; m = 3; k = 4; searchedCap = 1081; outcomesCap = 45433; duplicateCap = 4821; compactStatesCap = 321; compactGroupsCap = 11055;  compactStepOptimalCap = 2772 },
 	@{ n = 12; m = 4; k = 3; searchedCap = 130; outcomesCap = 3955; duplicateCap = 1605; compactStatesCap = 36;   compactGroupsCap = 639;    compactStepOptimalCap = 175 },
-	@{ n = 12; m = 3; k = 3; searchedCap = 538; outcomesCap = 8346; duplicateCap = 599;  compactStatesCap = -1;   compactGroupsCap = -1;     compactStepOptimalCap = -1 },
-	@{ n = 8;  m = 4; k = 2; searchedCap = 7; outcomesCap = 26; duplicateCap = 12; compactStatesCap = -1;         compactGroupsCap = -1;     compactStepOptimalCap = -1 },
-	@{ n = 10; m = 3; k = 5; searchedCap = 623; outcomesCap = 9656; duplicateCap = 622; compactStatesCap = -1;     compactGroupsCap = -1;     compactStepOptimalCap = -1 },
-	@{ n = 13; m = 4; k = 3; searchedCap = 138; outcomesCap = 1456; duplicateCap = 367; compactStatesCap = -1;     compactGroupsCap = -1;     compactStepOptimalCap = -1 },
+	@{ n = 12; m = 3; k = 3; searchedCap = 538; outcomesCap = 8346; duplicateCap = 599;  compactStatesCap = 8;    compactGroupsCap = 145;    compactStepOptimalCap = 9 },
+	@{ n = 8;  m = 4; k = 2; searchedCap = 7; outcomesCap = 26; duplicateCap = 12; compactStatesCap = 2;          compactGroupsCap = 5;      compactStepOptimalCap = 5 },
+	@{ n = 10; m = 3; k = 5; searchedCap = 623; outcomesCap = 9656; duplicateCap = 622; compactStatesCap = 5;      compactGroupsCap = 69;     compactStepOptimalCap = 5 },
+	@{ n = 13; m = 4; k = 3; searchedCap = 138; outcomesCap = 1456; duplicateCap = 367; compactStatesCap = 7;      compactGroupsCap = 118;    compactStepOptimalCap = 16 },
 	@{ n = 12; m = 3; k = 4; searchedCap = 5962; outcomesCap = 233774; duplicateCap = 18563; compactStatesCap = 677;        compactGroupsCap = 39691;  compactStepOptimalCap = 5770 },
 	@{ n = 10; m = 2; k = 4; searchedCap = 17104; outcomesCap = 471864; duplicateCap = 469; compactStatesCap = 4118;       compactGroupsCap = 120336; compactStepOptimalCap = 29291 }
 )

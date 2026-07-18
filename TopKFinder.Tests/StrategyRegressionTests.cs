@@ -987,14 +987,17 @@ public sealed class StrategyRegressionTests
     // groups it enumerated -- the dominant compact cost, mirrors CandidateGroupsEnumerated for the
     // default search) and CompactStepOptimalGroups (the step-optimal subset it actually costed). Caps
     // are the current deterministic counts; ratchet them DOWN when a compact optimization cuts work,
-    // an increase is a regression. (13,4,3 is intentionally omitted: its compact pass solves 0 states
-    // because the default tree is already minimal, so there is no work to monitor.)
+    // an increase is a regression.
     [Theory]
     [InlineData(9, 3, 3, 77, 1214, 366)]
     [InlineData(11, 3, 3, 129, 2762, 645)]
     [InlineData(12, 4, 4, 46, 1395, 165)]
     [InlineData(10, 3, 4, 321, 11055, 2772)]
     [InlineData(12, 4, 3, 36, 639, 175)]
+    [InlineData(12, 3, 3, 8, 145, 9)]
+    [InlineData(8, 4, 2, 2, 5, 5)]
+    [InlineData(10, 3, 5, 5, 69, 5)]
+    [InlineData(13, 4, 3, 7, 118, 16)]
     [InlineData(12, 3, 4, 677, 39691, 5770)]
     [InlineData(10, 2, 4, 4118, 120336, 29291)]
     public void Compact_WorkCountersStayWithinBaseline(

@@ -83,6 +83,7 @@ Current C progress:
 - added `counter-baseline-drift-review` so matched-tests baseline changes require an explicit PR-body explanation.
 - expanded compact deterministic counter coverage to include the previously snapshot-only heavy rows `(12,3,4)` and `(10,2,4)` for searched/outcomes/duplicate monitoring.
 - filled the remaining default snapshot-to-theory gaps for `OutcomesConstructed`/`DuplicateOutcomeSkips`, including heavy rows such as `(12,4,5)`, `(16,4,4)`, `(20,5,4)`, `(25,5,3)` and the pairwise-heavy `(8,2,3)`.
+- filled the remaining compact snapshot-to-theory gaps for `CompactStatesSolved` / `CompactGroupsEnumerated` / `CompactStepOptimalGroups`, closing the last four snapshot-only rows `(12,3,3)`, `(8,4,2)`, `(10,3,5)`, `(13,4,3)`.
 
 Mainline C foundation status:
 - deterministic governance lanes now exist for focused counter checks, full bundled audits, and wall-clock smoke diagnostics.
