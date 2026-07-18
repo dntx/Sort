@@ -71,3 +71,4 @@ Current C progress:
 - added `scripts/collect-all-counter-snapshots.ps1` as a unified entrypoint that emits one combined summary artifact across default/compact/iterative snapshots.
 - used the combined summary to ratchet one residual default outcomes cap (`9,4,3`) that still had positive headroom.
 - added `scripts/collect-all-counter-snapshots.ps1` to run default/compact/iterative collectors and emit one combined summary artifact for review.
+- enhanced `manual-counter-guardrails` workflow with optional unified snapshot collection/upload so reviewers can inspect summary and per-snapshot rows in one dispatch run.

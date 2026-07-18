@@ -12,6 +12,10 @@ on:
           - compact
           - full-counter-suite
         default: fast-default
+      collect_snapshots:
+        description: If true, run unified counter snapshot collection and upload summary artifacts
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -38,9 +42,38 @@ jobs:
           pwsh .\scripts\run-counter-guardrails.ps1 -Profile "${{ inputs.profile }}" -Configuration Release -SummaryJsonPath $summaryPath
           "summary_path=$summaryPath" >> $env:GITHUB_OUTPUT
 
+      - name: Collect deterministic counter snapshots
+        if: ${{ inputs.collect_snapshots }}
+        id: collect_snapshots
+        shell: pwsh
+        run: |
+          $artifactsDir = Join-Path $env:RUNNER_TEMP "counter-snapshot-artifacts"
+          pwsh .\scripts\collect-all-counter-snapshots.ps1 -Configuration Release -ArtifactsDir $artifactsDir
+          $summaryJsonPath = Join-Path $artifactsDir "counter-snapshot-summary.json"
+          $summaryMdPath = Join-Path $artifactsDir "counter-snapshot-summary.md"
+          "artifacts_dir=$artifactsDir" >> $env:GITHUB_OUTPUT
+          "summary_json_path=$summaryJsonPath" >> $env:GITHUB_OUTPUT
+          "summary_md_path=$summaryMdPath" >> $env:GITHUB_OUTPUT
+
       - name: Upload counter guardrail summary
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: counter-guardrails-summary
           path: ${{ steps.run_guardrails.outputs.summary_path }}
+
+      - name: Upload counter snapshot summary
+        if: ${{ always() && inputs.collect_snapshots }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: counter-snapshot-summary
+          path: |
+            ${{ steps.collect_snapshots.outputs.summary_json_path }}
+            ${{ steps.collect_snapshots.outputs.summary_md_path }}
+
+      - name: Upload counter snapshot detail rows
+        if: ${{ always() && inputs.collect_snapshots }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: counter-snapshot-rows
+          path: ${{ steps.collect_snapshots.outputs.artifacts_dir }}/snapshots
