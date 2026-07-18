@@ -114,38 +114,44 @@ partial class StrategyBuilder
     {
         var families = line.Select(outcome => outcome.Family).ToList();
         EquivalentOrderSummary? summary = BuildEquivalentOrderSummary(families);
-        bool allSingleton = families.All(family => family.Count == 1);
-
-        MergedFamilyOutcome representative = line[0];
-        if (line.Count > 1)
-        {
-            if (projectionMerged && !allSingleton)
-            {
-                MergedFamilyOutcome? quotientRepresentative = SelectProjectionQuotientRepresentative(state, line);
-                if (quotientRepresentative is not null)
-                    representative = quotientRepresentative;
-            }
-            else if (allSingleton && summary is not null && (projectionMerged || summary.PatternText.Contains(" | ", StringComparison.Ordinal)))
-            {
-                representative = SelectOrbitRepresentative(line);
-            }
-        }
+        BranchRepresentativeSelection selection =
+            SelectBranchRepresentativeForLine(state, line, projectionMerged, summary, families);
 
         return new SearchBranchSpec(
-            representative.Family.RepresentativeOrder,
-            representative.NextState,
-            representative.NextFixedTopMask,
-            representative.NextRemainingSlots);
+            selection.Representative.Family.RepresentativeOrder,
+            selection.Representative.NextState,
+            selection.Representative.NextFixedTopMask,
+            selection.Representative.NextRemainingSlots);
     }
 
-    private MergedFamilyOutcome? SelectProjectionQuotientRepresentative(
+    private BranchRepresentativeSelection SelectBranchRepresentativeForLine(
         ComparisonState state,
-        List<MergedFamilyOutcome> line)
+        List<MergedFamilyOutcome> line,
+        bool projectionMerged,
+        EquivalentOrderSummary? summary,
+        List<OrderFamilyDescriptor> families)
     {
-        MergedFamilyOutcome quotientRepresentative = SelectOrbitRepresentative(line);
-        EquivalentOrderSummary? quotientSummary =
-            BuildProjectionQuotientSummary(state, line, quotientRepresentative);
-        return quotientSummary is null ? null : quotientRepresentative;
+        if (line.Count <= 1)
+            return BranchRepresentativeSelection.Default(line[0]);
+
+        bool allSingleton = families.All(family => family.Count == 1);
+        if (projectionMerged && !allSingleton)
+        {
+            MergedFamilyOutcome quotientRepresentative = SelectOrbitRepresentative(line);
+            EquivalentOrderSummary? quotientSummary =
+                BuildProjectionQuotientSummary(state, line, quotientRepresentative);
+            if (quotientSummary is not null)
+                return BranchRepresentativeSelection.ProjectionQuotient(quotientRepresentative, quotientSummary);
+        }
+
+        if (allSingleton
+            && summary is not null
+            && (projectionMerged || summary.PatternText.Contains(" | ", StringComparison.Ordinal)))
+        {
+            return BranchRepresentativeSelection.RelabelOrbit(SelectOrbitRepresentative(line));
+        }
+
+        return BranchRepresentativeSelection.Default(line[0]);
     }
 
     private IReadOnlyList<TransitionSpec> BuildTransitionSpecsFromBranchSpecs(
@@ -252,35 +258,29 @@ partial class StrategyBuilder
     {
         var families = line.Select(outcome => outcome.Family).ToList();
         EquivalentOrderSummary? summary = BuildEquivalentOrderSummary(families);
+        BranchRepresentativeSelection selection =
+            SelectBranchRepresentativeForLine(state, line, projectionMerged, summary, families);
 
-        bool allSingleton = families.All(family => family.Count == 1);
+        if (selection.QuotientSummary is not null)
+            return new BranchSpec(
+                selection.Representative.Family.RepresentativeOrder,
+                selection.Representative,
+                selection.QuotientSummary);
 
-        // A multi-family projection merge cannot be a relabeling orbit (its members carry their own
-        // internal symmetry), so it routes through the structural quotient renderer instead. The
-        // merge step only folds such a component when this renderer accepts it, so a null here means
-        // the line was not actually a quotient merge and falls through to the normal handling.
-        if (line.Count > 1 && projectionMerged && !allSingleton)
+        if (selection.UseRelabelSummary)
         {
-            MergedFamilyOutcome quotientRepresentative = SelectOrbitRepresentative(line);
-            EquivalentOrderSummary? quotientSummary =
-                BuildProjectionQuotientSummary(state, line, quotientRepresentative);
-            if (quotientSummary is not null)
-                return new BranchSpec(
-                    quotientRepresentative.Family.RepresentativeOrder, quotientRepresentative, quotientSummary);
+            EquivalentOrderSummary relabelSummary =
+                BuildRelabelingOrbitSummary(state, line, selection.Representative);
+            return new BranchSpec(
+                selection.Representative.Family.RepresentativeOrder,
+                selection.Representative,
+                relabelSummary);
         }
 
-        if (line.Count > 1
-            && allSingleton
-            && summary is not null
-            && (projectionMerged || summary.PatternText.Contains(" | ", StringComparison.Ordinal)))
-        {
-            MergedFamilyOutcome representative = SelectOrbitRepresentative(line);
-            EquivalentOrderSummary relabelSummary = BuildRelabelingOrbitSummary(state, line, representative);
-            return new BranchSpec(representative.Family.RepresentativeOrder, representative, relabelSummary);
-        }
-
-        MergedFamilyOutcome lineRepresentative = line[0];
-        return new BranchSpec(lineRepresentative.Family.RepresentativeOrder, lineRepresentative, summary);
+        return new BranchSpec(
+            selection.Representative.Family.RepresentativeOrder,
+            selection.Representative,
+            summary);
     }
 
     // The lexicographically smallest ordering in a relabeling orbit, so the folded line shows the
@@ -596,6 +596,34 @@ partial class StrategyBuilder
         public string OrderText { get; }
         public MergedFamilyOutcome Outcome { get; }
         public EquivalentOrderSummary? Summary { get; }
+    }
+
+    private readonly struct BranchRepresentativeSelection
+    {
+        private BranchRepresentativeSelection(
+            MergedFamilyOutcome representative,
+            bool useRelabelSummary,
+            EquivalentOrderSummary? quotientSummary)
+        {
+            Representative = representative;
+            UseRelabelSummary = useRelabelSummary;
+            QuotientSummary = quotientSummary;
+        }
+
+        public MergedFamilyOutcome Representative { get; }
+        public bool UseRelabelSummary { get; }
+        public EquivalentOrderSummary? QuotientSummary { get; }
+
+        public static BranchRepresentativeSelection Default(MergedFamilyOutcome representative)
+            => new(representative, useRelabelSummary: false, quotientSummary: null);
+
+        public static BranchRepresentativeSelection RelabelOrbit(MergedFamilyOutcome representative)
+            => new(representative, useRelabelSummary: true, quotientSummary: null);
+
+        public static BranchRepresentativeSelection ProjectionQuotient(
+            MergedFamilyOutcome representative,
+            EquivalentOrderSummary quotientSummary)
+            => new(representative, useRelabelSummary: false, quotientSummary);
     }
 
     private readonly struct SearchBranchSpec
