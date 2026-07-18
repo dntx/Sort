@@ -40,6 +40,26 @@ if (-not $profileMethods.ContainsKey($Profile)) {
 
 $selectors = @($profileMethods[$Profile] | ForEach-Object { "FullyQualifiedName~$_" })
 $filter = ($selectors -join "|")
+$minimumMatchedTestsByProfile = @{
+    "full-counter-suite" = 80
+}
+
+function Get-MatchedTestCount {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Configuration,
+        [Parameter(Mandatory = $true)]
+        [string]$Filter
+    )
+
+    $listOutput = dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --configuration $Configuration --nologo --list-tests --filter $Filter
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to list tests for filter preflight."
+    }
+
+    $matchedTests = @($listOutput | Where-Object { $_ -match '^\s*StrategyRegressionTests\.' })
+    return $matchedTests.Count
+}
 
 function Write-SummaryJson {
     param(
@@ -80,6 +100,18 @@ foreach ($method in $profileMethods[$Profile]) {
     Write-Host "  - $method"
 }
 Write-Host "Filter: $filter"
+
+$matchedTestCount = Get-MatchedTestCount -Configuration $Configuration -Filter $filter
+Write-Host "Matched tests (preflight): $matchedTestCount" -ForegroundColor Cyan
+$summary["matchedTestsCount"] = $matchedTestCount
+
+if ($minimumMatchedTestsByProfile.ContainsKey($Profile)) {
+    $minimumExpected = [int]$minimumMatchedTestsByProfile[$Profile]
+    $summary["minimumExpectedMatchedTests"] = $minimumExpected
+    if ($matchedTestCount -lt $minimumExpected) {
+        throw "Preflight matched only $matchedTestCount tests for profile '$Profile' (minimum expected $minimumExpected). Check filter selectors."
+    }
+}
 
 if ($ListOnly) {
     $summary["executed"] = $false
