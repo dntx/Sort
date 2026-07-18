@@ -75,18 +75,12 @@ partial class StrategyBuilder
     {
         ThrowIfCancellationRequested();
 
-        List<BranchSpec>? doomedTailSpecs = TryBuildDoomedTailSpecs(state, remainingSlots, chosenGroup);
+        List<SearchBranchSpec>? doomedTailSpecs =
+            TryBuildSearchDoomedTailSpecs(state, remainingSlots, chosenGroup);
         if (doomedTailSpecs is not null)
-        {
             return doomedTailSpecs
-                .Select(spec => new SearchBranchSpec(
-                    spec.OrderText,
-                    spec.Outcome.NextState,
-                    spec.Outcome.NextFixedTopMask,
-                    spec.Outcome.NextRemainingSlots))
                 .OrderBy(spec => spec.OrderText, StringComparer.Ordinal)
                 .ToList();
-        }
 
         return BuildPlannedBranchSpecsForChosenGroup(
             state,
