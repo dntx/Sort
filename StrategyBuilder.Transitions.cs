@@ -54,7 +54,7 @@ partial class StrategyBuilder
 
     // Search transition planner seam: currently reuses the display branch-line planner so behavior
     // stays stable while search-side planning is being decoupled incrementally.
-    private IReadOnlyList<TransitionSpec> BuildSearchTransitionSpecs(
+    private IReadOnlyList<SearchTransitionSpec> BuildSearchTransitionSpecs(
         ComparisonState state,
         ulong fixedTopMask,
         int remainingSlots,
@@ -152,20 +152,33 @@ partial class StrategyBuilder
             .ToList();
     }
 
-    private IReadOnlyList<TransitionSpec> BuildTransitionSpecsFromSearchBranchSpecs(
+    private IReadOnlyList<SearchTransitionSpec> BuildTransitionSpecsFromSearchBranchSpecs(
         ComparisonState state,
         ulong fixedTopMask,
         IReadOnlyList<SearchBranchSpec> branchSpecs)
     {
         return branchSpecs
-            .Select(spec => new TransitionSpec(
+            .Select(spec => new SearchTransitionSpec(
                 spec.OrderText,
-                summary: null,
-                BuildComparisonEffect(state, fixedTopMask, spec.NextState, spec.NextFixedTopMask),
+                BuildSearchComparisonEffect(state, fixedTopMask, spec.NextState, spec.NextFixedTopMask),
                 spec.NextState,
                 spec.NextFixedTopMask,
                 spec.NextRemainingSlots))
             .ToList();
+    }
+
+    private SearchEffect BuildSearchComparisonEffect(
+        ComparisonState before,
+        ulong beforeFixedTopMask,
+        ComparisonState after,
+        ulong afterFixedTopMask)
+    {
+        StrategyEffect effect = BuildComparisonEffect(before, beforeFixedTopMask, after, afterFixedTopMask);
+        return new SearchEffect(
+            effect.NewlyGuaranteedTop,
+            effect.NewlyExcluded,
+            effect.FixedCandidates,
+            effect.PossibleCandidates);
     }
 
     // Builds the ordered display-branch specs for a chosen comparison group without
@@ -644,6 +657,29 @@ partial class StrategyBuilder
         }
 
         public string OrderText { get; }
+        public ComparisonState NextState { get; }
+        public ulong NextFixedTopMask { get; }
+        public int NextRemainingSlots { get; }
+    }
+
+    private readonly struct SearchTransitionSpec
+    {
+        public SearchTransitionSpec(
+            string orderText,
+            SearchEffect effect,
+            ComparisonState nextState,
+            ulong nextFixedTopMask,
+            int nextRemainingSlots)
+        {
+            OrderText = orderText;
+            Effect = effect;
+            NextState = nextState;
+            NextFixedTopMask = nextFixedTopMask;
+            NextRemainingSlots = nextRemainingSlots;
+        }
+
+        public string OrderText { get; }
+        public SearchEffect Effect { get; }
         public ComparisonState NextState { get; }
         public ulong NextFixedTopMask { get; }
         public int NextRemainingSlots { get; }
