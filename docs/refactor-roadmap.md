@@ -37,12 +37,16 @@ TODO:
 Remaining B work:
 - Decide whether to add a scheduled nightly slow parity lane or keep manual-only policy.
 
-## Mainline C: Performance Baseline Governance (TODO)
+## Mainline C: Performance Baseline Governance (in progress)
 
 Goal:
 - Shift performance regression control to deterministic counters and shape-specific baselines.
 
 TODO:
-- Define and ratchet key-shape counter budgets (`OutcomesConstructed`, `SearchedStates`, `CandidateGroupsEnumerated`).
-- Keep wall-clock checks as smoke diagnostics, not the primary regression gate.
-- Add a repeatable baseline refresh protocol for `scripts/benchmark-greedy-stage1.ps1`.
+- Define and ratchet key-shape counter budgets (`OutcomesConstructed`, `SearchedStates`, `CandidateGroupsEnumerated`). (in progress)
+- Keep wall-clock checks as smoke diagnostics, not the primary regression gate. (in progress)
+- Add a repeatable baseline refresh protocol for `scripts/benchmark-greedy-stage1.ps1`. (documented)
+
+Current C progress:
+- Added `manual-counter-guardrails` workflow to run deterministic counter-cap tests on demand.
+- Contributor run matrix now explicitly separates counter guardrails from wall-clock perf baseline checks.
