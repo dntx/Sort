@@ -36,9 +36,6 @@ The program has three entry points that share the same input validation
 
 - `docs/core-algorithm.md`: search/minimax design, lower bounds, exact/greedy
   stage semantics, and optimality boundaries.
-- `docs/architecture-class-relations-and-api-naming-baseline.md`: authoritative
-  class-relation and API naming migration baseline (dependency direction,
-  rename map, and staged execution checklist).
 - `docs/output-rendering.md`: branch/pattern rendering and equivalence folding
   rules.
 - `docs/test-strategy.md`: regression/perf testing strategy and guardrails.
