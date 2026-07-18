@@ -12,6 +12,13 @@ on:
           - compact
           - full-counter-suite
         default: fast-default
+      build_configuration:
+        description: Build configuration for deterministic counter runs
+        type: choice
+        options:
+          - Release
+          - Debug
+        default: Release
       collect_snapshots:
         description: If true, run unified counter snapshot collection and upload summary artifacts
         type: boolean
@@ -39,7 +46,7 @@ jobs:
         shell: pwsh
         run: |
           $summaryPath = Join-Path $env:RUNNER_TEMP "counter-guardrails-summary.json"
-          pwsh .\scripts\run-counter-guardrails.ps1 -Profile "${{ inputs.profile }}" -Configuration Release -SummaryJsonPath $summaryPath
+          pwsh .\scripts\run-counter-guardrails.ps1 -Profile "${{ inputs.profile }}" -Configuration "${{ inputs.build_configuration }}" -SummaryJsonPath $summaryPath
           "summary_path=$summaryPath" >> $env:GITHUB_OUTPUT
 
       - name: Collect deterministic counter snapshots
@@ -48,7 +55,7 @@ jobs:
         shell: pwsh
         run: |
           $artifactsDir = Join-Path $env:RUNNER_TEMP "counter-snapshot-artifacts"
-          pwsh .\scripts\collect-all-counter-snapshots.ps1 -Configuration Release -ArtifactsDir $artifactsDir
+          pwsh .\scripts\collect-all-counter-snapshots.ps1 -Configuration "${{ inputs.build_configuration }}" -ArtifactsDir $artifactsDir
           $summaryJsonPath = Join-Path $artifactsDir "counter-snapshot-summary.json"
           $summaryMdPath = Join-Path $artifactsDir "counter-snapshot-summary.md"
           "artifacts_dir=$artifactsDir" >> $env:GITHUB_OUTPUT

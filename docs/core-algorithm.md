@@ -502,6 +502,7 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     对外行为由回归测试守门：`GreedyPipeline_CancelAfterTwoSeconds_StopsPromptly_20_2_6` 模拟运行 2 秒后取消，
     约束取消到退出的延迟不回到分钟级卡顿（anti-regression guardrail，而非严格性能基准）。
     工程治理层面，`manual-counter-guardrails` 手动 lane 现可选联动 `collect-all-counter-snapshots`，一次派发同时产出 guardrail 结果与 default/compact/iterative 统一快照摘要，便于按同一批运行结果做 cap ratchet 审阅。
+    该 lane 也支持显式 `build_configuration`（Debug/Release），并统一透传到 counter 测试与 snapshot 收集脚本，避免手工改 workflow 常量。
     与其配套，`manual-perf-gate` 手动 lane 也支持可选导出当次 benchmark case 明细 CSV（rows artifact），让墙钟烟雾检查除 pass/fail 外还能复盘中位数样本与结构稳定性。
     该 lane 还支持在派发时指定 `baseline_csv_path` 并设置 job 超时上限，保证手动基线切换无需改脚本默认值且长跑任务可控收敛。
     此外，perf lane 现支持显式 `build_configuration`（Debug/Release）透传到基准脚本，避免在流程外手改脚本默认配置。
