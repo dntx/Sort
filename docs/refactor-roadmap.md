@@ -75,3 +75,6 @@ Current C progress:
 - enhanced `manual-perf-gate` workflow with optional benchmark-row CSV artifact upload so wall-clock smoke runs are auditable beyond pass/fail summary.
 - enhanced `manual-perf-gate` workflow with `baseline_csv_path` input and explicit job timeout to make baseline switching safer and long-run behavior bounded.
 - enhanced perf runner/workflow with explicit build configuration (`Release`/`Debug`) input so benchmark lanes can switch configuration without script edits.
+- enhanced `manual-counter-guardrails` workflow with explicit `build_configuration` input so deterministic test and snapshot lanes can run Debug/Release without editing workflow YAML.
+- enhanced `manual-counter-guardrails` workflow with `list_only` support to validate selector/preflight wiring without executing tests or snapshot collection.
+- enhanced `manual-counter-guardrails` workflow to always publish matched-test list artifacts for profile selector auditability.

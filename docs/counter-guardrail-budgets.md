@@ -11,6 +11,9 @@ Runner behavior:
 - supports dry-run listing via `-ListOnly`.
 - runs a preflight `--list-tests` count check; `full-counter-suite` enforces a minimum matched-test threshold to catch selector drift.
 - `manual-counter-guardrails` workflow supports optional `collect_snapshots=true`, which runs `scripts/collect-all-counter-snapshots.ps1` and uploads combined summary + per-snapshot row artifacts.
+- `manual-counter-guardrails` workflow supports `build_configuration` (`Release`/`Debug`) and passes it through to both guardrail tests and snapshot collectors.
+- `manual-counter-guardrails` workflow supports `list_only=true`, which runs guardrail preflight/selector validation only and skips snapshot collection.
+- `manual-counter-guardrails` workflow uploads `counter-guardrails-matched-tests` artifact for every run so selector/profile coverage can be audited directly.
 
 Snapshot utility:
 - `scripts/collect-default-counter-snapshot.ps1` collects deterministic default-path counters for ratchet anchor shapes and emits JSON/CSV with cap deltas.
@@ -74,6 +77,9 @@ pwsh .\scripts\run-counter-guardrails.ps1 -Profile full-counter-suite
 
 # Dry-run (show selectors only)
 pwsh .\scripts\run-counter-guardrails.ps1 -Profile compact -ListOnly
+
+# Dry-run + write matched test list for selector audit
+pwsh .\scripts\run-counter-guardrails.ps1 -Profile compact -ListOnly -MatchedTestsPath .\artifacts\counter-guardrails-matched-tests.txt
 
 # Collect default-path counter snapshot + ratchet opportunities
 pwsh .\scripts\collect-default-counter-snapshot.ps1 -Configuration Release

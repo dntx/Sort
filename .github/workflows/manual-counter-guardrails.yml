@@ -12,6 +12,17 @@ on:
           - compact
           - full-counter-suite
         default: fast-default
+      build_configuration:
+        description: Build configuration for deterministic counter runs
+        type: choice
+        options:
+          - Release
+          - Debug
+        default: Release
+      list_only:
+        description: If true, validate selectors and preflight matching without executing tests
+        type: boolean
+        default: false
       collect_snapshots:
         description: If true, run unified counter snapshot collection and upload summary artifacts
         type: boolean
@@ -38,17 +49,21 @@ jobs:
         id: run_guardrails
         shell: pwsh
         run: |
+          $listOnly = "${{ inputs.list_only }}"
+          $listOnlyArg = if ($listOnly -eq "true") { "-ListOnly" } else { "" }
           $summaryPath = Join-Path $env:RUNNER_TEMP "counter-guardrails-summary.json"
-          pwsh .\scripts\run-counter-guardrails.ps1 -Profile "${{ inputs.profile }}" -Configuration Release -SummaryJsonPath $summaryPath
+          $matchedTestsPath = Join-Path $env:RUNNER_TEMP "counter-guardrails-matched-tests.txt"
+          pwsh .\scripts\run-counter-guardrails.ps1 -Profile "${{ inputs.profile }}" -Configuration "${{ inputs.build_configuration }}" -MatchedTestsPath $matchedTestsPath -SummaryJsonPath $summaryPath $listOnlyArg
           "summary_path=$summaryPath" >> $env:GITHUB_OUTPUT
+          "matched_tests_path=$matchedTestsPath" >> $env:GITHUB_OUTPUT
 
       - name: Collect deterministic counter snapshots
-        if: ${{ inputs.collect_snapshots }}
+        if: ${{ inputs.collect_snapshots && !inputs.list_only }}
         id: collect_snapshots
         shell: pwsh
         run: |
           $artifactsDir = Join-Path $env:RUNNER_TEMP "counter-snapshot-artifacts"
-          pwsh .\scripts\collect-all-counter-snapshots.ps1 -Configuration Release -ArtifactsDir $artifactsDir
+          pwsh .\scripts\collect-all-counter-snapshots.ps1 -Configuration "${{ inputs.build_configuration }}" -ArtifactsDir $artifactsDir
           $summaryJsonPath = Join-Path $artifactsDir "counter-snapshot-summary.json"
           $summaryMdPath = Join-Path $artifactsDir "counter-snapshot-summary.md"
           "artifacts_dir=$artifactsDir" >> $env:GITHUB_OUTPUT
@@ -62,8 +77,15 @@ jobs:
           name: counter-guardrails-summary
           path: ${{ steps.run_guardrails.outputs.summary_path }}
 
+      - name: Upload counter guardrail matched tests
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: counter-guardrails-matched-tests
+          path: ${{ steps.run_guardrails.outputs.matched_tests_path }}
+
       - name: Upload counter snapshot summary
-        if: ${{ always() && inputs.collect_snapshots }}
+        if: ${{ always() && inputs.collect_snapshots && !inputs.list_only }}
         uses: actions/upload-artifact@v4
         with:
           name: counter-snapshot-summary
@@ -72,7 +94,7 @@ jobs:
             ${{ steps.collect_snapshots.outputs.summary_md_path }}
 
       - name: Upload counter snapshot detail rows
-        if: ${{ always() && inputs.collect_snapshots }}
+        if: ${{ always() && inputs.collect_snapshots && !inputs.list_only }}
         uses: actions/upload-artifact@v4
         with:
           name: counter-snapshot-rows
