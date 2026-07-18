@@ -5,6 +5,47 @@ using Xunit;
 public sealed class ProjectionKernelTests
 {
     [Fact]
+    public void PlanBranchLines_ThrowsWhenGetFamilyCountIsNull()
+    {
+        List<int> families =
+        [
+            1,
+            2,
+        ];
+
+        Assert.Throws<ArgumentNullException>(() => ProjectionKernel.PlanBranchLines(
+            families,
+            members => new EquivalentOrderSummary(members.Count, "x | y", members.Count.ToString()),
+            members => new List<List<int>> { members },
+            parentOrbits => parentOrbits.Select(orbit => (orbit, false)).ToList(),
+            null!));
+    }
+
+    [Fact]
+    public void PlanBranchLines_WrapsGetFamilyCountExceptionsWithClearMessage()
+    {
+        List<int> families =
+        [
+            1,
+            2,
+            3,
+        ];
+
+        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() => ProjectionKernel.PlanBranchLines(
+            families,
+            members => new EquivalentOrderSummary(members.Count, "x | y", members.Count.ToString()),
+            _ =>
+            [
+                [1, 2, 3],
+            ],
+            parentOrbits => parentOrbits.Select(orbit => (orbit, true)).ToList(),
+            family => family == 2 ? throw new InvalidOperationException("boom") : 1));
+
+        Assert.Contains("getFamilyCount", ex.Message, StringComparison.Ordinal);
+        Assert.NotNull(ex.InnerException);
+    }
+
+    [Fact]
     public void PlanBranchLines_MatchesDisplayPlanner_ForMixedOrbitFallbackCase()
     {
         List<int> families =
