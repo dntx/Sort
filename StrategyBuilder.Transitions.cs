@@ -89,18 +89,8 @@ partial class StrategyBuilder
         }
 
         var specs = new List<SearchBranchSpec>();
-        foreach (MergedBranch merged in chosenGroup.Branches)
-        {
-            if (EnableProjectionPairingProbe)
-            {
-                RecordProjectionPairingBucket(state, merged.FamilyOutcomes);
-            }
-
-            foreach (var line in SplitMergedBucketIntoBranchLines(state, merged.FamilyOutcomes))
-            {
-                specs.Add(BuildSearchBranchSpecForLine(state, line.Members, line.ProjectionMerged));
-            }
-        }
+        foreach (var line in PlanBranchLinesForChosenGroup(state, chosenGroup))
+            specs.Add(BuildSearchBranchSpecForLine(state, line.Members, line.ProjectionMerged));
 
         return specs
             .OrderBy(spec => spec.OrderText, StringComparer.Ordinal)
@@ -223,6 +213,19 @@ partial class StrategyBuilder
         }
 
         var specs = new List<BranchSpec>();
+        foreach (var line in PlanBranchLinesForChosenGroup(state, chosenGroup))
+            specs.Add(BuildBranchSpecForLine(state, line.Members, line.ProjectionMerged));
+
+        return specs
+            .OrderBy(spec => spec.OrderText, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    private List<DisplayRenderEngine.BranchLine<MergedFamilyOutcome>> PlanBranchLinesForChosenGroup(
+        ComparisonState state,
+        SelectedComparisonGroup chosenGroup)
+    {
+        var plannedLines = new List<DisplayRenderEngine.BranchLine<MergedFamilyOutcome>>();
         foreach (MergedBranch merged in chosenGroup.Branches)
         {
             if (EnableProjectionPairingProbe)
@@ -230,15 +233,10 @@ partial class StrategyBuilder
                 RecordProjectionPairingBucket(state, merged.FamilyOutcomes);
             }
 
-            foreach (var line in SplitMergedBucketIntoBranchLines(state, merged.FamilyOutcomes))
-            {
-                specs.Add(BuildBranchSpecForLine(state, line.Members, line.ProjectionMerged));
-            }
+            plannedLines.AddRange(SplitMergedBucketIntoBranchLines(state, merged.FamilyOutcomes));
         }
 
-        return specs
-            .OrderBy(spec => spec.OrderText, StringComparer.Ordinal)
-            .ToList();
+        return plannedLines;
     }
 
     // Builds the spec for one displayed branch line. A line with a single family, or several
