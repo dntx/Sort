@@ -222,14 +222,12 @@ partial class StrategyBuilder
         return BuildPlan(useCompactSelection: false);
     }
 
-    // Transitional exact-stage entrypoint: build the exact tree once, project it to the search model,
-    // and then project the public display plan back from that search tree. The solver itself is still
-    // display-materialization based, but callers now observe the exact path as search -> display.
+    // Exact-stage entrypoint: materialize display/search artifacts in one solver session.
     public (SearchTree SearchTree, DisplayTree DisplayTree) BuildDisplayTreeAndExpandedSearch()
         => BuildExactProjectionFromCurrentSession();
 
-    // Search-model entrypoint used by public callers; it now shares the same exact search projection
-    // as the display entrypoint instead of re-running a separate bridge.
+    // Search-model entrypoint used by public callers. It shares the same exact solver caches
+    // as the display entrypoint while staying independent from display materialization.
     public SearchStrategy BuildSearchTree()
         => BuildSearchTreeFromExactSolverState();
 
@@ -252,11 +250,6 @@ partial class StrategyBuilder
             ? ProgressScope.CompactPrimaryInCombinedRun
             : ProgressScope.DefaultStandalone;
         return BuildPlan(useCompactSelection: true, useFeasibleBudget: false);
-    }
-
-    internal (SearchTree SearchTree, DisplayTree DisplayTree) BuildExactSearchProjection()
-    {
-        return BuildExactProjectionFromCurrentSession();
     }
 
     // Mainline-A seam: build exact display + search artifacts inside one active solver session
@@ -308,9 +301,8 @@ partial class StrategyBuilder
         }
     }
 
-    // Transitional solver-sourced search builder: phase-1 group selection still comes from the
-    // same exact caches, but the search tree is now materialized directly from solver state
-    // recursion instead of mapping from an already-materialized display tree.
+    // Solver-sourced search builder: phase-1 group selection comes from exact caches,
+    // and the search tree is materialized directly from solver state recursion.
     private SearchTree BuildSearchTreeFromCurrentExactCaches()
     {
         var context = new SearchMaterializationContext(
