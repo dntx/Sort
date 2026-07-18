@@ -55,6 +55,7 @@ public sealed class DisplayToSearchExpanderTests
     [InlineData(9, 4, 4)]
     [InlineData(10, 4, 5)]
     [InlineData(11, 4, 4)]
+    [InlineData(12, 4, 5)]
     public void BuildDisplayTreeAndExpandedSearch_And_BuildSearchTree_RemainEquivalentAcrossProjectionMergingModes(int n, int m, int k)
     {
         AssertEquivalentAcrossProjectionMergingMode(n, m, k, projectionMerging: false);
