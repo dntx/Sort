@@ -49,6 +49,15 @@ public sealed class DisplayToSearchExpanderTests
         AssertSearchStrategyEquivalent(layeredSearch, directSearch);
     }
 
+    [Theory]
+    [InlineData(10, 4, 5)]
+    [InlineData(11, 4, 4)]
+    public void BuildDisplayTreeAndExpandedSearch_And_BuildSearchTree_RemainEquivalentAcrossProjectionMergingModes(int n, int m, int k)
+    {
+        AssertEquivalentAcrossProjectionMergingMode(n, m, k, projectionMerging: false);
+        AssertEquivalentAcrossProjectionMergingMode(n, m, k, projectionMerging: true);
+    }
+
     [Fact]
     public void FromStrategyPlan_MapsBasicMetadataAndRoot()
     {
@@ -148,6 +157,23 @@ public sealed class DisplayToSearchExpanderTests
         Assert.Equal(expected.RequestedK, actual.RequestedK);
         Assert.Equal(expected.K, actual.K);
         AssertSearchNodeEquivalent(expected.Root, actual.Root);
+    }
+
+    private static void AssertEquivalentAcrossProjectionMergingMode(int n, int m, int k, bool projectionMerging)
+    {
+        var layeredBuilder = new StrategyBuilder(n, m, k)
+        {
+            EnableProjectionOrbitMerging = projectionMerging,
+        };
+        (SearchTree layeredSearch, DisplayTree _) = layeredBuilder.BuildDisplayTreeAndExpandedSearch();
+
+        var directBuilder = new StrategyBuilder(n, m, k)
+        {
+            EnableProjectionOrbitMerging = projectionMerging,
+        };
+        SearchStrategy directSearch = directBuilder.BuildSearchTree();
+
+        AssertSearchStrategyEquivalent(layeredSearch, directSearch);
     }
 
     private static void AssertSearchNodeEquivalent(SearchNode expected, SearchNode actual)
