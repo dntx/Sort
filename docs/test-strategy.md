@@ -187,6 +187,7 @@ GitHub Actions 侧提供了手动门槛工作流：
 
 - PR 必跑（required gate）：仅跑 fast 套件（`Category!=Slow`）+ 轻量 perf tests。
 - Slow parity 矩阵：不进 required gate，改为按需触发。
+- deterministic counter guardrails：按需触发 `manual-counter-guardrails`（机器无关计数器门槛）。
 - perf baseline gate：按需触发 `manual-perf-gate`（对比基线 CSV）。
 
 推荐命令：
@@ -198,6 +199,9 @@ dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --filter "Category!=Slow"
 # Slow parity（收口前 / 专项回归）
 dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --filter "Category=Slow"
 
+# 手动计数器护栏（机器无关）
+dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --filter "FullyQualifiedName~StaysWithinBaseline|FullyQualifiedName~Compact_WorkCountersStayWithinBaseline"
+
 # 手动 perf gate（本地脚本）
 pwsh .\scripts\benchmark-greedy-stage1.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-stage1-baseline.csv -RegressionTolerancePercent 5 -EnforceBaseline
 ```
@@ -206,6 +210,7 @@ GitHub Actions 入口：
 
 - `required-pr-tests`：PR 自动触发（fast only）。
 - `manual-slow-parity`：手动触发 slow parity 矩阵。
+- `manual-counter-guardrails`：手动触发确定性计数器护栏（counter-cap tests）。
 - `manual-perf-gate`：手动触发 baseline 回归门槛。
 
 ---

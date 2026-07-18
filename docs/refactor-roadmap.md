@@ -24,7 +24,7 @@ Next strategic focus:
 - Mainline B (test layering governance)
 - Mainline C (performance baseline governance)
 
-## Mainline B: Test Layering Governance (in progress)
+## Mainline B: Test Layering Governance (completed)
 
 Goal:
 - Make Fast/Slow/Nightly boundaries explicit and enforceable in CI.
@@ -34,15 +34,22 @@ TODO:
 - Keep slow parity matrix in opt-in/manual or nightly lanes. (manual lane done: `manual-slow-parity`)
 - Add a short contributor section describing when to run fast vs slow vs perf gates. (done in `docs/test-strategy.md`)
 
-Remaining B work:
-- Decide whether to add a scheduled nightly slow parity lane or keep manual-only policy.
+Mainline B exit status:
+- required PR gate stays on fast suite.
+- slow parity is available as manual lane (`manual-slow-parity`).
+- contributor run matrix is documented in `docs/test-strategy.md` and `README.md`.
+- policy decision for nightly slow parity remains optional and can be revisited independently.
 
-## Mainline C: Performance Baseline Governance (TODO)
+## Mainline C: Performance Baseline Governance (in progress)
 
 Goal:
 - Shift performance regression control to deterministic counters and shape-specific baselines.
 
 TODO:
-- Define and ratchet key-shape counter budgets (`OutcomesConstructed`, `SearchedStates`, `CandidateGroupsEnumerated`).
-- Keep wall-clock checks as smoke diagnostics, not the primary regression gate.
-- Add a repeatable baseline refresh protocol for `scripts/benchmark-greedy-stage1.ps1`.
+- Define and ratchet key-shape counter budgets (`OutcomesConstructed`, `SearchedStates`, `CandidateGroupsEnumerated`). (in progress)
+- Keep wall-clock checks as smoke diagnostics, not the primary regression gate. (in progress)
+- Add a repeatable baseline refresh protocol for `scripts/benchmark-greedy-stage1.ps1`. (documented)
+
+Current C progress:
+- added `manual-counter-guardrails` workflow to run deterministic counter-cap suites on demand.
+- updated contributor quickstart to distinguish deterministic counter guardrails vs wall-clock perf baseline lane.

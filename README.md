@@ -48,6 +48,8 @@ The program has three entry points that share the same input validation
   - `dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --filter "Category!=Slow"`
 - Slow parity lane (opt-in before merge or dedicated audits):
   - `dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --filter "Category=Slow"`
+- Deterministic counter guardrail lane (machine-independent budgets):
+  - `dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --filter "FullyQualifiedName~StaysWithinBaseline|FullyQualifiedName~Compact_WorkCountersStayWithinBaseline"`
 - Perf baseline lane (manual regression gate):
   - `pwsh .\scripts\benchmark-greedy-stage1.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-stage1-baseline.csv -RegressionTolerancePercent 5 -EnforceBaseline`
 
@@ -55,6 +57,7 @@ GitHub Actions lanes:
 
 - `required-pr-tests` (automatic PR gate, fast-only test filter)
 - `manual-slow-parity` (manual slow parity matrix)
+- `manual-counter-guardrails` (manual deterministic counter-cap guardrails)
 - `manual-perf-gate` (manual perf baseline gate)
 
 ### Pipeline architecture (post-refactor)
