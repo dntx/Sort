@@ -229,7 +229,7 @@ partial class StrategyBuilder
     // Search-model entrypoint used by public callers. It shares the same exact solver caches
     // as the display entrypoint while staying independent from display materialization.
     public SearchStrategy BuildSearchTree()
-        => BuildSearchTreeFromExactSolverState();
+        => BuildSearchTreeFromStandaloneExactSession();
 
     public StrategyPlan RunExactPipeline(
         Action<StageResult>? onStageCompleted = null,
@@ -267,7 +267,7 @@ partial class StrategyBuilder
                 useCompactSelection: false,
                 useFeasibleBudget: false,
                 initializeSession: true);
-            SearchTree searchTree = BuildSearchTreeFromCurrentExactCaches();
+            SearchTree searchTree = BuildSearchTreeFromCurrentExactSession();
             return (searchTree, displayTree);
         }
         finally
@@ -276,29 +276,28 @@ partial class StrategyBuilder
         }
     }
 
-    // Mainline-A seam: keep a dedicated exact-search core that does not depend on display
-    // materialization, so search-first callers can remain independent from display projection.
-    private SearchTree BuildSearchTreeFromExactSolverState()
-        => BuildSearchTreeFromExactCaches(prepareSession: true);
-
-    // Shared search materialization path over exact solver caches. `prepareSession` controls
-    // whether this call should bootstrap the exact session (public search entrypoint) or reuse
-    // an already-materialized display session (layered exact projection entrypoint).
-    private SearchTree BuildSearchTreeFromExactCaches(bool prepareSession)
+    // Standalone search-only exact entry: starts its own solver session and materializes
+    // the search tree from that session's exact caches.
+    private SearchTree BuildSearchTreeFromStandaloneExactSession()
     {
         ComparisonState.SetThreadCancellationToken(_cancellationToken);
         try
         {
-            if (prepareSession)
-                InitializeExactSolverSession(useFeasibleBudget: false);
-
-            _useCompact = false;
-            return BuildSearchTreeFromCurrentExactCaches();
+            InitializeExactSolverSession(useFeasibleBudget: false);
+            return BuildSearchTreeFromCurrentExactSession();
         }
         finally
         {
             ComparisonState.SetThreadCancellationToken(default);
         }
+    }
+
+    // Current-session search materialization path shared by layered exact projection
+    // and standalone search-only exact entry after session initialization.
+    private SearchTree BuildSearchTreeFromCurrentExactSession()
+    {
+        _useCompact = false;
+        return BuildSearchTreeFromCurrentExactCaches();
     }
 
     // Solver-sourced search builder: phase-1 group selection comes from exact caches,
