@@ -225,6 +225,7 @@ GitHub Actions 入口：
 `manual-perf-gate` 支持 `list_only=true`，用于只验证参数与命令链路，不执行基准。
 
 `manual-counter-guardrails` 与 `manual-perf-gate` 都会上传 machine-readable summary artifact，便于后续做自动报表或历史对比。
+`manual-perf-gate` 还支持 `collect_benchmark_rows=true`，会额外上传当次运行的每个 case 明细 CSV（`perf-gate-benchmark-rows` artifact），用于复盘中位数样本与结构稳定性。
 
 `manual-counter-guardrails` 支持 profile 输入（`workflow_dispatch`）：
 
