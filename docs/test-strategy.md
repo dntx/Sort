@@ -200,7 +200,7 @@ dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --filter "Category!=Slow"
 dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --filter "Category=Slow"
 
 # 手动计数器护栏（机器无关）
-dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --filter "FullyQualifiedName~StaysWithinBaseline|FullyQualifiedName~Compact_WorkCountersStayWithinBaseline"
+pwsh .\scripts\run-counter-guardrails.ps1 -Profile fast-default
 
 # 手动 perf gate（本地脚本）
 pwsh .\scripts\benchmark-greedy-stage1.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-stage1-baseline.csv -RegressionTolerancePercent 5 -EnforceBaseline
@@ -221,6 +221,8 @@ GitHub Actions 入口：
 - `full-counter-suite`：合并运行 `*StaysWithinBaseline` + 关键 iterative 前沿用例。
 
 建议：PR 日常开发优先 `fast-default`；涉及 ID 门控改动时补跑 `iterative-frontier`；涉及 compact 逻辑时补跑 `compact`；收口前或专项巡检跑 `full-counter-suite`。
+
+profile 语义、shape 锚点与 cap ratchet 规则见 `docs/counter-guardrail-budgets.md`。
 
 ---
 

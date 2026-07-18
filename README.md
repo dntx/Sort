@@ -39,6 +39,8 @@ The program has three entry points that share the same input validation
 - `docs/output-rendering.md`: branch/pattern rendering and equivalence folding
   rules.
 - `docs/test-strategy.md`: regression/perf testing strategy and guardrails.
+- `docs/counter-guardrail-budgets.md`: deterministic counter guardrail profiles,
+  shape anchors, and ratchet protocol.
 - `docs/ui-explorer.md`: WinForms explorer behavior, stage timeline UI, and
   cancellation/progress semantics.
 
@@ -49,7 +51,7 @@ The program has three entry points that share the same input validation
 - Slow parity lane (opt-in before merge or dedicated audits):
   - `dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --filter "Category=Slow"`
 - Deterministic counter guardrail lane (machine-independent budgets):
-  - `dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --filter "FullyQualifiedName~StaysWithinBaseline|FullyQualifiedName~Compact_WorkCountersStayWithinBaseline"`
+  - `pwsh .\scripts\run-counter-guardrails.ps1 -Profile fast-default`
 - Perf baseline lane (manual regression gate):
   - `pwsh .\scripts\benchmark-greedy-stage1.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-stage1-baseline.csv -RegressionTolerancePercent 5 -EnforceBaseline`
 

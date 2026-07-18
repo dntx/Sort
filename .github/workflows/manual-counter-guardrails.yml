@@ -33,25 +33,4 @@ jobs:
       - name: Run deterministic counter-cap guardrails
         shell: pwsh
         run: |
-          $profile = "${{ inputs.profile }}"
-          $filter = switch ($profile) {
-            "fast-default" {
-              "FullyQualifiedName~Default_SearchedStateCountStaysWithinBaseline|FullyQualifiedName~Default_OutcomesConstructedStaysWithinBaseline|FullyQualifiedName~Default_CandidateGroupsEnumeratedStaysWithinBaseline|FullyQualifiedName~Default_DuplicateOutcomeSkipsStaysWithinBaseline"
-            }
-            "iterative-frontier" {
-              "FullyQualifiedName~Default_IterativeDeepeningBaselineRemainsStable|FullyQualifiedName~Default_IterativeDeepening_BeatsExactPath"
-            }
-            "compact" {
-              "FullyQualifiedName~Compact_WorkCountersStayWithinBaseline|FullyQualifiedName~Compact_SearchedStateCountStaysWithinBaseline|FullyQualifiedName~Compact_OutcomesConstructedStaysWithinBaseline|FullyQualifiedName~Compact_DuplicateOutcomeSkipsStaysWithinBaseline"
-            }
-            "full-counter-suite" {
-              "FullyQualifiedName~StaysWithinBaseline|FullyQualifiedName~Default_IterativeDeepeningBaselineRemainsStable|FullyQualifiedName~Default_IterativeDeepening_BeatsExactPath"
-            }
-            default {
-              throw "Unknown profile: $profile"
-            }
-          }
-
-          Write-Host "Running counter guardrail profile '$profile'"
-          Write-Host "Filter: $filter"
-          dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --configuration Release --nologo --filter $filter
+          pwsh .\scripts\run-counter-guardrails.ps1 -Profile "${{ inputs.profile }}" -Configuration Release
