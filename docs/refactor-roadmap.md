@@ -24,15 +24,18 @@ Next strategic focus:
 - Mainline B (test layering governance)
 - Mainline C (performance baseline governance)
 
-## Mainline B: Test Layering Governance (TODO)
+## Mainline B: Test Layering Governance (in progress)
 
 Goal:
 - Make Fast/Slow/Nightly boundaries explicit and enforceable in CI.
 
 TODO:
-- Keep required PR gate on fast tests only.
-- Keep slow parity matrix in opt-in/manual or nightly lanes.
-- Add a short contributor section describing when to run fast vs slow vs perf gates.
+- Keep required PR gate on fast tests only. (done)
+- Keep slow parity matrix in opt-in/manual or nightly lanes. (manual lane done: `manual-slow-parity`)
+- Add a short contributor section describing when to run fast vs slow vs perf gates. (done in `docs/test-strategy.md`)
+
+Remaining B work:
+- Decide whether to add a scheduled nightly slow parity lane or keep manual-only policy.
 
 ## Mainline C: Performance Baseline Governance (TODO)
 

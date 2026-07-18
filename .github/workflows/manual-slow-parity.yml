@@ -1,0 +1,24 @@
+name: manual-slow-parity
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  slow-parity:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Run slow Display/Search parity matrix
+        run: dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --configuration Release --nologo --filter "Category=Slow"

@@ -42,6 +42,21 @@ The program has three entry points that share the same input validation
 - `docs/ui-explorer.md`: WinForms explorer behavior, stage timeline UI, and
   cancellation/progress semantics.
 
+### Test lane quickstart
+
+- Fast lane (default local/PR validation):
+  - `dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --filter "Category!=Slow"`
+- Slow parity lane (opt-in before merge or dedicated audits):
+  - `dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --filter "Category=Slow"`
+- Perf baseline lane (manual regression gate):
+  - `pwsh .\scripts\benchmark-greedy-stage1.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-stage1-baseline.csv -RegressionTolerancePercent 5 -EnforceBaseline`
+
+GitHub Actions lanes:
+
+- `required-pr-tests` (automatic PR gate, fast-only test filter)
+- `manual-slow-parity` (manual slow parity matrix)
+- `manual-perf-gate` (manual perf baseline gate)
+
 ### Pipeline architecture (post-refactor)
 
 The refactor track is complete. The runtime now follows a stable layered boundary:
