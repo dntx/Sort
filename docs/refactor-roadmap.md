@@ -62,3 +62,5 @@ Current C progress:
 - fixed `full-counter-suite` selector matching so deterministic full audit runs the intended `StaysWithinBaseline` family.
 - added matched-test preflight counting in `run-counter-guardrails.ps1`; `full-counter-suite` now enforces a minimum matched-test threshold to catch selector drift early.
 - extended matched-test threshold enforcement to `fast-default`, `iterative-frontier`, and `compact` profiles to catch partial selector drift before execution.
+- added `scripts/collect-default-counter-snapshot.ps1` to automate deterministic default-path counter snapshot collection and ratchet delta reporting.
+- ratcheted down a batch of default-path counter caps (searched/outcomes/candidate/duplicate) using the collected snapshot as the source of truth.
