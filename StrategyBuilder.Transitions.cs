@@ -112,7 +112,7 @@ partial class StrategyBuilder
         if (line.Count <= 1)
             return line[0];
 
-        var families = line.Select(outcome => outcome.Family).ToList();
+        List<OrderFamilyDescriptor> families = CollectLineFamilies(line);
         bool allSingleton = families.All(family => family.Count == 1);
         if (projectionMerged && !allSingleton)
         {
@@ -152,6 +152,13 @@ partial class StrategyBuilder
             return false;
 
         return !MergedOrderingsFormSingleOrbit(summary);
+    }
+
+    private static List<OrderFamilyDescriptor> CollectLineFamilies(List<MergedFamilyOutcome> line)
+    {
+        return line
+            .Select(outcome => outcome.Family)
+            .ToList();
     }
 
     private bool TryBuildProjectionQuotientSummaryForLine(
@@ -302,8 +309,7 @@ partial class StrategyBuilder
     // disclosing the doomed set. Parent orbits (projectionMerged == false) keep their exact rendering.
     private BranchSpec BuildBranchSpecForLine(ComparisonState state, List<MergedFamilyOutcome> line, bool projectionMerged)
     {
-        var families = line.Select(outcome => outcome.Family).ToList();
-        EquivalentOrderSummary? summary = BuildEquivalentOrderSummary(families);
+        List<OrderFamilyDescriptor> families = CollectLineFamilies(line);
         bool allSingleton = families.All(family => family.Count == 1);
         if (projectionMerged
             && !allSingleton
@@ -318,6 +324,8 @@ partial class StrategyBuilder
                 quotientRepresentative,
                 quotientSummary);
         }
+
+        EquivalentOrderSummary? summary = BuildEquivalentOrderSummary(families);
 
         if (allSingleton
             && ShouldUseOrbitRepresentativeForSingletonLine(summary, projectionMerged))
