@@ -49,7 +49,7 @@ function Get-IterativeCounters {
     )
 
     $builder = New-Builder -N $N -M $M -K $K
-    $plan = $builderType.GetMethod("BuildStepProofStage").Invoke($builder, @())
+    $plan = $builderType.GetMethod("ExecuteStepProofStage").Invoke($builder, @())
 
     $stats = $plan.GetType().GetProperty("SearchStatistics").GetValue($plan)
     $statsType = $stats.GetType()

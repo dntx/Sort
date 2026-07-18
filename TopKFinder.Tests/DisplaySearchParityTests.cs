@@ -23,17 +23,17 @@ public sealed class DisplaySearchParityTests
     [Theory]
     [MemberData(nameof(Cases))]
     public void DefaultPlan_DisplayBranchesMirrorSearchExpansion(int n, int m, int k)
-        => AssertParity("default", n, m, k, builder => builder.BuildStepProofStage());
+        => AssertParity("default", n, m, k, builder => builder.ExecuteStepProofStage());
 
     [Theory]
     [MemberData(nameof(Cases))]
     public void FeasiblePlan_DisplayBranchesMirrorSearchExpansion(int n, int m, int k)
-        => AssertParity("feasible", n, m, k, builder => builder.BuildGreedyFeasibleStage());
+        => AssertParity("feasible", n, m, k, builder => builder.ExecuteGreedyFeasibleStage());
 
     [Theory]
     [MemberData(nameof(Cases))]
     public void CompactPlan_DisplayBranchesMirrorSearchExpansion(int n, int m, int k)
-        => AssertParity("compact", n, m, k, builder => builder.BuildEdgeCompactStage());
+        => AssertParity("compact", n, m, k, builder => builder.ExecuteEdgeCompactStage());
 
     private static void AssertParity(string phase, int n, int m, int k, Func<StrategyBuilder, StrategyPlan> build)
     {

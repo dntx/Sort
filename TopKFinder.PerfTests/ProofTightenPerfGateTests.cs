@@ -73,9 +73,9 @@ public sealed class ProofTightenPerfGateTests
                             lastEstimatedProgress01 = snapshot.EstimatedProgress01;
                         });
 
-                    StrategyPlan feasible = builder.BuildGreedyFeasibleStage();
+                    StrategyPlan feasible = builder.ExecuteGreedyFeasibleStage();
                     int budget = feasible.MaxStep - 1;
-                    StageResult stage = builder.BuildProofTightenStage(budget);
+                    StageResult stage = builder.ExecuteProofTightenStage(budget);
 
                     int? outcomes = stage.Plan?.SearchStatistics.OutcomesConstructed;
                     int? candidates = stage.Plan?.SearchStatistics.CandidateGroupsEnumerated;

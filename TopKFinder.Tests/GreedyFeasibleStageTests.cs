@@ -14,7 +14,7 @@ public class GreedyFeasibleStageTests
     [InlineData(9, 3, 3)]
     public void GreedyFeasibleStage_IsValidStrategy(int n, int m, int k)
     {
-        StrategyPlan plan = new StrategyBuilder(n, m, k).BuildGreedyFeasibleStage();
+        StrategyPlan plan = new StrategyBuilder(n, m, k).ExecuteGreedyFeasibleStage();
 
         Assert.True(plan.IsFeasibleUpperBound);
         Assert.True(plan.MaxStep > 0, "feasible plan should take at least one comparison");
@@ -27,7 +27,7 @@ public class GreedyFeasibleStageTests
     public void GreedyFeasibleStage_HardestShape_CompletesInstantly()
     {
         var start = DateTime.UtcNow;
-        StrategyPlan plan = new StrategyBuilder(25, 5, 5).BuildGreedyFeasibleStage();
+        StrategyPlan plan = new StrategyBuilder(25, 5, 5).ExecuteGreedyFeasibleStage();
         var elapsed = DateTime.UtcNow - start;
 
         Assert.True(plan.MaxStep > 0);
@@ -42,7 +42,7 @@ public class GreedyFeasibleStageTests
     [Fact]
     public void GreedyFeasibleStage_LargeShape_DoesNotOverflowLowerBound()
     {
-        StrategyPlan plan = new StrategyBuilder(26, 10, 10).BuildGreedyFeasibleStage();
+        StrategyPlan plan = new StrategyBuilder(26, 10, 10).ExecuteGreedyFeasibleStage();
 
         Assert.True(plan.IsFeasibleUpperBound);
         Assert.True(plan.MaxStep > 0, "feasible plan should take at least one comparison");
@@ -54,7 +54,7 @@ public class GreedyFeasibleStageTests
     [Fact]
     public void GreedyFeasibleStage_20_19_19_DoesNotOverflowEquivalentOrderCount()
     {
-        StrategyPlan plan = new StrategyBuilder(20, 19, 19).BuildGreedyFeasibleStage();
+        StrategyPlan plan = new StrategyBuilder(20, 19, 19).ExecuteGreedyFeasibleStage();
 
         Assert.True(plan.IsFeasibleUpperBound);
         Assert.True(plan.MaxStep > 0, "feasible plan should take at least one comparison");
@@ -65,7 +65,7 @@ public class GreedyFeasibleStageTests
     [Fact]
     public void GreedyFeasibleStage_25_24_1_DoesNotThrowCapacityOutOfRange()
     {
-        StrategyPlan plan = new StrategyBuilder(25, 24, 1).BuildGreedyFeasibleStage();
+        StrategyPlan plan = new StrategyBuilder(25, 24, 1).ExecuteGreedyFeasibleStage();
 
         Assert.True(plan.IsFeasibleUpperBound);
         Assert.True(plan.MaxStep > 0, "feasible plan should take at least one comparison");
@@ -79,7 +79,7 @@ public class GreedyFeasibleStageTests
     [InlineData(25, 5, 5)]
     public void GreedyFeasibleStage_SqueezeIsConsistent(int n, int m, int k)
     {
-        StrategyPlan plan = new StrategyBuilder(n, m, k).BuildGreedyFeasibleStage();
+        StrategyPlan plan = new StrategyBuilder(n, m, k).ExecuteGreedyFeasibleStage();
 
         int lower = plan.SearchStatistics.RootProvenLowerBound;
         Assert.True(lower >= 1, $"expected a positive proven lower bound, got {lower}");
@@ -96,8 +96,8 @@ public class GreedyFeasibleStageTests
     [InlineData(12, 4, 4)]
     public void GreedyFeasibleStage_UpperBoundNeverBelowOptimum(int n, int m, int k)
     {
-        int optimum = new StrategyBuilder(n, m, k).BuildStepProofStage().MaxStep;
-        int feasible = new StrategyBuilder(n, m, k).BuildGreedyFeasibleStage().MaxStep;
+        int optimum = new StrategyBuilder(n, m, k).ExecuteStepProofStage().MaxStep;
+        int feasible = new StrategyBuilder(n, m, k).ExecuteGreedyFeasibleStage().MaxStep;
 
         Assert.True(feasible >= optimum,
             $"feasible upper bound {feasible} was below the true optimum {optimum}");
@@ -115,7 +115,7 @@ public class GreedyFeasibleStageTests
     [InlineData(12, 6, 6, 4)]
     public void GreedyFeasibleStage_FixedBasePinsRawUpperBound(int n, int m, int k, int expectedRawU)
     {
-        int feasible = new StrategyBuilder(n, m, k).BuildGreedyFeasibleStage().MaxStep;
+        int feasible = new StrategyBuilder(n, m, k).ExecuteGreedyFeasibleStage().MaxStep;
 
         Assert.Equal(expectedRawU, feasible);
     }
@@ -131,7 +131,7 @@ public class GreedyFeasibleStageTests
     [InlineData(8, 2, 3, 11)]
     public void GreedyFeasibleStage_M2SpecialCasePinsRawUpperBound(int n, int m, int k, int expectedRawU)
     {
-        int feasible = new StrategyBuilder(n, m, k).BuildGreedyFeasibleStage().MaxStep;
+        int feasible = new StrategyBuilder(n, m, k).ExecuteGreedyFeasibleStage().MaxStep;
 
         Assert.Equal(expectedRawU, feasible);
     }
@@ -146,7 +146,7 @@ public class GreedyFeasibleStageTests
     {
         var builder = new StrategyBuilder(n, m, k);
 
-        _ = builder.BuildGreedyFeasibleStage();
+        _ = builder.ExecuteGreedyFeasibleStage();
 
         Assert.Equal(
             0,
@@ -169,7 +169,7 @@ public class GreedyFeasibleStageTests
         int maxAllowedEdges,
         int maxAllowedOutputStates)
     {
-        StrategyPlan plan = new StrategyBuilder(n, m, k).BuildGreedyFeasibleStage();
+        StrategyPlan plan = new StrategyBuilder(n, m, k).ExecuteGreedyFeasibleStage();
 
         Assert.True(
             plan.MaxStep <= maxAllowedSteps,
@@ -191,8 +191,8 @@ public class GreedyFeasibleStageTests
     [InlineData(16, 5, 5)]
     public void GreedyFeasibleStage_RepeatedBuildsRemainDeterministic(int n, int m, int k)
     {
-        StrategyPlan first = new StrategyBuilder(n, m, k).BuildGreedyFeasibleStage();
-        StrategyPlan second = new StrategyBuilder(n, m, k).BuildGreedyFeasibleStage();
+        StrategyPlan first = new StrategyBuilder(n, m, k).ExecuteGreedyFeasibleStage();
+        StrategyPlan second = new StrategyBuilder(n, m, k).ExecuteGreedyFeasibleStage();
 
         Assert.Equal(first.MaxStep, second.MaxStep);
         Assert.Equal(first.TotalBranchEdges, second.TotalBranchEdges);
@@ -213,7 +213,7 @@ public class GreedyFeasibleStageTests
             progressCallback: snapshot => progressReports.Add(snapshot.EstimatedProgress01),
             reportCombinedRunProgress: true);
 
-        StrategyPlan plan = builder.BuildGreedyFeasibleStage();
+        StrategyPlan plan = builder.ExecuteGreedyFeasibleStage();
 
         // Must report progress at least a few times during build
         Assert.True(progressReports.Count > 0, "no progress reports were generated");

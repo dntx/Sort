@@ -10,7 +10,7 @@ using Xunit;
 // a missed metadata clear, a looser-budget overwrite, or a reuse of a non-materializable entry would
 // surface here as an over-budget / invalid / non-deterministic probe.
 //
-// Every case has feasible upper bound U > optimum, so BuildGreedyFeasibleStage yields U and the
+// Every case has feasible upper bound U > optimum, so ExecuteGreedyFeasibleStage yields U and the
 // tightening ceilings U-1, U-2, … actually probe multiple budgets per state (exercising the reuse
 // and keep-tightest paths). All shapes are small enough to run well within the greedy candidate cap.
 public class ProofTightenBudgetReuseTests
@@ -34,9 +34,9 @@ public class ProofTightenBudgetReuseTests
     public void ProofTightenProbe_TightenedPlanIsValidAndWithinBudget(int n, int m, int k)
     {
         var builder = new StrategyBuilder(n, m, k);
-        int budget = builder.BuildGreedyFeasibleStage().MaxStep - 1;
+        int budget = builder.ExecuteGreedyFeasibleStage().MaxStep - 1;
 
-        StageResult probe = builder.BuildProofTightenStage(budget);
+        StageResult probe = builder.ExecuteProofTightenStage(budget);
 
         // Only a Tightened probe promises a within-budget realized plan; ProvenInfeasible /
         // Incomplete are the other valid terminal outcomes for a given ceiling and are covered elsewhere.
@@ -59,15 +59,15 @@ public class ProofTightenBudgetReuseTests
     [MemberData(nameof(TighteningCases))]
     public void ProofTightenProbe_FeasibilityIsMonotoneInBudget(int n, int m, int k)
     {
-        int u = new StrategyBuilder(n, m, k).BuildGreedyFeasibleStage().MaxStep;
+        int u = new StrategyBuilder(n, m, k).ExecuteGreedyFeasibleStage().MaxStep;
 
         for (int b = 1; b < u; b++)
         {
-            bool feasibleAtTight = new StrategyBuilder(n, m, k).BuildProofTightenStage(b).HasPlan;
+            bool feasibleAtTight = new StrategyBuilder(n, m, k).ExecuteProofTightenStage(b).HasPlan;
             if (!feasibleAtTight)
                 continue;
 
-            bool feasibleAtLooser = new StrategyBuilder(n, m, k).BuildProofTightenStage(b + 1).HasPlan;
+            bool feasibleAtLooser = new StrategyBuilder(n, m, k).ExecuteProofTightenStage(b + 1).HasPlan;
             Assert.True(feasibleAtLooser,
                 $"({n},{m},{k}): feasible at budget {b} but no plan at looser budget {b + 1}");
         }
@@ -80,10 +80,10 @@ public class ProofTightenBudgetReuseTests
     [MemberData(nameof(TighteningCases))]
     public void ProofTightenProbe_IsDeterministicAcrossBuilders(int n, int m, int k)
     {
-        int budget = new StrategyBuilder(n, m, k).BuildGreedyFeasibleStage().MaxStep - 1;
+        int budget = new StrategyBuilder(n, m, k).ExecuteGreedyFeasibleStage().MaxStep - 1;
 
-        StageResult first = new StrategyBuilder(n, m, k).BuildProofTightenStage(budget);
-        StageResult second = new StrategyBuilder(n, m, k).BuildProofTightenStage(budget);
+        StageResult first = new StrategyBuilder(n, m, k).ExecuteProofTightenStage(budget);
+        StageResult second = new StrategyBuilder(n, m, k).ExecuteProofTightenStage(budget);
 
         Assert.Equal(first.Outcome, second.Outcome);
         Assert.Equal(first.Plan?.MaxStep, second.Plan?.MaxStep);
@@ -98,11 +98,11 @@ public class ProofTightenBudgetReuseTests
     [MemberData(nameof(TighteningCases))]
     public void ProofTightenProbe_NeverOvershootsAcrossBudgets(int n, int m, int k)
     {
-        int u = new StrategyBuilder(n, m, k).BuildGreedyFeasibleStage().MaxStep;
+        int u = new StrategyBuilder(n, m, k).ExecuteGreedyFeasibleStage().MaxStep;
 
         for (int b = 1; b < u; b++)
         {
-            StageResult probe = new StrategyBuilder(n, m, k).BuildProofTightenStage(b);
+            StageResult probe = new StrategyBuilder(n, m, k).ExecuteProofTightenStage(b);
             if (!probe.HasPlan)
                 continue;
 

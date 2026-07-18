@@ -129,24 +129,24 @@ public sealed class StrategyMatrixTests
     {
         var full = new List<MatrixEntry>
         {
-            new("exact-step:6,2,2", "exact", "step-proof", 6, 2, 2, ct => RunPlan(ct, 6, 2, 2, b => b.BuildStepProofStage())),
-            new("exact-edge:6,2,2", "exact", "edge-compact", 6, 2, 2, ct => RunPlan(ct, 6, 2, 2, b => b.BuildEdgeCompactStage())),
-            new("exact-step:10,2,5", "exact", "step-proof", 10, 2, 5, ct => RunPlan(ct, 10, 2, 5, b => b.BuildStepProofStage())),
-            new("exact-edge:10,2,5", "exact", "edge-compact", 10, 2, 5, ct => RunPlan(ct, 10, 2, 5, b => b.BuildEdgeCompactStage())),
-            new("exact-step:12,4,4", "exact", "step-proof", 12, 4, 4, ct => RunPlan(ct, 12, 4, 4, b => b.BuildStepProofStage())),
-            new("exact-edge:12,4,4", "exact", "edge-compact", 12, 4, 4, ct => RunPlan(ct, 12, 4, 4, b => b.BuildEdgeCompactStage())),
+            new("exact-step:6,2,2", "exact", "step-proof", 6, 2, 2, ct => RunPlan(ct, 6, 2, 2, b => b.ExecuteStepProofStage())),
+            new("exact-edge:6,2,2", "exact", "edge-compact", 6, 2, 2, ct => RunPlan(ct, 6, 2, 2, b => b.ExecuteEdgeCompactStage())),
+            new("exact-step:10,2,5", "exact", "step-proof", 10, 2, 5, ct => RunPlan(ct, 10, 2, 5, b => b.ExecuteStepProofStage())),
+            new("exact-edge:10,2,5", "exact", "edge-compact", 10, 2, 5, ct => RunPlan(ct, 10, 2, 5, b => b.ExecuteEdgeCompactStage())),
+            new("exact-step:12,4,4", "exact", "step-proof", 12, 4, 4, ct => RunPlan(ct, 12, 4, 4, b => b.ExecuteStepProofStage())),
+            new("exact-edge:12,4,4", "exact", "edge-compact", 12, 4, 4, ct => RunPlan(ct, 12, 4, 4, b => b.ExecuteEdgeCompactStage())),
 
-            new("greedy-feasible:10,2,5", "greedy", "greedy-feasible", 10, 2, 5, ct => RunPlan(ct, 10, 2, 5, b => b.BuildGreedyFeasibleStage())),
+            new("greedy-feasible:10,2,5", "greedy", "greedy-feasible", 10, 2, 5, ct => RunPlan(ct, 10, 2, 5, b => b.ExecuteGreedyFeasibleStage())),
             new("greedy-tighten:10,2,5", "greedy", "greedy-tighten", 10, 2, 5, ct => RunGreedyTighten(ct, 10, 2, 5)),
             new("proof-tighten-first:10,2,5", "greedy", "proof-tighten", 10, 2, 5, ct => RunProofTightenFirst(ct, 10, 2, 5)),
             new("greedy-full:10,2,5", "greedy", "greedy-full", 10, 2, 5, ct => RunPlan(ct, 10, 2, 5, b => b.RunGreedyPipeline())),
 
-            new("greedy-feasible:12,4,4", "greedy", "greedy-feasible", 12, 4, 4, ct => RunPlan(ct, 12, 4, 4, b => b.BuildGreedyFeasibleStage())),
+            new("greedy-feasible:12,4,4", "greedy", "greedy-feasible", 12, 4, 4, ct => RunPlan(ct, 12, 4, 4, b => b.ExecuteGreedyFeasibleStage())),
             new("greedy-tighten:12,4,4", "greedy", "greedy-tighten", 12, 4, 4, ct => RunGreedyTighten(ct, 12, 4, 4)),
             new("proof-tighten-first:12,4,4", "greedy", "proof-tighten", 12, 4, 4, ct => RunProofTightenFirst(ct, 12, 4, 4)),
             new("greedy-full:12,4,4", "greedy", "greedy-full", 12, 4, 4, ct => RunPlan(ct, 12, 4, 4, b => b.RunGreedyPipeline())),
 
-            new("greedy-feasible:20,2,6", "greedy", "greedy-feasible", 20, 2, 6, ct => RunPlan(ct, 20, 2, 6, b => b.BuildGreedyFeasibleStage())),
+            new("greedy-feasible:20,2,6", "greedy", "greedy-feasible", 20, 2, 6, ct => RunPlan(ct, 20, 2, 6, b => b.ExecuteGreedyFeasibleStage())),
             new("greedy-tighten:20,2,6", "greedy", "greedy-tighten", 20, 2, 6, ct => RunGreedyTighten(ct, 20, 2, 6)),
             new("proof-tighten-first:20,2,6", "greedy", "proof-tighten", 20, 2, 6, ct => RunProofTightenFirst(ct, 20, 2, 6)),
             new("greedy-full:20,2,6", "greedy", "greedy-full", 20, 2, 6, ct => RunPlan(ct, 20, 2, 6, b => b.RunGreedyPipeline())),
@@ -179,7 +179,7 @@ public sealed class StrategyMatrixTests
     private static MatrixObservation RunGreedyTighten(CancellationToken cancellationToken, int n, int m, int k)
     {
         var builder = new StrategyBuilder(n, m, k, cancellationToken);
-        StrategyPlan feasible = builder.BuildGreedyFeasibleStage();
+        StrategyPlan feasible = builder.ExecuteGreedyFeasibleStage();
         bool shouldRun = builder.ShouldRunGreedyTightenByRootProbe();
         if (!shouldRun)
         {
@@ -195,7 +195,7 @@ public sealed class StrategyMatrixTests
                 ElapsedMilliseconds: feasible.Elapsed.TotalMilliseconds);
         }
 
-        StrategyPlan tightened = builder.BuildGreedyTightenPlan();
+        StrategyPlan tightened = builder.ExecuteGreedyTightenStage();
         return new MatrixObservation(
             Outcome: tightened.IsStrictRefinementOver(feasible) ? "Tightened" : "NoImprovement",
             HasPlan: true,
@@ -211,8 +211,8 @@ public sealed class StrategyMatrixTests
     private static MatrixObservation RunProofTightenFirst(CancellationToken cancellationToken, int n, int m, int k)
     {
         var builder = new StrategyBuilder(n, m, k, cancellationToken);
-        StrategyPlan feasible = builder.BuildGreedyFeasibleStage();
-        StageResult probe = builder.BuildProofTightenStage(feasible.MaxStep - 1);
+        StrategyPlan feasible = builder.ExecuteGreedyFeasibleStage();
+        StageResult probe = builder.ExecuteProofTightenStage(feasible.MaxStep - 1);
 
         return new MatrixObservation(
             Outcome: probe.Outcome.ToString(),

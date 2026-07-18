@@ -3,16 +3,16 @@ using Xunit;
 public sealed class DisplayToSearchExpanderTests
 {
     [Fact]
-    public void BuildDisplayTreeAndExpandedSearch_ReturnsConsistentSearchAndDisplayModels()
+    public void ProjectDisplayAndSearchTrees_ReturnsConsistentSearchAndDisplayModels()
     {
         var builder = new StrategyBuilder(12, 4, 5);
-        (SearchTree searchTree, DisplayTree displayPlan) = builder.BuildDisplayTreeAndExpandedSearch();
+        (SearchTree searchTree, DisplayTree displayPlan) = builder.ProjectDisplayAndSearchTrees();
 
         SearchStrategy mapped = DisplayToSearchExpander.FromStrategyPlan(displayPlan);
         AssertSearchStrategyEquivalent(mapped, searchTree);
 
         var baselineBuilder = new StrategyBuilder(12, 4, 5);
-        StrategyPlan baselinePlan = baselineBuilder.BuildStepProofStage();
+        StrategyPlan baselinePlan = baselineBuilder.ExecuteStepProofStage();
         Assert.Equal(baselinePlan.MaxStep, displayPlan.MaxStep);
         Assert.Equal(baselinePlan.TotalBranchEdges, displayPlan.TotalBranchEdges);
     }
@@ -21,13 +21,13 @@ public sealed class DisplayToSearchExpanderTests
     [InlineData(9, 3, 3)]
     [InlineData(10, 4, 8)]
     [InlineData(12, 4, 5)]
-    public void BuildSearchTree_ReturnsSearchModelEquivalentToMappedStepPlan(int n, int m, int k)
+    public void ProjectSearchTree_ReturnsSearchModelEquivalentToMappedStepPlan(int n, int m, int k)
     {
         var stepBuilder = new StrategyBuilder(n, m, k);
-        StrategyPlan stepPlan = stepBuilder.BuildStepProofStage();
+        StrategyPlan stepPlan = stepBuilder.ExecuteStepProofStage();
 
         var searchBuilder = new StrategyBuilder(n, m, k);
-        SearchStrategy built = searchBuilder.BuildSearchTree();
+        SearchStrategy built = searchBuilder.ProjectSearchTree();
 
         SearchStrategy mapped = DisplayToSearchExpander.FromStrategyPlan(stepPlan);
 
@@ -38,13 +38,13 @@ public sealed class DisplayToSearchExpanderTests
     [InlineData(9, 3, 3)]
     [InlineData(10, 4, 8)]
     [InlineData(12, 4, 5)]
-    public void BuildDisplayTreeAndExpandedSearch_And_BuildSearchTree_ProduceEquivalentSearchModels(int n, int m, int k)
+    public void ProjectDisplayAndSearchTrees_And_ProjectSearchTree_ProduceEquivalentSearchModels(int n, int m, int k)
     {
         var layeredBuilder = new StrategyBuilder(n, m, k);
-        (SearchTree layeredSearch, DisplayTree _) = layeredBuilder.BuildDisplayTreeAndExpandedSearch();
+        (SearchTree layeredSearch, DisplayTree _) = layeredBuilder.ProjectDisplayAndSearchTrees();
 
         var directBuilder = new StrategyBuilder(n, m, k);
-        SearchStrategy directSearch = directBuilder.BuildSearchTree();
+        SearchStrategy directSearch = directBuilder.ProjectSearchTree();
 
         AssertSearchStrategyEquivalent(layeredSearch, directSearch);
     }
@@ -67,7 +67,7 @@ public sealed class DisplayToSearchExpanderTests
     [InlineData(12, 4, 6)]
     [InlineData(13, 4, 6)]
     [InlineData(13, 4, 7)]
-    public void BuildDisplayTreeAndExpandedSearch_And_BuildSearchTree_RemainEquivalentAcrossProjectionMergingModes(int n, int m, int k)
+    public void ProjectDisplayAndSearchTrees_And_ProjectSearchTree_RemainEquivalentAcrossProjectionMergingModes(int n, int m, int k)
     {
         AssertEquivalentAcrossProjectionMergingMode(n, m, k, projectionMerging: false);
         AssertEquivalentAcrossProjectionMergingMode(n, m, k, projectionMerging: true);
@@ -76,7 +76,7 @@ public sealed class DisplayToSearchExpanderTests
     [Fact]
     public void FromStrategyPlan_MapsBasicMetadataAndRoot()
     {
-        StrategyPlan plan = new StrategyBuilder(9, 3, 3).BuildStepProofStage();
+        StrategyPlan plan = new StrategyBuilder(9, 3, 3).ExecuteStepProofStage();
 
         SearchStrategy mapped = DisplayToSearchExpander.FromStrategyPlan(plan);
 
@@ -180,13 +180,13 @@ public sealed class DisplayToSearchExpanderTests
         {
             EnableProjectionOrbitMerging = projectionMerging,
         };
-        (SearchTree layeredSearch, DisplayTree _) = layeredBuilder.BuildDisplayTreeAndExpandedSearch();
+        (SearchTree layeredSearch, DisplayTree _) = layeredBuilder.ProjectDisplayAndSearchTrees();
 
         var directBuilder = new StrategyBuilder(n, m, k)
         {
             EnableProjectionOrbitMerging = projectionMerging,
         };
-        SearchStrategy directSearch = directBuilder.BuildSearchTree();
+        SearchStrategy directSearch = directBuilder.ProjectSearchTree();
 
         AssertSearchStrategyEquivalent(layeredSearch, directSearch);
     }
@@ -229,7 +229,7 @@ public sealed class SearchParitySlowMatrixTests
     [InlineData(16, 4, 9)]
     [InlineData(16, 4, 10)]
     [InlineData(17, 4, 10)]
-    public void BuildDisplayTreeAndExpandedSearch_And_BuildSearchTree_RemainEquivalentAcrossProjectionMergingModes_Slow(int n, int m, int k)
+    public void ProjectDisplayAndSearchTrees_And_ProjectSearchTree_RemainEquivalentAcrossProjectionMergingModes_Slow(int n, int m, int k)
     {
         DisplayToSearchExpanderTests.AssertEquivalentAcrossProjectionMergingMode(n, m, k, projectionMerging: false);
         DisplayToSearchExpanderTests.AssertEquivalentAcrossProjectionMergingMode(n, m, k, projectionMerging: true);

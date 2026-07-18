@@ -10,7 +10,7 @@ public sealed class MainFormRenderingTests
     [Fact]
     public void BuildPlanDetails_EmitsDisplayEngineRenderedText()
     {
-        StrategyPlan plan = new StrategyBuilder(9, 3, 3).BuildStepProofStage();
+        StrategyPlan plan = new StrategyBuilder(9, 3, 3).ExecuteStepProofStage();
 
         string expectedText = Engine.RenderStrategyText(plan).TrimEnd();
         string actualText = InvokePrivateStatic<string>(typeof(MainForm), "BuildPlanDetails", plan);
@@ -21,7 +21,7 @@ public sealed class MainFormRenderingTests
     [Fact]
     public void BuildFeasibleOnlyDetails_EmitsDisplayEngineRenderedText()
     {
-        StrategyPlan plan = new StrategyBuilder(9, 3, 3).BuildStepProofStage();
+        StrategyPlan plan = new StrategyBuilder(9, 3, 3).ExecuteStepProofStage();
 
         string expectedText = Engine.RenderStrategyText(plan).TrimEnd();
         string actualText = InvokePrivateStatic<string>(typeof(MainForm), "BuildFeasibleOnlyDetails", plan);
@@ -32,7 +32,7 @@ public sealed class MainFormRenderingTests
     [Fact]
     public void OverviewMaterialization_EmitsDisplayEngineOverviewRows()
     {
-        StrategyPlan plan = new StrategyBuilder(9, 3, 3).BuildStepProofStage();
+        StrategyPlan plan = new StrategyBuilder(9, 3, 3).ExecuteStepProofStage();
         StrategyOverview expectedOverview = Engine.BuildOverview(plan);
 
         using var form = new MainForm();

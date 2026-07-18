@@ -10,7 +10,7 @@ public sealed class DisplayRenderEngineTests
     [InlineData(12, 4, 5)]
     public void RenderStrategyText_MatchesLegacyRenderer(int n, int m, int k)
     {
-        StrategyPlan plan = new StrategyBuilder(n, m, k).BuildStepProofStage();
+        StrategyPlan plan = new StrategyBuilder(n, m, k).ExecuteStepProofStage();
 
         string expected = StrategyTextRenderer.Render(plan);
         string actual = Engine.RenderStrategyText(plan);
@@ -24,7 +24,7 @@ public sealed class DisplayRenderEngineTests
     [InlineData(12, 4, 5)]
     public void OverviewRendering_MatchesLegacyRenderer(int n, int m, int k)
     {
-        StrategyPlan plan = new StrategyBuilder(n, m, k).BuildStepProofStage();
+        StrategyPlan plan = new StrategyBuilder(n, m, k).ExecuteStepProofStage();
 
         StrategyOverview expectedOverview = StrategyOverviewRenderer.Build(plan);
         StrategyOverview actualOverview = Engine.BuildOverview(plan);
@@ -42,7 +42,7 @@ public sealed class DisplayRenderEngineTests
     [InlineData(10, 4, 5)]
     public void RenderStrategyText_MatchesLegacyRenderer_OnProjectionSensitiveExactPlans(int n, int m, int k)
     {
-        StrategyPlan plan = new StrategyBuilder(n, m, k).BuildStepProofStage();
+        StrategyPlan plan = new StrategyBuilder(n, m, k).ExecuteStepProofStage();
 
         string expected = StrategyTextRenderer.Render(plan);
         string actual = Engine.RenderStrategyText(plan);
@@ -53,7 +53,7 @@ public sealed class DisplayRenderEngineTests
     [Fact]
     public void RenderStrategyText_MatchesLegacyRenderer_OnRelabelingOrbitGreedyPlan()
     {
-        StrategyPlan plan = new StrategyBuilder(20, 10, 10).BuildGreedyFeasibleStage();
+        StrategyPlan plan = new StrategyBuilder(20, 10, 10).ExecuteGreedyFeasibleStage();
 
         string expected = StrategyTextRenderer.Render(plan);
         string actual = Engine.RenderStrategyText(plan);

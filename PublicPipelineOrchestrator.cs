@@ -73,7 +73,7 @@ static class PublicPipelineOrchestrator
     private static (StrategyPlan StepPlan, TimeSpan Elapsed) ExecuteExactStepStage(StrategyBuilder builder)
     {
         var stopwatch = Stopwatch.StartNew();
-        (SearchTree _, DisplayTree stepPlan) = builder.BuildDisplayTreeAndExpandedSearch();
+        (SearchTree _, DisplayTree stepPlan) = builder.ProjectDisplayAndSearchTrees();
         stopwatch.Stop();
         return (stepPlan, stopwatch.Elapsed);
     }
@@ -82,7 +82,7 @@ static class PublicPipelineOrchestrator
     private static (StrategyPlan CompactPlan, TimeSpan Elapsed) ExecuteExactCompactStage(StrategyBuilder builder)
     {
         var stopwatch = Stopwatch.StartNew();
-        StrategyPlan compactPlan = builder.BuildEdgeCompactStage();
+        StrategyPlan compactPlan = builder.ExecuteEdgeCompactStage();
         stopwatch.Stop();
         return (compactPlan, stopwatch.Elapsed);
     }
@@ -93,7 +93,7 @@ static class PublicPipelineOrchestrator
     public static GreedyPreparationResult PrepareGreedyUpperBound(StrategyBuilder builder)
     {
         var feasibleStopwatch = System.Diagnostics.Stopwatch.StartNew();
-        StrategyPlan baseFeasiblePlan = builder.BuildGreedyFeasibleStage();
+        StrategyPlan baseFeasiblePlan = builder.ExecuteGreedyFeasibleStage();
         feasibleStopwatch.Stop();
         StrategyPlan effectiveFeasiblePlan = baseFeasiblePlan;
 
@@ -104,7 +104,7 @@ static class PublicPipelineOrchestrator
         if (gtProbeRun)
         {
             var gtStopwatch = System.Diagnostics.Stopwatch.StartNew();
-            gtPlan = builder.BuildGreedyTightenPlan();
+            gtPlan = builder.ExecuteGreedyTightenStage();
             gtStopwatch.Stop();
             gtElapsed = gtStopwatch.Elapsed;
             gtImproved = gtPlan.IsStrictRefinementOver(baseFeasiblePlan);
