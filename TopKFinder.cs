@@ -327,8 +327,8 @@ partial class StrategyBuilder
         ThrowIfCancellationRequested();
         NormalizeState(state, ref fixedTopMask, ref remainingSlots);
 
-        IntSequenceKey displayKey = GetDisplayStateKey(state, fixedTopMask);
-        int stateId = GetStateId(displayKey);
+        IntSequenceKey expansionKey = GetDisplayStateKey(state, fixedTopMask);
+        int stateId = GetStateId(expansionKey);
 
         if (remainingSlots == 0)
             return SearchNode.Terminal(stateId, ComparisonState.MaskToOrderedList(fixedTopMask));
@@ -343,19 +343,19 @@ partial class StrategyBuilder
         if (state.ActiveCount <= _m)
             return SearchNode.Decision(stateId, step, possibleCandidates, Array.Empty<SearchBranch>());
 
-        if (context.ExpandedStates.TryGetValue(displayKey, out ExpandedStateSnapshot snapshot))
+        if (context.ExpandedStates.TryGetValue(expansionKey, out ExpandedStateSnapshot snapshot))
         {
             IReadOnlyList<ItemRelabel>? relabeling =
                 snapshot.State.TryBuildDisplayRelabeling(snapshot.FixedTopMask, state, fixedTopMask);
             return SearchNode.Reference(stateId, relabeling);
         }
 
-        bool trackingDisplayPath = TryTrackExpandedDisplayState(
-            displayKey,
+        bool trackingExpansionPath = TryTrackExpandedState(
+            expansionKey,
             state,
             fixedTopMask,
             context.ExpandedStates,
-            context.DisplayPath,
+            context.ExpansionPath,
             "Search materialization detected a recursive display-state expansion path.");
 
         try
@@ -372,8 +372,8 @@ partial class StrategyBuilder
         }
         finally
         {
-            if (trackingDisplayPath)
-                context.DisplayPath!.Remove(displayKey);
+            if (trackingExpansionPath)
+                context.ExpansionPath!.Remove(expansionKey);
         }
     }
 
@@ -732,8 +732,8 @@ partial class StrategyBuilder
         NormalizeState(state, ref fixedTopMask, ref remainingSlots);
         ObserveSearchState(state, remainingSlots);
 
-        IntSequenceKey displayKey = GetDisplayStateKey(state, fixedTopMask);
-        int stateId = GetStateId(displayKey);
+        IntSequenceKey expansionKey = GetDisplayStateKey(state, fixedTopMask);
+        int stateId = GetStateId(expansionKey);
 
         if (remainingSlots == 0)
             return StrategyNode.Terminal(stateId, ComparisonState.MaskToOrderedList(fixedTopMask));
@@ -758,7 +758,7 @@ partial class StrategyBuilder
                     remainingSlots));
         }
 
-        if (_expandedStates.TryGetValue(displayKey, out ExpandedStateSnapshot snapshot))
+        if (_expandedStates.TryGetValue(expansionKey, out ExpandedStateSnapshot snapshot))
         {
             IReadOnlyList<ItemRelabel>? relabeling =
                 snapshot.State.TryBuildDisplayRelabeling(snapshot.FixedTopMask, state, fixedTopMask);
@@ -766,8 +766,8 @@ partial class StrategyBuilder
         }
 
         bool trackingDisplayPath = _useGreedyTightenSelection;
-        TryTrackExpandedDisplayState(
-            displayKey,
+        TryTrackExpandedState(
+            expansionKey,
             state,
             fixedTopMask,
             _expandedStates,
@@ -793,7 +793,7 @@ partial class StrategyBuilder
         finally
         {
             if (trackingDisplayPath)
-                _materializationDisplayPath.Remove(displayKey);
+                _materializationDisplayPath.Remove(expansionKey);
         }
     }
 
@@ -1871,21 +1871,21 @@ partial class StrategyBuilder
 
     private readonly record struct SearchMaterializationContext(
         Dictionary<IntSequenceKey, ExpandedStateSnapshot> ExpandedStates,
-        HashSet<IntSequenceKey> DisplayPath);
+        HashSet<IntSequenceKey> ExpansionPath);
 
-    private static bool TryTrackExpandedDisplayState(
-        IntSequenceKey displayKey,
+    private static bool TryTrackExpandedState(
+        IntSequenceKey expansionKey,
         ComparisonState state,
         ulong fixedTopMask,
         Dictionary<IntSequenceKey, ExpandedStateSnapshot> expandedStates,
-        HashSet<IntSequenceKey>? displayPath,
+        HashSet<IntSequenceKey>? expansionPath,
         string cycleMessage)
     {
-        expandedStates.Add(displayKey, new ExpandedStateSnapshot(state.Clone(), fixedTopMask));
-        if (displayPath is null)
+        expandedStates.Add(expansionKey, new ExpandedStateSnapshot(state.Clone(), fixedTopMask));
+        if (expansionPath is null)
             return false;
 
-        if (!displayPath.Add(displayKey))
+        if (!expansionPath.Add(expansionKey))
             throw new InvalidOperationException(cycleMessage);
 
         return true;
