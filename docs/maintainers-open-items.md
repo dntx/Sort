@@ -22,7 +22,6 @@ The original roadmap file `docs/refactor-roadmap.md` has been intentionally remo
 Its useful status notes were folded into long-lived docs:
 
 - `docs/core-algorithm.md`
-- `docs/architecture-class-relations-and-api-naming-baseline.md`
 - `docs/test-strategy.md`
 - `docs/counter-audit-operations.md`
 

@@ -460,7 +460,7 @@ partial class StrategyBuilder
     private List<PlannedBranchLine> SplitMergedBucketIntoBranchLines(
         ComparisonState state, List<MergedFamilyOutcome> families)
     {
-        return DisplayRenderEngine.PlanBranchLines(
+        return ProjectionKernel.PlanBranchLines(
                 families,
                 buildSummary: members => BuildEquivalentOrderSummary(CollectLineFamilies(members)),
                 partitionFamiliesIntoOrbits: members => PartitionFamiliesIntoOrbits(state, members),
@@ -579,7 +579,7 @@ partial class StrategyBuilder
             };
         }
 
-        return DisplayRenderEngine.TryProjectionAutomorphism(
+        return ProjectionKernel.TryProjectionAutomorphism(
             state,
             new ProjectionKernel.ProjectionOutcomeData(
                 a.Family.RepresentativeOrderItems,
@@ -617,7 +617,7 @@ partial class StrategyBuilder
     // " > ").
     private static bool MergedOrderingsFormSingleOrbit(EquivalentOrderSummary? combinedSummary)
     {
-        return DisplayRenderEngine.IsSingleMergedOrbit(combinedSummary);
+        return ProjectionKernel.IsSingleMergedOrbit(combinedSummary);
     }
 
     private void AddMergedBranch(
