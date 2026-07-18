@@ -1,0 +1,46 @@
+name: counter-baseline-drift-review
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - edited
+
+permissions:
+  contents: read
+
+jobs:
+  baseline-drift-review:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch base branch
+        shell: pwsh
+        run: git fetch origin "${{ github.base_ref }}" --depth 1
+
+      - name: Write PR body to file
+        id: pr_body
+        shell: pwsh
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          $bodyPath = Join-Path $env:RUNNER_TEMP "pr-body.md"
+          Set-Content -Path $bodyPath -Value $env:PR_BODY -Encoding utf8NoBOM
+          "body_path=$bodyPath" >> $env:GITHUB_OUTPUT
+
+      - name: Enforce baseline drift explanation
+        shell: pwsh
+        run: |
+          pwsh .\scripts\check-counter-baseline-drift-approval.ps1 `
+            -BaseRef "origin/${{ github.base_ref }}" `
+            -HeadRef "${{ github.event.pull_request.head.sha }}" `
+            -PrBodyPath "${{ steps.pr_body.outputs.body_path }}"

@@ -14,6 +14,10 @@ on:
         description: Repository path to the matched-tests baseline file
         type: string
         default: .\\docs\\counter-guardrails-full-counter-suite-baseline.txt
+      pull_request_number:
+        description: Optional pull request number to receive/update a counter audit summary comment
+        type: string
+        default: ""
       list_only:
         description: If true, validate guardrail selector coverage and matched-test diff without running tests or snapshots
         type: boolean
@@ -21,6 +25,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: write
 
 jobs:
   counter-full-audit:
@@ -67,3 +72,65 @@ jobs:
         with:
           name: counter-full-audit-bundle
           path: ${{ steps.run_audit.outputs.artifacts_dir }}
+
+      - name: Append audit summary to workflow summary
+        if: always()
+        shell: pwsh
+        run: |
+          Get-Content "${{ steps.run_audit.outputs.summary_md_path }}" | Add-Content $env:GITHUB_STEP_SUMMARY
+          $diffPath = Join-Path "${{ steps.run_audit.outputs.artifacts_dir }}" "counter-guardrails-matched-tests-diff.md"
+          if (Test-Path $diffPath) {
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "`r`n---`r`n"
+            Get-Content $diffPath | Add-Content $env:GITHUB_STEP_SUMMARY
+          }
+
+      - name: Comment audit summary on pull request
+        if: ${{ always() && inputs.pull_request_number != '' }}
+        uses: actions/github-script@v7
+        env:
+          SUMMARY_MD_PATH: ${{ steps.run_audit.outputs.summary_md_path }}
+          DIFF_MD_PATH: ${{ steps.run_audit.outputs.artifacts_dir }}/counter-guardrails-matched-tests-diff.md
+          PR_NUMBER: ${{ inputs.pull_request_number }}
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- counter-full-audit-comment -->';
+            const issueNumber = Number(process.env.PR_NUMBER);
+            const summary = fs.readFileSync(process.env.SUMMARY_MD_PATH, 'utf8');
+            const diff = fs.existsSync(process.env.DIFF_MD_PATH)
+              ? fs.readFileSync(process.env.DIFF_MD_PATH, 'utf8')
+              : '';
+            const body = [
+              marker,
+              '## Counter Full Audit',
+              '',
+              summary,
+              diff ? '\n---\n' + diff : ''
+            ].join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issueNumber,
+              per_page: 100,
+            });
+
+            const existing = comments.find(comment =>
+              typeof comment.body === 'string' && comment.body.includes(marker)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issueNumber,
+                body,
+              });
+            }

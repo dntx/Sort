@@ -40,7 +40,7 @@ Mainline B exit status:
 - contributor run matrix is documented in `docs/test-strategy.md` and `README.md`.
 - policy decision for nightly slow parity remains optional and can be revisited independently.
 
-## Mainline C: Performance Baseline Governance (in progress)
+## Mainline C: Performance Baseline Governance (foundation completed; ongoing ratchet maintenance)
 
 Goal:
 - Shift performance regression control to deterministic counters and shape-specific baselines.
@@ -79,3 +79,10 @@ Current C progress:
 - enhanced `manual-counter-guardrails` workflow with `list_only` support to validate selector/preflight wiring without executing tests or snapshot collection.
 - enhanced `manual-counter-guardrails` workflow to always publish matched-test list artifacts for profile selector auditability.
 - added `scripts/run-counter-full-audit.ps1`, `manual-counter-full-audit` workflow, and a repository matched-tests baseline so full deterministic audits now produce one combined review bundle.
+- enhanced `manual-counter-full-audit` to publish summary content directly in Actions and optionally update a PR comment.
+- added `counter-baseline-drift-review` so matched-tests baseline changes require an explicit PR-body explanation.
+
+Mainline C foundation status:
+- deterministic governance lanes now exist for focused counter checks, full bundled audits, and wall-clock smoke diagnostics.
+- matched-test selector drift is now both reviewable and enforceable.
+- future Mainline C work is primarily ratchet maintenance and targeted automation polish, not core governance bootstrapping.

@@ -50,6 +50,7 @@ pwsh .\scripts\run-counter-full-audit.ps1 -Configuration Release -MatchedTestsBa
 
 - `build_configuration`: `Release` or `Debug`
 - `matched_tests_baseline_path`: repository path used for selector drift comparison
+- `pull_request_number`: optional PR number for posting/updating an audit summary comment
 - `list_only`: run guardrail preflight + matched-test diff only, skip test execution and snapshots
 
 ## Produced Files
@@ -64,6 +65,16 @@ The audit bundle writes:
 - `counter-full-audit-summary.md`
 - snapshot outputs under `snapshots/` when `list_only=false`
 - unified snapshot summaries when `list_only=false`
+
+In GitHub Actions, the full-audit workflow also appends the audit summary to the run summary page and can optionally update a PR comment when `pull_request_number` is provided.
+
+## Baseline Drift Policy
+
+If `docs/counter-guardrails-full-counter-suite-baseline.txt` changes in a PR, the PR body must include:
+
+- `Counter baseline drift: <why the expected matched-test expansion changed>`
+
+The `counter-baseline-drift-review` workflow enforces that explanation.
 
 ## Review Guidance
 
