@@ -78,3 +78,4 @@ Current C progress:
 - enhanced `manual-counter-guardrails` workflow with explicit `build_configuration` input so deterministic test and snapshot lanes can run Debug/Release without editing workflow YAML.
 - enhanced `manual-counter-guardrails` workflow with `list_only` support to validate selector/preflight wiring without executing tests or snapshot collection.
 - enhanced `manual-counter-guardrails` workflow to always publish matched-test list artifacts for profile selector auditability.
+- added `scripts/run-counter-full-audit.ps1`, `manual-counter-full-audit` workflow, and a repository matched-tests baseline so full deterministic audits now produce one combined review bundle.
