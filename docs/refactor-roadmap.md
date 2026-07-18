@@ -55,3 +55,5 @@ Current C progress:
 - updated contributor quickstart to distinguish deterministic counter guardrails vs wall-clock perf baseline lane.
 - `manual-counter-guardrails` now supports profile-driven execution (`fast-default`, `iterative-frontier`, `compact`, `full-counter-suite`) for shape-specific guardrail governance.
 - added shared runner script (`scripts/run-counter-guardrails.ps1`) and budget manifest (`docs/counter-guardrail-budgets.md`) to reduce filter drift and standardize ratchet practice.
+- added shared perf gate runner (`scripts/run-perf-gate.ps1`) and switched manual perf workflow to use it.
+- added lane decision table in `docs/test-strategy.md` to standardize when to run counter lanes vs wall-clock perf lane.

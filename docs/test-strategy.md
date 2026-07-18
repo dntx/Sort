@@ -203,7 +203,7 @@ dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --filter "Category=Slow"
 pwsh .\scripts\run-counter-guardrails.ps1 -Profile fast-default
 
 # 手动 perf gate（本地脚本）
-pwsh .\scripts\benchmark-greedy-stage1.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-stage1-baseline.csv -RegressionTolerancePercent 5 -EnforceBaseline
+pwsh .\scripts\run-perf-gate.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-stage1-baseline.csv -RegressionTolerancePercent 5 -EnforceBaseline
 ```
 
 GitHub Actions 入口：
@@ -223,6 +223,16 @@ GitHub Actions 入口：
 建议：PR 日常开发优先 `fast-default`；涉及 ID 门控改动时补跑 `iterative-frontier`；涉及 compact 逻辑时补跑 `compact`；收口前或专项巡检跑 `full-counter-suite`。
 
 profile 语义、shape 锚点与 cap ratchet 规则见 `docs/counter-guardrail-budgets.md`。
+
+Lane 决策表（先选信号，再选车道）：
+
+| 目标 | 首选车道 | 核心信号 | 何时升级 |
+| --- | --- | --- | --- |
+| 日常 PR 回归 | `required-pr-tests` + `fast-default` | 快速确定性计数器 + 关键 fast 功能 | 触及 ID/compact 逻辑时升级到对应 profile |
+| 迭代加深（ID）改动验证 | `iterative-frontier` | ID 前沿计数器上限 + 对 exact 的收益约束 | 收口前补跑 `full-counter-suite` |
+| compact 改动验证 | `compact` | compact work/searched/outcomes/duplicate-skips | 收口前补跑 `full-counter-suite` |
+| 机器无关性能回归审计 | `full-counter-suite` | 全量 deterministic counter caps | 大改动前后都跑一遍并做 ratchet 记录 |
+| 墙钟性能烟雾诊断 | `manual-perf-gate` | 中位数时间对比（机器相关） | 仅用于诊断，不替代计数器护栏 |
 
 ---
 

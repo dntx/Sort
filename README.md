@@ -53,7 +53,7 @@ The program has three entry points that share the same input validation
 - Deterministic counter guardrail lane (machine-independent budgets):
   - `pwsh .\scripts\run-counter-guardrails.ps1 -Profile fast-default`
 - Perf baseline lane (manual regression gate):
-  - `pwsh .\scripts\benchmark-greedy-stage1.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-stage1-baseline.csv -RegressionTolerancePercent 5 -EnforceBaseline`
+  - `pwsh .\scripts\run-perf-gate.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-stage1-baseline.csv -RegressionTolerancePercent 5 -EnforceBaseline`
 
 GitHub Actions lanes:
 
@@ -68,6 +68,8 @@ Counter guardrail profiles (`manual-counter-guardrails` input `profile`):
 - `iterative-frontier`: iterative-deepening frontier caps
 - `compact`: compact-phase deterministic caps
 - `full-counter-suite`: all baseline-cap suites + key iterative checks
+
+Lane selection decision table is documented in `docs/test-strategy.md`.
 
 ### Pipeline architecture (post-refactor)
 

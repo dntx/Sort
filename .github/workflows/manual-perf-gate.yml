@@ -35,7 +35,7 @@ jobs:
       - name: Run greedy stage-1 baseline gate
         shell: pwsh
         run: |
-          pwsh .\scripts\benchmark-greedy-stage1.ps1 `
+          pwsh .\scripts\run-perf-gate.ps1 `
             -WarmupRuns ${{ inputs.warmup_runs }} `
             -MeasuredRuns ${{ inputs.measured_runs }} `
             -RegressionTolerancePercent ${{ inputs.regression_tolerance_percent }} `
