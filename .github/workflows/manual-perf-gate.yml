@@ -15,6 +15,10 @@ on:
         description: Allowed median slowdown percent vs baseline
         type: number
         default: 5
+      list_only:
+        description: If true, print resolved command and exit without running benchmark
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -35,8 +39,11 @@ jobs:
       - name: Run greedy stage-1 baseline gate
         shell: pwsh
         run: |
+          $listOnly = "${{ inputs.list_only }}"
+          $listOnlyArg = if ($listOnly -eq "true") { "-ListOnly" } else { "" }
           pwsh .\scripts\run-perf-gate.ps1 `
             -WarmupRuns ${{ inputs.warmup_runs }} `
             -MeasuredRuns ${{ inputs.measured_runs }} `
             -RegressionTolerancePercent ${{ inputs.regression_tolerance_percent }} `
-            -EnforceBaseline
+            -EnforceBaseline `
+            $listOnlyArg

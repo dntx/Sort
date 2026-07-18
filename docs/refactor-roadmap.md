@@ -57,3 +57,4 @@ Current C progress:
 - added shared runner script (`scripts/run-counter-guardrails.ps1`) and budget manifest (`docs/counter-guardrail-budgets.md`) to reduce filter drift and standardize ratchet practice.
 - added shared perf gate runner (`scripts/run-perf-gate.ps1`) and switched manual perf workflow to use it.
 - added lane decision table in `docs/test-strategy.md` to standardize when to run counter lanes vs wall-clock perf lane.
+- added perf runner dry-run support (`-ListOnly`) and workflow passthrough (`manual-perf-gate` input `list_only`) for parameter-chain validation.

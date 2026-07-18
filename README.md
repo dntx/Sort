@@ -54,6 +54,7 @@ The program has three entry points that share the same input validation
   - `pwsh .\scripts\run-counter-guardrails.ps1 -Profile fast-default`
 - Perf baseline lane (manual regression gate):
   - `pwsh .\scripts\run-perf-gate.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-stage1-baseline.csv -RegressionTolerancePercent 5 -EnforceBaseline`
+  - dry-run: `pwsh .\scripts\run-perf-gate.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-stage1-baseline.csv -ListOnly`
 
 GitHub Actions lanes:
 

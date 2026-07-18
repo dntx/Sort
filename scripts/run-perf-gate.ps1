@@ -3,7 +3,8 @@ param(
     [int]$MeasuredRuns = 5,
     [double]$RegressionTolerancePercent = 5,
     [string]$BaselineCsvPath = ".\\scripts\\benchmark-greedy-stage1-baseline.csv",
-    [switch]$EnforceBaseline
+    [switch]$EnforceBaseline,
+    [switch]$ListOnly
 )
 
 Set-StrictMode -Version Latest
@@ -36,7 +37,13 @@ if ($EnforceBaseline) {
 
 Write-Host "Running perf baseline gate"
 Write-Host "WarmupRuns=$WarmupRuns MeasuredRuns=$MeasuredRuns RegressionTolerancePercent=$RegressionTolerancePercent"
-Write-Host "BaselineCsvPath=$BaselineCsvPath EnforceBaseline=$EnforceBaseline"
+Write-Host "BaselineCsvPath=$BaselineCsvPath EnforceBaseline=$EnforceBaseline ListOnly=$ListOnly"
+Write-Host "Resolved command: pwsh $($args -join ' ')"
+
+if ($ListOnly) {
+    Write-Host "ListOnly set; benchmark script not executed." -ForegroundColor Yellow
+    exit 0
+}
 
 pwsh @args
 if ($LASTEXITCODE -ne 0) {
