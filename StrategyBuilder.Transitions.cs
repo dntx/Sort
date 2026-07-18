@@ -73,18 +73,10 @@ partial class StrategyBuilder
         int remainingSlots,
         SelectedComparisonGroup chosenGroup)
     {
-        ThrowIfCancellationRequested();
-
-        List<SearchBranchSpec>? doomedTailSpecs =
-            TryBuildSearchDoomedTailSpecs(state, remainingSlots, chosenGroup);
-        if (doomedTailSpecs is not null)
-            return doomedTailSpecs
-                .OrderBy(spec => spec.OrderText, StringComparer.Ordinal)
-                .ToList();
-
-        return BuildPlannedBranchSpecsForChosenGroup(
+        return BuildOrderedBranchSpecsWithDoomedTailFallback(
             state,
             chosenGroup,
+            tryBuildDoomedTailSpecs: group => TryBuildSearchDoomedTailSpecs(state, remainingSlots, group),
             line => BuildSearchBranchSpecForLine(state, line.Members, line.ProjectionMerged),
             spec => spec.OrderText);
     }
@@ -309,8 +301,6 @@ partial class StrategyBuilder
     // so its Count is exactly the number of branch lines this node will render.
     private List<BranchSpec> BuildBranchSpecs(ComparisonState state, int remainingSlots, SelectedComparisonGroup chosenGroup)
     {
-        ThrowIfCancellationRequested();
-
         // A merged branch groups every order family whose outcome maps to the same
         // display-canonical next state. Two very different situations land here:
         //
@@ -331,19 +321,34 @@ partial class StrategyBuilder
         // their final rank), fold every tail permutation into a single edge whose pattern carries
         // the tail as an unordered brace set. This replaces the per-family listing, which would
         // otherwise spell out each tail permutation as its own misleading branch.
-        List<BranchSpec>? doomedTailSpecs = TryBuildDoomedTailSpecs(state, remainingSlots, chosenGroup);
+        return BuildOrderedBranchSpecsWithDoomedTailFallback(
+            state,
+            chosenGroup,
+            tryBuildDoomedTailSpecs: group => TryBuildDoomedTailSpecs(state, remainingSlots, group),
+            line => BuildBranchSpecForLine(state, line.Members, line.ProjectionMerged),
+            spec => spec.OrderText);
+    }
+
+    private List<TSpec> BuildOrderedBranchSpecsWithDoomedTailFallback<TSpec>(
+        ComparisonState state,
+        SelectedComparisonGroup chosenGroup,
+        Func<SelectedComparisonGroup, List<TSpec>?> tryBuildDoomedTailSpecs,
+        Func<PlannedBranchLine, TSpec> buildSpec,
+        Func<TSpec, string> getOrderText)
+    {
+        ThrowIfCancellationRequested();
+
+        List<TSpec>? doomedTailSpecs = tryBuildDoomedTailSpecs(chosenGroup);
         if (doomedTailSpecs is not null)
-        {
             return doomedTailSpecs
-                .OrderBy(spec => spec.OrderText, StringComparer.Ordinal)
+                .OrderBy(getOrderText, StringComparer.Ordinal)
                 .ToList();
-        }
 
         return BuildPlannedBranchSpecsForChosenGroup(
             state,
             chosenGroup,
-            line => BuildBranchSpecForLine(state, line.Members, line.ProjectionMerged),
-            spec => spec.OrderText);
+            buildSpec,
+            getOrderText);
     }
 
     private List<TSpec> BuildPlannedBranchSpecsForChosenGroup<TSpec>(

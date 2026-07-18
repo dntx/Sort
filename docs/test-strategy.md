@@ -98,7 +98,16 @@ compact 是一个跑在 phase 1 之上的**二级 DP**（`StrategyBuilder.Compac
 > compact 的最优性边界（最小化的是边数**代理量**、原始候选可能比 default 差，由编排层「严格更优才展示」裁决）见
 > `docs/core-algorithm.md` §4.4。
 
-### 3.4 夹逼报告（squeeze）的「已证明下界 L」一侧
+### 3.4 Display/Search parity 矩阵分层（Fast vs Slow）
+
+`DisplayToSearchExpanderTests` 的 projection-merging parity theory 每个 case 都会执行 layered/direct 两条路径，并在 `projectionMerging=false/true` 下各跑一次，单 case 计算量较高。
+
+- 快速矩阵：保留在 `DisplayToSearchExpanderTests`，用于日常 focused 回归。
+- 慢速矩阵：拆到 `SearchParitySlowMatrixTests`，并标记 `Trait("Category", "Slow")`，用于收口前或专项回归。
+
+这样可以避免日常 focused 命令在未显式声明 slow 需求时反复触发高参数 case，降低“看起来卡住”但本质是重算例堆叠导致的长耗时。
+
+### 3.5 夹逼报告（squeeze）的「已证明下界 L」一侧
 
 迭代加深驱动循环的全局预算在每一趟都是 opt 的**已证明合法下界**，通过
 `SearchStatistics.RootProvenLowerBound` 与每次进度回调的 `SearchProgressSnapshot.RootProvenLowerBound`
