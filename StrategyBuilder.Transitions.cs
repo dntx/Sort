@@ -60,10 +60,92 @@ partial class StrategyBuilder
         int remainingSlots,
         SelectedComparisonGroup chosenGroup)
     {
-        return BuildTransitionSpecsFromBranchSpecs(
+        return BuildTransitionSpecsFromSearchBranchSpecs(
             state,
             fixedTopMask,
-            BuildBranchSpecs(state, remainingSlots, chosenGroup));
+            BuildSearchBranchSpecs(state, remainingSlots, chosenGroup));
+    }
+
+    // Search branch planner: mirrors the current display line-planning policy, but keeps a
+    // search-only branch payload that does not carry display summary fields.
+    private List<SearchBranchSpec> BuildSearchBranchSpecs(
+        ComparisonState state,
+        int remainingSlots,
+        SelectedComparisonGroup chosenGroup)
+    {
+        ThrowIfCancellationRequested();
+
+        List<BranchSpec>? doomedTailSpecs = TryBuildDoomedTailSpecs(state, remainingSlots, chosenGroup);
+        if (doomedTailSpecs is not null)
+        {
+            return doomedTailSpecs
+                .Select(spec => new SearchBranchSpec(
+                    spec.OrderText,
+                    spec.Outcome.NextState,
+                    spec.Outcome.NextFixedTopMask,
+                    spec.Outcome.NextRemainingSlots))
+                .OrderBy(spec => spec.OrderText, StringComparer.Ordinal)
+                .ToList();
+        }
+
+        var specs = new List<SearchBranchSpec>();
+        foreach (MergedBranch merged in chosenGroup.Branches)
+        {
+            if (EnableProjectionPairingProbe)
+            {
+                RecordProjectionPairingBucket(state, merged.FamilyOutcomes);
+            }
+
+            foreach (var line in SplitMergedBucketIntoBranchLines(state, merged.FamilyOutcomes))
+            {
+                specs.Add(BuildSearchBranchSpecForLine(state, line.Members, line.ProjectionMerged));
+            }
+        }
+
+        return specs
+            .OrderBy(spec => spec.OrderText, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    private SearchBranchSpec BuildSearchBranchSpecForLine(
+        ComparisonState state,
+        List<MergedFamilyOutcome> line,
+        bool projectionMerged)
+    {
+        var families = line.Select(outcome => outcome.Family).ToList();
+        EquivalentOrderSummary? summary = BuildEquivalentOrderSummary(families);
+        bool allSingleton = families.All(family => family.Count == 1);
+
+        MergedFamilyOutcome representative = line[0];
+        if (line.Count > 1)
+        {
+            if (projectionMerged && !allSingleton)
+            {
+                MergedFamilyOutcome? quotientRepresentative = SelectProjectionQuotientRepresentative(state, line);
+                if (quotientRepresentative is not null)
+                    representative = quotientRepresentative;
+            }
+            else if (allSingleton && summary is not null && (projectionMerged || summary.PatternText.Contains(" | ", StringComparison.Ordinal)))
+            {
+                representative = SelectOrbitRepresentative(line);
+            }
+        }
+
+        return new SearchBranchSpec(
+            representative.Family.RepresentativeOrder,
+            representative.NextState,
+            representative.NextFixedTopMask,
+            representative.NextRemainingSlots);
+    }
+
+    private MergedFamilyOutcome? SelectProjectionQuotientRepresentative(
+        ComparisonState state,
+        List<MergedFamilyOutcome> line)
+    {
+        MergedFamilyOutcome quotientRepresentative = SelectOrbitRepresentative(line);
+        EquivalentOrderSummary? quotientSummary =
+            BuildProjectionQuotientSummary(state, line, quotientRepresentative);
+        return quotientSummary is null ? null : quotientRepresentative;
     }
 
     private IReadOnlyList<TransitionSpec> BuildTransitionSpecsFromBranchSpecs(
@@ -79,6 +161,22 @@ partial class StrategyBuilder
                 spec.Outcome.NextState,
                 spec.Outcome.NextFixedTopMask,
                 spec.Outcome.NextRemainingSlots))
+            .ToList();
+    }
+
+    private IReadOnlyList<TransitionSpec> BuildTransitionSpecsFromSearchBranchSpecs(
+        ComparisonState state,
+        ulong fixedTopMask,
+        IReadOnlyList<SearchBranchSpec> branchSpecs)
+    {
+        return branchSpecs
+            .Select(spec => new TransitionSpec(
+                spec.OrderText,
+                summary: null,
+                BuildComparisonEffect(state, fixedTopMask, spec.NextState, spec.NextFixedTopMask),
+                spec.NextState,
+                spec.NextFixedTopMask,
+                spec.NextRemainingSlots))
             .ToList();
     }
 
@@ -498,6 +596,26 @@ partial class StrategyBuilder
         public string OrderText { get; }
         public MergedFamilyOutcome Outcome { get; }
         public EquivalentOrderSummary? Summary { get; }
+    }
+
+    private readonly struct SearchBranchSpec
+    {
+        public SearchBranchSpec(
+            string orderText,
+            ComparisonState nextState,
+            ulong nextFixedTopMask,
+            int nextRemainingSlots)
+        {
+            OrderText = orderText;
+            NextState = nextState;
+            NextFixedTopMask = nextFixedTopMask;
+            NextRemainingSlots = nextRemainingSlots;
+        }
+
+        public string OrderText { get; }
+        public ComparisonState NextState { get; }
+        public ulong NextFixedTopMask { get; }
+        public int NextRemainingSlots { get; }
     }
 
     private readonly struct TransitionSpec
