@@ -11,6 +11,9 @@ Runner behavior:
 - supports dry-run listing via `-ListOnly`.
 - runs a preflight `--list-tests` count check; `full-counter-suite` enforces a minimum matched-test threshold to catch selector drift.
 
+Snapshot utility:
+- `scripts/collect-default-counter-snapshot.ps1` collects deterministic default-path counters for ratchet anchor shapes and emits JSON/CSV with cap deltas.
+
 ## Profiles
 
 | Profile | Primary test methods | Purpose |
@@ -67,4 +70,7 @@ pwsh .\scripts\run-counter-guardrails.ps1 -Profile full-counter-suite
 
 # Dry-run (show selectors only)
 pwsh .\scripts\run-counter-guardrails.ps1 -Profile compact -ListOnly
+
+# Collect default-path counter snapshot + ratchet opportunities
+pwsh .\scripts\collect-default-counter-snapshot.ps1 -Configuration Release
 ```
