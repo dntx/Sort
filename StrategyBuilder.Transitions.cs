@@ -128,23 +128,14 @@ partial class StrategyBuilder
         if (!allSingleton)
             return line[0];
 
-        EquivalentOrderSummary? summary = projectionMerged
-            ? null
-            : BuildEquivalentOrderSummary(families);
-        if (ShouldUseOrbitRepresentativeForSingletonLine(summary, projectionMerged))
+        if (projectionMerged)
+            return SelectOrbitRepresentative(line);
+
+        EquivalentOrderSummary? summary = BuildEquivalentOrderSummary(families);
+        if (ShouldFoldSingletonOrbitRepresentative(summary))
             return SelectOrbitRepresentative(line);
 
         return line[0];
-    }
-
-    private static bool ShouldUseOrbitRepresentativeForSingletonLine(
-        EquivalentOrderSummary? summary,
-        bool projectionMerged)
-    {
-        if (projectionMerged)
-            return true;
-
-        return ShouldFoldSingletonOrbitRepresentative(summary);
     }
 
     private static bool ShouldFoldSingletonOrbitRepresentative(EquivalentOrderSummary? summary)
@@ -375,7 +366,7 @@ partial class StrategyBuilder
         EquivalentOrderSummary? summary = BuildEquivalentOrderSummary(families);
 
         if (allSingleton
-            && ShouldUseOrbitRepresentativeForSingletonLine(summary, projectionMerged))
+            && ShouldFoldSingletonOrbitRepresentative(summary))
         {
             return BuildRelabelRepresentativeBranchSpec(state, line);
         }
