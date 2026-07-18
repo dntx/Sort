@@ -8,6 +8,7 @@ Use this with:
 
 - `scripts/run-counter-full-audit.ps1`
 - `.github/workflows/manual-counter-full-audit.yml`
+- `.github/workflows/nightly-counter-full-audit.yml`
 - `docs/counter-guardrail-budgets.md`
 
 ## What The Full Audit Does
@@ -89,4 +90,5 @@ Start in this order:
 
 - Use `manual-counter-guardrails` for focused day-to-day profile checks.
 - Use `manual-counter-full-audit` before major merges, after large algorithm changes, or when selector drift is suspected.
+- Use `nightly-counter-full-audit` for unattended deterministic regression surveillance once manual audit coverage has stabilized.
 - Use `manual-perf-gate` only for wall-clock smoke diagnostics; deterministic counters remain the primary regression signal.
