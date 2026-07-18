@@ -144,26 +144,51 @@ Operational interpretation:
 
 ### 4.2 Display projection contract strictness
 
-Decision needed:
+Status: Resolved (2026-07-18)
 
-- Do we need a stricter explicit projection contract model (formal display mapping object),
-  or is the current facade + parity-tests approach sufficient?
+Decision:
 
-Why this matters:
+- Keep the current facade + parity-tests approach as the default.
+- Do NOT force a large formal display-mapping-object refactor at this stage.
+- Allow incremental contract tightening only when it clearly improves readability/maintainability
+  or closes a real verification gap discovered in practice.
 
-- Affects future refactor depth and verification burden.
-- Determines whether to invest in new data-model types vs preserving current adapters.
+Rationale and context:
+
+- The governing principle is: algorithm/search must remain logically rigorous and maintainable,
+  while display/result trees should optimize for human usability and inspectability.
+- Current code already has a workable split with parity tests guarding behavior.
+- A mandatory large projection-contract rewrite now would add complexity/cost without a proven
+  operational pain point.
+
+Operational interpretation:
+
+- Prefer small, local refactors that make naming/layer boundaries clearer.
+- Preserve and strengthen parity tests as the primary safety net.
+- Introduce stricter explicit projection metadata only when a concrete debugging or review
+  workflow requires it.
 
 ### 4.3 Nightly policy breadth
 
-Decision needed:
+Status: Resolved (2026-07-18)
 
-- Keep nightly deterministic audit as current scope,
-- or expand nightly policy (for example, additional scheduled lanes or stricter auto-escalation rules).
+Decision:
 
-Why this matters:
+- Keep nightly deterministic audit policy at current scope for now.
+- Expand nightly breadth only if observed evidence shows blind spots (missed regressions) or
+  poor triage quality.
 
-- Affects CI load, alert noise, and incident handling complexity.
+Rationale and context:
+
+- The governing principle is clarity and maintainability over framework expansion.
+- Unnecessary nightly expansion increases CI cost/noise and can reduce human usability of signals.
+- Current nightly lane already provides unattended drift/delta surveillance; next changes should be
+  evidence-driven, not preemptive.
+
+Operational interpretation:
+
+- First optimize signal quality and triage ergonomics in the existing nightly lane.
+- Add more nightly lanes/escalation rules only with a concrete failure mode and success criterion.
 
 ---
 
@@ -227,6 +252,8 @@ Change log convention:
 Recent decision log:
 
 - 2026-07-18: Section 4.1 resolved in favor of reference-capable/implicit search strategy semantics; fully expanded explicit trees are not the target default due to DAG-to-tree blow-up risk.
+- 2026-07-18: Section 4.2 resolved: keep facade + parity-tests as default projection contract strategy; tighten incrementally only when concrete pain/verification gaps appear.
+- 2026-07-18: Section 4.3 resolved: keep current nightly deterministic audit scope; expand only on evidence.
 
 ---
 
