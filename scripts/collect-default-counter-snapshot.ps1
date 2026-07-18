@@ -17,20 +17,20 @@ $cases = @(
 	@{ n = 12; m = 4; k = 3; searchedCap = 48;   outcomesCap = 207;    candidateCap = 463;    duplicateCap = 73 },
 	@{ n = 10; m = 3; k = 4; searchedCap = 409;  outcomesCap = 6360;   candidateCap = 7882;   duplicateCap = 495 },
 	@{ n = 10; m = 3; k = 5; searchedCap = 323;  outcomesCap = 5269;   candidateCap = 5593;   duplicateCap = 352 },
-	@{ n = 12; m = 4; k = 5; searchedCap = 710;  outcomesCap = 22593;  candidateCap = 28811;  duplicateCap = -1 },
-	@{ n = 16; m = 4; k = 4; searchedCap = 5650; outcomesCap = 328532; candidateCap = 464319; duplicateCap = -1 },
-	@{ n = 20; m = 5; k = 4; searchedCap = 3272; outcomesCap = 149648; candidateCap = 266517; duplicateCap = -1 },
+	@{ n = 12; m = 4; k = 5; searchedCap = 710;  outcomesCap = 22593;  candidateCap = 28811;  duplicateCap = 5422 },
+	@{ n = 16; m = 4; k = 4; searchedCap = 5650; outcomesCap = 328532; candidateCap = 464319; duplicateCap = 54676 },
+	@{ n = 20; m = 5; k = 4; searchedCap = 3272; outcomesCap = 149648; candidateCap = 266517; duplicateCap = 55716 },
 	@{ n = 13; m = 4; k = 3; searchedCap = 92;   outcomesCap = 506;    candidateCap = 871;    duplicateCap = 133 },
 	@{ n = 8;  m = 4; k = 2; searchedCap = 3;    outcomesCap = 4;      candidateCap = 5;      duplicateCap = 0 },
 	@{ n = 9;  m = 4; k = 3; searchedCap = 13;   outcomesCap = 36;     candidateCap = 44;     duplicateCap = 18 },
 	@{ n = 8;  m = 3; k = 4; searchedCap = 53;   outcomesCap = 457;    candidateCap = 484;    duplicateCap = 58 },
-	@{ n = 8;  m = 2; k = 3; searchedCap = 317;  outcomesCap = -1;     candidateCap = 4232;   duplicateCap = -1 },
+	@{ n = 8;  m = 2; k = 3; searchedCap = 317;  outcomesCap = 3445;   candidateCap = 4232;   duplicateCap = 14 },
 	@{ n = 9;  m = 3; k = 4; searchedCap = 173;  outcomesCap = 2533;   candidateCap = 2952;   duplicateCap = 245 },
 	@{ n = 10; m = 3; k = 6; searchedCap = 409;  outcomesCap = 6360;   candidateCap = 7882;   duplicateCap = 495 },
 	@{ n = 5;  m = 3; k = 2; searchedCap = 4;    outcomesCap = 8;      candidateCap = 4;      duplicateCap = 2 },
-	@{ n = 6;  m = 2; k = 2; searchedCap = 21;   outcomesCap = 72;     candidateCap = 85;     duplicateCap = -1 },
+	@{ n = 6;  m = 2; k = 2; searchedCap = 21;   outcomesCap = 72;     candidateCap = 85;     duplicateCap = 0 },
 	@{ n = 10; m = 2; k = 2; searchedCap = 106;  outcomesCap = 740;    candidateCap = 1115;   duplicateCap = 2 },
-	@{ n = 25; m = 5; k = 3; searchedCap = 173;  outcomesCap = 469;    candidateCap = 7254;   duplicateCap = -1 }
+	@{ n = 25; m = 5; k = 3; searchedCap = 173;  outcomesCap = 469;    candidateCap = 7254;   duplicateCap = 7 }
 )
 
 function Parse-IntMatch {

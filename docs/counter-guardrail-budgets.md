@@ -44,6 +44,7 @@ These shape families are intentionally present in counter-cap tests and should r
 
 - Default path heavy/default diversity:
   - `16,4,4`, `20,5,4`, `25,5,3`
+  - duplicate-monitor coverage now also includes heavy rows such as `12,4,5` and the pairwise-heavy row `8,2,3`
   - mixed dual/edge cases like `8,4,2`, `10,3,6`, `6,2,2`
 - Iterative frontier:
   - `(14|16|17|18),5,5`
