@@ -13,6 +13,7 @@ Runner behavior:
 
 Snapshot utility:
 - `scripts/collect-default-counter-snapshot.ps1` collects deterministic default-path counters for ratchet anchor shapes and emits JSON/CSV with cap deltas.
+- `scripts/collect-compact-counter-snapshot.ps1` collects compact-path counters (including compact-specific work counters) via reflection and emits JSON/CSV with cap deltas.
 
 ## Profiles
 
@@ -73,4 +74,7 @@ pwsh .\scripts\run-counter-guardrails.ps1 -Profile compact -ListOnly
 
 # Collect default-path counter snapshot + ratchet opportunities
 pwsh .\scripts\collect-default-counter-snapshot.ps1 -Configuration Release
+
+# Collect compact-path counter snapshot + ratchet opportunities
+pwsh .\scripts\collect-compact-counter-snapshot.ps1 -Configuration Release
 ```

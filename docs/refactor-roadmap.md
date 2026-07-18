@@ -64,3 +64,5 @@ Current C progress:
 - extended matched-test threshold enforcement to `fast-default`, `iterative-frontier`, and `compact` profiles to catch partial selector drift before execution.
 - added `scripts/collect-default-counter-snapshot.ps1` to automate deterministic default-path counter snapshot collection and ratchet delta reporting.
 - ratcheted down a batch of default-path counter caps (searched/outcomes/candidate/duplicate) using the collected snapshot as the source of truth.
+- added `scripts/collect-compact-counter-snapshot.ps1` to automate compact-path counter snapshot collection (including compact-specific work counters).
+- ratcheted down compact-path counter caps (`Compact_WorkCounters*`, `Compact_Searched*`, `Compact_Outcomes*`, `Compact_Duplicate*`) from measured snapshot values.
