@@ -5,6 +5,77 @@ using Xunit;
 public sealed class ProjectionKernelTests
 {
     [Fact]
+    public void PlanBranchLines_MatchesDisplayPlanner_ForMixedOrbitFallbackCase()
+    {
+        List<int> families =
+        [
+            1,
+            2,
+            3,
+            4,
+        ];
+
+        EquivalentOrderSummary BuildSummary(List<int> members)
+        {
+            if (members.Count == 4)
+                return new EquivalentOrderSummary(4, "x | y", "4");
+
+            if (members[0] is 1 or 2)
+                return new EquivalentOrderSummary(2, "permute {#1,#2}", "2");
+
+            return new EquivalentOrderSummary(members.Count, "u | v", members.Count.ToString());
+        }
+
+        List<List<int>> PartitionFamiliesIntoOrbits(List<int> _) =>
+        [
+            [1, 2],
+            [3, 4],
+        ];
+
+        List<(List<int> Members, bool ProjectionMerged)> MergeOrbitsByProjection(List<List<int>> parentOrbits) =>
+            parentOrbits.Select(orbit => (orbit, false)).ToList();
+
+        int GetFamilyCount(int family) => family <= 2 ? 1 : 2;
+
+        List<ProjectionKernel.BranchLine<int>> kernel = ProjectionKernel.PlanBranchLines(
+            families,
+            BuildSummary,
+            PartitionFamiliesIntoOrbits,
+            MergeOrbitsByProjection,
+            GetFamilyCount);
+
+        List<DisplayBranchLinePlanner.DisplayBranchLine<int>> planner = DisplayBranchLinePlanner.SplitMergedBucketIntoBranchLines(
+            families,
+            BuildSummary,
+            PartitionFamiliesIntoOrbits,
+            MergeOrbitsByProjection,
+            GetFamilyCount);
+
+        Assert.Equal(planner.Count, kernel.Count);
+        for (int i = 0; i < planner.Count; i++)
+        {
+            Assert.Equal(planner[i].Members, kernel[i].Members);
+            Assert.Equal(planner[i].ProjectionMerged, kernel[i].ProjectionMerged);
+        }
+
+        Assert.Equal(new[] { 1, 2 }, kernel[0].Members);
+        Assert.False(kernel[0].ProjectionMerged);
+        Assert.Equal(new[] { 3 }, kernel[1].Members);
+        Assert.Equal(new[] { 4 }, kernel[2].Members);
+    }
+
+    [Fact]
+    public void IsSingleMergedOrbit_DetectsDisjunctionSeparator()
+    {
+        var clean = new EquivalentOrderSummary(2, "permute {#1,#2}", "2");
+        var split = new EquivalentOrderSummary(2, "#1 > #2 | #2 > #1", "2");
+
+        Assert.True(ProjectionKernel.IsSingleMergedOrbit(clean));
+        Assert.True(ProjectionKernel.IsSingleMergedOrbit(null));
+        Assert.False(ProjectionKernel.IsSingleMergedOrbit(split));
+    }
+
+    [Fact]
     public void BuildProjectionComponents_GroupsTransitivelyEquivalentOrbits()
     {
         List<List<int>> orbits =
