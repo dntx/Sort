@@ -501,6 +501,7 @@ List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·activ
     默认使用节流探针（低开销），延迟敏感的递归路径用 `ProbeCancellation(0)`（每步检查）保持响应性。
     对外行为由回归测试守门：`GreedyPipeline_CancelAfterTwoSeconds_StopsPromptly_20_2_6` 模拟运行 2 秒后取消，
     约束取消到退出的延迟不回到分钟级卡顿（anti-regression guardrail，而非严格性能基准）。
+    工程治理层面，`manual-counter-guardrails` 手动 lane 现可选联动 `collect-all-counter-snapshots`，一次派发同时产出 guardrail 结果与 default/compact/iterative 统一快照摘要，便于按同一批运行结果做 cap ratchet 审阅。
   - **Anytime 呈现**：`RunGreedyPipeline(onStageCompleted)` 接受一个回调，在**每次**产出一个阶段结果时**同步**触发——
     回调参数是 `StageResult`（阶段名 + 该阶段**自身**耗时 + 可空的计划 + `Outcome` 枚举）。**强输出契约**：每个被
     `onStageStart` 宣布的探测都**恰好**由一次 `onStageCompleted` 完成、携带一个 `{Outcome, Plan}` 整体——driver 任何分支都不会
