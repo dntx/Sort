@@ -5,6 +5,11 @@
 `docs/core-algorithm.md`（算法原理）配套——后者讲「算法怎么算」，本文讲「我们如何守住算法的
 正确性与性能」。
 
+当前治理状态：
+
+- Mainline B（test layering governance）已完成：required PR gate 保持 fast-only，`manual-slow-parity` 承担按需 slow parity，贡献者运行矩阵已文档化。
+- Mainline C（performance baseline governance）基础设施已完成：focused counter lanes、bundled full audit、baseline drift 审批和 nightly deterministic audit 都已就位；后续主要是 ratchet maintenance。
+
 ---
 
 ## 1. 总体哲学：两层监控，确定性计数器为主、墙钟时间为辅

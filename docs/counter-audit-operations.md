@@ -4,6 +4,11 @@ This page is the operational runbook for Mainline C deterministic counter govern
 
 It focuses on one review question: how do we run a full deterministic audit and understand exactly what changed?
 
+Current Mainline C status:
+
+- governance foundation is complete: focused manual lanes, bundled full audit, baseline drift approval, and nightly deterministic audit are all in place.
+- follow-up work should usually be evidence-driven maintenance: either ratchet caps when real headroom appears or investigate nightly drift / delta signals.
+
 Use this with:
 
 - `scripts/run-counter-full-audit.ps1`
