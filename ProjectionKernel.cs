@@ -4,6 +4,8 @@ using System.Linq;
 
 static class ProjectionKernel
 {
+    internal readonly record struct BranchLine<T>(List<T> Members, bool ProjectionMerged);
+
     internal readonly record struct ProjectionOutcomeData(IReadOnlyList<int> OrderItems, ulong EliminatedMask);
 
     internal enum ProjectionAutomorphismProbeEvent
@@ -12,6 +14,55 @@ static class ProjectionKernel
         AutomorphismCheck,
         ProjectedStateBuild,
         ProjectedStateCacheHit,
+    }
+
+    internal static List<BranchLine<T>> PlanBranchLines<T>(
+        List<T> families,
+        Func<List<T>, EquivalentOrderSummary?> buildSummary,
+        Func<List<T>, List<List<T>>> partitionFamiliesIntoOrbits,
+        Func<List<List<T>>, List<(List<T> Members, bool ProjectionMerged)>> mergeOrbitsByProjection,
+        Func<T, int> getFamilyCount)
+    {
+        if (families.Count == 1)
+            return new List<BranchLine<T>> { new(families, false) };
+
+        EquivalentOrderSummary? fullBucketSummary = buildSummary(families);
+        if (IsSingleMergedOrbit(fullBucketSummary))
+            return new List<BranchLine<T>> { new(families, false) };
+
+        var lines = new List<BranchLine<T>>();
+        List<List<T>> parentOrbits = partitionFamiliesIntoOrbits(families);
+        List<(List<T> Members, bool ProjectionMerged)> orbits = mergeOrbitsByProjection(parentOrbits);
+
+        foreach ((List<T> orbit, bool projectionMerged) in orbits)
+        {
+            if (orbit.Count == 1)
+            {
+                lines.Add(new(orbit, false));
+                continue;
+            }
+
+            EquivalentOrderSummary? combinedSummary = buildSummary(orbit);
+
+            bool isCleanTemplate = IsSingleMergedOrbit(combinedSummary);
+            bool isRelabelingOrbit = orbit.TrueForAll(member => getFamilyCount(member) == 1);
+            bool isProjectionQuotient = projectionMerged && orbit.Exists(member => getFamilyCount(member) > 1);
+            if (isCleanTemplate || isRelabelingOrbit || isProjectionQuotient)
+                lines.Add(new(orbit, projectionMerged));
+            else
+            {
+                foreach (T outcome in orbit)
+                    lines.Add(new(new List<T> { outcome }, false));
+            }
+        }
+
+        return lines;
+    }
+
+    internal static bool IsSingleMergedOrbit(EquivalentOrderSummary? summary)
+    {
+        return summary is null
+            || !summary.PatternText.Contains(" | ", StringComparison.Ordinal);
     }
 
     internal static List<(List<T> Members, bool ProjectionMerged)> MergeProjectionOrbits<T>(
