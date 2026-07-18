@@ -52,6 +52,7 @@ public sealed class DisplayToSearchExpanderTests
     [Theory]
     [InlineData(7, 3, 2)]
     [InlineData(8, 3, 3)]
+    [InlineData(9, 4, 4)]
     [InlineData(10, 4, 5)]
     [InlineData(11, 4, 4)]
     public void BuildDisplayTreeAndExpandedSearch_And_BuildSearchTree_RemainEquivalentAcrossProjectionMergingModes(int n, int m, int k)
