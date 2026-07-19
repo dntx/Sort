@@ -39,4 +39,4 @@ jobs:
 
       - name: Run lightweight performance tests
         if: steps.changes.outputs.has_code == 'true'
-        run: dotnet test .\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --configuration Release --nologo --filter "Category=Slow"
+        run: dotnet test .\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --configuration Release --nologo

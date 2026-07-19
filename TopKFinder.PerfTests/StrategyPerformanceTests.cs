@@ -1,6 +1,5 @@
 using Xunit;
 
-[Trait("Category", "Slow")]
 public sealed class StrategyPerformanceTests
 {
     private static readonly TimeSpan PerfTestTimeout = TimeSpan.FromSeconds(30);
