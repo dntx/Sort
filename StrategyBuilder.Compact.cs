@@ -68,9 +68,15 @@ partial class StrategyBuilder
     // This resets the compact selection caches, ensuring subsequent phases start with clean state.
     private void ResetCompactState()
     {
-        _session.ResetCompactCaches();
+        _session.ResetCompactSelectionState();
         _phase1bSolved = false;
-        _session.Compact.ResetCompactProbeState();
+    }
+
+    private void PrepareFeasibleCompactProbe()
+    {
+        ResetPerBuildTransientState();
+        ResetCompactState();
+        _lastProbeEnumerationCapped = false;
     }
 
     // Returns the proxy subtree cost (number of displayed branch edges) under the
