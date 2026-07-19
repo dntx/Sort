@@ -48,10 +48,6 @@ partial class StrategyBuilder
     // infeasible (root cost == sentinel), so the tightening loop can tell a proven-infeasible ceiling
     // (complete search) from a merely-incomplete one (cap truncated some state's enumeration).
     private bool _lastProbeEnumerationCapped;
-    private readonly Dictionary<SearchStateKey, BestGroupPattern> _compactGroupPatternCache = new();
-    private readonly Dictionary<SearchStateKey, int> _compactGroupPatternTightestBudget = new();
-    private readonly Dictionary<(SearchStateKey Key, int Budget), int> _compactCostMemo = new();
-    private readonly Dictionary<SearchStateKey, int> _compactRealStepsMemo = new();
 
     // Greedy edge-phase U tightening. The constructive step phase's worst-case step count U is a feasible
     // upper bound that is typically opt+1, and the edge phase inherits it as its ceiling. After the

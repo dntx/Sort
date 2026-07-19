@@ -91,15 +91,19 @@ partial class StrategyBuilder
     // Active display-key recursion path while materializing a GreedyTighten tree. Used to reject
     // local overrides whose outcomes would reference an ancestor display state.
     private readonly HashSet<IntSequenceKey> _materializationDisplayPath = new();
-    private readonly HashSet<SearchStateKey> _visitedSearchStates = new();
-    private readonly Dictionary<SearchStateKey, int> _minWorstCaseStepsCache = new();
-    private readonly Dictionary<SearchStateKey, int> _lowerBoundStepsCache = new();
+    private HashSet<SearchStateKey> _visitedSearchStates => _session.VisitedSearchStates;
+    private Dictionary<SearchStateKey, int> _minWorstCaseStepsCache => _session.MinWorstCaseStepsCache;
+    private Dictionary<SearchStateKey, int> _lowerBoundStepsCache => _session.LowerBoundStepsCache;
     // Iterative-deepening transposition memo: the best lower bound on a state's exact cost learned
     // from passes that failed to resolve it under their budget. Lets a later node/pass prune a state
     // immediately when this learned bound already exceeds the current budget.
-    private readonly Dictionary<SearchStateKey, int> _searchLowerBoundCache = new();
-    private readonly Dictionary<SearchStateKey, FeasibleTopSetInfo> _feasibleTopSetCache = new();
-    private readonly Dictionary<SearchStateKey, BestGroupPattern> _bestGroupPatternCache = new();
+    private Dictionary<SearchStateKey, int> _searchLowerBoundCache => _session.SearchLowerBoundCache;
+    private Dictionary<SearchStateKey, FeasibleTopSetInfo> _feasibleTopSetCache => _session.FeasibleTopSetCache;
+    private Dictionary<SearchStateKey, BestGroupPattern> _bestGroupPatternCache => _session.BestGroupPatternCache;
+    private Dictionary<SearchStateKey, BestGroupPattern> _compactGroupPatternCache => _session.CompactGroupPatternCache;
+    private Dictionary<SearchStateKey, int> _compactGroupPatternTightestBudget => _session.CompactGroupPatternTightestBudget;
+    private Dictionary<(SearchStateKey Key, int Budget), int> _compactCostMemo => _session.CompactCostMemo;
+    private Dictionary<SearchStateKey, int> _compactRealStepsMemo => _session.CompactRealStepsMemo;
     // Cross-instance canonical-key memo: maps a state's cheap raw structural fingerprint to its
     // expensive McKay canonical key. The same logical poset is reached via many search paths as
     // distinct ComparisonState instances (each with its own per-instance cache), so without this the
