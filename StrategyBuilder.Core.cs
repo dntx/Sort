@@ -86,6 +86,17 @@ partial class StrategyBuilder
     // paths and assert they reach the same MaxStep optimum while iterative deepening constructs
     // strictly fewer outcomes. Null in production.
     internal bool? ForceIterativeDeepeningForTesting { get; set; }
+    private CompactSolver? _compactSolver;
+    private CompactSolver CompactSolverInstance => _compactSolver ??= new CompactSolver(this);
+    private bool _useCompact { get => _session.Compact.UseCompact; set => _session.Compact.UseCompact = value; }
+    private bool _compactUsesFeasibleBudget { get => _session.Compact.CompactUsesFeasibleBudget; set => _session.Compact.CompactUsesFeasibleBudget = value; }
+    private bool _compactFeasibilityOnly { get => _session.Compact.CompactFeasibilityOnly; set => _session.Compact.CompactFeasibilityOnly = value; }
+    private bool _compactEnumerationCapped { get => _session.Compact.CompactEnumerationCapped; set => _session.Compact.CompactEnumerationCapped = value; }
+    private bool _lastProbeEnumerationCapped { get => _session.Compact.LastProbeEnumerationCapped; set => _session.Compact.LastProbeEnumerationCapped = value; }
+    private bool EnableFeasibleTightening { get => _session.Compact.EnableFeasibleTightening; set => _session.Compact.EnableFeasibleTightening = value; }
+    private int _feasibleRootBudgetActive { get => _session.Compact.FeasibleRootBudgetActive; set => _session.Compact.FeasibleRootBudgetActive = value; }
+    private int _compactRootCost { get => _session.Compact.CompactRootCost; set => _session.Compact.CompactRootCost = value; }
+    private bool _compactPatternCacheReadyForMaterialization { get => _session.Compact.CompactPatternCacheReadyForMaterialization; set => _session.Compact.CompactPatternCacheReadyForMaterialization = value; }
     private readonly Dictionary<IntSequenceKey, int> _stateIds = new();
     private readonly Dictionary<IntSequenceKey, ExpandedStateSnapshot> _expandedStates = new();
     // Active display-key recursion path while materializing a GreedyTighten tree. Used to reject
@@ -151,7 +162,6 @@ partial class StrategyBuilder
     private int _rootProvenLowerBound;
     private bool _phase1Solved;
     private bool _phase1bSolved;
-    private bool _compactPatternCacheReadyForMaterialization;
     private StrategyPlan? _latestGreedyIncumbentPlan;
     private bool _progressEstimateInitialized;
     private double _progressEstimateEma01;

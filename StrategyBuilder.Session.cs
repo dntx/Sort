@@ -2,6 +2,8 @@ using System.Collections.Generic;
 
 sealed class StrategyBuilderSession
 {
+    public StrategyBuilderCompactState Compact { get; } = new();
+
     // Statistics/diagnostics state.
     public List<SearchMilestone> RootIncumbents { get; } = new();
 

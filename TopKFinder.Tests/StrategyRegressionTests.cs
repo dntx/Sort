@@ -978,6 +978,26 @@ public sealed class StrategyRegressionTests
             $"compact search-edge objective {compactSearchTreeEdges} exceeded baseline {baselineSearchTreeEdges}");
     }
 
+    [Fact]
+    public void SearchEdgeQueries_RestoreUseCompactFlagAfterTemporarySwitch()
+    {
+        var builder = new StrategyBuilder(9, 3, 3);
+        _ = TestTimeoutHelper.RunWithTimeout(
+            "StrategyBuilder.BuildCompactPlan(9, 3, 3) [use-compact restoration]",
+            RegressionTestTimeout,
+            _ => builder.ExecuteEdgeCompactStage());
+
+        Assert.True(ReadPrivateBoolMember(builder, "_useCompact"));
+
+        int stepOptimalEdges = builder.GetStepOptimalSearchTreeEdges();
+        Assert.True(stepOptimalEdges > 0);
+        Assert.True(ReadPrivateBoolMember(builder, "_useCompact"));
+
+        int compactEdges = builder.GetCompactSearchTreeEdges();
+        Assert.True(compactEdges > 0);
+        Assert.True(ReadPrivateBoolMember(builder, "_useCompact"));
+    }
+
     // P2.1 -- compact-phase work-counter monitor (deterministic time proxy for the compact pass).
     // The compact selection runs a SECOND DP (StrategyBuilder.Compact.cs) on top of phase 1 and is
     // sometimes the dominant cost of a full build -- occasionally slower than the default search
@@ -1502,6 +1522,30 @@ public sealed class StrategyRegressionTests
         Assert.NotNull(split.EquivalentOrders);
         Assert.Equal("#2 > A1 > {#3, A2}", split.EquivalentOrders!.PatternText);
         Assert.Equal("A = {#6, #10}", split.EquivalentOrders.Legend);
+    }
+
+    private static bool ReadPrivateBoolMember(StrategyBuilder builder, string memberName)
+    {
+        const System.Reflection.BindingFlags Flags =
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+
+        System.Reflection.FieldInfo? field = typeof(StrategyBuilder).GetField(memberName, Flags);
+        if (field is not null)
+        {
+            object? value = field.GetValue(builder);
+            Assert.NotNull(value);
+            return Assert.IsType<bool>(value);
+        }
+
+        System.Reflection.PropertyInfo? property = typeof(StrategyBuilder).GetProperty(memberName, Flags);
+        if (property is not null)
+        {
+            object? value = property.GetValue(builder);
+            Assert.NotNull(value);
+            return Assert.IsType<bool>(value);
+        }
+
+        throw new Xunit.Sdk.XunitException($"Could not find private bool member '{memberName}' on StrategyBuilder.");
     }
 }
 
