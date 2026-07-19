@@ -24,14 +24,275 @@ partial class StrategyBuilder
         int nextStep,
         MaterializationContext context)
     {
-        return BuildBranchSpecs(state, remainingSlots, chosenGroup)
-            .Select(spec => BuildTransitionBranch(
-                state,
-                fixedTopMask,
-                spec,
-                nextStep,
-                context))
+        return BuildDisplayTransitionSpecs(state, fixedTopMask, remainingSlots, chosenGroup)
+            .Select(spec => new StrategyBranch(
+                spec.OrderText,
+                spec.Summary,
+                spec.Effect,
+                BuildState(
+                    spec.NextState,
+                    spec.NextFixedTopMask,
+                    spec.NextRemainingSlots,
+                    nextStep,
+                    context)))
             .ToList();
+    }
+
+    // Display transition planner: consumes display branch-line specs (including equivalence-summary
+    // shaping) and projects them into transition payloads.
+    private IReadOnlyList<TransitionSpec> BuildDisplayTransitionSpecs(
+        ComparisonState state,
+        ulong fixedTopMask,
+        int remainingSlots,
+        SelectedComparisonGroup chosenGroup)
+    {
+        return BuildTransitionSpecsFromBranchSpecs(
+            state,
+            fixedTopMask,
+            BuildBranchSpecs(state, remainingSlots, chosenGroup));
+    }
+
+    // Search transition planner seam: currently reuses the display branch-line planner so behavior
+    // stays stable while search-side planning is being decoupled incrementally.
+    private IReadOnlyList<SearchTransitionSpec> BuildSearchTransitionSpecs(
+        ComparisonState state,
+        ulong fixedTopMask,
+        int remainingSlots,
+        SelectedComparisonGroup chosenGroup)
+    {
+        return BuildTransitionSpecsFromSearchBranchSpecs(
+            state,
+            fixedTopMask,
+            BuildSearchBranchSpecs(state, remainingSlots, chosenGroup));
+    }
+
+    // Search branch planner: mirrors the current display line-planning policy, but keeps a
+    // search-only branch payload that does not carry display summary fields.
+    private List<SearchBranchSpec> BuildSearchBranchSpecs(
+        ComparisonState state,
+        int remainingSlots,
+        SelectedComparisonGroup chosenGroup)
+    {
+        return BuildOrderedBranchSpecsWithDoomedTailFallback(
+            state,
+            chosenGroup,
+            tryBuildDoomedTailSpecs: group => TryBuildSearchDoomedTailSpecs(state, remainingSlots, group),
+            line => BuildSearchBranchSpecForLine(state, line.Members, line.ProjectionMerged),
+            spec => spec.OrderText);
+    }
+
+    private SearchBranchSpec BuildSearchBranchSpecForLine(
+        ComparisonState state,
+        List<MergedFamilyOutcome> line,
+        bool projectionMerged)
+    {
+        MergedFamilyOutcome representative =
+            SelectSearchRepresentativeForLine(state, line, projectionMerged);
+
+        return new SearchBranchSpec(
+            representative.Family.RepresentativeOrder,
+            representative.NextState,
+            representative.NextFixedTopMask,
+            representative.NextRemainingSlots);
+    }
+
+    private MergedFamilyOutcome SelectSearchRepresentativeForLine(
+        ComparisonState state,
+        List<MergedFamilyOutcome> line,
+        bool projectionMerged)
+    {
+        if (line.Count <= 1)
+            return line[0];
+
+        List<OrderFamilyDescriptor> families = CollectLineFamilies(line);
+        bool allSingleton = HasOnlySingletonFamilies(families);
+        if (TrySelectProjectionQuotientRepresentativeForLine(
+                state,
+                line,
+                projectionMerged,
+                allSingleton,
+                out MergedFamilyOutcome quotientRepresentative,
+                out _))
+        {
+            return quotientRepresentative;
+        }
+
+        if (!allSingleton)
+            return line[0];
+
+        if (projectionMerged)
+            return SelectOrbitRepresentative(line);
+
+        EquivalentOrderSummary? summary = BuildEquivalentOrderSummary(families);
+        if (ShouldFoldSingletonOrbitRepresentative(summary))
+            return SelectOrbitRepresentative(line);
+
+        return line[0];
+    }
+
+    private static bool ShouldFoldSingletonOrbitRepresentative(EquivalentOrderSummary? summary)
+    {
+        if (summary is null)
+            return false;
+
+        return !MergedOrderingsFormSingleOrbit(summary);
+    }
+
+    private static List<OrderFamilyDescriptor> CollectLineFamilies(List<MergedFamilyOutcome> line)
+    {
+        return line
+            .Select(outcome => outcome.Family)
+            .ToList();
+    }
+
+    private static bool HasOnlySingletonFamilies(List<OrderFamilyDescriptor> families)
+    {
+        return families.All(family => family.Count == 1);
+    }
+
+    private BranchSpec BuildRelabelRepresentativeBranchSpec(
+        ComparisonState state,
+        List<MergedFamilyOutcome> line)
+    {
+        MergedFamilyOutcome representative = SelectOrbitRepresentative(line);
+        EquivalentOrderSummary relabelSummary =
+            BuildRelabelingOrbitSummary(state, line, representative);
+        return new BranchSpec(
+            representative.Family.RepresentativeOrder,
+            representative,
+            relabelSummary);
+    }
+
+    private bool TryBuildProjectionQuotientSummaryForLine(
+        ComparisonState state,
+        List<MergedFamilyOutcome> line,
+        out MergedFamilyOutcome representative,
+        out EquivalentOrderSummary? quotientSummary)
+    {
+        representative = SelectOrbitRepresentative(line);
+        quotientSummary = BuildProjectionQuotientSummary(state, line, representative);
+        return quotientSummary is not null;
+    }
+
+    private bool TrySelectProjectionQuotientRepresentativeForLine(
+        ComparisonState state,
+        List<MergedFamilyOutcome> line,
+        bool projectionMerged,
+        bool allSingleton,
+        out MergedFamilyOutcome representative,
+        out EquivalentOrderSummary? quotientSummary)
+    {
+        if (!projectionMerged || allSingleton)
+        {
+            representative = line[0];
+            quotientSummary = null;
+            return false;
+        }
+
+        return TryBuildProjectionQuotientSummaryForLine(
+            state,
+            line,
+            out representative,
+            out quotientSummary);
+    }
+
+    private IReadOnlyList<TransitionSpec> BuildTransitionSpecsFromBranchSpecs(
+        ComparisonState state,
+        ulong fixedTopMask,
+        IReadOnlyList<BranchSpec> branchSpecs)
+    {
+        IReadOnlyList<TransitionTargetFields> targets = BuildTransitionTargetFields(branchSpecs);
+
+        return BuildTransitionSpecsFromTargets(
+            targets,
+            (index, target) => new TransitionSpec(
+                target.OrderText,
+                branchSpecs[index].Summary,
+                BuildComparisonEffect(state, fixedTopMask, target.NextState, target.NextFixedTopMask),
+                target.NextState,
+                target.NextFixedTopMask,
+                target.NextRemainingSlots));
+    }
+
+    private IReadOnlyList<SearchTransitionSpec> BuildTransitionSpecsFromSearchBranchSpecs(
+        ComparisonState state,
+        ulong fixedTopMask,
+        IReadOnlyList<SearchBranchSpec> branchSpecs)
+    {
+        IReadOnlyList<TransitionTargetFields> targets = BuildTransitionTargetFields(branchSpecs);
+
+        return BuildTransitionSpecsFromTargets(
+            targets,
+            (_, target) => new SearchTransitionSpec(
+                target.OrderText,
+                BuildSearchComparisonEffect(state, fixedTopMask, target.NextState, target.NextFixedTopMask),
+                target.NextState,
+                target.NextFixedTopMask,
+                target.NextRemainingSlots));
+    }
+
+    private static IReadOnlyList<TransitionTargetFields> BuildTransitionTargetFields<TSpec>(
+        IReadOnlyList<TSpec> branchSpecs,
+        Func<TSpec, string> getOrderText,
+        Func<TSpec, ComparisonState> getNextState,
+        Func<TSpec, ulong> getNextFixedTopMask,
+        Func<TSpec, int> getNextRemainingSlots)
+    {
+        return branchSpecs
+            .Select(spec => new TransitionTargetFields(
+                getOrderText(spec),
+                getNextState(spec),
+                getNextFixedTopMask(spec),
+                getNextRemainingSlots(spec)))
+            .ToList();
+    }
+
+    private static IReadOnlyList<TransitionTargetFields> BuildTransitionTargetFields(
+        IReadOnlyList<BranchSpec> branchSpecs)
+    {
+        return BuildTransitionTargetFields(
+            branchSpecs,
+            spec => spec.OrderText,
+            spec => spec.Outcome.NextState,
+            spec => spec.Outcome.NextFixedTopMask,
+            spec => spec.Outcome.NextRemainingSlots);
+    }
+
+    private static IReadOnlyList<TransitionTargetFields> BuildTransitionTargetFields(
+        IReadOnlyList<SearchBranchSpec> branchSpecs)
+    {
+        return BuildTransitionTargetFields(
+            branchSpecs,
+            spec => spec.OrderText,
+            spec => spec.NextState,
+            spec => spec.NextFixedTopMask,
+            spec => spec.NextRemainingSlots);
+    }
+
+    private static IReadOnlyList<TTransitionSpec> BuildTransitionSpecsFromTargets<TTransitionSpec>(
+        IReadOnlyList<TransitionTargetFields> targets,
+        Func<int, TransitionTargetFields, TTransitionSpec> buildSpec)
+    {
+        var specs = new List<TTransitionSpec>(targets.Count);
+        for (int i = 0; i < targets.Count; i++)
+            specs.Add(buildSpec(i, targets[i]));
+
+        return specs;
+    }
+
+    private SearchEffect BuildSearchComparisonEffect(
+        ComparisonState before,
+        ulong beforeFixedTopMask,
+        ComparisonState after,
+        ulong afterFixedTopMask)
+    {
+        ComparisonEffectFields effect =
+            BuildComparisonEffectFields(before, beforeFixedTopMask, after, afterFixedTopMask);
+        return new SearchEffect(
+            effect.NewlyGuaranteedTop,
+            effect.NewlyExcluded,
+            effect.FixedCandidates,
+            effect.PossibleCandidates);
     }
 
     // Builds the ordered display-branch specs for a chosen comparison group without
@@ -40,8 +301,6 @@ partial class StrategyBuilder
     // so its Count is exactly the number of branch lines this node will render.
     private List<BranchSpec> BuildBranchSpecs(ComparisonState state, int remainingSlots, SelectedComparisonGroup chosenGroup)
     {
-        ThrowIfCancellationRequested();
-
         // A merged branch groups every order family whose outcome maps to the same
         // display-canonical next state. Two very different situations land here:
         //
@@ -62,15 +321,56 @@ partial class StrategyBuilder
         // their final rank), fold every tail permutation into a single edge whose pattern carries
         // the tail as an unordered brace set. This replaces the per-family listing, which would
         // otherwise spell out each tail permutation as its own misleading branch.
-        List<BranchSpec>? doomedTailSpecs = TryBuildDoomedTailSpecs(state, remainingSlots, chosenGroup);
-        if (doomedTailSpecs is not null)
-        {
-            return doomedTailSpecs
-                .OrderBy(spec => spec.OrderText, StringComparer.Ordinal)
-                .ToList();
-        }
+        return BuildOrderedBranchSpecsWithDoomedTailFallback(
+            state,
+            chosenGroup,
+            tryBuildDoomedTailSpecs: group => TryBuildDoomedTailSpecs(state, remainingSlots, group),
+            line => BuildBranchSpecForLine(state, line.Members, line.ProjectionMerged),
+            spec => spec.OrderText);
+    }
 
-        var specs = new List<BranchSpec>();
+    private List<TSpec> BuildOrderedBranchSpecsWithDoomedTailFallback<TSpec>(
+        ComparisonState state,
+        SelectedComparisonGroup chosenGroup,
+        Func<SelectedComparisonGroup, List<TSpec>?> tryBuildDoomedTailSpecs,
+        Func<PlannedBranchLine, TSpec> buildSpec,
+        Func<TSpec, string> getOrderText)
+    {
+        ThrowIfCancellationRequested();
+
+        List<TSpec>? doomedTailSpecs = tryBuildDoomedTailSpecs(chosenGroup);
+        if (doomedTailSpecs is not null)
+            return doomedTailSpecs
+                .OrderBy(getOrderText, StringComparer.Ordinal)
+                .ToList();
+
+        return BuildPlannedBranchSpecsForChosenGroup(
+            state,
+            chosenGroup,
+            buildSpec,
+            getOrderText);
+    }
+
+    private List<TSpec> BuildPlannedBranchSpecsForChosenGroup<TSpec>(
+        ComparisonState state,
+        SelectedComparisonGroup chosenGroup,
+        Func<PlannedBranchLine, TSpec> buildSpec,
+        Func<TSpec, string> getOrderText)
+    {
+        var specs = new List<TSpec>();
+        foreach (var line in PlanBranchLinesForChosenGroup(state, chosenGroup))
+            specs.Add(buildSpec(line));
+
+        return specs
+            .OrderBy(getOrderText, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    private List<PlannedBranchLine> PlanBranchLinesForChosenGroup(
+        ComparisonState state,
+        SelectedComparisonGroup chosenGroup)
+    {
+        var plannedLines = new List<PlannedBranchLine>();
         foreach (MergedBranch merged in chosenGroup.Branches)
         {
             if (EnableProjectionPairingProbe)
@@ -78,15 +378,10 @@ partial class StrategyBuilder
                 RecordProjectionPairingBucket(state, merged.FamilyOutcomes);
             }
 
-            foreach (DisplayBranchLine line in SplitMergedBucketIntoBranchLines(state, merged.FamilyOutcomes))
-            {
-                specs.Add(BuildBranchSpecForLine(state, line.Members, line.ProjectionMerged));
-            }
+            plannedLines.AddRange(SplitMergedBucketIntoBranchLines(state, merged.FamilyOutcomes));
         }
 
-        return specs
-            .OrderBy(spec => spec.OrderText, StringComparer.Ordinal)
-            .ToList();
+        return plannedLines;
     }
 
     // Builds the spec for one displayed branch line. A line with a single family, or several
@@ -104,37 +399,41 @@ partial class StrategyBuilder
     // disclosing the doomed set. Parent orbits (projectionMerged == false) keep their exact rendering.
     private BranchSpec BuildBranchSpecForLine(ComparisonState state, List<MergedFamilyOutcome> line, bool projectionMerged)
     {
-        var families = line.Select(outcome => outcome.Family).ToList();
+        List<OrderFamilyDescriptor> families = CollectLineFamilies(line);
+        bool allSingleton = HasOnlySingletonFamilies(families);
+        if (TrySelectProjectionQuotientRepresentativeForLine(
+                state,
+                line,
+                projectionMerged,
+                allSingleton,
+                out MergedFamilyOutcome quotientRepresentative,
+                out EquivalentOrderSummary? quotientSummary))
+        {
+            return new BranchSpec(
+                quotientRepresentative.Family.RepresentativeOrder,
+                quotientRepresentative,
+                quotientSummary);
+        }
+
+        if (allSingleton
+            && projectionMerged)
+        {
+            return BuildRelabelRepresentativeBranchSpec(state, line);
+        }
+
         EquivalentOrderSummary? summary = BuildEquivalentOrderSummary(families);
 
-        bool allSingleton = families.All(family => family.Count == 1);
-
-        // A multi-family projection merge cannot be a relabeling orbit (its members carry their own
-        // internal symmetry), so it routes through the structural quotient renderer instead. The
-        // merge step only folds such a component when this renderer accepts it, so a null here means
-        // the line was not actually a quotient merge and falls through to the normal handling.
-        if (line.Count > 1 && projectionMerged && !allSingleton)
+        if (allSingleton
+            && ShouldFoldSingletonOrbitRepresentative(summary))
         {
-            MergedFamilyOutcome quotientRepresentative = SelectOrbitRepresentative(line);
-            EquivalentOrderSummary? quotientSummary =
-                BuildProjectionQuotientSummary(state, line, quotientRepresentative);
-            if (quotientSummary is not null)
-                return new BranchSpec(
-                    quotientRepresentative.Family.RepresentativeOrder, quotientRepresentative, quotientSummary);
+            return BuildRelabelRepresentativeBranchSpec(state, line);
         }
 
-        if (line.Count > 1
-            && allSingleton
-            && summary is not null
-            && (projectionMerged || summary.PatternText.Contains(" | ", StringComparison.Ordinal)))
-        {
-            MergedFamilyOutcome representative = SelectOrbitRepresentative(line);
-            EquivalentOrderSummary relabelSummary = BuildRelabelingOrbitSummary(state, line, representative);
-            return new BranchSpec(representative.Family.RepresentativeOrder, representative, relabelSummary);
-        }
-
-        MergedFamilyOutcome lineRepresentative = line[0];
-        return new BranchSpec(lineRepresentative.Family.RepresentativeOrder, lineRepresentative, summary);
+        MergedFamilyOutcome fallbackRepresentative = line[0];
+        return new BranchSpec(
+            fallbackRepresentative.Family.RepresentativeOrder,
+            fallbackRepresentative,
+            summary);
     }
 
     // The lexicographically smallest ordering in a relabeling orbit, so the folded line shows the
@@ -156,74 +455,22 @@ partial class StrategyBuilder
     }
 
     // Splits one merged bucket's order families into the exact set of displayed branch lines.
-    // Each returned inner list is the families folded onto a single line; its first element is the
-    // line's representative. BuildBranchSpecs routes through here for materialization.
-    //
-    // A merged bucket groups every order family whose outcome maps to the same display-canonical
-    // next state. If the full bucket can be summarized by one disjunction-free pattern, we render it
-    // as one line directly: this captures "comparison-before visible" equivalences (for example
-    // {A1, B1} > {A2, B2}) even when the parent-state automorphism partition is stricter. If the full
-    // bucket cannot be summarized cleanly, we fall back to parent-automorphism orbits and apply the
-    // same disjunction-free check per orbit, finally splitting to per-family lines when needed.
-    // One displayed branch line: the order families folded onto it (first element is the line's
-    // representative) plus whether the line exists only because the opt-in principle-D pass unioned
-    // two or more distinct parent-automorphism orbits. ProjectionMerged lines are rendered with an
-    // explicit "drop {...}" disclosure rather than a bare brace.
-    private readonly record struct DisplayBranchLine(List<MergedFamilyOutcome> Members, bool ProjectionMerged);
-
-    private List<DisplayBranchLine> SplitMergedBucketIntoBranchLines(
+    // The line-planning policy is now hosted in DisplayBranchLinePlanner (display layer), while this
+    // adapter provides the builder-specific orbit partition/projection merge hooks.
+    private List<PlannedBranchLine> SplitMergedBucketIntoBranchLines(
         ComparisonState state, List<MergedFamilyOutcome> families)
     {
-        if (families.Count == 1)
-            return new List<DisplayBranchLine> { new(families, false) };
-
-        EquivalentOrderSummary? fullBucketSummary = BuildEquivalentOrderSummary(
-            families.Select(outcome => outcome.Family).ToList());
-        if (MergedOrderingsFormSingleOrbit(fullBucketSummary))
-            return new List<DisplayBranchLine> { new(families, false) };
-
-        var lines = new List<DisplayBranchLine>();
-        List<List<MergedFamilyOutcome>> parentOrbits = PartitionFamiliesIntoOrbits(state, families);
-
-        List<(List<MergedFamilyOutcome> Members, bool ProjectionMerged)> orbits =
-            EnableProjectionOrbitMerging
-                ? MergeOrbitsByProjection(state, parentOrbits)
-                : parentOrbits.Select(orbit => (orbit, false)).ToList();
-
-        foreach ((List<MergedFamilyOutcome> orbit, bool projectionMerged) in orbits)
-        {
-            if (orbit.Count == 1)
-            {
-                lines.Add(new(orbit, false));
-                continue;
-            }
-
-            EquivalentOrderSummary? combinedSummary = BuildEquivalentOrderSummary(
-                orbit.Select(outcome => outcome.Family).ToList());
-
-            // The orbit is parent-automorphism-backed (interchangeable up to relabeling). Keep it on
-            // one line when it is either a clean disjunction-free template ("permute {...}") or an
-            // all-singleton relabeling orbit, which BuildBranchSpecForLine renders as one
-            // representative annotated with the relabeling. Only fall back to per-family lines when
-            // neither honest single-line form applies (e.g. a member carries its own internal
-            // permutation), which would otherwise read as a misleading "(... | ...)" disjunction.
-            bool isCleanTemplate = MergedOrderingsFormSingleOrbit(combinedSummary);
-            bool isRelabelingOrbit = orbit.All(outcome => outcome.Family.Count == 1);
-            // A multi-family projection merge is neither a clean template nor a relabeling orbit, but
-            // it renders honestly through the structural quotient notation, so keep it on one line.
-            bool isProjectionQuotient = projectionMerged && orbit.Any(outcome => outcome.Family.Count > 1);
-            if (isCleanTemplate || isRelabelingOrbit || isProjectionQuotient)
-            {
-                lines.Add(new(orbit, projectionMerged));
-            }
-            else
-            {
-                foreach (MergedFamilyOutcome outcome in orbit)
-                    lines.Add(new(new List<MergedFamilyOutcome> { outcome }, false));
-            }
-        }
-
-        return lines;
+        return ProjectionKernel.PlanBranchLines(
+                families,
+                buildSummary: members => BuildEquivalentOrderSummary(CollectLineFamilies(members)),
+                partitionFamiliesIntoOrbits: members => PartitionFamiliesIntoOrbits(state, members),
+                mergeOrbitsByProjection: parentOrbits =>
+                    EnableProjectionOrbitMerging
+                        ? MergeOrbitsByProjection(state, parentOrbits)
+                        : parentOrbits.Select(orbit => (orbit, false)).ToList(),
+                getFamilyCount: outcome => outcome.Family.Count)
+            .Select(line => new PlannedBranchLine(line.Members, line.ProjectionMerged))
+            .ToList();
     }
 
     // Partitions a merged bucket's families into parent-automorphism orbits over the active poset.
@@ -299,77 +546,6 @@ partial class StrategyBuilder
         return order.Select(root => orbitsByRoot[root]).ToList();
     }
 
-    // Principle-D projection merge (opt-in via EnableProjectionOrbitMerging). After the strict
-    // parent-automorphism partition, fold together orbits that each consist of a single ordering
-    // (a singleton family) whenever an automorphism of the parent poset *projected by removing the
-    // items both orderings eliminate this step* maps one onto the other. Only singleton-vs-singleton
-    // orbits are eligible: a multi-ordering family carries its own internal symmetry whose members
-    // do not all share the projection witness, so merging it would overclaim a symmetry that does
-    // not hold family-wide. The doomed "drop" set is surfaced in the rendered legend. Input order is
-    // preserved so the displayed-edge count stays identical between the display and counting paths.
-    private List<(List<MergedFamilyOutcome> Members, bool ProjectionMerged)> MergeSingletonOrbitsByProjection(
-        ComparisonState state, List<List<MergedFamilyOutcome>> orbits)
-    {
-        int n = orbits.Count;
-        if (n <= 1)
-            return orbits.Select(orbit => (orbit, false)).ToList();
-
-        var projectionCache = new Dictionary<ulong, (ComparisonState State, int[] Colors)>();
-
-        var parent = new int[n];
-        for (int i = 0; i < n; i++)
-            parent[i] = i;
-
-        int Find(int x)
-        {
-            while (parent[x] != x)
-            {
-                parent[x] = parent[parent[x]];
-                x = parent[x];
-            }
-            return x;
-        }
-
-        static bool IsSingleton(List<MergedFamilyOutcome> orbit)
-            => orbit.Count == 1 && orbit[0].Family.Count == 1;
-
-        for (int i = 0; i < n; i++)
-        {
-            if (!IsSingleton(orbits[i]))
-                continue;
-            for (int j = i + 1; j < n; j++)
-            {
-                if (!IsSingleton(orbits[j]) || Find(i) == Find(j))
-                    continue;
-                if (TryProjectionAutomorphism(state, orbits[i][0], orbits[j][0], projectionCache))
-                    parent[Find(i)] = Find(j);
-            }
-        }
-
-        var byRoot = new Dictionary<int, List<MergedFamilyOutcome>>();
-        var combinedCount = new Dictionary<int, int>();
-        var order = new List<int>();
-        for (int i = 0; i < n; i++)
-        {
-            int root = Find(i);
-            if (!byRoot.TryGetValue(root, out List<MergedFamilyOutcome>? merged))
-            {
-                merged = new List<MergedFamilyOutcome>();
-                byRoot[root] = merged;
-                combinedCount[root] = 0;
-                order.Add(root);
-            }
-            merged.AddRange(orbits[i]);
-            combinedCount[root]++;
-        }
-
-        // A root that absorbed two or more original parent orbits is a genuine projection merge and
-        // must be disclosed with a "drop {...}" legend; a root that is a single pass-through orbit
-        // (singleton with no projection partner, or any multi-ordering parent orbit) keeps its exact
-        // parent-automorphism rendering.
-        return order.Select(root => (byRoot[root], combinedCount[root] > 1)).ToList();
-    }
-
     // Tests the principle-D projection symmetry between two single orderings: remove the items both
     // eliminate this step (the common drop set, which this step's comparisons determine uniquely),
     // then ask whether an automorphism of the projected parent poset maps one surviving ordering
@@ -380,58 +556,39 @@ partial class StrategyBuilder
         MergedFamilyOutcome b,
         Dictionary<ulong, (ComparisonState State, int[] Colors)>? projectionCache = null)
     {
-        ulong commonDrop = EliminatedMask(state, a) & EliminatedMask(state, b);
-        List<int> orderA = RestrictOrder(a.Family.RepresentativeOrderItems, commonDrop);
-        List<int> orderB = RestrictOrder(b.Family.RepresentativeOrderItems, commonDrop);
-        if (orderA.Count != orderB.Count)
-            return false;
-
-        if (commonDrop == 0)
-        {
-            int[] activeColors = state.GetActiveItemColors();
-            if (!OrdersHaveMatchingActiveColorSequence(activeColors, orderA, orderB))
-            {
-                if (EnableProjectionPairingProbe)
-                    _projectionOrbitColorPrefilterSkips++;
-                return false;
-            }
-
-            if (EnableProjectionPairingProbe)
-                _projectionOrbitAutomorphismChecks++;
-
-            return state.TryMapOrderByAutomorphism(0, orderA, orderB);
-        }
-
-        ComparisonState projected;
-        int[] projectedColors;
-        if (projectionCache is not null && projectionCache.TryGetValue(commonDrop, out var cached))
-        {
-            projected = cached.State;
-            projectedColors = cached.Colors;
-            if (EnableProjectionPairingProbe)
-                _projectionOrbitProjectedStateCacheHits++;
-        }
-        else
-        {
-            projected = state.Clone();
-            projected.Deactivate(commonDrop);
-            projectedColors = projected.GetActiveItemColors();
-            projectionCache?.Add(commonDrop, (projected, projectedColors));
-            if (EnableProjectionPairingProbe)
-                _projectionOrbitProjectedStateBuilds++;
-        }
-
-        if (!OrdersHaveMatchingActiveColorSequence(projectedColors, orderA, orderB))
-        {
-            if (EnableProjectionPairingProbe)
-                _projectionOrbitColorPrefilterSkips++;
-            return false;
-        }
-
+        Action<ProjectionKernel.ProjectionAutomorphismProbeEvent>? probeHook = null;
         if (EnableProjectionPairingProbe)
-            _projectionOrbitAutomorphismChecks++;
+        {
+            probeHook = evt =>
+            {
+                switch (evt)
+                {
+                    case ProjectionKernel.ProjectionAutomorphismProbeEvent.ColorPrefilterSkip:
+                        _projectionOrbitColorPrefilterSkips++;
+                        break;
+                    case ProjectionKernel.ProjectionAutomorphismProbeEvent.AutomorphismCheck:
+                        _projectionOrbitAutomorphismChecks++;
+                        break;
+                    case ProjectionKernel.ProjectionAutomorphismProbeEvent.ProjectedStateBuild:
+                        _projectionOrbitProjectedStateBuilds++;
+                        break;
+                    case ProjectionKernel.ProjectionAutomorphismProbeEvent.ProjectedStateCacheHit:
+                        _projectionOrbitProjectedStateCacheHits++;
+                        break;
+                }
+            };
+        }
 
-        return projected.TryMapOrderByAutomorphism(0, orderA, orderB);
+        return ProjectionKernel.TryProjectionAutomorphism(
+            state,
+            new ProjectionKernel.ProjectionOutcomeData(
+                a.Family.RepresentativeOrderItems,
+                EliminatedMask(state, a)),
+            new ProjectionKernel.ProjectionOutcomeData(
+                b.Family.RepresentativeOrderItems,
+                EliminatedMask(state, b)),
+            projectionCache,
+            probeHook);
     }
 
     private static bool OrdersHaveMatchingActiveColorSequence(
@@ -453,17 +610,6 @@ partial class StrategyBuilder
     private static ulong EliminatedMask(ComparisonState state, MergedFamilyOutcome outcome)
         => state.ActiveMask & ~outcome.NextState.ActiveMask & ~outcome.NextFixedTopMask;
 
-    private static List<int> RestrictOrder(IReadOnlyList<int> order, ulong dropMask)
-    {
-        var result = new List<int>(order.Count);
-        foreach (int item in order)
-        {
-            if ((dropMask & (1UL << item)) == 0)
-                result.Add(item);
-        }
-        return result;
-    }
-
     // template describes a genuine relabeling orbit, so it stays a single branch. The pattern
     // engine emits the " | " separator only when the merged orderings cannot be unified into one
     // template (distinct orderings that merely converge to isomorphic next states); those are
@@ -471,8 +617,7 @@ partial class StrategyBuilder
     // " > ").
     private static bool MergedOrderingsFormSingleOrbit(EquivalentOrderSummary? combinedSummary)
     {
-        return combinedSummary is null
-            || !combinedSummary.PatternText.Contains(" | ", StringComparison.Ordinal);
+        return ProjectionKernel.IsSingleMergedOrbit(combinedSummary);
     }
 
     private void AddMergedBranch(
@@ -499,34 +644,36 @@ partial class StrategyBuilder
         _mergedOutcomeCollisions++;
     }
 
-    private StrategyBranch BuildTransitionBranch(
-        ComparisonState state,
-        ulong fixedTopMask,
-        BranchSpec spec,
-        int nextStep,
-        MaterializationContext context)
-    {
-        MergedFamilyOutcome outcome = spec.Outcome;
-        return new StrategyBranch(
-            spec.OrderText,
-            spec.Summary,
-            BuildComparisonEffect(state, fixedTopMask, outcome.NextState, outcome.NextFixedTopMask),
-            BuildState(
-                outcome.NextState,
-                outcome.NextFixedTopMask,
-                outcome.NextRemainingSlots,
-                nextStep,
-                context));
-    }
-
     private StrategyEffect BuildComparisonEffect(ComparisonState before, ulong beforeFixedTopMask, ComparisonState after, ulong afterFixedTopMask)
     {
-        var newlyGuaranteedTop = ComparisonState.MaskToOrderedList(afterFixedTopMask & ~beforeFixedTopMask);
-        var newlyExcluded = ComparisonState.MaskToOrderedList(before.ActiveMask & ~after.ActiveMask & ~afterFixedTopMask);
-        var fixedCandidates = ComparisonState.MaskToOrderedList(afterFixedTopMask);
-        var possibleCandidates = after.GetActiveItemsOrdered();
+        ComparisonEffectFields effect =
+            BuildComparisonEffectFields(before, beforeFixedTopMask, after, afterFixedTopMask);
 
-        return new StrategyEffect(newlyGuaranteedTop, newlyExcluded, fixedCandidates, possibleCandidates);
+        return new StrategyEffect(
+            effect.NewlyGuaranteedTop,
+            effect.NewlyExcluded,
+            effect.FixedCandidates,
+            effect.PossibleCandidates);
+    }
+
+    private static ComparisonEffectFields BuildComparisonEffectFields(
+        ComparisonState before,
+        ulong beforeFixedTopMask,
+        ComparisonState after,
+        ulong afterFixedTopMask)
+    {
+        IReadOnlyList<int> newlyGuaranteedTop =
+            ComparisonState.MaskToOrderedList(afterFixedTopMask & ~beforeFixedTopMask);
+        IReadOnlyList<int> newlyExcluded =
+            ComparisonState.MaskToOrderedList(before.ActiveMask & ~after.ActiveMask & ~afterFixedTopMask);
+        IReadOnlyList<int> fixedCandidates = ComparisonState.MaskToOrderedList(afterFixedTopMask);
+        IReadOnlyList<int> possibleCandidates = after.GetActiveItemsOrdered();
+
+        return new ComparisonEffectFields(
+            newlyGuaranteedTop,
+            newlyExcluded,
+            fixedCandidates,
+            possibleCandidates);
     }
 
     private ComparisonOutcome CreateComparisonOutcome(
@@ -626,6 +773,127 @@ partial class StrategyBuilder
         public string OrderText { get; }
         public MergedFamilyOutcome Outcome { get; }
         public EquivalentOrderSummary? Summary { get; }
+    }
+
+    private readonly struct PlannedBranchLine
+    {
+        public PlannedBranchLine(List<MergedFamilyOutcome> members, bool projectionMerged)
+        {
+            Members = members;
+            ProjectionMerged = projectionMerged;
+        }
+
+        public List<MergedFamilyOutcome> Members { get; }
+        public bool ProjectionMerged { get; }
+    }
+
+    private readonly struct SearchBranchSpec
+    {
+        public SearchBranchSpec(
+            string orderText,
+            ComparisonState nextState,
+            ulong nextFixedTopMask,
+            int nextRemainingSlots)
+        {
+            OrderText = orderText;
+            NextState = nextState;
+            NextFixedTopMask = nextFixedTopMask;
+            NextRemainingSlots = nextRemainingSlots;
+        }
+
+        public string OrderText { get; }
+        public ComparisonState NextState { get; }
+        public ulong NextFixedTopMask { get; }
+        public int NextRemainingSlots { get; }
+    }
+
+    private readonly struct SearchTransitionSpec
+    {
+        public SearchTransitionSpec(
+            string orderText,
+            SearchEffect effect,
+            ComparisonState nextState,
+            ulong nextFixedTopMask,
+            int nextRemainingSlots)
+        {
+            OrderText = orderText;
+            Effect = effect;
+            NextState = nextState;
+            NextFixedTopMask = nextFixedTopMask;
+            NextRemainingSlots = nextRemainingSlots;
+        }
+
+        public string OrderText { get; }
+        public SearchEffect Effect { get; }
+        public ComparisonState NextState { get; }
+        public ulong NextFixedTopMask { get; }
+        public int NextRemainingSlots { get; }
+    }
+
+    private readonly struct ComparisonEffectFields
+    {
+        public ComparisonEffectFields(
+            IReadOnlyList<int> newlyGuaranteedTop,
+            IReadOnlyList<int> newlyExcluded,
+            IReadOnlyList<int> fixedCandidates,
+            IReadOnlyList<int> possibleCandidates)
+        {
+            NewlyGuaranteedTop = newlyGuaranteedTop;
+            NewlyExcluded = newlyExcluded;
+            FixedCandidates = fixedCandidates;
+            PossibleCandidates = possibleCandidates;
+        }
+
+        public IReadOnlyList<int> NewlyGuaranteedTop { get; }
+        public IReadOnlyList<int> NewlyExcluded { get; }
+        public IReadOnlyList<int> FixedCandidates { get; }
+        public IReadOnlyList<int> PossibleCandidates { get; }
+    }
+
+    private readonly struct TransitionTargetFields
+    {
+        public TransitionTargetFields(
+            string orderText,
+            ComparisonState nextState,
+            ulong nextFixedTopMask,
+            int nextRemainingSlots)
+        {
+            OrderText = orderText;
+            NextState = nextState;
+            NextFixedTopMask = nextFixedTopMask;
+            NextRemainingSlots = nextRemainingSlots;
+        }
+
+        public string OrderText { get; }
+        public ComparisonState NextState { get; }
+        public ulong NextFixedTopMask { get; }
+        public int NextRemainingSlots { get; }
+    }
+
+    private readonly struct TransitionSpec
+    {
+        public TransitionSpec(
+            string orderText,
+            EquivalentOrderSummary? summary,
+            StrategyEffect effect,
+            ComparisonState nextState,
+            ulong nextFixedTopMask,
+            int nextRemainingSlots)
+        {
+            OrderText = orderText;
+            Summary = summary;
+            Effect = effect;
+            NextState = nextState;
+            NextFixedTopMask = nextFixedTopMask;
+            NextRemainingSlots = nextRemainingSlots;
+        }
+
+        public string OrderText { get; }
+        public EquivalentOrderSummary? Summary { get; }
+        public StrategyEffect Effect { get; }
+        public ComparisonState NextState { get; }
+        public ulong NextFixedTopMask { get; }
+        public int NextRemainingSlots { get; }
     }
 
     private sealed class MergedBranch

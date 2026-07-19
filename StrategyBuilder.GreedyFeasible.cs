@@ -5,7 +5,7 @@ partial class StrategyBuilder
 {
     // Constructive feasible-strategy upper bound ("tournament keeping the poset").
     //
-    // This is the greedy mode's step phase (BuildGreedyFeasibleStage). An earlier enumeration-based greedy
+    // This is the greedy mode's step phase (ExecuteGreedyFeasibleStage). An earlier enumeration-based greedy
     // committed to a single policy but still PICKED that policy by fully enumerating + scoring every
     // distinct candidate group at each state (EnumeratePrioritizedGroups -> ~C(active, m) work). On
     // large m that selection dominated (25,10,10 step phase ~49 s) even though only the #1 group was
@@ -43,7 +43,7 @@ partial class StrategyBuilder
     internal int ConstructiveDisplayLineTieBreakEvaluations => _constructiveDisplayLineTieBreakEvaluations;
 
     // Feasible step budget U threaded from the step phase to the edge phase within one combined run.
-    // BuildGreedyFeasibleStage sets it to the MATERIALIZED MaxStep of the just-built step tree (the tightest
+    // ExecuteGreedyFeasibleStage sets it to the MATERIALIZED MaxStep of the just-built step tree (the tightest
     // sound budget: the step plan itself witnesses a U-step solution, so the compact pass under this
     // ceiling can never need more than U). The edge phase (RunGreedyPipeline) reads it so it
     // never produces a plan worse than the step phase. -1 until a step plan is built; deliberately NOT
@@ -53,7 +53,7 @@ partial class StrategyBuilder
     private int _feasibleRootBudget = -1;
 
     // Total distinct canonical search states the step phase visited, captured at the end of
-    // BuildGreedyFeasibleStage and (like _feasibleRootBudget) deliberately NOT cleared by
+    // ExecuteGreedyFeasibleStage and (like _feasibleRootBudget) deliberately NOT cleared by
     // ResetPerBuildTransientState so it survives the step->edge boundary on the same builder. The edge
     // phase has no pending/searched signal, so this serves as the SCALE anchor for a self-correcting
     // asymptote (see EstimateProgress) that turns _compactStatesSolved into a live progress fraction --
@@ -81,7 +81,7 @@ partial class StrategyBuilder
     // The comparison group at each state is built constructively from the current partial order
     // (ChooseConstructiveGroup, O(m*active^2)), so unlike the old enumeration-based greedy there is no
     // phase-1 closure / pattern cache: the policy is computed on the fly during materialization.
-    public StrategyPlan BuildGreedyFeasibleStage()
+    public StrategyPlan ExecuteGreedyFeasibleStage()
     {
         ComparisonState.SetThreadCancellationToken(_cancellationToken);
         try

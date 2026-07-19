@@ -12,7 +12,7 @@ partial class StrategyBuilder
     // deferred tuning part (阶段 B): v1 uses the existing distinct-group enumeration in canonical order
     // (no scoring). NO proof semantics — it only tightens the feasible upper bound.
     //
-    // It is NOT wired into the production pipeline yet; BuildGreedyTightenPlan is only exercised by
+    // It is NOT wired into the production pipeline yet; ExecuteGreedyTightenStage is only exercised by
     // tests until the mechanism is validated.
     internal int GreedyTightenCandidateCap = DefaultGreedyTightenCandidateCap;
 
@@ -48,7 +48,7 @@ partial class StrategyBuilder
     private readonly Dictionary<SearchStateKey, int> _greedyTightenSharedHeightMemo = new();
     private bool _useGreedyTightenSelection;
 
-    // Diagnostics (per BuildGreedyTightenPlan run).
+    // Diagnostics (per ExecuteGreedyTightenStage run).
     private int _greedyTightenRounds;
     private int _greedyTightenCommits;
     private int _greedyTightenStatesVisited;
@@ -125,7 +125,7 @@ partial class StrategyBuilder
 
     // Builds the GreedyTighten stage plan: runs the local restructuring to tighten the upper bound,
     // then materializes the tightened tree once. Returns a feasible-upper-bound plan (never proven).
-    public StrategyPlan BuildGreedyTightenPlan()
+    public StrategyPlan ExecuteGreedyTightenStage()
     {
         _progressScope = _reportCombinedRunProgress
             ? ProgressScope.FeasibleInCombinedRun

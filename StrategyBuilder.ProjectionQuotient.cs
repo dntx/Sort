@@ -32,98 +32,16 @@ partial class StrategyBuilder
     private List<(List<MergedFamilyOutcome> Members, bool ProjectionMerged)> MergeOrbitsByProjection(
         ComparisonState state, List<List<MergedFamilyOutcome>> orbits)
     {
-        int n = orbits.Count;
-        if (n <= 1)
-            return orbits.Select(orbit => (orbit, false)).ToList();
-
         var projectionCache = new Dictionary<ulong, (ComparisonState State, int[] Colors)>();
-
-        var parent = new int[n];
-        for (int i = 0; i < n; i++)
-            parent[i] = i;
-
-        int Find(int x)
-        {
-            while (parent[x] != x)
-            {
-                parent[x] = parent[parent[x]];
-                x = parent[x];
-            }
-            return x;
-        }
-
-        for (int i = 0; i < n; i++)
-        {
-            for (int j = i + 1; j < n; j++)
-            {
-                if (Find(i) == Find(j))
-                    continue;
-                if (TryProjectionAutomorphism(state, orbits[i][0], orbits[j][0], projectionCache))
-                    parent[Find(i)] = Find(j);
-            }
-        }
-
-        var componentsByRoot = new Dictionary<int, List<int>>();
-        var order = new List<int>();
-        for (int i = 0; i < n; i++)
-        {
-            int root = Find(i);
-            if (!componentsByRoot.TryGetValue(root, out List<int>? members))
-            {
-                members = new List<int>();
-                componentsByRoot[root] = members;
-                order.Add(root);
-            }
-            members.Add(i);
-        }
-
-        var result = new List<(List<MergedFamilyOutcome>, bool)>();
-        foreach (int root in order)
-        {
-            List<int> component = componentsByRoot[root];
-            if (component.Count == 1)
-            {
-                result.Add((orbits[component[0]], false));
-                continue;
-            }
-
-            var flattened = new List<MergedFamilyOutcome>();
-            foreach (int orbitIndex in component)
-                flattened.AddRange(orbits[orbitIndex]);
-
-            bool multiFamily = flattened.Any(outcome => outcome.Family.Count > 1);
-
-            // A singleton-only component reproduces the legacy singleton merge exactly (the relabeling
-            // summary renders it); multi-family components are the genuinely new case and must clear
-            // both the honesty guard and the structural renderer before they fold.
-            bool fold;
-            if (!multiFamily)
-            {
-                fold = true;
-            }
-            else
-            {
-                List<MergedFamilyOutcome> ordered = OrderRepresentativeFirst(flattened);
-                fold = ComponentIsSingleGlobalDropOrbit(state, ordered, out _)
-                    && BuildProjectionQuotientSummary(state, ordered, ordered[0]) is not null;
-            }
-
-            if (fold)
-            {
-                result.Add((flattened, true));
-            }
-            else
-            {
-                // Unsupported multi-family shape: don't claim the quotient. Fall back to the legacy
-                // singleton merge over this component's parent orbits so any singleton-vs-singleton
-                // saving is still taken -- the all-orbit pass is therefore never worse than the
-                // singleton-only pass, only ever better.
-                var componentOrbits = component.Select(orbitIndex => orbits[orbitIndex]).ToList();
-                result.AddRange(MergeSingletonOrbitsByProjection(state, componentOrbits));
-            }
-        }
-
-        return result;
+        return ProjectionKernel.MergeProjectionOrbits(
+            orbits,
+            areProjectionEquivalent: (left, right) =>
+                TryProjectionAutomorphism(state, left, right, projectionCache),
+            canFoldMultiFamilyComponent: ordered =>
+                ComponentIsSingleGlobalDropOrbit(state, ordered, out _)
+                && BuildProjectionQuotientSummary(state, ordered, ordered[0]) is not null,
+            orderRepresentativeFirst: OrderRepresentativeFirst,
+            getFamilyCount: outcome => outcome.Family.Count);
     }
 
     // Returns the component's families with the lexicographically-smallest representative first, so

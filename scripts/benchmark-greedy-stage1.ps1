@@ -1,4 +1,6 @@
 param(
+    [ValidateSet("Debug", "Release")]
+    [string]$Configuration = "Release",
     [int]$WarmupRuns = 1,
     [int]$MeasuredRuns = 5,
     [string]$CaseSpecs = "20,3,6;22,3,6;24,3,6;16,5,5",
@@ -57,6 +59,7 @@ function Invoke-CaseRun {
         [int]$N,
         [int]$M,
         [int]$K,
+        [string]$Configuration,
         [int]$TimeoutSeconds = 0
     )
 
@@ -67,6 +70,8 @@ function Invoke-CaseRun {
             'run',
             '--project',
             '.\TopKFinder.csproj',
+            '--configuration',
+            $Configuration,
             '--',
             $N,
             $M,
@@ -167,7 +172,7 @@ function Parse-Cases {
 $caseList = Parse-Cases -CaseText $CaseSpecs
 
 Write-Host "Benchmarking greedy stage 1 (median across runs)" -ForegroundColor Cyan
-Write-Host "WarmupRuns=$WarmupRuns MeasuredRuns=$MeasuredRuns" -ForegroundColor Cyan
+Write-Host "Configuration=$Configuration WarmupRuns=$WarmupRuns MeasuredRuns=$MeasuredRuns" -ForegroundColor Cyan
 
 $results = New-Object System.Collections.Generic.List[object]
 
@@ -177,7 +182,7 @@ foreach ($case in $caseList) {
     $k = [int]$case.K
 
     for ($i = 0; $i -lt $WarmupRuns; $i++) {
-        [void](Invoke-CaseRun -N $n -M $m -K $k -TimeoutSeconds $PerRunTimeoutSeconds)
+        [void](Invoke-CaseRun -N $n -M $m -K $k -Configuration $Configuration -TimeoutSeconds $PerRunTimeoutSeconds)
     }
 
     $sampleTimes = New-Object System.Collections.Generic.List[double]
@@ -186,7 +191,7 @@ foreach ($case in $caseList) {
     $sampleStates = New-Object System.Collections.Generic.List[int]
 
     for ($i = 0; $i -lt $MeasuredRuns; $i++) {
-        $run = Invoke-CaseRun -N $n -M $m -K $k -TimeoutSeconds $PerRunTimeoutSeconds
+        $run = Invoke-CaseRun -N $n -M $m -K $k -Configuration $Configuration -TimeoutSeconds $PerRunTimeoutSeconds
         $sampleTimes.Add($run.Seconds)
         $sampleSteps.Add($run.Steps)
         $sampleEdges.Add($run.Edges)
@@ -202,6 +207,7 @@ foreach ($case in $caseList) {
     $avgSeconds = [math]::Round((($sampleTimes | Measure-Object -Average).Average), 3)
 
     $results.Add([pscustomobject]@{
+        Configuration = $Configuration
         Case = "$n,$m,$k"
         Steps = $sampleSteps[0]
         Edges = $sampleEdges[0]

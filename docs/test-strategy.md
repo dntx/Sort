@@ -5,6 +5,11 @@
 `docs/core-algorithm.md`（算法原理）配套——后者讲「算法怎么算」，本文讲「我们如何守住算法的
 正确性与性能」。
 
+当前治理状态：
+
+- Mainline B（test layering governance）已完成：required PR gate 保持 fast-only，`manual-slow-parity` 承担按需 slow parity，贡献者运行矩阵已文档化。
+- Mainline C（performance baseline governance）基础设施已完成：focused counter lanes、bundled full audit、baseline drift 审批和 nightly deterministic audit 都已就位；后续主要是 ratchet maintenance。
+
 ---
 
 ## 1. 总体哲学：两层监控，确定性计数器为主、墙钟时间为辅
@@ -105,7 +110,16 @@ compact 是一个跑在 phase 1 之上的**二级 DP**（`StrategyBuilder.Compac
 > compact 的最优性边界（最小化的是边数**代理量**、原始候选可能比 default 差，由编排层「严格更优才展示」裁决）见
 > `docs/core-algorithm.md` §4.4。
 
-### 3.4 夹逼报告（squeeze）的「已证明下界 L」一侧
+### 3.4 Display/Search parity 矩阵分层（Fast vs Slow）
+
+`DisplayToSearchExpanderTests` 的 projection-merging parity theory 每个 case 都会执行 layered/direct 两条路径，并在 `projectionMerging=false/true` 下各跑一次，单 case 计算量较高。
+
+- 快速矩阵：保留在 `DisplayToSearchExpanderTests`，用于日常 focused 回归。
+- 慢速矩阵：拆到 `SearchParitySlowMatrixTests`，并标记 `Trait("Category", "Slow")`，用于收口前或专项回归。
+
+这样可以避免日常 focused 命令在未显式声明 slow 需求时反复触发高参数 case，降低“看起来卡住”但本质是重算例堆叠导致的长耗时。
+
+### 3.5 夹逼报告（squeeze）的「已证明下界 L」一侧
 
 迭代加深驱动循环的全局预算在每一趟都是 opt 的**已证明合法下界**，通过
 `SearchStatistics.RootProvenLowerBound` 与每次进度回调的 `SearchProgressSnapshot.RootProvenLowerBound`
@@ -179,16 +193,104 @@ GitHub Actions 侧提供了手动门槛工作流：
 
 ---
 
+## 4.2 Contributor Run Matrix（Fast / Slow / Perf）
+
+为避免日常开发被重型 case 拖慢，仓库按以下规则分层：
+
+- PR 必跑（required gate）：仅跑 fast 套件（`Category!=Slow`）+ 轻量 perf tests。
+- Slow parity 矩阵：不进 required gate，改为按需触发。
+- deterministic counter guardrails：按需触发 `manual-counter-guardrails`（机器无关计数器门槛）。
+- perf baseline gate：按需触发 `manual-perf-gate`（对比基线 CSV）。
+
+推荐命令：
+
+```powershell
+# Fast（默认日常回归）
+dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --filter "Category!=Slow"
+
+# Slow parity（收口前 / 专项回归）
+dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --filter "Category=Slow"
+
+# 手动计数器护栏（机器无关）
+pwsh .\scripts\run-counter-guardrails.ps1 -Profile fast-default
+
+# 计数器护栏 dry-run + 机器可读摘要
+pwsh .\scripts\run-counter-guardrails.ps1 -Profile compact -ListOnly -SummaryJsonPath .\artifacts\counter-guardrails-summary.json
+
+# 手动 perf gate（本地脚本）
+pwsh .\scripts\run-perf-gate.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-stage1-baseline.csv -RegressionTolerancePercent 5 -EnforceBaseline
+
+# Perf gate dry-run（只打印命令，不执行）
+pwsh .\scripts\run-perf-gate.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-stage1-baseline.csv -ListOnly
+
+# Perf gate dry-run + 机器可读摘要
+pwsh .\scripts\run-perf-gate.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-stage1-baseline.csv -ListOnly -SummaryJsonPath .\artifacts\perf-gate-summary.json
+```
+
+GitHub Actions 入口：
+
+- `required-pr-tests`：PR 自动触发（fast only）。
+- `manual-slow-parity`：手动触发 slow parity 矩阵。
+- `manual-counter-guardrails`：手动触发确定性计数器护栏（counter-cap tests）。
+- `manual-counter-full-audit`：手动触发 full-counter-suite + matched-tests drift diff + unified snapshots 的组合审计。
+- `nightly-counter-full-audit`：夜间自动跑 full deterministic audit，持续监控 matched-tests drift 与 snapshot 回归。
+- `manual-perf-gate`：手动触发 baseline 回归门槛。
+- `counter-baseline-drift-review`：PR 自动触发；如果 matched-tests baseline 文件变化，则要求 PR body 解释 drift。
+
+`manual-perf-gate` 支持 `list_only=true`，用于只验证参数与命令链路，不执行基准。
+`manual-perf-gate` 也支持 `baseline_csv_path` 输入，可在不改脚本默认值的前提下切换对比基线文件。
+`manual-perf-gate` 还支持 `build_configuration` 输入（默认 `Release`），可在手动 lane 中显式切换 Debug/Release 基准构建配置。
+
+`manual-counter-guardrails` 与 `manual-perf-gate` 都会上传 machine-readable summary artifact，便于后续做自动报表或历史对比。
+`manual-perf-gate` 还支持 `collect_benchmark_rows=true`，会额外上传当次运行的每个 case 明细 CSV（`perf-gate-benchmark-rows` artifact），用于复盘中位数样本与结构稳定性。
+
+`manual-counter-guardrails` 支持 profile 输入（`workflow_dispatch`）：
+
+- `fast-default`：默认路径计数器护栏（searched/outcomes/candidate-groups/duplicate-skips）。
+- `iterative-frontier`：迭代加深门控前沿护栏（含与 exact 路径对比）。
+- `compact`：compact 阶段计数器护栏（work/searched/outcomes/duplicate-skips）。
+- `full-counter-suite`：合并运行 `*StaysWithinBaseline` + 关键 iterative 前沿用例。
+
+建议：PR 日常开发优先 `fast-default`；涉及 ID 门控改动时补跑 `iterative-frontier`；涉及 compact 逻辑时补跑 `compact`；收口前或专项巡检跑 `full-counter-suite`。
+
+`manual-counter-full-audit` 适合收口前或怀疑 selector 漂移时使用：一次输出 `full-counter-suite` 结果、matched-tests baseline diff、snapshot 汇总与单份总览摘要。
+它还会把审计摘要写入 workflow summary，并可选更新指定 PR 的审计评论。
+当 coverage 基本稳定后，可改用 `nightly-counter-full-audit` 做无人值守巡检，把 drift / positive delta 检查从人工触发转成日常监控。
+
+profile 语义、shape 锚点与 cap ratchet 规则见 `docs/counter-guardrail-budgets.md`。
+`scripts/run-counter-guardrails.ps1` 会在执行前打印 profile 对应的方法选择器，支持 `-ListOnly` 做 dry-run 检查。
+完整操作步骤与产物说明见 `docs/counter-audit-operations.md`。
+
+如果 PR 修改了 `docs/counter-guardrails-full-counter-suite-baseline.txt`，请在 PR body 中加入：`Counter baseline drift: <explanation>`。
+
+Lane 决策表（先选信号，再选车道）：
+
+| 目标 | 首选车道 | 核心信号 | 何时升级 |
+| --- | --- | --- | --- |
+| 日常 PR 回归 | `required-pr-tests` + `fast-default` | 快速确定性计数器 + 关键 fast 功能 | 触及 ID/compact 逻辑时升级到对应 profile |
+| 迭代加深（ID）改动验证 | `iterative-frontier` | ID 前沿计数器上限 + 对 exact 的收益约束 | 收口前补跑 `full-counter-suite` |
+| compact 改动验证 | `compact` | compact work/searched/outcomes/duplicate-skips | 收口前补跑 `full-counter-suite` |
+| 机器无关性能回归审计 | `full-counter-suite` | 全量 deterministic counter caps | 大改动前后都跑一遍并做 ratchet 记录 |
+| 墙钟性能烟雾诊断 | `manual-perf-gate` | 中位数时间对比（机器相关） | 仅用于诊断，不替代计数器护栏 |
+
+---
+
 ## 5. 其它正确性 / 单元测试
 
 | 文件 | 职责 |
 | --- | --- |
 | `ComparisonStateTests.cs` | 偏序集状态：传递闭包、祖先 / 后代计数等底层不变量 |
+| `ExactPipelineTests.cs` | exact 公共流水线契约：阶段顺序 / 阶段命名 / 返回计划一致性（`step-proof -> exact-edge-compact@S`） |
 | `FreeSymmetryClassTests.cs` | 对称性感知组生成的核心不变量：按 free-symmetry-class 枚举一个代表 == 扫描全部 m-子集得到的轨道集合 |
 | `DominanceMetricTests.cs` | phase-1 支配（subsumption）下界剪枝的**正确性**（下界 bracket 真值）与**有效性**（剪枝确实触发） |
 | `StrategyOverviewTests.cs` | `StrategyOverview` 概览汇总的正确性 |
 | `StrategyTextRendererTests.cs` | 文本渲染器的格式化逻辑 |
 | `InputValidationTests.cs` / `CliArgsTests.cs` | 输入校验与命令行参数解析 |
+
+补充（稳定性）：
+
+- `GreedyPipelineTests.ProofTighten_FirstProbeCompletesQuickly_14_2_4` 为 m=2 前瞻性能 canary。
+- 该 canary 保持 10 秒门槛，同时在超时时允许一次重试，以吸收偶发机器负载抖动并降低误报。
 
 ---
 

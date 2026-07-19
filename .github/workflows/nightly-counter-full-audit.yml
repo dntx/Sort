@@ -1,0 +1,116 @@
+name: nightly-counter-full-audit
+
+on:
+  schedule:
+    # Daily at 17:00 UTC (01:00 China Standard Time, UTC+8)
+    - cron: '0 17 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: nightly-counter-full-audit
+  cancel-in-progress: false
+
+jobs:
+  counter-full-audit:
+    runs-on: windows-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Run nightly counter full audit
+        id: run_audit
+        shell: pwsh
+        run: |
+          $artifactsDir = Join-Path $env:RUNNER_TEMP "nightly-counter-full-audit"
+          pwsh .\scripts\run-counter-full-audit.ps1 `
+            -Configuration Release `
+            -ArtifactsDir $artifactsDir
+          "artifacts_dir=$artifactsDir" >> $env:GITHUB_OUTPUT
+          "summary_json_path=$(Join-Path $artifactsDir 'counter-full-audit-summary.json')" >> $env:GITHUB_OUTPUT
+          "summary_md_path=$(Join-Path $artifactsDir 'counter-full-audit-summary.md')" >> $env:GITHUB_OUTPUT
+
+      - name: Upload nightly counter full audit summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-counter-full-audit-summary
+          path: |
+            ${{ steps.run_audit.outputs.summary_json_path }}
+            ${{ steps.run_audit.outputs.summary_md_path }}
+
+      - name: Upload nightly counter full audit bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-counter-full-audit-bundle
+          path: ${{ steps.run_audit.outputs.artifacts_dir }}
+
+      - name: Append audit summary to workflow summary
+        if: always()
+        shell: pwsh
+        run: |
+          Get-Content "${{ steps.run_audit.outputs.summary_md_path }}" | Add-Content $env:GITHUB_STEP_SUMMARY
+          $diffPath = Join-Path "${{ steps.run_audit.outputs.artifacts_dir }}" "counter-guardrails-matched-tests-diff.md"
+          if (Test-Path $diffPath) {
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "`r`n---`r`n"
+            Get-Content $diffPath | Add-Content $env:GITHUB_STEP_SUMMARY
+          }
+
+      - name: Alert on failure (create or update issue)
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const date = new Date().toISOString().slice(0, 10);
+            const title = `[perf-gate] nightly counter full audit failed (${date})`;
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+            const body = [
+              'Nightly counter full audit failed.',
+              '',
+              `- Job: counter-full-audit`,
+              `- Workflow run: ${runUrl}`,
+              `- Commit: ${context.sha}`,
+              `- Trigger: ${context.eventName}`,
+              `- Matched-tests baseline: docs/counter-guardrails-full-counter-suite-baseline.txt`,
+              '',
+              'Please inspect the full audit summary, matched-tests diff, and snapshot bundle artifacts.'
+            ].join('\n');
+
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner,
+              repo,
+              state: 'open',
+              per_page: 100,
+              labels: 'perf-gate,nightly-counter-full-audit'
+            });
+
+            const existing = issues.find(i => i.title === title);
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: existing.number,
+                body
+              });
+            } else {
+              await github.rest.issues.create({
+                owner,
+                repo,
+                title,
+                body,
+                labels: ['perf-gate', 'nightly-counter-full-audit', 'regression']
+              });
+            }

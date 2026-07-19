@@ -14,13 +14,13 @@ partial class MainForm
     private static string BuildBranchDetails(StrategyBranch branch)
     {
         string details = branch.OrderText;
-        string effectDetails = StrategyTextRenderer.FormatEffectDetails(branch.Effect);
+        string effectDetails = DisplayEngine.FormatEffectDetails(branch.Effect);
         if (!string.IsNullOrEmpty(effectDetails))
             details += "\n" + effectDetails;
 
         if (branch.EquivalentOrders is not null)
         {
-            details += "\n" + StrategyTextRenderer.FormatEquivalentDetails(branch.EquivalentOrders);
+            details += "\n" + DisplayEngine.FormatEquivalentDetails(branch.EquivalentOrders);
         }
 
         return details;
@@ -30,7 +30,7 @@ partial class MainForm
     {
         string stepAndGroup =
             $"Step: {node.Step}\n" +
-            $"Comparison group: ({StrategyTextRenderer.FormatSet(node.Group)})";
+            $"Comparison group: ({DisplayEngine.FormatSet(node.Group)})";
         string details = node.FinalChoice is not null
             ? stepAndGroup
             : $"State S{node.StateId}\n" + stepAndGroup;
@@ -139,7 +139,7 @@ partial class MainForm
 
         if (_feasiblePlan is not null)
         {
-            PopulateTree(_feasiblePlan, _defaultPlan, _compactPlan, _exactImproved, _compactImproved);
+            PopulateTree(_feasiblePlan, _defaultPlan, _compactPlan, _compactImproved);
             if (_runCancellationSource is null)
                 UpdateSummaryText(_feasiblePlan, _defaultPlan, _compactPlan, _compactImproved);
         }
@@ -233,7 +233,7 @@ partial class MainForm
         {
             double seconds = feasiblePlan.Elapsed.TotalSeconds + defaultPlan.Elapsed.TotalSeconds;
             _statusLabel.Text =
-                $"{head}, step max={defaultPlan.MaxStep}, elapsed={seconds:F3} s. Computing edge-compact stage...";
+                $"{head}, step max={defaultPlan.MaxStep}, elapsed={seconds:F3} s. Computing {StageNames.ExactEdgeCompactPattern} stage...";
             return;
         }
 
@@ -252,14 +252,14 @@ partial class MainForm
 
     private static string BuildCompressedFinalChoiceText(FinalChoiceSummary summary, int k)
     {
-        return $"fixed ({StrategyTextRenderer.FormatSet(summary.FixedTopSet)}); choose {summary.RemainingSlots} of ({StrategyTextRenderer.FormatSet(summary.CandidatePool)}) into top {k}";
+        return $"fixed ({DisplayEngine.FormatSet(summary.FixedTopSet)}); choose {summary.RemainingSlots} of ({DisplayEngine.FormatSet(summary.CandidatePool)}) into top {k}";
     }
 
     private static string BuildCompressedFinalChoiceDetails(FinalChoiceSummary summary, int k)
     {
         return
-            $"Fixed top-{k} members: ({StrategyTextRenderer.FormatSet(summary.FixedTopSet)})\n" +
-            $"Choose {summary.RemainingSlots} of ({StrategyTextRenderer.FormatSet(summary.CandidatePool)}) to complete top {k}";
+            $"Fixed top-{k} members: ({DisplayEngine.FormatSet(summary.FixedTopSet)})\n" +
+            $"Choose {summary.RemainingSlots} of ({DisplayEngine.FormatSet(summary.CandidatePool)}) to complete top {k}";
     }
 
     private void StopStrategy()
@@ -481,7 +481,7 @@ partial class MainForm
 
     private static string BuildFeasibleOnlyDetails(StrategyPlan feasiblePlan)
     {
-        string feasibleText = StrategyTextRenderer.Render(feasiblePlan).TrimEnd();
+        string feasibleText = DisplayEngine.RenderStrategyText(feasiblePlan).TrimEnd();
         var lines = new List<string>
         {
             "Step strategy (greedy upper bound; next stage in progress)",
@@ -500,10 +500,10 @@ partial class MainForm
 
     private static string BuildDefaultOnlyDetails(StrategyPlan defaultPlan)
     {
-        string defaultText = StrategyTextRenderer.Render(defaultPlan).TrimEnd();
+        string defaultText = DisplayEngine.RenderStrategyText(defaultPlan).TrimEnd();
         var lines = new List<string>
         {
-            "Step result (edge-compact stage in progress)",
+            $"Step result ({StageNames.ExactEdgeCompactPattern} stage in progress)",
             $"step elapsed: {defaultPlan.Elapsed.TotalSeconds:F3} s",
             $"step total edges: {defaultPlan.TotalBranchEdges}",
             $"step output states: {defaultPlan.SearchStatistics.OutputStates}",
@@ -518,8 +518,8 @@ partial class MainForm
 
     private static string BuildTwoPhaseDetails(StrategyPlan defaultPlan, StrategyPlan compactPlan, bool compactImproved)
     {
-        string defaultText = StrategyTextRenderer.Render(defaultPlan).TrimEnd();
-        string compactText = StrategyTextRenderer.Render(compactPlan).TrimEnd();
+        string defaultText = DisplayEngine.RenderStrategyText(defaultPlan).TrimEnd();
+        string compactText = DisplayEngine.RenderStrategyText(compactPlan).TrimEnd();
         double totalElapsedSeconds = defaultPlan.Elapsed.TotalSeconds + compactPlan.Elapsed.TotalSeconds;
         var lines = new List<string>
         {
@@ -549,7 +549,7 @@ partial class MainForm
 
     private static string BuildPlanDetails(StrategyPlan plan)
     {
-        string rendered = StrategyTextRenderer.Render(plan).TrimEnd();
+        string rendered = DisplayEngine.RenderStrategyText(plan).TrimEnd();
         string diagnostics = BuildDiagnosticsDetails(plan.SearchStatistics.Diagnostics);
         return diagnostics.Length == 0 ? rendered : $"{rendered}\n\n{diagnostics}";
     }

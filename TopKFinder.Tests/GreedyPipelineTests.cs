@@ -46,7 +46,7 @@ public class GreedyPipelineTests
     public void GreedyPipeline_StepNeverExceedsFeasibleUpperBound(int n, int m, int k)
     {
         var builder = new StrategyBuilder(n, m, k);
-        int stepU = builder.BuildGreedyFeasibleStage().MaxStep;
+        int stepU = builder.ExecuteGreedyFeasibleStage().MaxStep;
         int edgeStep = builder.RunGreedyPipeline().MaxStep;
 
         Assert.True(edgeStep <= stepU,
@@ -64,7 +64,7 @@ public class GreedyPipelineTests
     [InlineData(12, 4, 4)]
     public void GreedyPipeline_StepNeverBelowOptimum(int n, int m, int k)
     {
-        int optimum = new StrategyBuilder(n, m, k).BuildStepProofStage().MaxStep;
+        int optimum = new StrategyBuilder(n, m, k).ExecuteStepProofStage().MaxStep;
         int edgeStep = new StrategyBuilder(n, m, k).RunGreedyPipeline().MaxStep;
 
         Assert.True(edgeStep >= optimum,
@@ -93,6 +93,25 @@ public class GreedyPipelineTests
             "expected edge-compact stage to enumerate compact candidate groups");
         Assert.True(plan.SearchStatistics.CompactStepOptimalGroups > 0,
             "expected edge-compact stage to evaluate compact step-optimal groups");
+    }
+
+    [Fact]
+    public void GreedyPipeline_SkippingAlreadyAppliedPreparation_PreservesFinalPlan()
+    {
+        var preparedBuilder = new StrategyBuilder(12, 4, 4);
+        _ = PublicPipelineOrchestrator.PrepareGreedyUpperBound(preparedBuilder);
+        StrategyPlan preparedPath = PublicPipelineOrchestrator.RunGreedyPipeline(
+            preparedBuilder,
+            emitPreparationStages: false,
+            preparationAlreadyApplied: true);
+
+        var baselineBuilder = new StrategyBuilder(12, 4, 4);
+        StrategyPlan baselinePath = PublicPipelineOrchestrator.RunGreedyPipeline(
+            baselineBuilder,
+            emitPreparationStages: false);
+
+        Assert.Equal(baselinePath.MaxStep, preparedPath.MaxStep);
+        Assert.Equal(baselinePath.TotalBranchEdges, preparedPath.TotalBranchEdges);
     }
 
     // Proof-tighten now auto-expands capped probes on the SAME budget (starting from
@@ -143,9 +162,9 @@ public class GreedyPipelineTests
     public void ProofTightenProbe_TinyStartingCap_AutoExpandsToConclusiveOutcome()
     {
         var builder = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 1 };
-        int budget = builder.BuildGreedyFeasibleStage().MaxStep - 1;
+        int budget = builder.ExecuteGreedyFeasibleStage().MaxStep - 1;
 
-        StageResult stage = builder.BuildProofTightenStage(budget);
+        StageResult stage = builder.ExecuteProofTightenStage(budget);
 
         Assert.Equal($"proof-tighten\u2264{budget}", stage.Name);
         Assert.NotEqual(StageOutcome.Incomplete, stage.Outcome);
@@ -169,16 +188,16 @@ public class GreedyPipelineTests
     {
         var builder = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 1 };
         int originalCap = builder.CompactGreedyCandidateCap;
-        int budget = builder.BuildGreedyFeasibleStage().MaxStep - 1;
+        int budget = builder.ExecuteGreedyFeasibleStage().MaxStep - 1;
 
-        _ = builder.BuildProofTightenStage(budget);
+        _ = builder.ExecuteProofTightenStage(budget);
 
         Assert.Equal(originalCap, builder.CompactGreedyCandidateCap);
     }
 
     // Pins the user-facing stage-name contract emitted by RunGreedyPipeline: each downward
     // tightening ceiling is announced as "proof-tighten\u2264N" and the final edge pass as
-    // "edge-compact@S" (S = the resulting plan's MaxStep). These labels are shared verbatim by the CLI
+    // "greedy-edge-compact@S". These labels are shared verbatim by the CLI
     // headers, GUI tree roots, and the progress panel, so renaming them is a real behavior change --
     // this test fails if the labels drift back to the old "feasible\u2264N" / "compact" wording. 12,4,4
     // has U > opt so its tightening probes run, exercising both the proof-tighten ceilings and the
@@ -193,18 +212,18 @@ public class GreedyPipelineTests
             onStageCompleted: stage => { if (stage.HasPlan) solvedStages.Add(stage.Name); },
             onStageStart: name => startedStages.Add(name));
 
-        string edgeCompactName = $"edge-compact@{plan.MaxStep}";
+        string edgeCompactName = StageNames.FormatGreedyEdgeCompact(plan.MaxStep);
 
         // The final edge-compaction pass is always announced and always carries the returned plan.
         Assert.Contains(edgeCompactName, startedStages);
         Assert.Contains(edgeCompactName, solvedStages);
 
         // At least one downward tightening ceiling ran, and every announced stage uses either the
-        // "proof-tighten\u2264N" tightening label or the terminal "edge-compact@S" label.
-        Assert.Contains(startedStages, name => name.StartsWith("proof-tighten\u2264", StringComparison.Ordinal));
+        // "proof-tighten\u2264N" tightening label or the terminal "greedy-edge-compact@S" label.
+        Assert.Contains(startedStages, name => name.StartsWith(StageNames.ProofTightenPrefix, StringComparison.Ordinal));
         Assert.All(startedStages, name =>
             Assert.True(
-                name.StartsWith("proof-tighten\u2264", StringComparison.Ordinal) || name == edgeCompactName,
+            name.StartsWith(StageNames.ProofTightenPrefix, StringComparison.Ordinal) || name == edgeCompactName,
                 $"unexpected stage label '{name}'"));
 
         // The progression is ordered: every proof-tighten ceiling precedes the terminal edge-compact
@@ -213,13 +232,13 @@ public class GreedyPipelineTests
         Assert.Equal(1, startedStages.Count(name => name == edgeCompactName));
         int firstEdgeCompactIndex = startedStages.IndexOf(edgeCompactName);
         Assert.All(startedStages.Take(firstEdgeCompactIndex), name =>
-            Assert.StartsWith("proof-tighten\u2264", name, StringComparison.Ordinal));
+            Assert.StartsWith(StageNames.ProofTightenPrefix, name, StringComparison.Ordinal));
 
         // The tightening ceilings step strictly downward (U-1, then lower), matching the U-1, U-2, …
         // probe order the CLI/GUI progression surfaces.
         var tightenBudgets = startedStages
-            .Where(name => name.StartsWith("proof-tighten\u2264", StringComparison.Ordinal))
-            .Select(name => int.Parse(name.Substring("proof-tighten\u2264".Length)))
+            .Where(name => name.StartsWith(StageNames.ProofTightenPrefix, StringComparison.Ordinal))
+            .Select(name => int.Parse(name.Substring(StageNames.ProofTightenPrefix.Length)))
             .ToList();
         for (int i = 1; i < tightenBudgets.Count; i++)
             Assert.True(tightenBudgets[i] < tightenBudgets[i - 1],
@@ -331,9 +350,9 @@ public class GreedyPipelineTests
     public void ProofTighten_Budget14TightensInsteadOfOvershooting_20_4_6()
     {
         var builder = new StrategyBuilder(20, 4, 6);
-        int budget = builder.BuildGreedyFeasibleStage().MaxStep - 1;
+        int budget = builder.ExecuteGreedyFeasibleStage().MaxStep - 1;
 
-        StageResult probe = builder.BuildProofTightenStage(budget);
+        StageResult probe = builder.ExecuteProofTightenStage(budget);
 
         Assert.Equal($"proof-tighten\u2264{budget}", probe.Name);
         Assert.Equal(StageOutcome.Tightened, probe.Outcome);
@@ -345,7 +364,7 @@ public class GreedyPipelineTests
         Assert.False(probe.ProvesOptimal);
     }
 
-    // Single-probe API contract: a direct BuildProofTightenStage(U-1) call must report the same first
+    // Single-probe API contract: a direct ExecuteProofTightenStage(U-1) call must report the same first
     // tightening-stage result as RunGreedyPipeline (which internally drives the same probe). The pipeline
     // is cancelled as soon as that first stage is observed: with the overshoot fixed the pipeline no
     // longer stops early at <=14 but keeps tightening toward the optimum, so running it to completion
@@ -354,9 +373,9 @@ public class GreedyPipelineTests
     public void ProofTighten_SingleProbeMatchesPipelineFirstStage_20_4_6()
     {
         var probeBuilder = new StrategyBuilder(20, 4, 6);
-        int budget = probeBuilder.BuildGreedyFeasibleStage().MaxStep - 1;
+        int budget = probeBuilder.ExecuteGreedyFeasibleStage().MaxStep - 1;
 
-        StageResult probe = probeBuilder.BuildProofTightenStage(budget);
+        StageResult probe = probeBuilder.ExecuteProofTightenStage(budget);
 
         Assert.Equal($"proof-tighten\u2264{budget}", probe.Name);
         Assert.Equal(StageOutcome.Tightened, probe.Outcome);
@@ -416,12 +435,12 @@ public class GreedyPipelineTests
     public void GreedyPipeline_WithTighterSeededUpperBound_StartsFromTighterBudget_AndFinalIsNotWorse_10_2_5()
     {
         var baselineBuilder = new StrategyBuilder(10, 2, 5);
-        _ = baselineBuilder.BuildGreedyFeasibleStage();
+        _ = baselineBuilder.ExecuteGreedyFeasibleStage();
         int baselineFirstBudget = FirstProofTightenBudget(baselineBuilder, out StrategyPlan baselinePlan);
 
         var gatedBuilder = new StrategyBuilder(10, 2, 5);
-        StrategyPlan feasible = gatedBuilder.BuildGreedyFeasibleStage();
-        StrategyPlan gt = gatedBuilder.BuildGreedyTightenPlan();
+        StrategyPlan feasible = gatedBuilder.ExecuteGreedyFeasibleStage();
+        StrategyPlan gt = gatedBuilder.ExecuteGreedyTightenStage();
         Assert.True(gt.IsStrictRefinementOver(feasible),
             "expected GT pre-step to improve the feasible bound on (10,2,5)");
         gatedBuilder.OverrideGreedyPipelineUpperBound(gt.MaxStep);
@@ -440,11 +459,11 @@ public class GreedyPipelineTests
     public void GreedyPipeline_RootProbeSkip_PathMatchesBaseline_12_4_4()
     {
         var baselineBuilder = new StrategyBuilder(12, 4, 4);
-        _ = baselineBuilder.BuildGreedyFeasibleStage();
+        _ = baselineBuilder.ExecuteGreedyFeasibleStage();
         int baselineFirstBudget = FirstProofTightenBudget(baselineBuilder, out StrategyPlan baselinePlan);
 
         var gatedBuilder = new StrategyBuilder(12, 4, 4);
-        _ = gatedBuilder.BuildGreedyFeasibleStage();
+        _ = gatedBuilder.ExecuteGreedyFeasibleStage();
         Assert.False(gatedBuilder.ShouldRunGreedyTightenByRootProbe());
         int gatedFirstBudget = FirstProofTightenBudget(gatedBuilder, out StrategyPlan gatedPlan);
 
@@ -454,18 +473,34 @@ public class GreedyPipelineTests
 
     // Lightweight canary for the m=2 proof-tighten performance cliff: this shape used to complete
     // quickly in normal conditions but becomes much slower when the exact-feasibility prune path
-    // regresses. Keep the budget short to avoid inflating the suite runtime.
+    // regresses. Keep the budget short to avoid inflating the suite runtime. A single retry absorbs
+    // occasional CI/load jitter while still failing persistent regressions.
     [Fact]
     public void ProofTighten_FirstProbeCompletesQuickly_14_2_4()
     {
+        const string operationName = "ExecuteProofTightenStage(14,2,4) first probe";
+
+        try
+        {
+            RunFirstProofTightenProbeCanary(operationName);
+        }
+        catch (Xunit.Sdk.XunitException ex) when (ex.Message.Contains("exceeded timeout", StringComparison.OrdinalIgnoreCase))
+        {
+            // Retry once to filter out sporadic machine-load spikes.
+            RunFirstProofTightenProbeCanary(operationName);
+        }
+    }
+
+    private static void RunFirstProofTightenProbeCanary(string operationName)
+    {
         _ = TestTimeoutHelper.RunWithTimeout(
-            "BuildProofTightenStage(14,2,4) first probe",
+            operationName,
             TimeSpan.FromSeconds(10),
             cancellationToken =>
             {
                 var builder = new StrategyBuilder(14, 2, 4, cancellationToken);
-                int budget = builder.BuildGreedyFeasibleStage().MaxStep - 1;
-                StageResult stage = builder.BuildProofTightenStage(budget);
+                int budget = builder.ExecuteGreedyFeasibleStage().MaxStep - 1;
+                StageResult stage = builder.ExecuteProofTightenStage(budget);
 
                 Assert.Equal($"proof-tighten\u2264{budget}", stage.Name);
                 Assert.True(
@@ -500,7 +535,7 @@ public class GreedyPipelineTests
                     CompactGreedyCandidateCap = 1,
                 };
 
-                StageResult incumbent = builder.BuildProofTightenStage(5);
+                StageResult incumbent = builder.ExecuteProofTightenStage(5);
                 Assert.Equal(StageOutcome.Tightened, incumbent.Outcome);
                 Assert.NotNull(incumbent.Plan);
                 Assert.Equal(5, incumbent.Plan!.MaxStep);

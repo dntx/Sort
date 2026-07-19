@@ -18,7 +18,7 @@ partial class StrategyBuilder
     //   * the tail is shorter than two items (nothing to fold), or
     //   * bucketing by the doomed prefix would not merge any families (e.g. a pure relabeling
     //     orbit that the existing "permute {...}" path renders better).
-    private List<BranchSpec>? TryBuildDoomedTailSpecs(
+    private List<DoomedTailLine>? TryBuildDoomedTailLines(
         ComparisonState state,
         int remainingSlots,
         SelectedComparisonGroup chosenGroup)
@@ -82,13 +82,13 @@ partial class StrategyBuilder
         // unify into one disjunction-free template (e.g. "{#1 > #2, #5 > #6}" or "{#1, #5} > {#2,
         // #6}"), emit a single merged branch; otherwise keep the per-bucket doomed-tail lines.
         var bucketList = bucketOrder.Select(key => buckets[key]).ToList();
-        var specs = new List<BranchSpec>(bucketList.Count);
+        var lines = new List<DoomedTailLine>(bucketList.Count);
         foreach (List<DoomedTailBucket> orbit in PartitionDoomedBucketsIntoOrbits(state, bucketList))
         {
             if (orbit.Count == 1)
             {
                 DoomedTailBucket only = orbit[0];
-                specs.Add(new BranchSpec(
+                lines.Add(new DoomedTailLine(
                     only.Representative.Family.RepresentativeOrder,
                     only.Representative,
                     BuildDoomedTailSummary(state, symmetryInfo, only)));
@@ -106,7 +106,7 @@ partial class StrategyBuilder
 
             if (MergedOrderingsFormSingleOrbit(combinedSummary))
             {
-                specs.Add(new BranchSpec(
+                lines.Add(new DoomedTailLine(
                     representative.Representative.Family.RepresentativeOrder,
                     representative.Representative,
                     combinedSummary));
@@ -114,14 +114,46 @@ partial class StrategyBuilder
             else
             {
                 foreach (DoomedTailBucket bucket in orbit)
-                    specs.Add(new BranchSpec(
+                    lines.Add(new DoomedTailLine(
                         bucket.Representative.Family.RepresentativeOrder,
                         bucket.Representative,
                         BuildDoomedTailSummary(state, symmetryInfo, bucket)));
             }
         }
 
-        return specs;
+        return lines;
+    }
+
+    private List<BranchSpec>? TryBuildDoomedTailSpecs(
+        ComparisonState state,
+        int remainingSlots,
+        SelectedComparisonGroup chosenGroup)
+    {
+        List<DoomedTailLine>? doomedTailLines = TryBuildDoomedTailLines(state, remainingSlots, chosenGroup);
+        if (doomedTailLines is null)
+            return null;
+
+        return doomedTailLines
+            .Select(line => new BranchSpec(line.OrderText, line.Representative, line.Summary))
+            .ToList();
+    }
+
+    private List<SearchBranchSpec>? TryBuildSearchDoomedTailSpecs(
+        ComparisonState state,
+        int remainingSlots,
+        SelectedComparisonGroup chosenGroup)
+    {
+        List<DoomedTailLine>? doomedTailLines = TryBuildDoomedTailLines(state, remainingSlots, chosenGroup);
+        if (doomedTailLines is null)
+            return null;
+
+        return doomedTailLines
+            .Select(line => new SearchBranchSpec(
+                line.OrderText,
+                line.Representative.NextState,
+                line.Representative.NextFixedTopMask,
+                line.Representative.NextRemainingSlots))
+            .ToList();
     }
 
     // Groups doomed-prefix buckets into parent-automorphism orbits: two buckets are unioned when an
@@ -592,5 +624,19 @@ partial class StrategyBuilder
             if (!ReferenceEquals(outcome, Representative))
                 Families.Add(outcome);
         }
+    }
+
+    private readonly struct DoomedTailLine
+    {
+        public DoomedTailLine(string orderText, MergedFamilyOutcome representative, EquivalentOrderSummary? summary)
+        {
+            OrderText = orderText;
+            Representative = representative;
+            Summary = summary;
+        }
+
+        public string OrderText { get; }
+        public MergedFamilyOutcome Representative { get; }
+        public EquivalentOrderSummary? Summary { get; }
     }
 }

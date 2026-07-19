@@ -17,7 +17,7 @@ public sealed class StrategyRegressionTests
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
             "StrategyBuilder.BuildDefaultPlan(10, 9, 9)",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(10, 9, 9, cancellationToken).BuildStepProofStage());
+            cancellationToken => new StrategyBuilder(10, 9, 9, cancellationToken).ExecuteStepProofStage());
 
         Assert.Equal(2, plan.MaxStep);
         Assert.Equal(2, plan.SearchStatistics.SearchedStates);
@@ -36,7 +36,7 @@ public sealed class StrategyRegressionTests
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
             "StrategyBuilder.BuildDefaultPlan(9, 3, 3)",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(9, 3, 3, cancellationToken).BuildStepProofStage());
+            cancellationToken => new StrategyBuilder(9, 3, 3, cancellationToken).ExecuteStepProofStage());
 
         Assert.Equal(new[] { 0, 1, 2 }, plan.Root.Group);
 
@@ -56,7 +56,7 @@ public sealed class StrategyRegressionTests
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
             "StrategyBuilder.BuildDefaultPlan(9, 3, 3)",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(9, 3, 3, cancellationToken).BuildStepProofStage());
+            cancellationToken => new StrategyBuilder(9, 3, 3, cancellationToken).ExecuteStepProofStage());
 
         // At this node the compared items #1, #4 and #7 sit in different symmetry classes, yet all
         // six orderings collapse to the same next state. The summary should compress them to a
@@ -99,7 +99,7 @@ public sealed class StrategyRegressionTests
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
             $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k})",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildStepProofStage());
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).ExecuteStepProofStage());
 
         Assert.Equal(maxStep, plan.MaxStep);
         Assert.Equal(rootGroupCount, plan.Root.Group.Count);
@@ -138,12 +138,12 @@ public sealed class StrategyRegressionTests
     // and docs/core-algorithm.md sec 4.3). This theory therefore locks the ID path's own tree, not
     // cross-path identity.
     [Theory]
-    [InlineData(14, 5, 5, 5, 5, 72, 36, 8, 329, 22686, 30137)]
-    [InlineData(16, 5, 5, 6, 5, 122, 29, 12, 2573, 416162, 488630)]
-    [InlineData(17, 5, 5, 6, 5, 135, 40, 13, 2714, 393047, 534261)]
-    [InlineData(18, 5, 5, 6, 5, 227, 66, 14, 3855, 680812, 836413)]
-    [InlineData(12, 6, 6, 3, 6, 16, 17, 2, 34, 1172, 1753)]
-    [InlineData(14, 6, 6, 4, 6, 92, 23, 3, 94, 4117, 6423)]
+    [InlineData(14, 5, 5, 5, 5, 72, 36, 8, 174, 2768, 7474)]
+    [InlineData(16, 5, 5, 6, 5, 122, 29, 12, 1633, 66249, 73060)]
+    [InlineData(17, 5, 5, 6, 5, 135, 40, 13, 1309, 42641, 67024)]
+    [InlineData(18, 5, 5, 6, 5, 227, 66, 14, 1758, 78787, 88908)]
+    [InlineData(12, 6, 6, 3, 6, 16, 17, 2, 25, 66, 65)]
+    [InlineData(14, 6, 6, 4, 6, 92, 23, 3, 45, 404, 2341)]
     public void Default_IterativeDeepeningBaselineRemainsStable(
         int n, int m, int k, int maxStep, int rootGroupCount, int totalEdges,
         int outputStates, int expandedOutputStates,
@@ -152,7 +152,7 @@ public sealed class StrategyRegressionTests
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
             $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k}) [iterative-deepening]",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildStepProofStage());
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).ExecuteStepProofStage());
 
         Assert.Equal(maxStep, plan.MaxStep);
         Assert.Equal(rootGroupCount, plan.Root.Group.Count);
@@ -183,13 +183,13 @@ public sealed class StrategyRegressionTests
             "StrategyBuilder.BuildDefaultPlan(17, 5, 5) [force ID]",
             RegressionTestTimeout,
             cancellationToken => new StrategyBuilder(17, 5, 5, cancellationToken)
-            { ForceIterativeDeepeningForTesting = true }.BuildStepProofStage());
+            { ForceIterativeDeepeningForTesting = true }.ExecuteStepProofStage());
 
         StrategyPlan exactPlan = TestTimeoutHelper.RunWithTimeout(
             "StrategyBuilder.BuildDefaultPlan(17, 5, 5) [force exact]",
             RegressionTestTimeout,
             cancellationToken => new StrategyBuilder(17, 5, 5, cancellationToken)
-            { ForceIterativeDeepeningForTesting = false }.BuildStepProofStage());
+            { ForceIterativeDeepeningForTesting = false }.ExecuteStepProofStage());
 
         Assert.Equal(exactPlan.MaxStep, idPlan.MaxStep);
         Assert.True(
@@ -208,11 +208,11 @@ public sealed class StrategyRegressionTests
             StrategyPlan first = TestTimeoutHelper.RunWithTimeout(
                 $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k}) first",
                 RegressionTestTimeout,
-                cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildStepProofStage());
+                cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).ExecuteStepProofStage());
             StrategyPlan second = TestTimeoutHelper.RunWithTimeout(
                 $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k}) second",
                 RegressionTestTimeout,
-                cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildStepProofStage());
+                cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).ExecuteStepProofStage());
 
             string firstRendered = StrategyTestHelpers.NormalizeRenderedSnapshot(StrategyTextRenderer.Render(first));
             string secondRendered = StrategyTestHelpers.NormalizeRenderedSnapshot(StrategyTextRenderer.Render(second));
@@ -233,12 +233,12 @@ public sealed class StrategyRegressionTests
     public void GreedyFeasible_EarlyPrune_DoesNotIncreaseOutcomeWork(int n, int m, int k)
     {
         StrategyPlan withPrune = TestTimeoutHelper.RunWithTimeout(
-            $"StrategyBuilder.BuildGreedyFeasibleStage({n}, {m}, {k}) [with prune]",
+            $"StrategyBuilder.ExecuteGreedyFeasibleStage({n}, {m}, {k}) [with prune]",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildGreedyFeasibleStage());
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).ExecuteGreedyFeasibleStage());
 
         StrategyPlan withoutPrune = TestTimeoutHelper.RunWithTimeout(
-            $"StrategyBuilder.BuildGreedyFeasibleStage({n}, {m}, {k}) [without prune]",
+            $"StrategyBuilder.ExecuteGreedyFeasibleStage({n}, {m}, {k}) [without prune]",
             RegressionTestTimeout,
             cancellationToken =>
             {
@@ -246,7 +246,7 @@ public sealed class StrategyRegressionTests
                 {
                     DisableConstructiveCandidateEarlyPruneForTesting = true
                 };
-                return builder.BuildGreedyFeasibleStage();
+                return builder.ExecuteGreedyFeasibleStage();
             });
 
         Assert.Equal(withoutPrune.MaxStep, withPrune.MaxStep);
@@ -264,18 +264,18 @@ public sealed class StrategyRegressionTests
     {
         var withGateBuilder = new StrategyBuilder(20, 3, 6);
         StrategyPlan withGate = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.BuildGreedyFeasibleStage(20, 3, 6) [display tie-break gate on]",
+            "StrategyBuilder.ExecuteGreedyFeasibleStage(20, 3, 6) [display tie-break gate on]",
             RegressionTestTimeout,
-            _ => withGateBuilder.BuildGreedyFeasibleStage());
+            _ => withGateBuilder.ExecuteGreedyFeasibleStage());
 
         var withoutGateBuilder = new StrategyBuilder(20, 3, 6)
         {
             DisableConstructiveDisplayLineTieBreakActiveGateForTesting = true
         };
         StrategyPlan withoutGate = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.BuildGreedyFeasibleStage(20, 3, 6) [display tie-break gate off]",
+            "StrategyBuilder.ExecuteGreedyFeasibleStage(20, 3, 6) [display tie-break gate off]",
             RegressionTestTimeout,
-            _ => withoutGateBuilder.BuildGreedyFeasibleStage());
+            _ => withoutGateBuilder.ExecuteGreedyFeasibleStage());
 
         Assert.True(withGate.MaxStep > 0);
         Assert.True(withoutGate.MaxStep > 0);
@@ -291,18 +291,18 @@ public sealed class StrategyRegressionTests
     {
         var defaultBuilder = new StrategyBuilder(12, 2, 6);
         StrategyPlan defaultPlan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.BuildGreedyFeasibleStage(12, 2, 6) [pairwise default gate]",
+            "StrategyBuilder.ExecuteGreedyFeasibleStage(12, 2, 6) [pairwise default gate]",
             RegressionTestTimeout,
-            _ => defaultBuilder.BuildGreedyFeasibleStage());
+            _ => defaultBuilder.ExecuteGreedyFeasibleStage());
 
         var forcedBuilder = new StrategyBuilder(12, 2, 6)
         {
             DisableConstructiveDisplayLineTieBreakActiveGateForTesting = true
         };
         StrategyPlan forcedPlan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.BuildGreedyFeasibleStage(12, 2, 6) [pairwise gate override]",
+            "StrategyBuilder.ExecuteGreedyFeasibleStage(12, 2, 6) [pairwise gate override]",
             RegressionTestTimeout,
-            _ => forcedBuilder.BuildGreedyFeasibleStage());
+            _ => forcedBuilder.ExecuteGreedyFeasibleStage());
 
         Assert.True(defaultPlan.MaxStep > 0);
         Assert.True(forcedPlan.MaxStep > 0);
@@ -327,7 +327,7 @@ public sealed class StrategyRegressionTests
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
             $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k}) [proven LB]",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildStepProofStage());
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).ExecuteStepProofStage());
 
         Assert.Equal(plan.MaxStep, plan.SearchStatistics.RootProvenLowerBound);
     }
@@ -343,7 +343,7 @@ public sealed class StrategyRegressionTests
             "StrategyBuilder.BuildDefaultPlan(17, 5, 5) [force ID, proven LB timeline]",
             RegressionTestTimeout,
             cancellationToken => new StrategyBuilder(17, 5, 5, cancellationToken, snapshot => snapshots.Add(snapshot))
-            { ForceIterativeDeepeningForTesting = true }.BuildStepProofStage());
+            { ForceIterativeDeepeningForTesting = true }.ExecuteStepProofStage());
 
         Assert.NotEmpty(snapshots);
 
@@ -374,7 +374,7 @@ public sealed class StrategyRegressionTests
             "StrategyBuilder.BuildDefaultPlan(14, 5, 5) [solve for opt]",
             RegressionTestTimeout,
             cancellationToken => new StrategyBuilder(14, 5, 5, cancellationToken)
-            { ForceIterativeDeepeningForTesting = true }.BuildStepProofStage());
+            { ForceIterativeDeepeningForTesting = true }.ExecuteStepProofStage());
         int optimum = solved.MaxStep;
 
         using var cts = new CancellationTokenSource();
@@ -390,7 +390,7 @@ public sealed class StrategyRegressionTests
                 }
             })
             { ForceIterativeDeepeningForTesting = true };
-            builder.BuildStepProofStage();
+            builder.ExecuteStepProofStage();
         });
 
         Assert.IsType<OperationCanceledException>(thrown);
@@ -418,8 +418,8 @@ public sealed class StrategyRegressionTests
             cancellationToken =>
             {
                 var builder = new StrategyBuilder(n, m, k, cancellationToken, snapshot => snapshots.Add(snapshot));
-                StrategyPlan defaultPlan = builder.BuildStepProofStage();
-                StrategyPlan compactPlan = builder.BuildEdgeCompactStage();
+                StrategyPlan defaultPlan = builder.ExecuteStepProofStage();
+                StrategyPlan compactPlan = builder.ExecuteEdgeCompactStage();
                 return (defaultPlan.MaxStep, compactPlan.SearchStatistics.RootProvenLowerBound);
             });
 
@@ -443,7 +443,7 @@ public sealed class StrategyRegressionTests
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
             "StrategyBuilder.BuildDefaultPlan(10, 3, 5)",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(10, 3, 5, cancellationToken).BuildStepProofStage());
+            cancellationToken => new StrategyBuilder(10, 3, 5, cancellationToken).ExecuteStepProofStage());
 
         SearchDiagnostics diagnostics = plan.SearchStatistics.Diagnostics;
         Assert.NotEmpty(diagnostics.RootIncumbents);
@@ -465,7 +465,7 @@ public sealed class StrategyRegressionTests
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
             "StrategyBuilder.BuildDefaultPlan(5, 3, 2) with progress",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(5, 3, 2, cancellationToken, snapshot => snapshots.Add(snapshot)).BuildStepProofStage());
+            cancellationToken => new StrategyBuilder(5, 3, 2, cancellationToken, snapshot => snapshots.Add(snapshot)).ExecuteStepProofStage());
 
         Assert.NotEmpty(snapshots);
         Assert.True(snapshots.Exists(snapshot => snapshot.RootIncumbentCount > 0));
@@ -485,7 +485,7 @@ public sealed class StrategyRegressionTests
     {
         var snapshots = new List<SearchProgressSnapshot>();
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
-            "StrategyBuilder.BuildGreedyFeasibleStage(12, 4, 4) with combined-run progress",
+            "StrategyBuilder.ExecuteGreedyFeasibleStage(12, 4, 4) with combined-run progress",
             RegressionTestTimeout,
             cancellationToken => new StrategyBuilder(
                 12,
@@ -493,7 +493,7 @@ public sealed class StrategyRegressionTests
                 4,
                 cancellationToken,
                 snapshot => snapshots.Add(snapshot),
-                reportCombinedRunProgress: true).BuildGreedyFeasibleStage());
+                reportCombinedRunProgress: true).ExecuteGreedyFeasibleStage());
 
         Assert.NotEmpty(snapshots);
         Assert.All(snapshots, snapshot => Assert.InRange(snapshot.EstimatedProgress01, 0.0, 0.10));
@@ -520,7 +520,7 @@ public sealed class StrategyRegressionTests
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
             "StrategyBuilder.BuildDefaultPlan(12, 4, 4)",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(12, 4, 4, cancellationToken).BuildStepProofStage());
+            cancellationToken => new StrategyBuilder(12, 4, 4, cancellationToken).ExecuteStepProofStage());
 
         Assert.Equal(5, plan.MaxStep);
         Assert.True(plan.SearchStatistics.SearchedStates <= 284, $"searched states regressed to {plan.SearchStatistics.SearchedStates}");
@@ -551,7 +551,7 @@ public sealed class StrategyRegressionTests
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
             "StrategyBuilder.BuildDefaultPlan(12, 3, 3)",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(12, 3, 3, cancellationToken).BuildStepProofStage());
+            cancellationToken => new StrategyBuilder(12, 3, 3, cancellationToken).ExecuteStepProofStage());
 
         foreach (StrategyNode node in StrategyTestHelpers.EnumerateDecisionNodes(plan.Root))
         {
@@ -570,7 +570,7 @@ public sealed class StrategyRegressionTests
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
             "StrategyBuilder.BuildDefaultPlan(5, 3, 2)",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(5, 3, 2, cancellationToken).BuildStepProofStage());
+            cancellationToken => new StrategyBuilder(5, 3, 2, cancellationToken).ExecuteStepProofStage());
 
         string rendered = StrategyTestHelpers.NormalizeRenderedSnapshot(StrategyTextRenderer.Render(plan));
         const string expected = """
@@ -639,7 +639,7 @@ public sealed class StrategyRegressionTests
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
             "StrategyBuilder.BuildDefaultPlan(12, 3, 3)",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(12, 3, 3, cancellationToken).BuildStepProofStage());
+            cancellationToken => new StrategyBuilder(12, 3, 3, cancellationToken).ExecuteStepProofStage());
 
         StrategyBranch branch = StrategyTestHelpers.FindBranchPath(
             plan.Root,
@@ -664,7 +664,7 @@ public sealed class StrategyRegressionTests
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
             "StrategyBuilder.BuildDefaultPlan(9, 3, 3)",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(9, 3, 3, cancellationToken).BuildStepProofStage());
+            cancellationToken => new StrategyBuilder(9, 3, 3, cancellationToken).ExecuteStepProofStage());
 
         StrategyBranch branch = StrategyTestHelpers.FindBranchPath(
             plan.Root,
@@ -689,7 +689,7 @@ public sealed class StrategyRegressionTests
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
             "StrategyBuilder.BuildDefaultPlan(11, 3, 3)",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(11, 3, 3, cancellationToken).BuildStepProofStage());
+            cancellationToken => new StrategyBuilder(11, 3, 3, cancellationToken).ExecuteStepProofStage());
 
         StrategyNode referenceTarget = StrategyTestHelpers.FollowBranchPath(
             plan.Root,
@@ -724,7 +724,7 @@ public sealed class StrategyRegressionTests
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
             "StrategyBuilder.BuildDefaultPlan(11, 3, 3)",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(11, 3, 3, cancellationToken).BuildStepProofStage());
+            cancellationToken => new StrategyBuilder(11, 3, 3, cancellationToken).ExecuteStepProofStage());
 
         var depthIndex = StrategyDepthIndex.Build(plan.Root);
 
@@ -764,7 +764,7 @@ public sealed class StrategyRegressionTests
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
             "StrategyBuilder.BuildDefaultPlan(11, 3, 3)",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(11, 3, 3, cancellationToken).BuildStepProofStage());
+            cancellationToken => new StrategyBuilder(11, 3, 3, cancellationToken).ExecuteStepProofStage());
 
         // Branch leading into the reference site and the branch leading into its target.
         StrategyBranch referenceBranch = StrategyTestHelpers.FindBranchPath(
@@ -819,7 +819,7 @@ public sealed class StrategyRegressionTests
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
             "StrategyBuilder.BuildDefaultPlan(12, 3, 3)",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(12, 3, 3, cancellationToken).BuildStepProofStage());
+            cancellationToken => new StrategyBuilder(12, 3, 3, cancellationToken).ExecuteStepProofStage());
 
         StrategyNode node = StrategyTestHelpers.FollowBranchPath(
             plan.Root,
@@ -836,7 +836,7 @@ public sealed class StrategyRegressionTests
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
             "StrategyBuilder.BuildDefaultPlan(12, 3, 3)",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(12, 3, 3, cancellationToken).BuildStepProofStage());
+            cancellationToken => new StrategyBuilder(12, 3, 3, cancellationToken).ExecuteStepProofStage());
 
         StrategyNode node = StrategyTestHelpers.FollowBranchPath(
             plan.Root,
@@ -855,7 +855,7 @@ public sealed class StrategyRegressionTests
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
             "StrategyBuilder.BuildDefaultPlan(10, 2, 2)",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(10, 2, 2, cancellationToken).BuildStepProofStage());
+            cancellationToken => new StrategyBuilder(10, 2, 2, cancellationToken).ExecuteStepProofStage());
 
         // The tie-break prefers fresh, mutually independent pairs over reusing the leader.
         StrategyNode afterFirstComparison = StrategyTestHelpers.FollowBranchPath(
@@ -876,7 +876,7 @@ public sealed class StrategyRegressionTests
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
             "StrategyBuilder.BuildDefaultPlan(12, 4, 4)",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(12, 4, 4, cancellationToken).BuildStepProofStage());
+            cancellationToken => new StrategyBuilder(12, 4, 4, cancellationToken).ExecuteStepProofStage());
 
         string rendered = StrategyTestHelpers.NormalizeRenderedSnapshot(StrategyTextRenderer.Render(plan));
         string excerpt = StrategyTestHelpers.ExtractRenderedSection(
@@ -937,12 +937,12 @@ public sealed class StrategyRegressionTests
         StrategyPlan baseline = TestTimeoutHelper.RunWithTimeout(
             $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k})",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildStepProofStage());
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).ExecuteStepProofStage());
 
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
             $"StrategyBuilder.BuildCompactPlan({n}, {m}, {k})",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildEdgeCompactStage());
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).ExecuteEdgeCompactStage());
 
         Assert.Equal(baseline.MaxStep, compact.MaxStep);
     }
@@ -962,14 +962,14 @@ public sealed class StrategyRegressionTests
         StrategyPlan baseline = TestTimeoutHelper.RunWithTimeout(
             $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k})",
             RegressionTestTimeout,
-            _ => baselineBuilder.BuildStepProofStage());
+            _ => baselineBuilder.ExecuteStepProofStage());
         int baselineSearchTreeEdges = baselineBuilder.GetStepOptimalSearchTreeEdges();
 
         var compactBuilder = new StrategyBuilder(n, m, k);
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
             $"StrategyBuilder.BuildCompactPlan({n}, {m}, {k})",
             RegressionTestTimeout,
-            _ => compactBuilder.BuildEdgeCompactStage());
+            _ => compactBuilder.ExecuteEdgeCompactStage());
         int compactSearchTreeEdges = compactBuilder.GetCompactSearchTreeEdges();
 
         Assert.Equal(baseline.MaxStep, compact.MaxStep);
@@ -987,15 +987,18 @@ public sealed class StrategyRegressionTests
     // groups it enumerated -- the dominant compact cost, mirrors CandidateGroupsEnumerated for the
     // default search) and CompactStepOptimalGroups (the step-optimal subset it actually costed). Caps
     // are the current deterministic counts; ratchet them DOWN when a compact optimization cuts work,
-    // an increase is a regression. (13,4,3 is intentionally omitted: its compact pass solves 0 states
-    // because the default tree is already minimal, so there is no work to monitor.)
+    // an increase is a regression.
     [Theory]
-    [InlineData(9, 3, 3, 78, 1219, 368)]
-    [InlineData(11, 3, 3, 131, 2847, 647)]
+    [InlineData(9, 3, 3, 77, 1214, 366)]
+    [InlineData(11, 3, 3, 129, 2762, 645)]
     [InlineData(12, 4, 4, 46, 1395, 165)]
-    [InlineData(10, 3, 4, 324, 11228, 2777)]
-    [InlineData(12, 4, 3, 43, 811, 199)]
-    [InlineData(12, 3, 4, 690, 40377, 5931)]
+    [InlineData(10, 3, 4, 321, 11055, 2772)]
+    [InlineData(12, 4, 3, 36, 639, 175)]
+    [InlineData(12, 3, 3, 8, 145, 9)]
+    [InlineData(8, 4, 2, 2, 5, 5)]
+    [InlineData(10, 3, 5, 5, 69, 5)]
+    [InlineData(13, 4, 3, 7, 118, 16)]
+    [InlineData(12, 3, 4, 677, 39691, 5770)]
     [InlineData(10, 2, 4, 4118, 120336, 29291)]
     public void Compact_WorkCountersStayWithinBaseline(
         int n, int m, int k, int statesSolvedCap, int groupsEnumeratedCap, int stepOptimalGroupsCap)
@@ -1003,7 +1006,7 @@ public sealed class StrategyRegressionTests
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
             $"StrategyBuilder.BuildCompactPlan({n}, {m}, {k})",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildEdgeCompactStage());
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).ExecuteEdgeCompactStage());
 
         Assert.True(
             compact.SearchStatistics.CompactStatesSolved <= statesSolvedCap,
@@ -1027,12 +1030,12 @@ public sealed class StrategyRegressionTests
         StrategyPlan baseline = TestTimeoutHelper.RunWithTimeout(
             $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k})",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildStepProofStage());
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).ExecuteStepProofStage());
 
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
             $"StrategyBuilder.BuildCompactPlan({n}, {m}, {k})",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildEdgeCompactStage());
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).ExecuteEdgeCompactStage());
 
         Assert.Equal(baseline.MaxStep, compact.MaxStep);
         Assert.True(
@@ -1049,12 +1052,12 @@ public sealed class StrategyRegressionTests
         StrategyPlan baseline = TestTimeoutHelper.RunWithTimeout(
             "StrategyBuilder.BuildDefaultPlan(12, 4, 4)",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(12, 4, 4, cancellationToken).BuildStepProofStage());
+            cancellationToken => new StrategyBuilder(12, 4, 4, cancellationToken).ExecuteStepProofStage());
 
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
             "StrategyBuilder.BuildCompactPlan(12, 4, 4)",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(12, 4, 4, cancellationToken).BuildEdgeCompactStage());
+            cancellationToken => new StrategyBuilder(12, 4, 4, cancellationToken).ExecuteEdgeCompactStage());
 
         Assert.Equal(baseline.MaxStep, compact.MaxStep);
         Assert.Equal(51, compact.TotalBranchEdges);
@@ -1068,23 +1071,27 @@ public sealed class StrategyRegressionTests
     // changes.
     [Theory]
     [InlineData(9, 3, 3, 159)]
-    [InlineData(11, 3, 3, 540)]
+    [InlineData(11, 3, 3, 511)]
     [InlineData(12, 4, 4, 471)]
-    [InlineData(10, 3, 4, 1088)]
-    [InlineData(12, 4, 3, 131)]
+    [InlineData(10, 3, 4, 1081)]
+    [InlineData(12, 4, 3, 130)]
     [InlineData(12, 3, 3, 538)]
     // These three shapes are ties/anomalies where the compact candidate does not strictly beat
     // default. They formerly measured the discarded default-fallback plan's tiny counts; now that
     // BuildCompactPlan returns the genuine compact candidate, the caps reflect the real compact pass.
     [InlineData(8, 4, 2, 7)]
     [InlineData(10, 3, 5, 623)]
-    [InlineData(13, 4, 3, 142)]
+    [InlineData(13, 4, 3, 138)]
+    // These two rows were previously only covered by compact work counters; keep the main compact
+    // searched-state proxy pinned as well because they are among the heaviest compact-only shapes.
+    [InlineData(12, 3, 4, 5962)]
+    [InlineData(10, 2, 4, 17104)]
     public void Compact_SearchedStateCountStaysWithinBaseline(int n, int m, int k, int searchedStateCap)
     {
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
             $"StrategyBuilder.BuildCompactPlan({n}, {m}, {k})",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildEdgeCompactStage());
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).ExecuteEdgeCompactStage());
 
         Assert.True(
             compact.SearchStatistics.SearchedStates <= searchedStateCap,
@@ -1101,16 +1108,16 @@ public sealed class StrategyRegressionTests
     [InlineData(9, 3, 3, 95)]
     [InlineData(11, 3, 3, 267)]
     [InlineData(12, 3, 3, 486)]
-    [InlineData(12, 4, 4, 242)]
-    [InlineData(12, 4, 3, 63)]
+    [InlineData(12, 4, 4, 210)]
+    [InlineData(12, 4, 3, 48)]
     [InlineData(10, 3, 4, 409)]
     [InlineData(10, 3, 5, 323)]
     [InlineData(12, 4, 5, 710)]
     [InlineData(16, 4, 4, 5650)]
-    [InlineData(20, 5, 4, 3587)]
-    [InlineData(13, 4, 3, 97)]
+    [InlineData(20, 5, 4, 3272)]
+    [InlineData(13, 4, 3, 92)]
     [InlineData(8, 4, 2, 3)]
-    [InlineData(9, 4, 3, 16)]
+    [InlineData(9, 4, 3, 13)]
     [InlineData(8, 3, 4, 53)]
     [InlineData(8, 2, 3, 317)]
     [InlineData(9, 3, 4, 173)]
@@ -1118,13 +1125,13 @@ public sealed class StrategyRegressionTests
     [InlineData(5, 3, 2, 4)]
     [InlineData(6, 2, 2, 21)]
     [InlineData(10, 2, 2, 106)]
-    [InlineData(25, 5, 3, 247)]
+    [InlineData(25, 5, 3, 173)]
     public void Default_SearchedStateCountStaysWithinBaseline(int n, int m, int k, int searchedStateCap)
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
             $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k})",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildStepProofStage());
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).ExecuteStepProofStage());
 
         Assert.True(
             plan.SearchStatistics.SearchedStates <= searchedStateCap,
@@ -1144,32 +1151,33 @@ public sealed class StrategyRegressionTests
     // though the search results (and the snapshot/output-state monitors) are byte-identical; the
     // net effect on heavy cases is a large reduction in both outcomes and wall-clock time.
     [Theory]
-    [InlineData(9, 3, 3, 991)]
-    [InlineData(11, 3, 3, 3532)]
-    [InlineData(12, 3, 3, 7303)]
-    [InlineData(12, 4, 4, 9809)]
-    [InlineData(12, 4, 5, 32512)]
+    [InlineData(9, 3, 3, 845)]
+    [InlineData(11, 3, 3, 3373)]
+    [InlineData(12, 3, 3, 7118)]
+    [InlineData(12, 4, 4, 3052)]
+    [InlineData(12, 4, 5, 22593)]
     [InlineData(16, 4, 4, 328532)]
-    [InlineData(20, 5, 4, 304457)]
-    [InlineData(12, 4, 3, 492)]
+    [InlineData(20, 5, 4, 149648)]
+    [InlineData(12, 4, 3, 207)]
     [InlineData(10, 3, 4, 6360)]
-    [InlineData(10, 3, 5, 5521)]
-    [InlineData(13, 4, 3, 1346)]
+    [InlineData(10, 3, 5, 5269)]
+    [InlineData(13, 4, 3, 506)]
     [InlineData(8, 4, 2, 4)]
-    [InlineData(9, 4, 3, 93)]
-    [InlineData(8, 3, 4, 591)]
-    [InlineData(9, 3, 4, 2759)]
+    [InlineData(9, 4, 3, 36)]
+    [InlineData(8, 3, 4, 457)]
+    [InlineData(8, 2, 3, 3445)]
+    [InlineData(9, 3, 4, 2533)]
     [InlineData(10, 3, 6, 6360)]
-    [InlineData(5, 3, 2, 12)]
+    [InlineData(5, 3, 2, 8)]
     [InlineData(6, 2, 2, 72)]
     [InlineData(10, 2, 2, 740)]
-    [InlineData(25, 5, 3, 759)]
+    [InlineData(25, 5, 3, 469)]
     public void Default_OutcomesConstructedStaysWithinBaseline(int n, int m, int k, int outcomesCap)
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
             $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k})",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildStepProofStage());
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).ExecuteStepProofStage());
 
         Assert.True(
             plan.SearchStatistics.OutcomesConstructed <= outcomesCap,
@@ -1183,23 +1191,25 @@ public sealed class StrategyRegressionTests
     // the current deterministic counts -- ratchet them down when an optimization legitimately
     // cuts outcome construction.
     [Theory]
-    [InlineData(9, 3, 3, 5473)]
-    [InlineData(11, 3, 3, 16220)]
-    [InlineData(12, 4, 4, 20854)]
-    [InlineData(10, 3, 4, 47634)]
-    [InlineData(12, 4, 3, 6321)]
-    [InlineData(12, 3, 3, 8550)]
+    [InlineData(9, 3, 3, 5047)]
+    [InlineData(11, 3, 3, 14860)]
+    [InlineData(12, 4, 4, 16867)]
+    [InlineData(10, 3, 4, 45433)]
+    [InlineData(12, 4, 3, 3955)]
+    [InlineData(12, 3, 3, 8346)]
     // Ties/anomalies (see Compact_SearchedStateCountStaysWithinBaseline): now measure the genuine
     // compact candidate instead of the discarded default fallback.
-    [InlineData(8, 4, 2, 30)]
-    [InlineData(10, 3, 5, 9835)]
-    [InlineData(13, 4, 3, 2385)]
+    [InlineData(8, 4, 2, 26)]
+    [InlineData(10, 3, 5, 9656)]
+    [InlineData(13, 4, 3, 1456)]
+    [InlineData(12, 3, 4, 233774)]
+    [InlineData(10, 2, 4, 471864)]
     public void Compact_OutcomesConstructedStaysWithinBaseline(int n, int m, int k, int outcomesCap)
     {
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
             $"StrategyBuilder.BuildCompactPlan({n}, {m}, {k})",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildEdgeCompactStage());
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).ExecuteEdgeCompactStage());
 
         Assert.True(
             compact.SearchStatistics.OutcomesConstructed <= outcomesCap,
@@ -1216,27 +1226,33 @@ public sealed class StrategyRegressionTests
     // optimizations: a correct orbit detector must ratchet these caps DOWN. Caps pin the current
     // deterministic counts; an increase is a regression, a deliberate decrease is an improvement.
     [Theory]
-    [InlineData(9, 3, 3, 104)]
-    [InlineData(11, 3, 3, 276)]
-    [InlineData(12, 3, 3, 550)]
-    [InlineData(12, 4, 4, 2232)]
-    [InlineData(12, 4, 3, 111)]
+    [InlineData(9, 3, 3, 87)]
+    [InlineData(11, 3, 3, 250)]
+    [InlineData(12, 3, 3, 532)]
+    [InlineData(12, 4, 4, 844)]
+    [InlineData(12, 4, 3, 73)]
+    [InlineData(12, 4, 5, 5422)]
     [InlineData(10, 3, 4, 495)]
-    [InlineData(10, 3, 5, 360)]
-    [InlineData(13, 4, 3, 329)]
+    [InlineData(10, 3, 5, 352)]
+    [InlineData(13, 4, 3, 133)]
+    [InlineData(16, 4, 4, 54676)]
+    [InlineData(20, 5, 4, 55716)]
     [InlineData(8, 4, 2, 0)]
-    [InlineData(9, 4, 3, 29)]
-    [InlineData(8, 3, 4, 73)]
-    [InlineData(9, 3, 4, 254)]
+    [InlineData(9, 4, 3, 18)]
+    [InlineData(8, 3, 4, 58)]
+    [InlineData(8, 2, 3, 14)]
+    [InlineData(9, 3, 4, 245)]
     [InlineData(10, 3, 6, 495)]
-    [InlineData(5, 3, 2, 3)]
+    [InlineData(5, 3, 2, 2)]
+    [InlineData(6, 2, 2, 0)]
     [InlineData(10, 2, 2, 2)]
+    [InlineData(25, 5, 3, 7)]
     public void Default_DuplicateOutcomeSkipsStaysWithinBaseline(int n, int m, int k, int duplicateSkipCap)
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
             $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k})",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildStepProofStage());
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).ExecuteStepProofStage());
 
         Assert.True(
             plan.SearchStatistics.Diagnostics.DuplicateOutcomeSkips <= duplicateSkipCap,
@@ -1249,12 +1265,12 @@ public sealed class StrategyRegressionTests
         StrategyPlan reduced = TestTimeoutHelper.RunWithTimeout(
             "StrategyBuilder.BuildDefaultPlan(10, 4, 2)",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(10, 4, 2, cancellationToken).BuildStepProofStage());
+            cancellationToken => new StrategyBuilder(10, 4, 2, cancellationToken).ExecuteStepProofStage());
 
         StrategyPlan dualInput = TestTimeoutHelper.RunWithTimeout(
             "StrategyBuilder.BuildDefaultPlan(10, 4, 8)",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(10, 4, 8, cancellationToken).BuildStepProofStage());
+            cancellationToken => new StrategyBuilder(10, 4, 8, cancellationToken).ExecuteStepProofStage());
 
         Assert.Equal(2, dualInput.K);
         Assert.Equal(reduced.MaxStep, dualInput.MaxStep);
@@ -1271,33 +1287,33 @@ public sealed class StrategyRegressionTests
     // Caps pin the current deterministic counts; an increase is a regression and a deliberate
     // decrease (a stronger symmetry collapse) is an improvement -- ratchet them down when one lands.
     [Theory]
-    [InlineData(9, 3, 3, 1286)]
-    [InlineData(11, 3, 3, 5114)]
-    [InlineData(12, 3, 3, 10909)]
-    [InlineData(12, 4, 4, 9776)]
-    [InlineData(12, 4, 5, 33855)]
+    [InlineData(9, 3, 3, 1236)]
+    [InlineData(11, 3, 3, 5053)]
+    [InlineData(12, 3, 3, 10862)]
+    [InlineData(12, 4, 4, 4636)]
+    [InlineData(12, 4, 5, 28811)]
     [InlineData(16, 4, 4, 464319)]
-    [InlineData(20, 5, 4, 379108)]
-    [InlineData(12, 4, 3, 544)]
+    [InlineData(20, 5, 4, 266517)]
+    [InlineData(12, 4, 3, 463)]
     [InlineData(10, 3, 4, 7882)]
-    [InlineData(10, 3, 5, 5634)]
-    [InlineData(13, 4, 3, 1542)]
+    [InlineData(10, 3, 5, 5593)]
+    [InlineData(13, 4, 3, 871)]
     [InlineData(8, 4, 2, 5)]
-    [InlineData(9, 4, 3, 68)]
-    [InlineData(8, 3, 4, 546)]
+    [InlineData(9, 4, 3, 44)]
+    [InlineData(8, 3, 4, 484)]
     [InlineData(8, 2, 3, 4232)]
-    [InlineData(9, 3, 4, 3008)]
+    [InlineData(9, 3, 4, 2952)]
     [InlineData(10, 3, 6, 7882)]
     [InlineData(5, 3, 2, 4)]
     [InlineData(6, 2, 2, 85)]
     [InlineData(10, 2, 2, 1115)]
-    [InlineData(25, 5, 3, 7261)]
+    [InlineData(25, 5, 3, 7254)]
     public void Default_CandidateGroupsEnumeratedStaysWithinBaseline(int n, int m, int k, int candidateGroupsCap)
     {
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
             $"StrategyBuilder.BuildDefaultPlan({n}, {m}, {k})",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildStepProofStage());
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).ExecuteStepProofStage());
 
         Assert.True(
             plan.SearchStatistics.CandidateGroupsEnumerated <= candidateGroupsCap,
@@ -1309,23 +1325,25 @@ public sealed class StrategyRegressionTests
     // this is the primary symmetry-collapse target for compact search. Caps pin the current
     // deterministic counts -- ratchet them down when an orbit/block-symmetry optimization lands.
     [Theory]
-    [InlineData(9, 3, 3, 800)]
-    [InlineData(11, 3, 3, 1743)]
-    [InlineData(12, 4, 4, 5538)]
-    [InlineData(10, 3, 4, 5242)]
-    [InlineData(12, 4, 3, 2566)]
-    [InlineData(12, 3, 3, 622)]
+    [InlineData(9, 3, 3, 711)]
+    [InlineData(11, 3, 3, 1569)]
+    [InlineData(12, 4, 4, 4687)]
+    [InlineData(10, 3, 4, 4821)]
+    [InlineData(12, 4, 3, 1605)]
+    [InlineData(12, 3, 3, 599)]
     // Ties/anomalies (see Compact_SearchedStateCountStaysWithinBaseline): now measure the genuine
     // compact candidate instead of the discarded default fallback.
     [InlineData(8, 4, 2, 12)]
-    [InlineData(10, 3, 5, 625)]
-    [InlineData(13, 4, 3, 563)]
+    [InlineData(10, 3, 5, 622)]
+    [InlineData(13, 4, 3, 367)]
+    [InlineData(12, 3, 4, 18563)]
+    [InlineData(10, 2, 4, 469)]
     public void Compact_DuplicateOutcomeSkipsStaysWithinBaseline(int n, int m, int k, int duplicateSkipCap)
     {
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
             $"StrategyBuilder.BuildCompactPlan({n}, {m}, {k})",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).BuildEdgeCompactStage());
+            cancellationToken => new StrategyBuilder(n, m, k, cancellationToken).ExecuteEdgeCompactStage());
 
         Assert.True(
             compact.SearchStatistics.Diagnostics.DuplicateOutcomeSkips <= duplicateSkipCap,
@@ -1346,7 +1364,7 @@ public sealed class StrategyRegressionTests
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
             "StrategyBuilder.BuildDefaultPlan(25, 6, 3)",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(25, 6, 3, cancellationToken).BuildStepProofStage());
+            cancellationToken => new StrategyBuilder(25, 6, 3, cancellationToken).ExecuteStepProofStage());
 
         StrategyNode s5 = StrategyTestHelpers.FollowBranchPath(
             plan.Root,
@@ -1391,7 +1409,7 @@ public sealed class StrategyRegressionTests
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
             "StrategyBuilder.BuildDefaultPlan(25, 6, 3)",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(25, 6, 3, cancellationToken).BuildStepProofStage());
+            cancellationToken => new StrategyBuilder(25, 6, 3, cancellationToken).ExecuteStepProofStage());
 
         StrategyNode s5 = StrategyTestHelpers.FollowBranchPath(
             plan.Root,
@@ -1425,7 +1443,7 @@ public sealed class StrategyRegressionTests
         StrategyPlan plan = TestTimeoutHelper.RunWithTimeout(
             "StrategyBuilder.BuildDefaultPlan(25, 6, 3)",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(25, 6, 3, cancellationToken).BuildStepProofStage());
+            cancellationToken => new StrategyBuilder(25, 6, 3, cancellationToken).ExecuteStepProofStage());
 
         StrategyNode s5 = StrategyTestHelpers.FollowBranchPath(
             plan.Root,
@@ -1460,7 +1478,7 @@ public sealed class StrategyRegressionTests
         StrategyPlan compact = TestTimeoutHelper.RunWithTimeout(
             "StrategyBuilder.BuildCompactPlan(12, 4, 3)",
             RegressionTestTimeout,
-            cancellationToken => new StrategyBuilder(12, 4, 3, cancellationToken).BuildEdgeCompactStage());
+            cancellationToken => new StrategyBuilder(12, 4, 3, cancellationToken).ExecuteEdgeCompactStage());
 
         StrategyNode s4 = StrategyTestHelpers.FollowBranchPath(
             compact.Root,

@@ -102,13 +102,13 @@ partial class MainForm : Form
     private StrategyPlan? _feasiblePlan;
     private StrategyPlan? _defaultPlan;
     private StrategyPlan? _compactPlan;
-    private bool _exactImproved;
     private bool _compactImproved;
     private bool _feasibleMode;
     private Stopwatch? _runStopwatch;
     private CancellationTokenSource? _runCancellationSource;
     private CancellationTokenSource? _stopEscalationSource;
     private StrategyBuilder? _activeBuilder;
+    private static readonly DisplayRenderEngine DisplayEngine = new();
     private readonly Dictionary<string, TreeNode> _stateNodesByKey = new();
     private readonly Dictionary<TreeNode, string> _referenceTargets = new();
     private readonly Stack<TreeNode> _navigationHistory = new();

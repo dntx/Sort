@@ -26,7 +26,8 @@ partial class MainForm
     }
 
     private static bool IsEdgeCompactStageName(string stageName)
-        => stageName.StartsWith("edge-compact@", StringComparison.Ordinal);
+        => stageName.StartsWith(StageNames.ExactEdgeCompactPrefix, StringComparison.Ordinal)
+            || stageName.StartsWith(StageNames.GreedyEdgeCompactPrefix, StringComparison.Ordinal);
 
     private TreeNode CreatePlanTreeRoot(string stageName, StrategyPlan plan, string scope, TimeSpan elapsed)
     {
@@ -84,7 +85,7 @@ partial class MainForm
     private TreeNode CreateDecisionNode(StrategyNode node, int k, string scope, LazyDepthIndex depthIndex)
     {
         // Keep initial rendering cheap: avoid full depth-index construction here.
-        string headerText = $"S{node.StateId} [step {node.Step}] sort({StrategyTextRenderer.FormatSet(node.Group)})";
+        string headerText = $"S{node.StateId} [step {node.Step}] sort({DisplayEngine.FormatSet(node.Group)})";
         if (node.FinalChoice is null)
             headerText += node.Branches.Count == 1 ? " (1 edge)" : $" ({node.Branches.Count} edges)";
 
@@ -171,46 +172,46 @@ partial class MainForm
         {
             // The count and its formula live in the branch header (×N = formula), so this child row
             // only carries the pattern/legend. The hover Tag still exposes the full two-line detail.
-            branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatEquivalentPatternLine(branch.EquivalentOrders))
+            branchNode.Nodes.Add(new TreeNode(DisplayEngine.FormatEquivalentPatternLine(branch.EquivalentOrders))
             {
                 ForeColor = _palette.MutedForeColor,
-                Tag = StrategyTextRenderer.FormatEquivalentDetails(branch.EquivalentOrders),
+                Tag = DisplayEngine.FormatEquivalentDetails(branch.EquivalentOrders),
             });
         }
 
         if (branch.Effect.NewlyGuaranteedTop.Count > 0)
         {
-            branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatInEntry(branch.Effect.NewlyGuaranteedTop))
+            branchNode.Nodes.Add(new TreeNode(DisplayEngine.FormatInEntry(branch.Effect.NewlyGuaranteedTop))
             {
                 ForeColor = _palette.InColor,
-                Tag = $"Newly confirmed in top-k: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.NewlyGuaranteedTop)}",
+                Tag = $"Newly confirmed in top-k: {DisplayEngine.FormatOptionalSet(branch.Effect.NewlyGuaranteedTop)}",
             });
         }
 
         if (branch.Effect.NewlyExcluded.Count > 0)
         {
-            branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatOutEntry(branch.Effect.NewlyExcluded))
+            branchNode.Nodes.Add(new TreeNode(DisplayEngine.FormatOutEntry(branch.Effect.NewlyExcluded))
             {
                 ForeColor = _palette.OutColor,
-                Tag = $"Newly excluded from top-k: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.NewlyExcluded)}",
+                Tag = $"Newly excluded from top-k: {DisplayEngine.FormatOptionalSet(branch.Effect.NewlyExcluded)}",
             });
         }
 
         if (branch.Effect.FixedCandidates.Count > 0)
         {
-            branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatFixedEntry(branch.Effect.FixedCandidates))
+            branchNode.Nodes.Add(new TreeNode(DisplayEngine.FormatFixedEntry(branch.Effect.FixedCandidates))
             {
                 ForeColor = _palette.FixedColor,
-                Tag = $"Current fixed top-k candidates: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.FixedCandidates)}",
+                Tag = $"Current fixed top-k candidates: {DisplayEngine.FormatOptionalSet(branch.Effect.FixedCandidates)}",
             });
         }
 
         if (branch.Effect.PossibleCandidates.Count > 0)
         {
-            branchNode.Nodes.Add(new TreeNode(StrategyTextRenderer.FormatPossibleEntry(branch.Effect.PossibleCandidates))
+            branchNode.Nodes.Add(new TreeNode(DisplayEngine.FormatPossibleEntry(branch.Effect.PossibleCandidates))
             {
                 ForeColor = _palette.PossibleColor,
-                Tag = $"Current possible top-k candidates: {StrategyTextRenderer.FormatOptionalSet(branch.Effect.PossibleCandidates)}",
+                Tag = $"Current possible top-k candidates: {DisplayEngine.FormatOptionalSet(branch.Effect.PossibleCandidates)}",
             });
         }
 
@@ -339,10 +340,10 @@ partial class MainForm
 
     private TreeNode CreateTerminalNode(StrategyNode node, int k, string scope)
     {
-        var treeNode = new TreeNode($"S{node.StateId}: top {k} = ({StrategyTextRenderer.FormatSet(node.TopSet)})")
+        var treeNode = new TreeNode($"S{node.StateId}: top {k} = ({DisplayEngine.FormatSet(node.TopSet)})")
         {
             ForeColor = _palette.ResultColor,
-            Tag = $"Result state S{node.StateId}\nTop {k} = ({StrategyTextRenderer.FormatSet(node.TopSet)})",
+            Tag = $"Result state S{node.StateId}\nTop {k} = ({DisplayEngine.FormatSet(node.TopSet)})",
         };
         _stateNodesByKey.TryAdd($"{scope}:{node.StateId}", treeNode);
         return treeNode;
@@ -351,9 +352,9 @@ partial class MainForm
     private TreeNode CreateReferenceNode(StrategyNode node, string scope, LazyDepthIndex depthIndex)
     {
         string label = depthIndex.Value.TryGetReferenceRemaining(node.StateId, out int remaining)
-            ? $"->S{node.StateId} {StrategyTextRenderer.FormatRemainingSteps(remaining)}"
+            ? $"->S{node.StateId} {DisplayEngine.FormatRemainingSteps(remaining)}"
             : $"->S{node.StateId}";
-        label += StrategyTextRenderer.FormatRelabeling(node.ReferenceRelabeling);
+        label += DisplayEngine.FormatRelabeling(node.ReferenceRelabeling);
 
         string tag = $"Reference to previously expanded state S{node.StateId}";
         if (node.ReferenceRelabeling.Count > 0)

@@ -6,8 +6,14 @@
 
 - 无命令行参数且无 stdin 重定向时启动桌面 UI。
 - 模式与 CLI 一致：
-  - `exact`：`step-proof → edge-compact@S`
-  - `greedy`：`greedy-feasible → (optional) greedy-tighten → proof-tighten≤N (0..n 次) → edge-compact@S`
+  - `exact`：`step-proof → exact-edge-compact@S`
+  - `greedy`：`greedy-feasible → (optional) greedy-tighten → proof-tighten≤N (0..n 次) → greedy-edge-compact@S`
+
+实现归属：
+
+- UI 与 CLI 共用 `PublicPipelineOrchestrator` 的阶段编排与阶段名契约。
+- 阶段名的单一事实来源在 `StageNames.cs`：固定阶段名用常量，带预算/步数的阶段名用统一格式化规则生成。
+- UI 侧的 `MainForm.Run.cs` 只负责线程切换、占位/树更新与交互，不再维护独立的并行编排路径。
 
 ## 2. 阶段时间线与占位
 
@@ -17,7 +23,8 @@ UI 使用与 CLI 相同的阶段名展示进度：
 - `greedy-feasible`
 - `greedy-tighten`（可选，root-probe 通过才运行）
 - `proof-tighten≤N`
-- `edge-compact@S`
+- `exact-edge-compact@S`（exact 终段）
+- `greedy-edge-compact@S`（greedy 终段）
 
 当阶段尚在运行时，树视图会显示 `computing...` 占位；阶段完成后替换为真实结果。greedy 流水线可能产生多个 tightening 阶段，按完成顺序追加。
 
@@ -56,7 +63,7 @@ UI 使用与 CLI 相同的阶段名展示进度：
 - 系统周期性地轮询进度（间隔 100ms），确保在长时间运行的阶段（如 feasible 阶段）中持续显示更新
 - 在大规模递归搜索期间（BuildState 递推），进度报告在每个递归深度被触发，而不只在阶段边界被触发
 
-**可视化改进** (2026-07):
+**可视化改进**:
 - 通过在递归内部报告进度，消除了"进度跳跃后停滞"的问题
 - feasible 阶段现在从 0% 平滑增长到 10%，而不是跳到 4-7% 后冻结
 - 保守的剩余时间估计（最小 500ms）确保进度条永不完全停滞

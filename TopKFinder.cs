@@ -214,7 +214,7 @@ partial class StrategyBuilder
         return scaledCap >= int.MaxValue ? int.MaxValue : (int)scaledCap;
     }
 
-    public StrategyPlan BuildStepProofStage()
+    public StrategyPlan ExecuteStepProofStage()
     {
         _progressScope = _reportCombinedRunProgress
             ? ProgressScope.DefaultInCombinedRun
@@ -222,28 +222,21 @@ partial class StrategyBuilder
         return BuildPlan(useCompactSelection: false);
     }
 
+    // Exact-stage entrypoint: materialize display/search artifacts in one solver session.
+    public (SearchTree SearchTree, DisplayTree DisplayTree) ProjectDisplayAndSearchTrees()
+        => BuildExactProjectionFromCurrentSession();
+
+    // Search-model entrypoint used by public callers. It shares the same exact solver caches
+    // as the display entrypoint while staying independent from display materialization.
+    public SearchStrategy ProjectSearchTree()
+        => ProjectSearchTreeFromStandaloneExactSession();
+
     public StrategyPlan RunExactPipeline(
         Action<StageResult>? onStageCompleted = null,
         Action<string>? onStageStart = null)
-    {
-        const string stepStageName = "step-proof";
-        onStageStart?.Invoke(stepStageName);
-        var stepStopwatch = Stopwatch.StartNew();
-        StrategyPlan stepPlan = BuildStepProofStage();
-        stepStopwatch.Stop();
-        onStageCompleted?.Invoke(new StageResult(stepStageName, stepPlan, stepStopwatch.Elapsed, StageOutcome.Completed));
+        => PublicPipelineOrchestrator.RunExactPipeline(this, onStageCompleted, onStageStart);
 
-        string edgeStageName = FormatEdgeCompactStageName(stepPlan.MaxStep);
-        onStageStart?.Invoke(edgeStageName);
-        var edgeStopwatch = Stopwatch.StartNew();
-        StrategyPlan edgePlan = BuildEdgeCompactStage();
-        edgeStopwatch.Stop();
-        onStageCompleted?.Invoke(new StageResult(edgeStageName, edgePlan, edgeStopwatch.Elapsed, StageOutcome.Completed));
-
-        return edgePlan;
-    }
-
-    public StrategyPlan BuildEdgeCompactStage()
+    public StrategyPlan ExecuteEdgeCompactStage()
     {
         // Returns the raw compact candidate: the compact DP keeps the optimal worst-case step count
         // (so MaxStep always matches default) and, among equally-optimal groups, minimizes a per-state
@@ -259,6 +252,151 @@ partial class StrategyBuilder
         return BuildPlan(useCompactSelection: true, useFeasibleBudget: false);
     }
 
+    // Mainline-A seam: build exact display + search artifacts inside one active solver session
+    // so both materializers consume the same phase-1 caches without nested entrypoint hand-offs.
+    private (SearchTree SearchTree, DisplayTree DisplayTree) BuildExactProjectionFromCurrentSession()
+    {
+        ComparisonState.SetThreadCancellationToken(_cancellationToken);
+        try
+        {
+            _progressScope = _reportCombinedRunProgress
+                ? ProgressScope.DefaultInCombinedRun
+                : ProgressScope.DefaultStandalone;
+
+            DisplayTree displayTree = BuildPlanWithinSession(
+                useCompactSelection: false,
+                useFeasibleBudget: false,
+                initializeSession: true);
+            SearchTree searchTree = ProjectSearchTreeFromCurrentExactSession();
+            return (searchTree, displayTree);
+        }
+        finally
+        {
+            ComparisonState.SetThreadCancellationToken(default);
+        }
+    }
+
+    // Standalone search-only exact entry: starts its own solver session and materializes
+    // the search tree from that session's exact caches.
+    private SearchTree ProjectSearchTreeFromStandaloneExactSession()
+    {
+        ComparisonState.SetThreadCancellationToken(_cancellationToken);
+        try
+        {
+            InitializeExactSolverSession(useFeasibleBudget: false);
+            return ProjectSearchTreeFromCurrentExactSession();
+        }
+        finally
+        {
+            ComparisonState.SetThreadCancellationToken(default);
+        }
+    }
+
+    // Current-session search materialization path shared by layered exact projection
+    // and standalone search-only exact entry after session initialization.
+    private SearchTree ProjectSearchTreeFromCurrentExactSession()
+    {
+        _useCompact = false;
+        return ProjectSearchTreeFromCurrentExactCaches();
+    }
+
+    // Solver-sourced search builder: phase-1 group selection comes from exact caches,
+    // and the search tree is materialized directly from solver state recursion.
+    private SearchTree ProjectSearchTreeFromCurrentExactCaches()
+    {
+        var context = new SearchMaterializationContext(
+            new Dictionary<IntSequenceKey, ExpandedStateSnapshot>(),
+            new HashSet<IntSequenceKey>());
+        SearchNode root = BuildSearchState(new ComparisonState(_n), 0, _k, 1, context);
+        return new SearchStrategy(
+            _n,
+            _m,
+            _requestedK,
+            _k,
+            root);
+    }
+
+    private SearchNode BuildSearchState(
+        ComparisonState state,
+        ulong fixedTopMask,
+        int remainingSlots,
+        int step,
+        SearchMaterializationContext context)
+    {
+        ThrowIfCancellationRequested();
+        NormalizeState(state, ref fixedTopMask, ref remainingSlots);
+
+        IntSequenceKey expansionKey = GetDisplayStateKey(state, fixedTopMask);
+        int stateId = GetStateId(expansionKey);
+
+        if (remainingSlots == 0)
+            return SearchNode.Terminal(stateId, ComparisonState.MaskToOrderedList(fixedTopMask));
+
+        if (TryGetDeterminedTopSet(state, remainingSlots, out ulong determinedTopMask))
+            return SearchNode.Terminal(stateId, ComparisonState.MaskToOrderedList(fixedTopMask | determinedTopMask));
+
+        if (state.ActiveCount <= remainingSlots)
+            return SearchNode.Terminal(stateId, ComparisonState.MaskToOrderedList(fixedTopMask | state.ActiveMask));
+
+        var possibleCandidates = GetPossibleCandidates(state);
+        if (state.ActiveCount <= _m)
+            return SearchNode.Decision(stateId, step, possibleCandidates, Array.Empty<SearchBranch>());
+
+        if (context.ExpandedStates.TryGetValue(expansionKey, out ExpandedStateSnapshot snapshot))
+        {
+            IReadOnlyList<ItemRelabel>? relabeling =
+                snapshot.State.TryBuildDisplayRelabeling(snapshot.FixedTopMask, state, fixedTopMask);
+            return SearchNode.Reference(stateId, relabeling);
+        }
+
+        bool trackingExpansionPath = TryTrackExpandedState(
+            expansionKey,
+            state,
+            fixedTopMask,
+            context.ExpandedStates,
+            context.ExpansionPath,
+            "Search materialization detected a recursive display-state expansion path.");
+
+        try
+        {
+            SelectedComparisonGroup chosenGroup = ChooseGroup(state, fixedTopMask, remainingSlots, default);
+            IReadOnlyList<SearchBranch> branches = BuildSearchBranches(
+                state,
+                fixedTopMask,
+                remainingSlots,
+                chosenGroup,
+                step + 1,
+                context);
+            return SearchNode.Decision(stateId, step, chosenGroup.Group, branches);
+        }
+        finally
+        {
+            if (trackingExpansionPath)
+                context.ExpansionPath!.Remove(expansionKey);
+        }
+    }
+
+    private IReadOnlyList<SearchBranch> BuildSearchBranches(
+        ComparisonState state,
+        ulong fixedTopMask,
+        int remainingSlots,
+        SelectedComparisonGroup chosenGroup,
+        int nextStep,
+        SearchMaterializationContext context)
+    {
+        return BuildSearchTransitionSpecs(state, fixedTopMask, remainingSlots, chosenGroup)
+            .Select(spec => new SearchBranch(
+                spec.OrderText,
+                spec.Effect,
+                BuildSearchState(
+                    spec.NextState,
+                    spec.NextFixedTopMask,
+                    spec.NextRemainingSlots,
+                    nextStep,
+                        context)))
+            .ToList();
+    }
+
     // Greedy mode: proof tightening followed by a single edge-compaction pass.
     //
     //   Phase A (ProofTighten): starting from the feasible upper bound U (the greedy step plan's MaxStep,
@@ -272,13 +410,18 @@ partial class StrategyBuilder
     //     final edge-minimized tree.
     //
     // Fast and interruptible, not proven optimal. onStageCompleted, when supplied, is invoked synchronously on
-    // this thread each time a downstream stage becomes available: once per successful tightening ceiling
-    // ("proof-tighten≤N", carrying the smaller plan), once for the terminal ceiling that stops tightening
+    // this thread each time a downstream stage becomes available: once per successful proof-tighten stage
+    // (carrying the smaller plan), once for the terminal ceiling that stops tightening
     // (a no-solution/incomplete stage whose plan is null), and finally once for the edge-compaction pass
-    // ("edge-compact@S"). This drives an anytime UI/CLI that surfaces the full progression as it is found; a
+    // ("greedy-edge-compact@S"). This drives an anytime UI/CLI that surfaces the full progression as it is found; a
     // user who no longer wants to wait cancels (GUI Stop / CLI Ctrl+C), which propagates out with the
     // best plan found so far already surfaced via onStageCompleted.
     public StrategyPlan RunGreedyPipeline(
+        Action<StageResult>? onStageCompleted = null,
+        Action<string>? onStageStart = null)
+        => RunGreedyPipelineCore(onStageCompleted, onStageStart);
+
+    internal StrategyPlan RunGreedyPipelineCore(
         Action<StageResult>? onStageCompleted = null,
         Action<string>? onStageStart = null)
     {
@@ -289,10 +432,10 @@ partial class StrategyBuilder
         // The step ceiling U comes from the greedy feasible plan. Production callers (Program.cs /
         // MainForm.cs) build it first and reuse this builder, so _feasibleRootBudget is already set;
         // standalone callers (e.g. tests invoking RunGreedyPipeline directly) have not, so
-        // establish it here. BuildGreedyFeasibleStage deliberately does not clear _feasibleRootBudget, so this
+        // establish it here. ExecuteGreedyFeasibleStage deliberately does not clear _feasibleRootBudget, so this
         // never double-builds when the caller already ran the step phase.
         if (_feasibleRootBudget < 0)
-            BuildGreedyFeasibleStage();
+            ExecuteGreedyFeasibleStage();
 
         int U = _feasibleRootBudget;
         int provenLowerBound = Math.Max(1, _rootProvenLowerBound);
@@ -312,9 +455,9 @@ partial class StrategyBuilder
             {
                 _cancellationToken.ThrowIfCancellationRequested();
                 _proofTightenCurrentBudget = budget;
-                string stageName = FormatProofTightenStageName(budget);
+                string stageName = StageNames.FormatProofTighten(budget);
                 onStageStart?.Invoke(stageName);
-                StageResult stage = BuildProofTightenStage(budget);
+                StageResult stage = ExecuteProofTightenStage(budget);
                 onStageCompleted?.Invoke(stage);
 
                 if (stage.Outcome == StageOutcome.Tightened)
@@ -342,7 +485,7 @@ partial class StrategyBuilder
         }
 
         // Phase B: one edge-compaction pass at the determined step S.
-        string edgeCompactStageName = FormatEdgeCompactStageName(bestStep);
+        string edgeCompactStageName = StageNames.FormatGreedyEdgeCompact(bestStep);
         onStageStart?.Invoke(edgeCompactStageName);
         var edgeStopwatch = Stopwatch.StartNew();
         StrategyPlan finalPlan = BuildEdgeCompactPlanAtBudget(bestStep)
@@ -353,13 +496,7 @@ partial class StrategyBuilder
         return finalPlan;
     }
 
-    private static string FormatProofTightenStageName(int budget)
-        => $"proof-tighten\u2264{budget}";
-
-    internal static string FormatEdgeCompactStageName(int step)
-        => $"edge-compact@{step}";
-
-    public StageResult BuildProofTightenStage(int budget)
+    public StageResult ExecuteProofTightenStage(int budget)
     {
         _progressScope = _reportCombinedRunProgress
             ? ProgressScope.CompactFeasibleInCombinedRun
@@ -368,7 +505,7 @@ partial class StrategyBuilder
         _compactFeasibilityOnly = true;
         try
         {
-            string stageName = FormatProofTightenStageName(budget);
+            string stageName = StageNames.FormatProofTighten(budget);
             var stopwatch = Stopwatch.StartNew();
             (StageOutcome outcome, StrategyPlan? candidate) = ProbeAndClassify(budget);
             stopwatch.Stop();
@@ -514,41 +651,57 @@ partial class StrategyBuilder
         ComparisonState.SetThreadCancellationToken(_cancellationToken);
         try
         {
-            ResetPerBuildTransientState();
-            var stopwatch = Stopwatch.StartNew();
-            ReportProgress(force: true);
-
-            _compactUsesFeasibleBudget = useFeasibleBudget;
-            if (!useFeasibleBudget)
-                EnsurePhase1Solved();
-            _phase1Milliseconds = stopwatch.ElapsedMilliseconds;
-
-            if (useCompactSelection)
-                EnsureCompactSolved();
-            _phase1bMilliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds;
-
-            // Phase 2: materialize the strategy tree, reusing the cached group patterns.
-            _useCompact = useCompactSelection;
-            var root = BuildState(new ComparisonState(_n), 0, _k, 1);
-            _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds - _phase1bMilliseconds;
-            stopwatch.Stop();
-            ReportProgress(force: true);
-            bool feasible = useFeasibleBudget;
-            int? searchTreeEdges = useCompactSelection ? _compactRootCost : null;
-            return new StrategyPlan(
-                _n,
-                _m,
-                _requestedK,
-                _k,
-                root,
-                stopwatch.Elapsed,
-                CreateSearchStatistics(searchTreeEdges),
-                isFeasibleUpperBound: feasible);
+            return BuildPlanWithinSession(useCompactSelection, useFeasibleBudget, initializeSession: true);
         }
         finally
         {
             ComparisonState.SetThreadCancellationToken(default);
         }
+    }
+
+    private StrategyPlan BuildPlanWithinSession(
+        bool useCompactSelection,
+        bool useFeasibleBudget,
+        bool initializeSession)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        if (initializeSession)
+            InitializeExactSolverSession(useFeasibleBudget);
+        _phase1Milliseconds = stopwatch.ElapsedMilliseconds;
+
+        if (useCompactSelection)
+            EnsureCompactSolved();
+        _phase1bMilliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds;
+
+        // Phase 2: materialize the strategy tree, reusing the cached group patterns.
+        _useCompact = useCompactSelection;
+        var root = BuildState(new ComparisonState(_n), 0, _k, 1);
+        _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds - _phase1bMilliseconds;
+        stopwatch.Stop();
+        ReportProgress(force: true);
+        bool feasible = useFeasibleBudget;
+        int? searchTreeEdges = useCompactSelection ? _compactRootCost : null;
+        return new StrategyPlan(
+            _n,
+            _m,
+            _requestedK,
+            _k,
+            root,
+            stopwatch.Elapsed,
+            CreateSearchStatistics(searchTreeEdges),
+            isFeasibleUpperBound: feasible);
+    }
+
+    // Shared exact-session bootstrap used by both display and search entrypoints.
+    // Mainline-A objective: keep phase-1 cache initialization semantics in one place.
+    private void InitializeExactSolverSession(bool useFeasibleBudget)
+    {
+        ResetPerBuildTransientState();
+        ReportProgress(force: true);
+
+        _compactUsesFeasibleBudget = useFeasibleBudget;
+        if (!useFeasibleBudget)
+            EnsurePhase1Solved();
     }
 
     private readonly record struct MaterializationContext(
@@ -566,8 +719,8 @@ partial class StrategyBuilder
         NormalizeState(state, ref fixedTopMask, ref remainingSlots);
         ObserveSearchState(state, remainingSlots);
 
-        IntSequenceKey displayKey = GetDisplayStateKey(state, fixedTopMask);
-        int stateId = GetStateId(displayKey);
+        IntSequenceKey expansionKey = GetDisplayStateKey(state, fixedTopMask);
+        int stateId = GetStateId(expansionKey);
 
         if (remainingSlots == 0)
             return StrategyNode.Terminal(stateId, ComparisonState.MaskToOrderedList(fixedTopMask));
@@ -592,21 +745,21 @@ partial class StrategyBuilder
                     remainingSlots));
         }
 
-        if (_expandedStates.TryGetValue(displayKey, out ExpandedStateSnapshot snapshot))
+        if (_expandedStates.TryGetValue(expansionKey, out ExpandedStateSnapshot snapshot))
         {
             IReadOnlyList<ItemRelabel>? relabeling =
                 snapshot.State.TryBuildDisplayRelabeling(snapshot.FixedTopMask, state, fixedTopMask);
             return StrategyNode.Reference(stateId, relabeling);
         }
 
-        _expandedStates.Add(displayKey, new ExpandedStateSnapshot(state.Clone(), fixedTopMask));
-
         bool trackingDisplayPath = _useGreedyTightenSelection;
-        if (trackingDisplayPath && !_materializationDisplayPath.Add(displayKey))
-        {
-            throw new InvalidOperationException(
-                "GreedyTighten materialization detected a recursive display-state expansion path.");
-        }
+        TryTrackExpandedState(
+            expansionKey,
+            state,
+            fixedTopMask,
+            _expandedStates,
+            trackingDisplayPath ? _materializationDisplayPath : null,
+            "GreedyTighten materialization detected a recursive display-state expansion path.");
 
         try
         {
@@ -627,7 +780,7 @@ partial class StrategyBuilder
         finally
         {
             if (trackingDisplayPath)
-                _materializationDisplayPath.Remove(displayKey);
+                _materializationDisplayPath.Remove(expansionKey);
         }
     }
 
@@ -1701,6 +1854,28 @@ partial class StrategyBuilder
 
         public ComparisonState State { get; }
         public ulong FixedTopMask { get; }
+    }
+
+    private readonly record struct SearchMaterializationContext(
+        Dictionary<IntSequenceKey, ExpandedStateSnapshot> ExpandedStates,
+        HashSet<IntSequenceKey> ExpansionPath);
+
+    private static bool TryTrackExpandedState(
+        IntSequenceKey expansionKey,
+        ComparisonState state,
+        ulong fixedTopMask,
+        Dictionary<IntSequenceKey, ExpandedStateSnapshot> expandedStates,
+        HashSet<IntSequenceKey>? expansionPath,
+        string cycleMessage)
+    {
+        expandedStates.Add(expansionKey, new ExpandedStateSnapshot(state.Clone(), fixedTopMask));
+        if (expansionPath is null)
+            return false;
+
+        if (!expansionPath.Add(expansionKey))
+            throw new InvalidOperationException(cycleMessage);
+
+        return true;
     }
 
     private sealed class OutcomeTraversalSummary

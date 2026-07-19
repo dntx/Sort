@@ -39,23 +39,81 @@ The program has three entry points that share the same input validation
 - `docs/output-rendering.md`: branch/pattern rendering and equivalence folding
   rules.
 - `docs/test-strategy.md`: regression/perf testing strategy and guardrails.
+- `docs/counter-guardrail-budgets.md`: deterministic counter guardrail profiles,
+  shape anchors, and ratchet protocol.
 - `docs/ui-explorer.md`: WinForms explorer behavior, stage timeline UI, and
   cancellation/progress semantics.
+
+### Test lane quickstart
+
+- Fast lane (default local/PR validation):
+  - `dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --filter "Category!=Slow"`
+- Slow parity lane (opt-in before merge or dedicated audits):
+  - `dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --filter "Category=Slow"`
+- Deterministic counter guardrail lane (machine-independent budgets):
+  - `pwsh .\scripts\run-counter-guardrails.ps1 -Profile fast-default`
+  - dry-run + summary: `pwsh .\scripts\run-counter-guardrails.ps1 -Profile compact -ListOnly -SummaryJsonPath .\artifacts\counter-guardrails-summary.json`
+- Perf baseline lane (manual regression gate):
+  - `pwsh .\scripts\run-perf-gate.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-stage1-baseline.csv -RegressionTolerancePercent 5 -EnforceBaseline`
+  - dry-run: `pwsh .\scripts\run-perf-gate.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-stage1-baseline.csv -ListOnly`
+  - dry-run + summary: `pwsh .\scripts\run-perf-gate.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-stage1-baseline.csv -ListOnly -SummaryJsonPath .\artifacts\perf-gate-summary.json`
+
+GitHub Actions lanes:
+
+- `required-pr-tests` (automatic PR gate, fast-only test filter)
+- `manual-slow-parity` (manual slow parity matrix)
+- `manual-counter-guardrails` (manual deterministic counter-cap guardrails)
+- `manual-perf-gate` (manual perf baseline gate)
+
+Counter guardrail profiles (`manual-counter-guardrails` input `profile`):
+
+- `fast-default`: default-path deterministic caps (daily default)
+- `iterative-frontier`: iterative-deepening frontier caps
+- `compact`: compact-phase deterministic caps
+- `full-counter-suite`: all baseline-cap suites + key iterative checks
+
+Lane selection decision table is documented in `docs/test-strategy.md`.
+
+### Pipeline architecture (post-refactor)
+
+The refactor track is complete. The runtime now follows a stable layered boundary:
+
+- Search layer (`StrategyBuilder`): owns search semantics, feasibility/optimality
+  reasoning, and stage solving.
+- Public orchestration layer (`PublicPipelineOrchestrator`): owns shared stage
+  orchestration for CLI/UI and stage-emission contracts.
+- Display layer (`DisplayRenderEngine` + UI/text renderers): owns rendering,
+  folding, and presentation-only behavior.
+
+Exact search-model projection is now canonical via
+`StrategyBuilder.ProjectDisplayAndSearchTrees()` and `ProjectSearchTree()`.
 
 ### Builder API naming
 
 The in-process builder API uses a consistent naming split between
 single-stage construction and multi-stage orchestration:
 
-- `BuildGreedyFeasibleStage`, `BuildStepProofStage`, `BuildProofTightenStage`,
-  `BuildEdgeCompactStage`: build one atomic stage result or plan.
+- `ExecuteGreedyFeasibleStage`, `ExecuteStepProofStage`, `ExecuteProofTightenStage`,
+  `ExecuteEdgeCompactStage`: execute one atomic stage result or plan.
 - `RunGreedyPipeline`: greedy-mode orchestrator that emits
   `greedy-feasible`, zero or more `proof-tighten≤N`, then a final
-  `edge-compact@S` stage.
+  `greedy-edge-compact@S` stage.
 - `RunExactPipeline`: exact-mode orchestrator that emits `step-proof`, then
-  `edge-compact@S`.
+  `exact-edge-compact@S`.
 - `StageResult` / `StageOutcome`: the unified stage callback model used by the
   pipelines. Terminal non-tightening stages report `StageOutcome.Completed`.
+
+### Stage-name contract
+
+User-visible stage names are centralized in `StageNames.cs`.
+
+- Fixed stage names live there as constants: `step-proof`, `greedy-feasible`,
+  and `greedy-tighten`.
+- Parameterized stage names are generated there as format rules, not repeated
+  ad hoc at call sites: `proof-tighten≤N`, `exact-edge-compact@S`, and
+  `greedy-edge-compact@S`.
+- CLI headers, GUI tree/overview labels, progress text, and stage-oriented
+  tests all share this same naming contract.
 
 ### Command-line arguments
 
@@ -72,7 +130,7 @@ dotnet run -- <n> <m> <k> [--mode exact|greedy] [--stage <n>]
   - **greedy**: a fast greedy feasible strategy for step, then a budget-bounded
     compact pass for edge. Fast and interruptible, but not proven optimal.
 - `--stage <n>` stops after stage `n` (1-based):
-  - exact: `1` = step-proof, `2` = edge-compact
+  - exact: `1` = step-proof, `2` = exact-edge-compact@S
   - greedy: `1` = greedy-feasible, `2+` continues along tightening progression
 - If the edge stage does not reduce output states, only the step strategy is
   printed; otherwise both step and edge strategies are printed.
@@ -139,7 +197,7 @@ printed.
 ### Desktop UI details
 
 The WinForms explorer shares the same stage model as the CLI (`step-proof` /
-`greedy-feasible` / `proof-tighten≤N` / `edge-compact@S`) and shows live
+`greedy-feasible` / `proof-tighten≤N` / `exact-edge-compact@S` / `greedy-edge-compact@S`) and shows live
 progress, search counters, and per-stage timing. For full UI behavior and
 diagnostic panes, see `docs/ui-explorer.md`.
 
@@ -157,7 +215,7 @@ keeps the best plan found so far.
 
 - `greedy-feasible`: build an initial feasible upper bound `U`.
 - `proof-tighten≤N`: probe lower ceilings (`U-1`, `U-2`, ...) with feasibility-only compact search.
-- `edge-compact@S`: one min-edge pass at the final feasible step `S`.
+- `greedy-edge-compact@S`: one min-edge pass at the final feasible step `S`.
 
 For algorithmic details, proofs, and edge-case semantics, see
 `docs/core-algorithm.md` (sections on greedy pipeline and compact stage).
