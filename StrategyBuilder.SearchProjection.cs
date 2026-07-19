@@ -8,8 +8,7 @@ partial class StrategyBuilder
     // so both materializers consume the same phase-1 caches without nested entrypoint hand-offs.
     private (SearchTree SearchTree, DisplayTree DisplayTree) BuildExactProjectionFromCurrentSession()
     {
-        ComparisonState.SetThreadCancellationToken(_cancellationToken);
-        try
+        return RunWithComparisonStateCancellation(() =>
         {
             _progressScope = _reportCombinedRunProgress
                 ? ProgressScope.DefaultInCombinedRun
@@ -21,27 +20,18 @@ partial class StrategyBuilder
                 initializeSession: true);
             SearchTree searchTree = ProjectSearchTreeFromCurrentExactSession();
             return (searchTree, displayTree);
-        }
-        finally
-        {
-            ComparisonState.SetThreadCancellationToken(default);
-        }
+        });
     }
 
     // Standalone search-only exact entry: starts its own solver session and materializes
     // the search tree from that session's exact caches.
     private SearchTree ProjectSearchTreeFromStandaloneExactSession()
     {
-        ComparisonState.SetThreadCancellationToken(_cancellationToken);
-        try
+        return RunWithComparisonStateCancellation(() =>
         {
             InitializeExactSolverSession(useFeasibleBudget: false);
             return ProjectSearchTreeFromCurrentExactSession();
-        }
-        finally
-        {
-            ComparisonState.SetThreadCancellationToken(default);
-        }
+        });
     }
 
     // Current-session search materialization path shared by layered exact projection

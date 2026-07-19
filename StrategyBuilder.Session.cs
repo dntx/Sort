@@ -85,6 +85,12 @@ sealed class StrategyBuilderSession
         CompactRealStepsMemo.Clear();
     }
 
+    public void ResetCompactSelectionState()
+    {
+        ResetCompactCaches();
+        Compact.ResetCompactProbeState();
+    }
+
     public void LoadCompactPatternAssignment(IReadOnlyDictionary<SearchStateKey, BestGroupPattern> assignment)
     {
         ResetCompactCaches();

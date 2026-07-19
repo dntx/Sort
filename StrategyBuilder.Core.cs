@@ -88,33 +88,11 @@ partial class StrategyBuilder
     internal bool? ForceIterativeDeepeningForTesting { get; set; }
     private CompactSolver? _compactSolver;
     private CompactSolver CompactSolverInstance => _compactSolver ??= new CompactSolver(this);
-    private bool _useCompact { get => _session.Compact.UseCompact; set => _session.Compact.UseCompact = value; }
-    private bool _compactUsesFeasibleBudget { get => _session.Compact.CompactUsesFeasibleBudget; set => _session.Compact.CompactUsesFeasibleBudget = value; }
-    private bool _compactFeasibilityOnly { get => _session.Compact.CompactFeasibilityOnly; set => _session.Compact.CompactFeasibilityOnly = value; }
-    private bool _compactEnumerationCapped { get => _session.Compact.CompactEnumerationCapped; set => _session.Compact.CompactEnumerationCapped = value; }
-    private bool _lastProbeEnumerationCapped { get => _session.Compact.LastProbeEnumerationCapped; set => _session.Compact.LastProbeEnumerationCapped = value; }
-    private bool EnableFeasibleTightening { get => _session.Compact.EnableFeasibleTightening; set => _session.Compact.EnableFeasibleTightening = value; }
-    private int _feasibleRootBudgetActive { get => _session.Compact.FeasibleRootBudgetActive; set => _session.Compact.FeasibleRootBudgetActive = value; }
-    private int _compactRootCost { get => _session.Compact.CompactRootCost; set => _session.Compact.CompactRootCost = value; }
-    private bool _compactPatternCacheReadyForMaterialization { get => _session.Compact.CompactPatternCacheReadyForMaterialization; set => _session.Compact.CompactPatternCacheReadyForMaterialization = value; }
     private readonly Dictionary<IntSequenceKey, int> _stateIds = new();
     private readonly Dictionary<IntSequenceKey, ExpandedStateSnapshot> _expandedStates = new();
     // Active display-key recursion path while materializing a GreedyTighten tree. Used to reject
     // local overrides whose outcomes would reference an ancestor display state.
     private readonly HashSet<IntSequenceKey> _materializationDisplayPath = new();
-    private HashSet<SearchStateKey> _visitedSearchStates => _session.VisitedSearchStates;
-    private Dictionary<SearchStateKey, int> _minWorstCaseStepsCache => _session.MinWorstCaseStepsCache;
-    private Dictionary<SearchStateKey, int> _lowerBoundStepsCache => _session.LowerBoundStepsCache;
-    // Iterative-deepening transposition memo: the best lower bound on a state's exact cost learned
-    // from passes that failed to resolve it under their budget. Lets a later node/pass prune a state
-    // immediately when this learned bound already exceeds the current budget.
-    private Dictionary<SearchStateKey, int> _searchLowerBoundCache => _session.SearchLowerBoundCache;
-    private Dictionary<SearchStateKey, FeasibleTopSetInfo> _feasibleTopSetCache => _session.FeasibleTopSetCache;
-    private Dictionary<SearchStateKey, BestGroupPattern> _bestGroupPatternCache => _session.BestGroupPatternCache;
-    private Dictionary<SearchStateKey, BestGroupPattern> _compactGroupPatternCache => _session.CompactGroupPatternCache;
-    private Dictionary<SearchStateKey, int> _compactGroupPatternTightestBudget => _session.CompactGroupPatternTightestBudget;
-    private Dictionary<(SearchStateKey Key, int Budget), int> _compactCostMemo => _session.CompactCostMemo;
-    private Dictionary<SearchStateKey, int> _compactRealStepsMemo => _session.CompactRealStepsMemo;
     // Cross-instance canonical-key memo: maps a state's cheap raw structural fingerprint to its
     // expensive McKay canonical key. The same logical poset is reached via many search paths as
     // distinct ComparisonState instances (each with its own per-instance cache), so without this the
@@ -123,7 +101,6 @@ partial class StrategyBuilder
     // determines the canonical key.
     private readonly Dictionary<RawStructureKey, IntSequenceKey> _canonicalKeyMemo = new();
     private readonly Stopwatch _progressStopwatch = Stopwatch.StartNew();
-    private List<SearchMilestone> _rootIncumbents => _session.RootIncumbents;
     private int _nextStateId = 1;
     private int _searchedStates;
     private int _pendingStates;
@@ -132,18 +109,6 @@ partial class StrategyBuilder
     private int _lastReportedVisitedStatesCount = 0;
     private long _feasiblePhase2StartMs = -1;
     private bool _feasiblePhaseSolved = false;
-    private int _lowerBoundPrunes { get => _session.LowerBoundPrunes; set => _session.LowerBoundPrunes = value; }
-    private int _duplicateOutcomeSkips { get => _session.DuplicateOutcomeSkips; set => _session.DuplicateOutcomeSkips = value; }
-    private int _mergedOutcomeCollisions { get => _session.MergedOutcomeCollisions; set => _session.MergedOutcomeCollisions = value; }
-    private int _exactCacheHits { get => _session.ExactCacheHits; set => _session.ExactCacheHits = value; }
-    private int _lowerBoundCacheHits { get => _session.LowerBoundCacheHits; set => _session.LowerBoundCacheHits = value; }
-    private int _feasibleTopSetCacheHits { get => _session.FeasibleTopSetCacheHits; set => _session.FeasibleTopSetCacheHits = value; }
-    private int _bestGroupPatternCacheHits { get => _session.BestGroupPatternCacheHits; set => _session.BestGroupPatternCacheHits = value; }
-    private int _outcomesConstructed { get => _session.OutcomesConstructed; set => _session.OutcomesConstructed = value; }
-    private int _candidateGroupsEnumerated { get => _session.CandidateGroupsEnumerated; set => _session.CandidateGroupsEnumerated = value; }
-    private int _compactStatesSolved { get => _session.CompactStatesSolved; set => _session.CompactStatesSolved = value; }
-    private int _compactGroupsEnumerated { get => _session.CompactGroupsEnumerated; set => _session.CompactGroupsEnumerated = value; }
-    private int _compactStepOptimalGroups { get => _session.CompactStepOptimalGroups; set => _session.CompactStepOptimalGroups = value; }
     private long _phase1Milliseconds;
     private long _phase1bMilliseconds;
     private long _phase2Milliseconds;
@@ -451,42 +416,38 @@ partial class StrategyBuilder
     // caches first. Progress snapshots flow normally so the bar/ETA track the current tightening probe.
     private StrategyPlan? ProbeFeasibleCompact(int rootBudget)
     {
-        ComparisonState.SetThreadCancellationToken(_cancellationToken);
-        ResetPerBuildTransientState();
-        ResetCompactState();
-        _compactEnumerationCapped = false;
-        _lastProbeEnumerationCapped = false;
-
-        var stopwatch = Stopwatch.StartNew();
-        _compactUsesFeasibleBudget = true;
-        _feasibleRootBudgetActive = rootBudget;
-        try
+        return RunWithComparisonStateCancellation(() =>
         {
-            EnsureCompactSolved();
-            _phase1bMilliseconds = stopwatch.ElapsedMilliseconds;
-            if (_compactRootCost == int.MaxValue)
+            PrepareFeasibleCompactProbe();
+
+            var stopwatch = Stopwatch.StartNew();
+            _compactUsesFeasibleBudget = true;
+            _feasibleRootBudgetActive = rootBudget;
+            try
             {
-                // Record whether the cap truncated any state's enumeration during this probe. When set,
-                // "no group fit within budget" is not a proof of infeasibility (an untried group might
-                // have fit), so the caller must not close the squeeze / claim proven optimality.
-                _lastProbeEnumerationCapped = _compactEnumerationCapped;
-                ResetCompactState();
-                return null;
-            }
+                EnsureCompactSolved();
+                _phase1bMilliseconds = stopwatch.ElapsedMilliseconds;
+                if (_compactRootCost == int.MaxValue)
+                {
+                    // Record whether the cap truncated any state's enumeration during this probe. When set,
+                    // "no group fit within budget" is not a proof of infeasibility (an untried group might
+                    // have fit), so the caller must not close the squeeze / claim proven optimality.
+                    _lastProbeEnumerationCapped = _compactEnumerationCapped;
+                    ResetCompactState();
+                    return null;
+                }
 
-            _useCompact = true;
-            var root = BuildState(new ComparisonState(_n), 0, _k, 1);
-            _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1bMilliseconds;
-            stopwatch.Stop();
-            return new StrategyPlan(
-                _n, _m, _requestedK, _k, root, stopwatch.Elapsed, CreateSearchStatistics(_compactRootCost),
-                isFeasibleUpperBound: true);
-        }
-        finally
-        {
-            _feasibleRootBudgetActive = -1;
-            ComparisonState.SetThreadCancellationToken(default);
-        }
+                _useCompact = true;
+                var root = BuildState(new ComparisonState(_n), 0, _k, 1);
+                _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1bMilliseconds;
+                stopwatch.Stop();
+                return CreatePlan(root, stopwatch.Elapsed, _compactRootCost, isFeasibleUpperBound: true);
+            }
+            finally
+            {
+                _feasibleRootBudgetActive = -1;
+            }
+        });
     }
 
     private StrategyPlan BuildEdgeCompactPlanAtBudget(int rootBudget)
@@ -508,15 +469,8 @@ partial class StrategyBuilder
 
     private StrategyPlan BuildPlan(bool useCompactSelection, bool useFeasibleBudget = false)
     {
-        ComparisonState.SetThreadCancellationToken(_cancellationToken);
-        try
-        {
-            return BuildPlanWithinSession(useCompactSelection, useFeasibleBudget, initializeSession: true);
-        }
-        finally
-        {
-            ComparisonState.SetThreadCancellationToken(default);
-        }
+        return RunWithComparisonStateCancellation(
+            () => BuildPlanWithinSession(useCompactSelection, useFeasibleBudget, initializeSession: true));
     }
 
     private StrategyPlan BuildPlanWithinSession(
@@ -541,16 +495,23 @@ partial class StrategyBuilder
         ReportProgress(force: true);
         bool feasible = useFeasibleBudget;
         int? searchTreeEdges = useCompactSelection ? _compactRootCost : null;
-        return new StrategyPlan(
+        return CreatePlan(root, stopwatch.Elapsed, searchTreeEdges, feasible);
+    }
+
+    private StrategyPlan CreatePlan(
+        StrategyNode root,
+        TimeSpan elapsed,
+        int? searchTreeEdges = null,
+        bool isFeasibleUpperBound = false)
+        => new StrategyPlan(
             _n,
             _m,
             _requestedK,
             _k,
             root,
-            stopwatch.Elapsed,
+            elapsed,
             CreateSearchStatistics(searchTreeEdges),
-            isFeasibleUpperBound: feasible);
-    }
+            isFeasibleUpperBound: isFeasibleUpperBound);
 
     // Shared exact-session bootstrap used by both display and search entrypoints.
     // Mainline-A objective: keep phase-1 cache initialization semantics in one place.
@@ -1416,6 +1377,19 @@ partial class StrategyBuilder
     private void ThrowIfCancellationRequested()
     {
         _cancellationToken.ThrowIfCancellationRequested();
+    }
+
+    private T RunWithComparisonStateCancellation<T>(Func<T> action)
+    {
+        ComparisonState.SetThreadCancellationToken(_cancellationToken);
+        try
+        {
+            return action();
+        }
+        finally
+        {
+            ComparisonState.SetThreadCancellationToken(default);
+        }
     }
 
     // Shared throttled cancellation probe for hot loops. Call this in frequently-executed paths

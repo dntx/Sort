@@ -43,41 +43,7 @@ partial class StrategyBuilder
     // keeps GreedyTightenHeight (memoized by the canonical key) consistent across isomorphic states --
     // applying a concrete group literally to a sibling labeling would otherwise yield a different
     // subtree height and corrupt the shared height memo.
-    private Dictionary<SearchStateKey, List<int>> _greedyTightenOverrides => _session.GreedyTightenOverrides;
-    private Dictionary<SearchStateKey, ComparisonState> _greedyTightenOverrideAnchors => _session.GreedyTightenOverrideAnchors;
-    private Dictionary<SearchStateKey, int> _greedyTightenSharedHeightMemo => _session.GreedyTightenSharedHeightMemo;
-    private bool _useGreedyTightenSelection
-    {
-        get => _session.UseGreedyTightenSelection;
-        set => _session.UseGreedyTightenSelection = value;
-    }
-
-    // Diagnostics (per ExecuteGreedyTightenStage run).
-    private int _greedyTightenRounds { get => _session.GreedyTightenRounds; set => _session.GreedyTightenRounds = value; }
-    private int _greedyTightenCommits { get => _session.GreedyTightenCommits; set => _session.GreedyTightenCommits = value; }
-    private int _greedyTightenStatesVisited { get => _session.GreedyTightenStatesVisited; set => _session.GreedyTightenStatesVisited = value; }
-    private int _greedyTightenCandidateGroupsTried { get => _session.GreedyTightenCandidateGroupsTried; set => _session.GreedyTightenCandidateGroupsTried = value; }
-    private int _greedyTightenHeightCalls { get => _session.GreedyTightenHeightCalls; set => _session.GreedyTightenHeightCalls = value; }
-    private int _greedyTightenHeightMemoHits { get => _session.GreedyTightenHeightMemoHits; set => _session.GreedyTightenHeightMemoHits = value; }
-    private int _greedyTightenHeightUnderGroupCalls { get => _session.GreedyTightenHeightUnderGroupCalls; set => _session.GreedyTightenHeightUnderGroupCalls = value; }
-    private int _greedyTightenCriticalShortCircuits { get => _session.GreedyTightenCriticalShortCircuits; set => _session.GreedyTightenCriticalShortCircuits = value; }
-    private int _greedyTightenCommitCandidateRankSum { get => _session.GreedyTightenCommitCandidateRankSum; set => _session.GreedyTightenCommitCandidateRankSum = value; }
-    private Dictionary<int, int> _greedyTightenVisitedDepthHistogram => _session.GreedyTightenVisitedDepthHistogram;
-    private Dictionary<int, int> _greedyTightenCommitDepthHistogram => _session.GreedyTightenCommitDepthHistogram;
     private readonly List<GreedyTightenRoundDiagnostics> _greedyTightenRoundDiagnostics = new();
-    internal int GreedyTightenRounds => _greedyTightenRounds;
-    internal int GreedyTightenCommits => _greedyTightenCommits;
-    internal int GreedyTightenStatesVisited => _greedyTightenStatesVisited;
-    internal int GreedyTightenCandidateGroupsTried => _greedyTightenCandidateGroupsTried;
-    internal int GreedyTightenHeightCalls => _greedyTightenHeightCalls;
-    internal int GreedyTightenHeightMemoHits => _greedyTightenHeightMemoHits;
-    internal int GreedyTightenHeightUnderGroupCalls => _greedyTightenHeightUnderGroupCalls;
-    internal int GreedyTightenCriticalShortCircuits => _greedyTightenCriticalShortCircuits;
-    internal int GreedyTightenAverageCommitCandidateRank => _greedyTightenCommits == 0
-        ? 0
-        : _greedyTightenCommitCandidateRankSum / _greedyTightenCommits;
-    internal IReadOnlyDictionary<int, int> GreedyTightenVisitedDepthHistogram => _greedyTightenVisitedDepthHistogram;
-    internal IReadOnlyDictionary<int, int> GreedyTightenCommitDepthHistogram => _greedyTightenCommitDepthHistogram;
     internal IReadOnlyList<GreedyTightenRoundDiagnostics> GreedyTightenRoundTrace => _greedyTightenRoundDiagnostics;
 
     // Fast pre-check for whether running single-round GreedyTighten is worthwhile: only probe the
@@ -131,33 +97,34 @@ partial class StrategyBuilder
     // then materializes the tightened tree once. Returns a feasible-upper-bound plan (never proven).
     public StrategyPlan ExecuteGreedyTightenStage()
     {
-        _progressScope = _reportCombinedRunProgress
-            ? ProgressScope.FeasibleInCombinedRun
-            : ProgressScope.DefaultStandalone;
+        return RunWithComparisonStateCancellation(() =>
+        {
+            _progressScope = _reportCombinedRunProgress
+                ? ProgressScope.FeasibleInCombinedRun
+                : ProgressScope.DefaultStandalone;
 
-        ResetPerBuildTransientState();
-        var stopwatch = Stopwatch.StartNew();
+            ResetPerBuildTransientState();
+            var stopwatch = Stopwatch.StartNew();
 
-        // L side of the squeeze: proven analytic lower bound (independent of the never-finishing exact
-        // search), identical to the greedy-feasible path.
-        RecordRootProvenLowerBound(GetMinWorstCaseLowerBound(new ComparisonState(_n), _k));
+            // L side of the squeeze: proven analytic lower bound (independent of the never-finishing exact
+            // search), identical to the greedy-feasible path.
+            RecordRootProvenLowerBound(GetMinWorstCaseLowerBound(new ComparisonState(_n), _k));
 
-        RunGreedyTighten();
+            RunGreedyTighten();
 
-        // Materialize the tightened tree once (Option B: search on the lean-depth DP, materialize only
-        // at the end). Absent overrides fall back to ChooseConstructiveGroup, so this yields the
-        // greedy-feasible tree plus the committed local edits.
-        _useGreedyTightenSelection = true;
-        StrategyNode root = BuildState(new ComparisonState(_n), 0, _k, 1);
-        _useGreedyTightenSelection = false;
+            // Materialize the tightened tree once (Option B: search on the lean-depth DP, materialize only
+            // at the end). Absent overrides fall back to ChooseConstructiveGroup, so this yields the
+            // greedy-feasible tree plus the committed local edits.
+            _useGreedyTightenSelection = true;
+            StrategyNode root = BuildState(new ComparisonState(_n), 0, _k, 1);
+            _useGreedyTightenSelection = false;
 
-        stopwatch.Stop();
+            stopwatch.Stop();
 
-        StrategyPlan plan = new StrategyPlan(
-            _n, _m, _requestedK, _k, root, stopwatch.Elapsed, CreateSearchStatistics(),
-            isFeasibleUpperBound: true);
-        _latestGreedyIncumbentPlan = plan;
-        return plan;
+            StrategyPlan plan = CreatePlan(root, stopwatch.Elapsed, isFeasibleUpperBound: true);
+            _latestGreedyIncumbentPlan = plan;
+            return plan;
+        });
     }
 
     // Multi-round driver. Each round runs one critical-path post-order pass from the root; a pass that
