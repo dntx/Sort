@@ -571,38 +571,60 @@ _NO_TEST_DECLARATION_RE = re.compile(
 _NO_TEST_REASON_HINTS = {
     "refactor",
     "mechanical",
+    "relocate",
+    "relocates",
+    "relocated",
+    "relocation",
+    "move",
+    "moved",
+    "split",
+    "file split",
+    "extract",
+    "extraction",
+    "structural refactor",
+    "structural extraction",
+    "structural split",
     "non-functional",
     "no behavior change",
     "does not change behavior",
     "doesn't change behavior",
+    "behavior-preserving",
     "does not introduce or modify algorithm behavior",
     "does not modify algorithm behavior",
     "no algorithmic decision path",
     "timing-only",
-    "behaviour-preserving",
+    "behavior-preserving",
     "existing test",
     "already covered",
     "covered by",
     "no observable change",
+    "no user-visible",
     "documentation only",
     "docs only",
 }
 _NO_TEST_EVIDENCE_HINTS = {
     "existing test",
     "existing tests",
+    "guarded by",
     "existing regression tests",
     "regression tests",
     "remain applicable",
     "already covered",
     "covered by",
     "coverage",
+    "tests",
     "verified",
     "validated",
     "manual verification",
+    "local verification",
+    "passing",
+    "passed",
+    "dotnet build",
+    "dotnet test",
     "invariant",
     "proof",
     "behavior unchanged",
-    "behaviour-preserving",
+    "behavior-preserving",
     "mechanical split",
     "rename only",
 }
@@ -634,6 +656,65 @@ def _extract_no_test_section(pr_body: str) -> str:
     return "\n".join(section).strip()
 
 
+def _normalize_review_text(text: str) -> str:
+    """Normalise freeform review text for robust phrase matching."""
+    normalized = " ".join((text or "").lower().split())
+    normalized = normalized.replace("behaviour", "behavior")
+    normalized = normalized.replace("behavior preserving", "behavior-preserving")
+    return normalized
+
+
+_NO_TEST_FIELD_RE = re.compile(r"^\s*[-*]?\s*(reason|evidence)\s*:\s*(.*\S)\s*$", re.IGNORECASE)
+_NO_TEST_EVIDENCE_RE = re.compile(
+    r"\b(?:[A-Z][A-Za-z0-9_]*Tests?|dotnet\s+(?:build|test)|pass(?:es|ed|ing)?|"
+    r"guarded\s+by|covered\s+by|verified|validated|parity|invariant|local\s+verification|manual\s+verification)\b",
+    re.IGNORECASE,
+)
+
+
+def _extract_no_test_fields(text: str) -> tuple[str, str]:
+    """Extract explicit Reason/Evidence bullets from a no-test explanation."""
+    reason_parts: list[str] = []
+    evidence_parts: list[str] = []
+    active_field: str | None = None
+
+    for raw_line in (text or "").splitlines():
+        line = raw_line.strip()
+        if not line:
+            active_field = None
+            continue
+
+        match = _NO_TEST_FIELD_RE.match(line)
+        if match:
+            active_field = match.group(1).lower()
+            value = match.group(2).strip()
+            if active_field == "reason":
+                reason_parts.append(value)
+            else:
+                evidence_parts.append(value)
+            continue
+
+        if active_field == "reason":
+            reason_parts.append(line.lstrip("-* "))
+        elif active_field == "evidence":
+            evidence_parts.append(line.lstrip("-* "))
+
+    return " ".join(reason_parts).strip(), " ".join(evidence_parts).strip()
+
+
+def _has_reasonable_no_test_reason(text: str) -> bool:
+    normalized = _normalize_review_text(text)
+    return bool(normalized) and any(hint in normalized for hint in _NO_TEST_REASON_HINTS)
+
+
+def _has_reasonable_no_test_evidence(text: str) -> bool:
+    normalized = _normalize_review_text(text)
+    return bool(normalized) and (
+        any(hint in normalized for hint in _NO_TEST_EVIDENCE_HINTS)
+        or bool(_NO_TEST_EVIDENCE_RE.search(text or ""))
+    )
+
+
 def _has_reasonable_no_test_explanation(pr_body: str) -> bool:
     """Heuristic: PR description explicitly and concretely justifies no new tests."""
     raw = pr_body or ""
@@ -643,12 +724,13 @@ def _has_reasonable_no_test_explanation(pr_body: str) -> bool:
     section_text = _extract_no_test_section(raw)
     has_explicit_no_test_section = bool(section_text)
     candidate = section_text if section_text else raw
-    normalized = " ".join(candidate.lower().split())
+    normalized = _normalize_review_text(candidate)
     if not (has_explicit_no_test_section or _NO_TEST_DECLARATION_RE.search(normalized)):
         return False
 
-    has_reason = any(hint in normalized for hint in _NO_TEST_REASON_HINTS)
-    has_evidence = any(hint in normalized for hint in _NO_TEST_EVIDENCE_HINTS)
+    reason_text, evidence_text = _extract_no_test_fields(candidate)
+    has_reason = _has_reasonable_no_test_reason(reason_text or candidate)
+    has_evidence = _has_reasonable_no_test_evidence(evidence_text or candidate)
     return has_reason and has_evidence
 
 
@@ -1278,6 +1360,19 @@ def _is_noise_bullet(bullet: str) -> bool:
     return "no issues found" in low or "**[approve]**" in low or "[approve]" in low
 
 
+_SELF_NEGATING_STRUCTURAL_BULLET_RE = re.compile(
+    r"\b(?:unexplained new source file|naming inconsistency|missing documentation updates?|"
+    r"description [^\n:]*consistency)\b[^\n]*:\s*none\.",
+    re.IGNORECASE,
+)
+
+
+def _is_self_negating_structural_bullet(bullet: str) -> bool:
+    """True for contradictory structural bullets like 'UNEXPLAINED ...: None.'"""
+    normalized = " ".join((bullet or "").split())
+    return bool(_SELF_NEGATING_STRUCTURAL_BULLET_RE.search(normalized))
+
+
 _BULLET_MARKER_RE = re.compile(r"^\s*[-*]\s+")
 _LEADING_SEVERITY_RE = re.compile(
     r"^\**\[(?:BLOCK|COMMENT|APPROVE)\]\**\s*", re.IGNORECASE
@@ -1319,17 +1414,24 @@ def combine_batch_reviews(
     findings are integrated into a single list, deduplicated across batches."""
     verdict_order = {"APPROVE": 0, "COMMENT": 1, "BLOCK": 2}
     all_verdicts = [verdict for _, _, verdict, _ in batch_reviews]
+    struct_summary, struct_findings = ("", "")
+    effective_structural_verdict = "APPROVE"
     if structural is not None:
-        all_verdicts.append(structural[0])
+        effective_structural_verdict = structural[0]
+        struct_summary, struct_findings = _split_summary_findings(structural[1])
+    struct_bullets = [
+        b
+        for b in _parse_bullets(struct_findings)
+        if not _is_noise_bullet(b) and not _is_self_negating_structural_bullet(b)
+    ]
+    if effective_structural_verdict != "APPROVE" and not struct_bullets:
+        effective_structural_verdict = "APPROVE"
+
+    if structural is not None:
+        all_verdicts.append(effective_structural_verdict)
     if policy_findings:
         all_verdicts.append("BLOCK")
     final_verdict = max(all_verdicts, key=lambda v: verdict_order[v]) if all_verdicts else "APPROVE"
-
-    # Structural (PR-level) summary + findings.
-    struct_summary, struct_findings = ("", "")
-    if structural is not None:
-        struct_summary, struct_findings = _split_summary_findings(structural[1])
-    struct_bullets = [b for b in _parse_bullets(struct_findings) if not _is_noise_bullet(b)]
 
     # Merge code-level findings from every batch, dropping noise and duplicates.
     code_bullets: list[str] = []
