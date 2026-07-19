@@ -183,7 +183,7 @@ partial class MainForm
     }
 
     // A trailing tree/overview node ending in ": computing..." is a transient in-progress placeholder
-    // (the initial second-stage slot, or a live "proof-tighten<=N: computing..." probe appended between
+    // (the initial second-stage slot, or a live proof-tighten "<name>: computing..." probe appended between
     // greedy tightening stages). Both are replaced in place once the stage they announce lands.
     private static bool IsComputingPlaceholderText(string text)
         => text.EndsWith(ComputingSuffix, StringComparison.Ordinal);
@@ -322,16 +322,16 @@ partial class MainForm
             ForeColor = _palette.ForeColor,
         };
 
-        // Slot 0: the step strategy, named by mode -- "step-proof" once the exact pass finishes (it
-        // replaces the placeholder in place), or "greedy-feasible" for the constructive feasible plan
+        // Slot 0: the step strategy, named by mode -- StageNames.StepProof once the exact pass finishes (it
+        // replaces the placeholder in place), or StageNames.GreedyFeasible for the constructive feasible plan
         // in greedy mode.
         StrategyPlan stepPlan = defaultPlan ?? feasiblePlan;
         string stepStageName = defaultPlan is null ? StageNames.GreedyFeasible : StageNames.StepProof;
         root.Nodes.Add(CreatePlanTreeRoot(stepStageName, stepPlan, "default", stepPlan.Elapsed));
 
         // Slot 1: the second stage's live placeholder. In exact mode this is the min-edge
-        // "exact-edge-compact@S" pass; in greedy mode it is whatever RunGreedyPipeline emits first --
-        // a "proof-tighten<=N" tightening stage, or "greedy-edge-compact@S" directly when the greedy bound is
+        // StageNames.ExactEdgeCompactPattern pass; in greedy mode it is whatever RunGreedyPipeline emits first --
+        // a proof-tighten stage, or StageNames.GreedyEdgeCompactPattern directly when the greedy bound is
         // already at the lower bound.
         if (compactPlan is null)
         {
@@ -528,10 +528,9 @@ partial class MainForm
     }
 
     // Name of the next stage RunGreedyPipeline will emit given the best incumbent max-step so
-    // far. Mirrors the V2 loop: it tightens to "proof-tighten<=(step-1)" while that ceiling is still above
-    // the proven analytic lower bound, otherwise the final "greedy-edge-compact@S" pass runs. Used to label
-    // the transient "...: computing..." placeholder so it matches the stage name that actually lands
-    // (proof-tightening stages surface as "proof-tighten<=N", the final min-edge pass as "greedy-edge-compact@S").
+    // far. Mirrors the V2 loop: it tightens to the next proof-tighten ceiling while that ceiling is still above
+    // the proven analytic lower bound, otherwise the final StageNames.GreedyEdgeCompactPattern pass runs. Used to label
+    // the transient "...: computing..." placeholder so it matches the stage name that actually lands.
     private static string NextProofTightenStageName(StrategyPlan feasiblePlan, int incumbentMaxStep)
     {
         int lower = Math.Max(1, feasiblePlan.SearchStatistics.RootProvenLowerBound);
@@ -540,7 +539,7 @@ partial class MainForm
     }
 
     // Anytime greedy edge handler: invoked on the UI thread once per edge stage as the worker thread
-    // produces it (each "proof-tighten<=N" proof-tightening stage, then the final "greedy-edge-compact@S"
+    // produces it (each proof-tighten stage, then the final StageNames.GreedyEdgeCompactPattern
     // pass, or a no-solution/incomplete terminal stage). The first stage fills the computing
     // slot in place; every later stage is appended as a new tree + overview section, so the user watches
     // the strategy improve stage by stage. Each tree gets a unique scope ("edge0", "edge1", ...) so
@@ -562,8 +561,8 @@ partial class MainForm
         StrategyPlan incumbent = _compactPlan ?? _feasiblePlan;
         bool improved = stage.HasPlan && stage.Plan!.IsStrictRefinementOver(incumbent);
 
-        // A follow-up stage always lands after every emitted stage except the terminal EdgeCompact
-        // pass: after a "proof-tighten<=N" stage -- whether it found a solution or proved/failed the
+        // A follow-up stage always lands after every emitted stage except the terminal edge-compact
+        // pass: after a proof-tighten stage -- whether it found a solution or proved/failed the
         // ceiling -- the worker next probes a deeper feasible ceiling or runs the final edge-compaction
         // pass. We announce that in-progress probe with a trailing "<next>: computing..." placeholder
         // so the tree/overview never look idle while it runs. The terminal EdgeCompact stage has nothing
@@ -578,7 +577,7 @@ partial class MainForm
         _treeView.BeginUpdate();
         TreeNode root = _treeView.Nodes[0];
         // Replace the trailing in-progress placeholder (the initial second-stage slot, or the previous
-        // probe's "proof-tighten<=N: computing..." note) with the landed stage.
+        // proof-tighten "<name>: computing..." note) with the landed stage.
         TryRemoveTrailingComputingPlaceholder(root.Nodes);
         root.Nodes.Add(BuildStageTreeNode(stage, scope, improved));
         if (nextStageName is not null)

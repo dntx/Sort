@@ -32,7 +32,7 @@ class Program
         "                  greedy = feasible bound, then min-step tightening, then one min-edge pass (interruptible with Ctrl+C).\n" +
         "  --stage <n>     Stop after stage n (1-based).\n" +
         "                  exact: 1=" + StageNames.StepProof + ", 2=" + StageNames.ExactEdgeCompactPattern + ".\n" +
-        "                  greedy: 1=greedy-feasible, 2+=continue along tightening progression.\n" +
+        "                  greedy: 1=" + StageNames.GreedyFeasible + ", 2+=continue along proof-tighten progression.\n" +
         "\n" +
         "Arguments:\n" +
         "  n   total number of elements   (1 <= n <= 64)\n" +
@@ -303,8 +303,8 @@ class Program
                     $"edges={gtPlan.TotalBranchEdges} ({prep.GreedyTightenElapsed.TotalSeconds:F2}s)");
             }
 
-            // The anytime stages (each "proof-tighten≤N" tightening, a terminal no-solution ceiling,
-            // and the final "greedy-edge-compact@S") are produced incrementally for the GUI. The CLI is a batch tool,
+            // The anytime stages (each proof-tighten tightening, a terminal no-solution ceiling,
+            // and the final StageNames.GreedyEdgeCompactPattern stage) are produced incrementally for the GUI. The CLI is a batch tool,
             // so printing every intermediate tree is just noise: collect the stages, then print a
             // one-line progression summary followed by only the final (best) tree. A stage that has a
             // solution but does not strictly improve the incumbent is flagged "no improvement" and never

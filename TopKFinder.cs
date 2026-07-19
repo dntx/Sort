@@ -410,10 +410,10 @@ partial class StrategyBuilder
     //     final edge-minimized tree.
     //
     // Fast and interruptible, not proven optimal. onStageCompleted, when supplied, is invoked synchronously on
-    // this thread each time a downstream stage becomes available: once per successful tightening ceiling
-    // ("proof-tighten≤N", carrying the smaller plan), once for the terminal ceiling that stops tightening
+    // this thread each time a downstream stage becomes available: once per successful proof-tighten stage
+    // (carrying the smaller plan), once for the terminal ceiling that stops tightening
     // (a no-solution/incomplete stage whose plan is null), and finally once for the edge-compaction pass
-    // ("greedy-edge-compact@S"). This drives an anytime UI/CLI that surfaces the full progression as it is found; a
+    // (StageNames.GreedyEdgeCompactPattern). This drives an anytime UI/CLI that surfaces the full progression as it is found; a
     // user who no longer wants to wait cancels (GUI Stop / CLI Ctrl+C), which propagates out with the
     // best plan found so far already surfaced via onStageCompleted.
     public StrategyPlan RunGreedyPipeline(
