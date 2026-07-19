@@ -1362,6 +1362,12 @@ def combine_batch_reviews(
     blocking = [(src, b) for src, b in tagged if _bullet_severity(b) == "BLOCK"]
     comments = [(src, b) for src, b in tagged if _bullet_severity(b) != "BLOCK"]
 
+    # Keep the merge-gating verdict aligned with the visible findings: if the
+    # consolidated review surfaced any blocking bullets, the posted review must
+    # be a request for changes.
+    if blocking:
+        final_verdict = "BLOCK"
+
     parts: list[str] = ["## Summary"]
     if overall_summary:
         parts.append(overall_summary)
