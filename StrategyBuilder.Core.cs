@@ -7,6 +7,8 @@ using System.Threading;
 
 partial class StrategyBuilder
 {
+    private readonly StrategyBuilderSession _session = new();
+
     private const int ProgressReportIntervalMs = 100;
     private const int IterativeDeepeningMinGroupSize = 5;
     private const int IterativeDeepeningMinRequestedTopCount = 5;
@@ -89,15 +91,19 @@ partial class StrategyBuilder
     // Active display-key recursion path while materializing a GreedyTighten tree. Used to reject
     // local overrides whose outcomes would reference an ancestor display state.
     private readonly HashSet<IntSequenceKey> _materializationDisplayPath = new();
-    private readonly HashSet<SearchStateKey> _visitedSearchStates = new();
-    private readonly Dictionary<SearchStateKey, int> _minWorstCaseStepsCache = new();
-    private readonly Dictionary<SearchStateKey, int> _lowerBoundStepsCache = new();
+    private HashSet<SearchStateKey> _visitedSearchStates => _session.VisitedSearchStates;
+    private Dictionary<SearchStateKey, int> _minWorstCaseStepsCache => _session.MinWorstCaseStepsCache;
+    private Dictionary<SearchStateKey, int> _lowerBoundStepsCache => _session.LowerBoundStepsCache;
     // Iterative-deepening transposition memo: the best lower bound on a state's exact cost learned
     // from passes that failed to resolve it under their budget. Lets a later node/pass prune a state
     // immediately when this learned bound already exceeds the current budget.
-    private readonly Dictionary<SearchStateKey, int> _searchLowerBoundCache = new();
-    private readonly Dictionary<SearchStateKey, FeasibleTopSetInfo> _feasibleTopSetCache = new();
-    private readonly Dictionary<SearchStateKey, BestGroupPattern> _bestGroupPatternCache = new();
+    private Dictionary<SearchStateKey, int> _searchLowerBoundCache => _session.SearchLowerBoundCache;
+    private Dictionary<SearchStateKey, FeasibleTopSetInfo> _feasibleTopSetCache => _session.FeasibleTopSetCache;
+    private Dictionary<SearchStateKey, BestGroupPattern> _bestGroupPatternCache => _session.BestGroupPatternCache;
+    private Dictionary<SearchStateKey, BestGroupPattern> _compactGroupPatternCache => _session.CompactGroupPatternCache;
+    private Dictionary<SearchStateKey, int> _compactGroupPatternTightestBudget => _session.CompactGroupPatternTightestBudget;
+    private Dictionary<(SearchStateKey Key, int Budget), int> _compactCostMemo => _session.CompactCostMemo;
+    private Dictionary<SearchStateKey, int> _compactRealStepsMemo => _session.CompactRealStepsMemo;
     // Cross-instance canonical-key memo: maps a state's cheap raw structural fingerprint to its
     // expensive McKay canonical key. The same logical poset is reached via many search paths as
     // distinct ComparisonState instances (each with its own per-instance cache), so without this the
@@ -106,7 +112,7 @@ partial class StrategyBuilder
     // determines the canonical key.
     private readonly Dictionary<RawStructureKey, IntSequenceKey> _canonicalKeyMemo = new();
     private readonly Stopwatch _progressStopwatch = Stopwatch.StartNew();
-    private readonly List<SearchMilestone> _rootIncumbents = new();
+    private List<SearchMilestone> _rootIncumbents => _session.RootIncumbents;
     private int _nextStateId = 1;
     private int _searchedStates;
     private int _pendingStates;
@@ -115,15 +121,18 @@ partial class StrategyBuilder
     private int _lastReportedVisitedStatesCount = 0;
     private long _feasiblePhase2StartMs = -1;  // When BuildState recursion began in feasible stage
     private bool _feasiblePhaseSolved = false;  // Mark when feasible stage materialization completes
-    private int _lowerBoundPrunes;
-    private int _duplicateOutcomeSkips;
-    private int _mergedOutcomeCollisions;
-    private int _exactCacheHits;
-    private int _lowerBoundCacheHits;
-    private int _feasibleTopSetCacheHits;
-    private int _bestGroupPatternCacheHits;
-    private int _outcomesConstructed;
-    private int _candidateGroupsEnumerated;
+    private int _lowerBoundPrunes { get => _session.LowerBoundPrunes; set => _session.LowerBoundPrunes = value; }
+    private int _duplicateOutcomeSkips { get => _session.DuplicateOutcomeSkips; set => _session.DuplicateOutcomeSkips = value; }
+    private int _mergedOutcomeCollisions { get => _session.MergedOutcomeCollisions; set => _session.MergedOutcomeCollisions = value; }
+    private int _exactCacheHits { get => _session.ExactCacheHits; set => _session.ExactCacheHits = value; }
+    private int _lowerBoundCacheHits { get => _session.LowerBoundCacheHits; set => _session.LowerBoundCacheHits = value; }
+    private int _feasibleTopSetCacheHits { get => _session.FeasibleTopSetCacheHits; set => _session.FeasibleTopSetCacheHits = value; }
+    private int _bestGroupPatternCacheHits { get => _session.BestGroupPatternCacheHits; set => _session.BestGroupPatternCacheHits = value; }
+    private int _outcomesConstructed { get => _session.OutcomesConstructed; set => _session.OutcomesConstructed = value; }
+    private int _candidateGroupsEnumerated { get => _session.CandidateGroupsEnumerated; set => _session.CandidateGroupsEnumerated = value; }
+    private int _compactStatesSolved { get => _session.CompactStatesSolved; set => _session.CompactStatesSolved = value; }
+    private int _compactGroupsEnumerated { get => _session.CompactGroupsEnumerated; set => _session.CompactGroupsEnumerated = value; }
+    private int _compactStepOptimalGroups { get => _session.CompactStepOptimalGroups; set => _session.CompactStepOptimalGroups = value; }
     private long _phase1Milliseconds;
     private long _phase1bMilliseconds;
     private long _phase2Milliseconds;
@@ -1793,27 +1802,13 @@ partial class StrategyBuilder
         _materializationDisplayPath.Clear();
         _nextStateId = 1;
 
-        _visitedSearchStates.Clear();
+        _session.ResetPerBuildTransientState();
         _searchedStates = 0;
         _lastReportedVisitedStatesCount = 0;
         _feasiblePhase2StartMs = -1;
         _feasiblePhaseSolved = false;
         _pendingStates = 0;
         _peakPendingStates = 0;
-
-        _lowerBoundPrunes = 0;
-        _duplicateOutcomeSkips = 0;
-        _mergedOutcomeCollisions = 0;
-        _exactCacheHits = 0;
-        _lowerBoundCacheHits = 0;
-        _feasibleTopSetCacheHits = 0;
-        _bestGroupPatternCacheHits = 0;
-        _greedyScoreLowerBoundCacheReuseHits = 0;
-        _outcomesConstructed = 0;
-        _candidateGroupsEnumerated = 0;
-        _compactStatesSolved = 0;
-        _compactGroupsEnumerated = 0;
-        _compactStepOptimalGroups = 0;
         _progressEstimateInitialized = false;
         _progressEstimateEma01 = 0.0;
         _lastProgressSampleElapsedMs = -1;

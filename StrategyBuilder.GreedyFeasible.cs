@@ -26,7 +26,7 @@ partial class StrategyBuilder
     // active items, and ChooseConstructiveGroup guarantees one is included.
     //
     // This builder reuses the existing BuildState materialization: the greedy-feasible stage enables
-    // constructive selection through MaterializationContext (see TopKFinder.cs), so no precomputed
+    // constructive selection through MaterializationContext (see StrategyBuilder.Core.cs), so no precomputed
     // pattern cache / closure pre-solve is needed (the chooser is cheap and deterministic).
     // Test-only switch: when true, candidate lookahead scoring always runs to completion (no
     // incumbent-based early prune). Used by regression tests to A/B lock the pruning win via
@@ -35,9 +35,23 @@ partial class StrategyBuilder
     // Test-only switch: when true, disables the active-count gate for display-line tie-break so
     // tests can A/B compare heavy tie-break evaluation work.
     internal bool DisableConstructiveDisplayLineTieBreakActiveGateForTesting { get; set; }
-    private Dictionary<SearchStateKey, int>? _constructiveDepthMemo;
-    private int _greedyScoreLowerBoundCacheReuseHits;
-    private int _constructiveDisplayLineTieBreakEvaluations;
+    private Dictionary<SearchStateKey, int>? _constructiveDepthMemo
+    {
+        get => _session.ConstructiveDepthMemo;
+        set => _session.ConstructiveDepthMemo = value;
+    }
+
+    private int _greedyScoreLowerBoundCacheReuseHits
+    {
+        get => _session.GreedyScoreLowerBoundCacheReuseHits;
+        set => _session.GreedyScoreLowerBoundCacheReuseHits = value;
+    }
+
+    private int _constructiveDisplayLineTieBreakEvaluations
+    {
+        get => _session.ConstructiveDisplayLineTieBreakEvaluations;
+        set => _session.ConstructiveDisplayLineTieBreakEvaluations = value;
+    }
 
     internal int GreedyScoreLowerBoundCacheReuseHits => _greedyScoreLowerBoundCacheReuseHits;
     internal int ConstructiveDisplayLineTieBreakEvaluations => _constructiveDisplayLineTieBreakEvaluations;
@@ -50,7 +64,11 @@ partial class StrategyBuilder
     // cleared by ResetPerBuildTransientState so it survives the step->edge build boundary on the same
     // builder. When the edge phase runs standalone (no prior step build) it falls back to the lean
     // ConstructiveRootUpperBound, which is sound but looser.
-    private int _feasibleRootBudget = -1;
+    private int _feasibleRootBudget
+    {
+        get => _session.FeasibleRootBudget;
+        set => _session.FeasibleRootBudget = value;
+    }
 
     // Total distinct canonical search states the step phase visited, captured at the end of
     // ExecuteGreedyFeasibleStage and (like _feasibleRootBudget) deliberately NOT cleared by
@@ -60,7 +78,11 @@ partial class StrategyBuilder
     // it is only a rough scale (edge work can be many times larger or smaller than the step state
     // count), not a hard denominator. -1 until a step plan is built; the standalone edge phase (no
     // prior step build) leaves it -1 and keeps the pinned-progress behavior.
-    private int _feasibleCompactStateEstimate = -1;
+    private int _feasibleCompactStateEstimate
+    {
+        get => _session.FeasibleCompactStateEstimate;
+        set => _session.FeasibleCompactStateEstimate = value;
+    }
 
     // Allows a caller that computed a tighter feasible plan on the same builder (for example an
     // optional GreedyTighten pre-step) to seed the proof-tighten loop with that tighter U.

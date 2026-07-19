@@ -19,7 +19,6 @@ partial class StrategyBuilder
     // Phase A feasibility-only tightening; Phase B clears it to run one real min-edge pass at
     // the determined step.
     private bool _compactFeasibilityOnly;
-    private int _compactStatesSolved;
 
 
     // Per-state cap on how many candidate groups the greedy edge phase (mode A) generates and
@@ -36,10 +35,6 @@ partial class StrategyBuilder
 
     internal int GetCompactGreedyCandidateCapForTesting(int activeCount, int groupSize)
         => GetCompactGreedyCandidateCap(activeCount, groupSize);
-    
-    
-    private int _compactGroupsEnumerated;
-    private int _compactStepOptimalGroups;
 
     // Set true whenever the greedy candidate cap (a finite generationCap) actually truncated a state's
     // group enumeration during the current probe -- i.e. more representatives existed than the cap
@@ -53,10 +48,6 @@ partial class StrategyBuilder
     // infeasible (root cost == sentinel), so the tightening loop can tell a proven-infeasible ceiling
     // (complete search) from a merely-incomplete one (cap truncated some state's enumeration).
     private bool _lastProbeEnumerationCapped;
-    private readonly Dictionary<SearchStateKey, BestGroupPattern> _compactGroupPatternCache = new();
-    private readonly Dictionary<SearchStateKey, int> _compactGroupPatternTightestBudget = new();
-    private readonly Dictionary<(SearchStateKey Key, int Budget), int> _compactCostMemo = new();
-    private readonly Dictionary<SearchStateKey, int> _compactRealStepsMemo = new();
 
     // Greedy edge-phase U tightening. The constructive step phase's worst-case step count U is a feasible
     // upper bound that is typically opt+1, and the edge phase inherits it as its ceiling. After the
@@ -81,10 +72,7 @@ partial class StrategyBuilder
     // This resets the compact selection caches, ensuring subsequent phases start with clean state.
     private void ResetCompactState()
     {
-        _compactGroupPatternCache.Clear();
-        _compactGroupPatternTightestBudget.Clear();
-        _compactCostMemo.Clear();
-        _compactRealStepsMemo.Clear();
+        _session.ResetCompactCaches();
         _phase1bSolved = false;
         _compactPatternCacheReadyForMaterialization = false;
         _compactRootCost = int.MaxValue;
