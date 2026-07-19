@@ -11,6 +11,7 @@ using Xunit;
 // where ~125 were automorphism-backed duplicates. CheckPlanFalseSplits counts exactly those
 // automorphism-backed-yet-split sibling pairs; folding drives it to zero. This test locks that in
 // with a counter (not wall-clock), so a regression that re-splits genuine orbits fails here.
+[Trait("Category", "Slow")]
 public sealed class RelabelingOrbitFoldingTests
 {
     [Fact]

@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup Condition="'$(IsTestProject)' == 'true'">
+    <!-- Default to fast tests only; callers can override with filter args or -p:UseFastTestFilter=false. -->
+    <VSTestTestCaseFilter Condition="'$(VSTestTestCaseFilter)' == '' and '$(UseFastTestFilter)' != 'false'">Category!=Slow</VSTestTestCaseFilter>
+  </PropertyGroup>
+</Project>

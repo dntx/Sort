@@ -25,6 +25,7 @@ using Xunit;
 //     (StrategyPlan.IsStrictRefinementOver) then keeps the compact plan only when it strictly beats
 //     default, so a worse-than-default candidate is simply never shown. This Review finding therefore
 //     records the proxy-vs-display gap for those shapes rather than flagging a regression.
+[Trait("Category", "Slow")]
 public sealed class AnomalyScanTests
 {
     [Fact]

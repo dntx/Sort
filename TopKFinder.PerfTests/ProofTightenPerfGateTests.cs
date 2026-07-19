@@ -20,6 +20,7 @@ using Xunit.Sdk;
 // - Wall-clock-only gates are noisy across machines.
 // - This gate combines a coarse timeout sentinel (hang/explosion catcher) with optional deterministic
 //   work counters (machine-independent, ratchet-friendly).
+[Trait("Category", "Slow")]
 public sealed class ProofTightenPerfGateTests
 {
     private readonly ITestOutputHelper _output;

@@ -15,6 +15,7 @@ using Xunit;
 //   dotnet test TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter OrderedBlockHonesty
 // Knobs: BLOCK_HONESTY_NMAX (default 10), BLOCK_HONESTY_CAP (default 2000000),
 //   BLOCK_HONESTY_PATH (default <repo>\block-honesty-report.txt).
+[Trait("Category", "Slow")]
 public sealed class OrderedBlockHonestyTests
 {
     [Fact]
