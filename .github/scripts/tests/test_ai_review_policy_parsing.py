@@ -38,3 +38,25 @@ VERDICT: BLOCK
 
     assert "UNEXPLAINED NEW SOURCE FILE: None." not in review
     assert "VERDICT: APPROVE" in review
+
+
+def test_combine_batch_reviews_drops_plural_and_missing_docs_none_blocks() -> None:
+    structural_review = """## Structural Review
+The PR description matches the change set.
+
+## Findings
+- **[BLOCK]** MISSING DOCS**: None. The PR does not introduce or modify user-facing behavior, so no documentation updates are required.
+- **[BLOCK]** UNEXPLAINED NEW SOURCE FILES**: None. The new files are well-named and their purposes are clear from the description and the diff.
+
+VERDICT: BLOCK
+"""
+
+    review = ai_review.combine_batch_reviews(
+        [(1, 1, "APPROVE", "## Summary\nLooks good.\n\n## Findings\nNo issues found.\n\nVERDICT: APPROVE")],
+        structural=("BLOCK", structural_review),
+        policy_findings=[],
+    )
+
+    assert "MISSING DOCS**: None." not in review
+    assert "UNEXPLAINED NEW SOURCE FILES**: None." not in review
+    assert "VERDICT: APPROVE" in review

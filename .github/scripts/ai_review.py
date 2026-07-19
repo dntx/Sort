@@ -1360,17 +1360,19 @@ def _is_noise_bullet(bullet: str) -> bool:
     return "no issues found" in low or "**[approve]**" in low or "[approve]" in low
 
 
-_SELF_NEGATING_STRUCTURAL_BULLET_RE = re.compile(
-    r"\b(?:unexplained new source file|naming inconsistency|missing documentation updates?|"
-    r"description [^\n:]*consistency)\b[^\n]*:\s*none\.",
-    re.IGNORECASE,
-)
+_SELF_NEGATING_STRUCTURAL_BULLET_RE = re.compile(r":\s*none\.", re.IGNORECASE)
 
 
 def _is_self_negating_structural_bullet(bullet: str) -> bool:
-    """True for contradictory structural bullets like 'UNEXPLAINED ...: None.'"""
+    """True for contradictory structural bullets like '...: None.'"""
     normalized = " ".join((bullet or "").split())
-    return bool(_SELF_NEGATING_STRUCTURAL_BULLET_RE.search(normalized))
+    if not _SELF_NEGATING_STRUCTURAL_BULLET_RE.search(normalized):
+        return False
+
+    stripped = _BULLET_MARKER_RE.sub("", normalized, count=1)
+    stripped = _LEADING_SEVERITY_RE.sub("", stripped)
+    lowered = stripped.lower()
+    return bool(re.match(r"^[a-z][a-z\s/*_-]+:\s*none\.", lowered))
 
 
 _BULLET_MARKER_RE = re.compile(r"^\s*[-*]\s+")
