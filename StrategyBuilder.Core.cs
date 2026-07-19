@@ -877,7 +877,7 @@ partial class StrategyBuilder
 
         foreach (var group in EnumerateCombinations(candidates, cachedPattern.GroupSize))
         {
-            if (activeColors is not null && !GroupMatchesColorSignature(activeColors, group, colorSignature!))
+            if (activeColors is not null && !GroupEnumerationService.GroupMatchesColorSignature(activeColors, group, colorSignature!))
                 continue;
 
             if (GetGroupPattern(state, group) == cachedPattern.Pattern)
@@ -940,48 +940,10 @@ partial class StrategyBuilder
     private static BestGroupPattern MakeGroupPattern(ComparisonState state, IReadOnlyList<int> group)
     {
         int[] colors = state.GetActiveItemColors();
-        return new BestGroupPattern(group.Count, GetGroupPattern(state, group), BuildSortedColorSignature(colors, group));
-    }
-
-    private static int[] BuildSortedColorSignature(int[] colors, IReadOnlyList<int> group)
-    {
-        var signature = new int[group.Count];
-        for (int i = 0; i < group.Count; i++)
-            signature[i] = colors[group[i]];
-        Array.Sort(signature);
-        return signature;
-    }
-
-    // Necessary condition for GetGroupPattern(state, group) == target pattern: the group's sorted
-    // color multiset must equal the cached signature. Allocation-free (group size is tiny).
-    private static bool GroupMatchesColorSignature(int[] colors, IReadOnlyList<int> group, int[] target)
-    {
-        int count = group.Count;
-        if (target.Length != count)
-            return false;
-
-        Span<int> signature = stackalloc int[count];
-        for (int i = 0; i < count; i++)
-            signature[i] = colors[group[i]];
-
-        for (int i = 1; i < count; i++)
-        {
-            int value = signature[i];
-            int j = i - 1;
-            while (j >= 0 && signature[j] > value)
-            {
-                signature[j + 1] = signature[j];
-                j--;
-            }
-
-            signature[j + 1] = value;
-        }
-
-        for (int i = 0; i < count; i++)
-            if (signature[i] != target[i])
-                return false;
-
-        return true;
+        return new BestGroupPattern(
+            group.Count,
+            GetGroupPattern(state, group),
+            GroupEnumerationService.BuildSortedColorSignature(colors, group));
     }
 
     private IEnumerable<List<int>> EnumerateDistinctGroups(
@@ -1027,7 +989,7 @@ partial class StrategyBuilder
         foreach (var group in collected)
         {
             ProbeCancellation();
-            IntSequenceKey cheap = CheapGroupSignature(labels, group);
+            IntSequenceKey cheap = GroupEnumerationService.BuildCheapGroupSignature(labels, group);
             if (!buckets.TryGetValue(cheap, out List<List<int>>? bucket))
             {
                 bucket = new List<List<int>>();
@@ -1053,7 +1015,7 @@ partial class StrategyBuilder
                 ProbeCancellation();
                 IntSequenceKey pattern = GetGroupPattern(state, group);
                 if (!representatives.TryGetValue(pattern, out List<int>? existing) ||
-                    CompareGroupsLexicographically(group, existing) < 0)
+                    GroupEnumerationService.CompareGroupsLexicographically(group, existing) < 0)
                 {
                     representatives[pattern] = group;
                 }
@@ -1062,17 +1024,8 @@ partial class StrategyBuilder
             ordered.AddRange(representatives.Values);
         }
 
-        ordered.Sort(CompareGroupsLexicographically);
+        ordered.Sort(GroupEnumerationService.CompareGroupsLexicographically);
         return ordered;
-    }
-
-    private static IntSequenceKey CheapGroupSignature(int[] labels, IReadOnlyList<int> group)
-    {
-        var values = new int[group.Count];
-        for (int i = 0; i < group.Count; i++)
-            values[i] = labels[group[i]];
-        Array.Sort(values);
-        return new IntSequenceKey(values);
     }
 
     private void GenerateClassRepresentatives(
@@ -1128,19 +1081,6 @@ partial class StrategyBuilder
         }
     }
 
-    private static int CompareGroupsLexicographically(List<int> a, List<int> b)
-    {
-        int min = Math.Min(a.Count, b.Count);
-        for (int i = 0; i < min; i++)
-        {
-            int cmp = a[i].CompareTo(b[i]);
-            if (cmp != 0)
-                return cmp;
-        }
-
-        return a.Count.CompareTo(b.Count);
-    }
-
     private IEnumerable<List<int>> EnumeratePrioritizedGroups(
         ComparisonState state,
         int remainingSlots,
@@ -1169,52 +1109,10 @@ partial class StrategyBuilder
 
         return new HeuristicGroupScore(
             guaranteedTopHits,
-            CountFreshItems(state, group),
-            CalculateUnrelatedScore(state, group),
-            CountUnresolvedPairs(state, group),
+            GroupEnumerationService.CountFreshItems(state, group),
+            GroupEnumerationService.CalculateUnrelatedScore(state, group),
+            GroupEnumerationService.CountUnresolvedPairs(state, group),
             group.Count);
-    }
-
-    private static int CountFreshItems(ComparisonState state, IReadOnlyList<int> group)
-    {
-        int count = 0;
-        for (int i = 0; i < group.Count; i++)
-        {
-            int item = group[i];
-            if (state.GetAncestorCount(item) == 0 && state.GetDescendantCount(item) == 0)
-                count++;
-        }
-
-        return count;
-    }
-
-    private static int CalculateUnrelatedScore(ComparisonState state, IReadOnlyList<int> group)
-    {
-        int sum = 0;
-        for (int i = 0; i < group.Count; i++)
-        {
-            int item = group[i];
-            sum += state.GetAncestorCount(item) + state.GetDescendantCount(item);
-        }
-
-        return -sum;
-    }
-
-    private static int CountUnresolvedPairs(ComparisonState state, IReadOnlyList<int> group)
-    {
-        int count = 0;
-        for (int i = 0; i < group.Count - 1; i++)
-        {
-            for (int j = i + 1; j < group.Count; j++)
-            {
-                int a = group[i];
-                int b = group[j];
-                if (!state.HasAncestor(a, b) && !state.HasAncestor(b, a))
-                    count++;
-            }
-        }
-
-        return count;
     }
 
     private IEnumerable<List<int>> EnumerateCombinations(IReadOnlyList<int> items, int count)
@@ -1436,28 +1334,16 @@ partial class StrategyBuilder
 
     private double MapToReportedProgress(double localProgress01)
     {
-        if (!_reportCombinedRunProgress)
-            return localProgress01;
-
-        // The combined-run bar is split into two visible stages: step then edge. The ratio differs
-        // per mode. Exact mode: step (exact solve) gets 60%, edge (compact) gets 40%. Greedy mode:
-        // step (feasible bound) gets 10%, so edge (feasible-compact) gets the remaining 90%.
-        (double progressBase, double progressSpan) = _progressScope switch
-        {
-            ProgressScope.FeasibleInCombinedRun => (0.0, ProgressTuning.CombinedRun.FeasibleSpanPercent / 100.0),
-            ProgressScope.DefaultInCombinedRun => (0.0, ProgressTuning.CombinedRun.DefaultSpanPercent / 100.0),
-            ProgressScope.CompactPrimaryInCombinedRun => (ProgressTuning.CombinedRun.CompactPrimaryBasePercent / 100.0, ProgressTuning.CombinedRun.CompactPrimarySpanPercent / 100.0),
-            ProgressScope.CompactFeasibleInCombinedRun => (ProgressTuning.CombinedRun.CompactFeasibleBasePercent / 100.0, ProgressTuning.CombinedRun.CompactFeasibleSpanPercent / 100.0),
-            _ => (0.0, 1.0),
-        };
-
-        // All phases now report incremental progress based on their own work signal:
-        // - FeasibleInCombinedRun: grows from 0% to 100% of its 10% band as states are visited
-        // - DefaultInCombinedRun: grows from 0% to 100% of its 60% band as states are searched
-        // - CompactFeasibleInCombinedRun: grows from 0% to 100% of its 90% band as states are solved
-        // This ensures the display never looks stuck; progress monotonically increases whenever work happens.
-        double localFraction = Math.Clamp(localProgress01, 0.0, 1.0);
-        return Math.Clamp(progressBase + (localFraction * progressSpan), 0.0, 1.0);
+        return ProgressEstimationService.MapToReportedProgress(
+            _reportCombinedRunProgress,
+            _progressScope,
+            localProgress01,
+            ProgressTuning.CombinedRun.FeasibleSpanPercent,
+            ProgressTuning.CombinedRun.DefaultSpanPercent,
+            ProgressTuning.CombinedRun.CompactPrimaryBasePercent,
+            ProgressTuning.CombinedRun.CompactPrimarySpanPercent,
+            ProgressTuning.CombinedRun.CompactFeasibleBasePercent,
+            ProgressTuning.CombinedRun.CompactFeasibleSpanPercent);
     }
 
     private double EstimateProgress(long elapsedMs)
@@ -1474,16 +1360,12 @@ partial class StrategyBuilder
                 return 0.0;
 
             long elapsedInPhase2 = elapsedMs - _feasiblePhase2StartMs;
-            if (elapsedInPhase2 <= 0)
-                return 0.0;
-
-            // Use the same asymptote as the edge phase: estimate remaining work conservatively.
-            // The remaining estimate (min 500ms) ensures the bar rises continuously.
-            long remainingEstimate = Math.Max(
+            return ProgressEstimationService.EstimateAsymptoticProgress(
+                elapsedInPhase2,
                 ProgressTuning.Asymptote.MinimumRemainingMs,
-                ProgressTuning.Asymptote.InitialRemainingMs - elapsedInPhase2 / ProgressTuning.Asymptote.ElapsedDivisor);
-            double fraction = elapsedInPhase2 / (double)(elapsedInPhase2 + remainingEstimate);
-            return Math.Min(fraction, ProgressTuning.Asymptote.FeasibleSoftCap);
+                ProgressTuning.Asymptote.InitialRemainingMs,
+                ProgressTuning.Asymptote.ElapsedDivisor,
+                ProgressTuning.Asymptote.FeasibleSoftCap);
         }
 
         // Greedy-mode edge phase: the compact solve has no pending/searched signal (those counters are
@@ -1501,9 +1383,10 @@ partial class StrategyBuilder
             double stageFraction = 0.0;
             if (_feasibleCompactStateEstimate > 0)
             {
-                double scale = _feasibleCompactStateEstimate;
-                stageFraction = _compactStatesSolved / (_compactStatesSolved + scale);
-                stageFraction = Math.Min(stageFraction, ProgressTuning.Asymptote.CompactFeasibleSoftCap);
+                stageFraction = ProgressEstimationService.EstimateSolvedVsScaleProgress(
+                    _compactStatesSolved,
+                    _feasibleCompactStateEstimate,
+                    ProgressTuning.Asymptote.CompactFeasibleSoftCap);
             }
 
             // Blend with the outer L < step < U loop structure: in the worst case every budget level
@@ -1918,15 +1801,6 @@ partial class StrategyBuilder
 
             return GroupSize.CompareTo(other.GroupSize);
         }
-    }
-
-    private enum ProgressScope
-    {
-        DefaultStandalone = 0,
-        DefaultInCombinedRun = 1,
-        CompactPrimaryInCombinedRun = 2,
-        FeasibleInCombinedRun = 4,
-        CompactFeasibleInCombinedRun = 8,
     }
 
 }
