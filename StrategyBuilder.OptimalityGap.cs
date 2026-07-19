@@ -124,10 +124,7 @@ partial class StrategyBuilder
         _ = ExhaustiveMinEdges(orderedKeys, choiceSets, out _, out Dictionary<SearchStateKey, BestGroupPattern>? best);
 
         _useCompact = true;
-        _compactGroupPatternCache.Clear();
-        _compactGroupPatternTightestBudget.Clear();
-        foreach (KeyValuePair<SearchStateKey, BestGroupPattern> kv in best!)
-            _compactGroupPatternCache[kv.Key] = kv.Value;
+        _session.LoadCompactPatternAssignment(best!);
 
         ResetPerBuildTransientState();
         StrategyNode root = BuildState(new ComparisonState(_n), 0, _k, 1);
@@ -194,10 +191,7 @@ partial class StrategyBuilder
     private int MaterializeEdgeCountWithAssignment(Dictionary<SearchStateKey, BestGroupPattern> assignment, out int maxStep)
     {
         _useCompact = true;
-        _compactGroupPatternCache.Clear();
-        _compactGroupPatternTightestBudget.Clear();
-        foreach (KeyValuePair<SearchStateKey, BestGroupPattern> kv in assignment)
-            _compactGroupPatternCache[kv.Key] = kv.Value;
+        _session.LoadCompactPatternAssignment(assignment);
 
         ResetPerBuildTransientState();
         StrategyNode root = BuildState(new ComparisonState(_n), 0, _k, 1);

@@ -269,6 +269,7 @@ Lane 决策表（先选信号，再选车道）：
 | `ExactPipelineTests.cs` | exact 公共流水线契约：阶段顺序 / 阶段命名 / 返回计划一致性（`step-proof -> exact-edge-compact@S`） |
 | `FreeSymmetryClassTests.cs` | 对称性感知组生成的核心不变量：按 free-symmetry-class 枚举一个代表 == 扫描全部 m-子集得到的轨道集合 |
 | `DominanceMetricTests.cs` | phase-1 支配（subsumption）下界剪枝的**正确性**（下界 bracket 真值）与**有效性**（剪枝确实触发） |
+| `StrategyBuilderSessionTests.cs` | Session 生命周期契约：`ResetPerBuildTransientState` / `ResetCompactCaches` / `LoadCompactPatternAssignment` / `ResetGreedyTightenRunState` 的清理边界与替换语义 |
 | `StrategyOverviewTests.cs` | `StrategyOverview` 概览汇总的正确性 |
 | `StrategyTextRendererTests.cs` | 文本渲染器的格式化逻辑 |
 | `InputValidationTests.cs` / `CliArgsTests.cs` | 输入校验与命令行参数解析 |
@@ -277,6 +278,18 @@ Lane 决策表（先选信号，再选车道）：
 
 - `GreedyPipelineTests.ProofTighten_FirstProbeCompletesQuickly_14_2_4` 为 m=2 前瞻性能 canary。
 - 该 canary 保持 10 秒门槛，同时在超时时允许一次重试，以吸收偶发机器负载抖动并降低误报。
+
+### 5.1 Session 生命周期契约（新增）
+
+随着 `StrategyBuilder` 的可变状态逐步收敛到 `StrategyBuilderSession`，我们新增了
+`StrategyBuilderSessionTests.cs` 作为独立防线，专门锁定以下行为不变量：
+
+- `ResetPerBuildTransientState` 只清每次 build 的瞬态计数/集合，不误清长生命周期 cache；
+- `ResetCompactCaches` 只影响 compact 相关容器；
+- `LoadCompactPatternAssignment` 先清旧 compact 赋值，再加载新 assignment；
+- `ResetGreedyTightenRunState` 清空 greedy-tighten 运行态与诊断计数。
+
+这组测试的目标不是验证算法最优性，而是防止后续重构把 session 生命周期边界悄悄改坏。
 
 ---
 

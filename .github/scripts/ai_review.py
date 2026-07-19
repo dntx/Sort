@@ -557,7 +557,7 @@ def _is_core_algorithm_code_path(path: str) -> bool:
         return False
     base = lower.rsplit("/", 1)[-1]
     return (
-        base == "topkfinder.cs"
+        base in {"strategybuilder.core.cs"}
         or base == "comparisonstate.cs"
         or base.startswith("strategybuilder.")
     )
@@ -1463,6 +1463,12 @@ def combine_batch_reviews(
     )
     blocking = [(src, b) for src, b in tagged if _bullet_severity(b) == "BLOCK"]
     comments = [(src, b) for src, b in tagged if _bullet_severity(b) != "BLOCK"]
+
+    # Keep the merge-gating verdict aligned with the visible findings: if the
+    # consolidated review surfaced any blocking bullets, the posted review must
+    # be a request for changes.
+    if blocking:
+        final_verdict = "BLOCK"
 
     parts: list[str] = ["## Summary"]
     if overall_summary:
