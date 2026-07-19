@@ -46,10 +46,8 @@ The program has three entry points that share the same input validation
 
 ### Test lane quickstart
 
-- Fast lane (default local/PR validation):
-  - `dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --filter "Category!=Slow"`
-- Slow parity lane (opt-in before merge or dedicated audits):
-  - `dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --filter "Category=Slow"`
+- Core test lane (default local/PR validation):
+  - `dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj`
 - Deterministic counter guardrail lane (machine-independent budgets):
   - `pwsh .\scripts\run-counter-guardrails.ps1 -Profile fast-default`
   - dry-run + summary: `pwsh .\scripts\run-counter-guardrails.ps1 -Profile compact -ListOnly -SummaryJsonPath .\artifacts\counter-guardrails-summary.json`
@@ -60,8 +58,7 @@ The program has three entry points that share the same input validation
 
 GitHub Actions lanes:
 
-- `required-pr-tests` (automatic PR gate, fast-only test filter)
-- `manual-slow-parity` (manual slow parity matrix)
+- `required-pr-tests` (automatic PR gate)
 - `manual-counter-guardrails` (manual deterministic counter-cap guardrails)
 - `manual-perf-gate` (manual perf baseline gate)
 

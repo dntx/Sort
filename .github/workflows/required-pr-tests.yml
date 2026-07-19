@@ -39,7 +39,7 @@ jobs:
 
       - name: Run structural regression tests
         if: steps.changes.outputs.has_code == 'true'
-        run: dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --configuration Release --nologo --filter "Category!=Slow"
+        run: dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --configuration Release --nologo
 
       - name: Run lightweight performance tests
         if: steps.changes.outputs.has_code == 'true'
