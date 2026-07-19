@@ -19,7 +19,6 @@ partial class StrategyBuilder
     // Phase A feasibility-only tightening; Phase B clears it to run one real min-edge pass at
     // the determined step.
     private bool _compactFeasibilityOnly;
-    private int _compactStatesSolved;
 
 
     // Per-state cap on how many candidate groups the greedy edge phase (mode A) generates and
@@ -36,10 +35,6 @@ partial class StrategyBuilder
 
     internal int GetCompactGreedyCandidateCapForTesting(int activeCount, int groupSize)
         => GetCompactGreedyCandidateCap(activeCount, groupSize);
-    
-    
-    private int _compactGroupsEnumerated;
-    private int _compactStepOptimalGroups;
 
     // Set true whenever the greedy candidate cap (a finite generationCap) actually truncated a state's
     // group enumeration during the current probe -- i.e. more representatives existed than the cap

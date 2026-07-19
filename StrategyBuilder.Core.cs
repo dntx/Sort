@@ -108,7 +108,7 @@ partial class StrategyBuilder
     // determines the canonical key.
     private readonly Dictionary<RawStructureKey, IntSequenceKey> _canonicalKeyMemo = new();
     private readonly Stopwatch _progressStopwatch = Stopwatch.StartNew();
-    private readonly List<SearchMilestone> _rootIncumbents = new();
+    private List<SearchMilestone> _rootIncumbents => _session.RootIncumbents;
     private int _nextStateId = 1;
     private int _searchedStates;
     private int _pendingStates;
@@ -117,15 +117,18 @@ partial class StrategyBuilder
     private int _lastReportedVisitedStatesCount = 0;
     private long _feasiblePhase2StartMs = -1;  // When BuildState recursion began in feasible stage
     private bool _feasiblePhaseSolved = false;  // Mark when feasible stage materialization completes
-    private int _lowerBoundPrunes;
-    private int _duplicateOutcomeSkips;
-    private int _mergedOutcomeCollisions;
-    private int _exactCacheHits;
-    private int _lowerBoundCacheHits;
-    private int _feasibleTopSetCacheHits;
-    private int _bestGroupPatternCacheHits;
-    private int _outcomesConstructed;
-    private int _candidateGroupsEnumerated;
+    private int _lowerBoundPrunes { get => _session.LowerBoundPrunes; set => _session.LowerBoundPrunes = value; }
+    private int _duplicateOutcomeSkips { get => _session.DuplicateOutcomeSkips; set => _session.DuplicateOutcomeSkips = value; }
+    private int _mergedOutcomeCollisions { get => _session.MergedOutcomeCollisions; set => _session.MergedOutcomeCollisions = value; }
+    private int _exactCacheHits { get => _session.ExactCacheHits; set => _session.ExactCacheHits = value; }
+    private int _lowerBoundCacheHits { get => _session.LowerBoundCacheHits; set => _session.LowerBoundCacheHits = value; }
+    private int _feasibleTopSetCacheHits { get => _session.FeasibleTopSetCacheHits; set => _session.FeasibleTopSetCacheHits = value; }
+    private int _bestGroupPatternCacheHits { get => _session.BestGroupPatternCacheHits; set => _session.BestGroupPatternCacheHits = value; }
+    private int _outcomesConstructed { get => _session.OutcomesConstructed; set => _session.OutcomesConstructed = value; }
+    private int _candidateGroupsEnumerated { get => _session.CandidateGroupsEnumerated; set => _session.CandidateGroupsEnumerated = value; }
+    private int _compactStatesSolved { get => _session.CompactStatesSolved; set => _session.CompactStatesSolved = value; }
+    private int _compactGroupsEnumerated { get => _session.CompactGroupsEnumerated; set => _session.CompactGroupsEnumerated = value; }
+    private int _compactStepOptimalGroups { get => _session.CompactStepOptimalGroups; set => _session.CompactStepOptimalGroups = value; }
     private long _phase1Milliseconds;
     private long _phase1bMilliseconds;
     private long _phase2Milliseconds;
