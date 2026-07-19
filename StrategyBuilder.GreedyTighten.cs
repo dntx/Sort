@@ -97,33 +97,34 @@ partial class StrategyBuilder
     // then materializes the tightened tree once. Returns a feasible-upper-bound plan (never proven).
     public StrategyPlan ExecuteGreedyTightenStage()
     {
-        _progressScope = _reportCombinedRunProgress
-            ? ProgressScope.FeasibleInCombinedRun
-            : ProgressScope.DefaultStandalone;
+        return RunWithComparisonStateCancellation(() =>
+        {
+            _progressScope = _reportCombinedRunProgress
+                ? ProgressScope.FeasibleInCombinedRun
+                : ProgressScope.DefaultStandalone;
 
-        ResetPerBuildTransientState();
-        var stopwatch = Stopwatch.StartNew();
+            ResetPerBuildTransientState();
+            var stopwatch = Stopwatch.StartNew();
 
-        // L side of the squeeze: proven analytic lower bound (independent of the never-finishing exact
-        // search), identical to the greedy-feasible path.
-        RecordRootProvenLowerBound(GetMinWorstCaseLowerBound(new ComparisonState(_n), _k));
+            // L side of the squeeze: proven analytic lower bound (independent of the never-finishing exact
+            // search), identical to the greedy-feasible path.
+            RecordRootProvenLowerBound(GetMinWorstCaseLowerBound(new ComparisonState(_n), _k));
 
-        RunGreedyTighten();
+            RunGreedyTighten();
 
-        // Materialize the tightened tree once (Option B: search on the lean-depth DP, materialize only
-        // at the end). Absent overrides fall back to ChooseConstructiveGroup, so this yields the
-        // greedy-feasible tree plus the committed local edits.
-        _useGreedyTightenSelection = true;
-        StrategyNode root = BuildState(new ComparisonState(_n), 0, _k, 1);
-        _useGreedyTightenSelection = false;
+            // Materialize the tightened tree once (Option B: search on the lean-depth DP, materialize only
+            // at the end). Absent overrides fall back to ChooseConstructiveGroup, so this yields the
+            // greedy-feasible tree plus the committed local edits.
+            _useGreedyTightenSelection = true;
+            StrategyNode root = BuildState(new ComparisonState(_n), 0, _k, 1);
+            _useGreedyTightenSelection = false;
 
-        stopwatch.Stop();
+            stopwatch.Stop();
 
-        StrategyPlan plan = new StrategyPlan(
-            _n, _m, _requestedK, _k, root, stopwatch.Elapsed, CreateSearchStatistics(),
-            isFeasibleUpperBound: true);
-        _latestGreedyIncumbentPlan = plan;
-        return plan;
+            StrategyPlan plan = CreatePlan(root, stopwatch.Elapsed, isFeasibleUpperBound: true);
+            _latestGreedyIncumbentPlan = plan;
+            return plan;
+        });
     }
 
     // Multi-round driver. Each round runs one critical-path post-order pass from the root; a pass that
