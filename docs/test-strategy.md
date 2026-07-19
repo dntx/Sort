@@ -7,7 +7,7 @@
 
 当前治理状态：
 
-- Mainline B（test layering governance）已完成：required PR gate 保持 fast-only，`manual-slow-parity` 承担按需 slow parity，贡献者运行矩阵已文档化。
+- Mainline B（test layering governance）已完成：required PR gate 直接运行完整 `TopKFinder.Tests` + 轻量 perf tests，贡献者运行矩阵已文档化。
 - Mainline C（performance baseline governance）基础设施已完成：focused counter lanes、bundled full audit、baseline drift 审批和 nightly deterministic audit 都已就位；后续主要是 ratchet maintenance。
 
 ---
@@ -103,14 +103,12 @@ compact 是一个跑在 phase 1 之上的**二级 DP**（`StrategyBuilder.Compac
 > compact 的最优性边界（最小化的是边数**代理量**、原始候选可能比 default 差，由编排层「严格更优才展示」裁决）见
 > `docs/core-algorithm.md` §4.4。
 
-### 3.4 Display/Search parity 矩阵分层（Fast vs Slow）
+### 3.4 Display/Search parity 覆盖
 
-`DisplayToSearchExpanderTests` 的 projection-merging parity theory 每个 case 都会执行 layered/direct 两条路径，并在 `projectionMerging=false/true` 下各跑一次，单 case 计算量较高。
+当前 parity 覆盖统一保留在常规测试集中，不再做按测试分类标签的分流。
 
-- 快速矩阵：保留在 `DisplayToSearchExpanderTests`，用于日常 focused 回归。
-- 慢速矩阵：拆到 `SearchParitySlowMatrixTests`，并标记 `Trait("Category", "Slow")`，用于收口前或专项回归。
-
-这样可以避免日常 focused 命令在未显式声明 slow 需求时反复触发高参数 case，降低“看起来卡住”但本质是重算例堆叠导致的长耗时。
+- `DisplaySearchParityTests` 覆盖 default/feasible/compact 的显示-搜索一致性。
+- required gate 直接运行完整 `TopKFinder.Tests`，避免分类筛选与测试集漂移。
 
 ### 3.5 夹逼报告（squeeze）的「已证明下界 L」一侧
 
@@ -186,23 +184,19 @@ GitHub Actions 侧提供了手动门槛工作流：
 
 ---
 
-## 4.2 Contributor Run Matrix（Fast / Slow / Perf）
+## 4.2 Contributor Run Matrix（Core / Counter / Perf）
 
-为避免日常开发被重型 case 拖慢，仓库按以下规则分层：
+仓库按以下规则分层：
 
-- PR 必跑（required gate）：仅跑 fast 套件（`Category!=Slow`）+ 轻量 perf tests。
-- Slow parity 矩阵：不进 required gate，改为按需触发。
+- PR 必跑（required gate）：运行完整 `TopKFinder.Tests` + 轻量 perf tests。
 - deterministic counter guardrails：按需触发 `manual-counter-guardrails`（机器无关计数器门槛）。
 - perf baseline gate：按需触发 `manual-perf-gate`（对比基线 CSV）。
 
 推荐命令：
 
 ```powershell
-# Fast（默认日常回归）
-dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --filter "Category!=Slow"
-
-# Slow parity（收口前 / 专项回归）
-dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --filter "Category=Slow"
+# Core（默认日常回归）
+dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj
 
 # 手动计数器护栏（机器无关）
 pwsh .\scripts\run-counter-guardrails.ps1 -Profile fast-default
@@ -222,8 +216,7 @@ pwsh .\scripts\run-perf-gate.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-sta
 
 GitHub Actions 入口：
 
-- `required-pr-tests`：PR 自动触发（fast only）。
-- `manual-slow-parity`：手动触发 slow parity 矩阵。
+- `required-pr-tests`：PR 自动触发（完整 TopKFinder.Tests + 轻量 perf tests）。
 - `manual-counter-guardrails`：手动触发确定性计数器护栏（counter-cap tests）。
 - `manual-counter-full-audit`：手动触发 full-counter-suite + matched-tests drift diff + unified snapshots 的组合审计。
 - `nightly-counter-full-audit`：夜间自动跑 full deterministic audit，持续监控 matched-tests drift 与 snapshot 回归。
