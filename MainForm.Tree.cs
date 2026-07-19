@@ -11,6 +11,83 @@ using System.Windows.Forms;
 
 partial class MainForm
 {
+    private readonly Dictionary<string, TreeNode> _stateNodesByKey = new();
+    private readonly Dictionary<TreeNode, string> _referenceTargets = new();
+    private readonly Stack<TreeNode> _navigationHistory = new();
+
+    // Lazy tree materialization. A decision node's branch subtree is expensive to build (thousands of
+    // formatted TreeNodes for large shapes), so it is deferred: each expandable decision node gets a
+    // single empty placeholder child and an entry here recording how to build its real children. The
+    // children are materialized on demand -- when the node is expanded, when a jump/copy needs it, or
+    // when the user requests "expand all". Membership in this dictionary (not any placeholder text) is
+    // the source of truth for "not yet materialized".
+    private readonly Dictionary<TreeNode, LazyDecision> _lazyDecisions = new();
+    private readonly Dictionary<TreeNode, LazyOverviewSection> _lazyOverviewSections = new();
+
+    // Per (scope:stateId) branch-index path from a plan's root state node to that state's node, so a jump
+    // target that has not been materialized yet can be reached by walking and materializing the path.
+    private readonly Dictionary<string, JumpTarget> _jumpTargets = new();
+    private readonly Dictionary<string, TreeNode> _jumpScopeRoots = new();
+    private readonly Dictionary<string, StrategyNode> _jumpScopeStrategyRoots = new();
+    private readonly HashSet<string> _indexedJumpScopes = new();
+
+    private sealed class LazyDepthIndex
+    {
+        private readonly StrategyNode _root;
+        private StrategyDepthIndex? _value;
+
+        public LazyDepthIndex(StrategyNode root)
+        {
+            _root = root;
+        }
+
+        public StrategyDepthIndex Value => _value ??= StrategyDepthIndex.Build(_root);
+    }
+
+    private readonly record struct LazyDecision(StrategyNode Node, int K, string Scope, LazyDepthIndex DepthIndex);
+    private readonly record struct LazyOverviewSection(StrategyPlan Plan, string Scope);
+    private readonly record struct JumpTarget(TreeNode ScopeRoot, int[] BranchPath);
+
+    private sealed class LazyNodeDetails
+    {
+        private readonly Func<string> _factory;
+        private string? _cached;
+
+        public LazyNodeDetails(Func<string> factory)
+        {
+            _factory = factory;
+        }
+
+        public bool TryGetCached(out string text)
+        {
+            if (_cached is null)
+            {
+                text = string.Empty;
+                return false;
+            }
+
+            text = _cached;
+            return true;
+        }
+
+        public string GetOrCreate()
+            => _cached ??= _factory();
+    }
+
+    // A branch header node that carries which of its order-text "#n" labels this outcome resolves, mapped
+    // to whether the item is doomed (true -> excluded from top-k, drawn in the exclusion color) or secured
+    // (false -> guaranteed into top-k, drawn in the inclusion color). Storing this on the node itself lets
+    // DrawNode tint the colored head/tail of "a > b > c > d > e"; the map is collected with the node when
+    // the tree is repopulated, so there is no side table keyed by TreeNode to keep in sync.
+    private sealed class BranchTreeNode : TreeNode
+    {
+        public BranchTreeNode(string text) : base(text)
+        {
+        }
+
+        public IReadOnlyDictionary<int, bool>? ColoredTokens { get; init; }
+    }
+
     // The single unified stage-root label used by BOTH the strategy tree plan roots and the overview
     // section roots: "<stage>: elapsed=<s>.3f s, max steps=<n>, edges=<n>, output=<n>", optionally
     // suffixed with a marker (e.g. "no improvement"). When there is no plan the body collapses to the
