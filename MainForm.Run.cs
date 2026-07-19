@@ -322,16 +322,16 @@ partial class MainForm
             ForeColor = _palette.ForeColor,
         };
 
-        // Slot 0: the step strategy, named by mode -- StageNames.StepProof once the exact pass finishes (it
-        // replaces the placeholder in place), or StageNames.GreedyFeasible for the constructive feasible plan
+        // Slot 0: the step strategy, named by mode -- "step-proof" once the exact pass finishes (it
+        // replaces the placeholder in place), or "greedy-feasible" for the constructive feasible plan
         // in greedy mode.
         StrategyPlan stepPlan = defaultPlan ?? feasiblePlan;
         string stepStageName = defaultPlan is null ? StageNames.GreedyFeasible : StageNames.StepProof;
         root.Nodes.Add(CreatePlanTreeRoot(stepStageName, stepPlan, "default", stepPlan.Elapsed));
 
         // Slot 1: the second stage's live placeholder. In exact mode this is the min-edge
-        // StageNames.ExactEdgeCompactPattern pass; in greedy mode it is whatever RunGreedyPipeline emits first --
-        // a proof-tighten stage, or StageNames.GreedyEdgeCompactPattern directly when the greedy bound is
+        // "exact-edge-compact@S" pass; in greedy mode it is whatever RunGreedyPipeline emits first --
+        // a proof-tighten stage, or "greedy-edge-compact@S" directly when the greedy bound is
         // already at the lower bound.
         if (compactPlan is null)
         {
@@ -529,7 +529,7 @@ partial class MainForm
 
     // Name of the next stage RunGreedyPipeline will emit given the best incumbent max-step so
     // far. Mirrors the V2 loop: it tightens to the next proof-tighten ceiling while that ceiling is still above
-    // the proven analytic lower bound, otherwise the final StageNames.GreedyEdgeCompactPattern pass runs. Used to label
+    // the proven analytic lower bound, otherwise the final "greedy-edge-compact@S" pass runs. Used to label
     // the transient "...: computing..." placeholder so it matches the stage name that actually lands.
     private static string NextProofTightenStageName(StrategyPlan feasiblePlan, int incumbentMaxStep)
     {
@@ -539,7 +539,7 @@ partial class MainForm
     }
 
     // Anytime greedy edge handler: invoked on the UI thread once per edge stage as the worker thread
-    // produces it (each proof-tighten stage, then the final StageNames.GreedyEdgeCompactPattern
+    // produces it (each proof-tighten stage, then the final "greedy-edge-compact@S"
     // pass, or a no-solution/incomplete terminal stage). The first stage fills the computing
     // slot in place; every later stage is appended as a new tree + overview section, so the user watches
     // the strategy improve stage by stage. Each tree gets a unique scope ("edge0", "edge1", ...) so

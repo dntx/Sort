@@ -57,7 +57,7 @@ partial class MainForm
     }
 
     // Renders the overview panel so it mirrors the tree one-to-one: a step section (named by mode --
-    // StageNames.StepProof / StageNames.GreedyFeasible) and an edge-compact section ("computing..." placeholder until the edge-compact stage
+    // "step-proof" / "greedy-feasible") and an edge-compact section ("computing..." placeholder until the edge-compact stage
     // finishes). Each section is an independent root, so the strategies' overviews can be browsed and
     // collapsed separately. This is the full-rebuild path used for the initial render and theme switches.
     private void RebuildOverview(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool compactImproved)
