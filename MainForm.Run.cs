@@ -35,11 +35,10 @@ partial class MainForm
         _feasiblePlan = null;
         _defaultPlan = null;
         _compactPlan = null;
-        _exactImproved = false;
         _compactImproved = false;
         _activePhase = 0;
         _proofTightenStages.Clear();
-        _currentStageName = feasibleMode ? "greedy-feasible" : "step-proof";
+        _currentStageName = feasibleMode ? StageNames.GreedyFeasible : StageNames.StepProof;
         _stageStartMs = 0;
         ClearResultsView();
         ShowInitialStagePlaceholder(n, m, k, feasibleMode);
@@ -74,7 +73,7 @@ partial class MainForm
 
                 _feasiblePlan = feasiblePlan;
                 _latestProgress = CreateSnapshotFromPlan(feasiblePlan);
-                PopulateTree(feasiblePlan, defaultPlan: null, compactPlan: null, exactImproved: false, compactImproved: false);
+                PopulateTree(feasiblePlan, defaultPlan: null, compactPlan: null, compactImproved: false);
                 _completedFeasibleStats = feasiblePlan.SearchStatistics;
                 UpdateSummaryText(feasiblePlan, defaultPlan: null, compactPlan: null, compactImproved: false);
                 UpdateStatsPanels();
@@ -270,10 +269,10 @@ partial class MainForm
     // region is never visually empty during the initial compute.
     private void ShowInitialStagePlaceholder(int n, int m, int k, bool feasibleMode)
     {
-        string stageName = feasibleMode ? "greedy-feasible" : "step-proof";
+        string stageName = feasibleMode ? StageNames.GreedyFeasible : StageNames.StepProof;
         string rootLabel = feasibleMode
-            ? $"n={n}, m={m}, k={k} (computing greedy-feasible stage...)"
-            : $"n={n}, m={m}, k={k} (computing step-proof stage...)";
+            ? $"n={n}, m={m}, k={k} (computing {StageNames.GreedyFeasible} stage...)"
+            : $"n={n}, m={m}, k={k} (computing {StageNames.StepProof} stage...)";
         string rootDetails = feasibleMode
             ? "Greedy-feasible stage in progress."
             : "Step-proof stage in progress.";
@@ -298,7 +297,7 @@ partial class MainForm
         _overviewTree.EndUpdate();
     }
 
-    private void PopulateTree(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool exactImproved, bool compactImproved)
+    private void PopulateTree(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool compactImproved)
     {
         _treeView.BeginUpdate();
         _treeView.Nodes.Clear();
@@ -314,7 +313,7 @@ partial class MainForm
         _backButton.Enabled = false;
 
         string rootLabel = BuildRootLabel(feasiblePlan, defaultPlan, compactPlan);
-        var rootDetails = new LazyNodeDetails(() => BuildRootDetails(feasiblePlan, defaultPlan, compactPlan, exactImproved, compactImproved));
+        var rootDetails = new LazyNodeDetails(() => BuildRootDetails(feasiblePlan, defaultPlan, compactPlan, compactImproved));
 
         var root = new TreeNode(rootLabel)
         {
@@ -327,7 +326,7 @@ partial class MainForm
         // replaces the placeholder in place), or "greedy-feasible" for the constructive feasible plan
         // in greedy mode.
         StrategyPlan stepPlan = defaultPlan ?? feasiblePlan;
-        string stepStageName = defaultPlan is null ? "greedy-feasible" : "step-proof";
+        string stepStageName = defaultPlan is null ? StageNames.GreedyFeasible : StageNames.StepProof;
         root.Nodes.Add(CreatePlanTreeRoot(stepStageName, stepPlan, "default", stepPlan.Elapsed));
 
         // Slot 1: the second stage's live placeholder. In exact mode this is the min-edge
@@ -352,7 +351,7 @@ partial class MainForm
         _treeView.EndUpdate();
         _treeView.SelectedNode = root;
 
-        RebuildOverview(feasiblePlan, defaultPlan, compactPlan, exactImproved, compactImproved);
+        RebuildOverview(feasiblePlan, defaultPlan, compactPlan, compactImproved);
     }
 
     // Squeeze on the optimum for a plan: L is the proven analytic lower bound
@@ -399,7 +398,7 @@ partial class MainForm
         return $"{head}, {FormatPlanSqueeze(compactPlan)}, total elapsed={totalSeconds:F3} s";
     }
 
-    private static string BuildRootDetails(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool exactImproved, bool compactImproved)
+    private static string BuildRootDetails(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool compactImproved)
     {
         if (defaultPlan is null)
             return BuildFeasibleOnlyDetails(feasiblePlan);
@@ -421,7 +420,7 @@ partial class MainForm
         if (_treeView.Nodes.Count == 0 || _feasiblePlan is null)
         {
             if (_feasiblePlan is not null)
-                PopulateTree(_feasiblePlan, defaultPlan, compactPlan, _exactImproved, compactImproved);
+                PopulateTree(_feasiblePlan, defaultPlan, compactPlan, compactImproved);
             return;
         }
 
@@ -491,14 +490,13 @@ partial class MainForm
         if (!stage.HasPlan)
             return;
 
-        if (string.Equals(stage.Name, "step-proof", StringComparison.Ordinal))
+        if (string.Equals(stage.Name, StageNames.StepProof, StringComparison.Ordinal))
         {
             StrategyPlan defaultPlan = stage.Plan!;
             _defaultPlan = defaultPlan;
             _feasiblePlan = defaultPlan;
-            _exactImproved = true;
             _latestProgress = CreateSnapshotFromPlan(defaultPlan);
-            PopulateTree(defaultPlan, defaultPlan, compactPlan: null, exactImproved: true, compactImproved: false);
+            PopulateTree(defaultPlan, defaultPlan, compactPlan: null, compactImproved: false);
             _completedDefaultStats = defaultPlan.SearchStatistics;
             UpdateSummaryText(defaultPlan, defaultPlan, compactPlan: null, compactImproved: false);
             UpdateStatsPanels();

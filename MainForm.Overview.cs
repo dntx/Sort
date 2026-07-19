@@ -60,13 +60,13 @@ partial class MainForm
     // "step-proof"/"greedy-feasible") and an edge-compact section ("computing..." placeholder until the edge-compact stage
     // finishes). Each section is an independent root, so the strategies' overviews can be browsed and
     // collapsed separately. This is the full-rebuild path used for the initial render and theme switches.
-    private void RebuildOverview(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool exactImproved, bool compactImproved)
+    private void RebuildOverview(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool compactImproved)
     {
         _overviewTree.BeginUpdate();
         _overviewTree.Nodes.Clear();
 
         StrategyPlan stepPlan = defaultPlan ?? feasiblePlan;
-        string stepStageName = defaultPlan is null ? "greedy-feasible" : "step-proof";
+        string stepStageName = defaultPlan is null ? StageNames.GreedyFeasible : StageNames.StepProof;
         _overviewTree.Nodes.Add(BuildOverviewSectionNode(stepPlan, "default", stepStageName, stepPlan.Elapsed));
 
         if (compactPlan is null)

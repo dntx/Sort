@@ -311,28 +311,28 @@ class Program
             // becomes the final tree.
             var stageSummaries = new System.Collections.Generic.List<string>
             {
-                FormatStageSummary("greedy-feasible", baseFeasiblePlan),
+                FormatStageSummary(StageNames.GreedyFeasible, baseFeasiblePlan),
             };
             if (gtProbeRun)
             {
                 if (gtPlan is not null && gtImproved)
-                    stageSummaries.Add(FormatStageSummary("greedy-tighten", gtPlan));
+                    stageSummaries.Add(FormatStageSummary(StageNames.GreedyTighten, gtPlan));
                 else if (gtPlan is not null)
-                    stageSummaries.Add($"{FormatStageSummary("greedy-tighten", gtPlan)}: no improvement");
+                    stageSummaries.Add($"{FormatStageSummary(StageNames.GreedyTighten, gtPlan)}: no improvement");
             }
             else
             {
-                stageSummaries.Add("greedy-tighten: skipped (root probe)");
+                stageSummaries.Add($"{StageNames.GreedyTighten}: skipped (root probe)");
             }
             int emittedStages = 1 + (gtProbeRun ? 1 : 0);
             StrategyPlan incumbentPlan = baseFeasiblePlan;
-            string finalName = "greedy-feasible";
+            string finalName = StageNames.GreedyFeasible;
             StrategyPlan finalPlan = baseFeasiblePlan;
 
             if (gtPlan is not null && gtImproved)
             {
                 incumbentPlan = gtPlan;
-                finalName = "greedy-tighten";
+                finalName = StageNames.GreedyTighten;
                 finalPlan = gtPlan;
             }
 
@@ -458,7 +458,7 @@ class Program
                 builder,
                 stage =>
                 {
-                    if (string.Equals(stage.Name, "step-proof", StringComparison.Ordinal))
+                    if (string.Equals(stage.Name, StageNames.StepProof, StringComparison.Ordinal))
                     {
                         StrategyPlan stepPlan = stage.Plan!;
                         defaultPlan = stepPlan;

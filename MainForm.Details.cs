@@ -139,7 +139,7 @@ partial class MainForm
 
         if (_feasiblePlan is not null)
         {
-            PopulateTree(_feasiblePlan, _defaultPlan, _compactPlan, _exactImproved, _compactImproved);
+            PopulateTree(_feasiblePlan, _defaultPlan, _compactPlan, _compactImproved);
             if (_runCancellationSource is null)
                 UpdateSummaryText(_feasiblePlan, _defaultPlan, _compactPlan, _compactImproved);
         }

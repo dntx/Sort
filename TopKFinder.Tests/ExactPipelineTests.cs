@@ -18,7 +18,7 @@ public sealed class ExactPipelineTests
         Assert.Equal(2, started.Count);
         Assert.Equal(2, completed.Count);
 
-        Assert.Equal("step-proof", started[0]);
+        Assert.Equal(StageNames.StepProof, started[0]);
 
         StageResult step = completed[0];
         StageResult compact = completed[1];
