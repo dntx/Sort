@@ -282,19 +282,19 @@ public class GreedyPipelineTests
         object compactFeasibleScope = Enum.Parse(progressScopeField.FieldType, "CompactFeasibleInCombinedRun");
         progressScopeField.SetValue(builder, compactFeasibleScope);
 
-        type.GetField("_phase1bSolved", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, false);
-        type.GetField("_feasibleCompactStateEstimate", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, 100);
-        type.GetField("_proofTightenInitialBudget", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, 9);
-        type.GetField("_proofTightenLowerBound", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, 5);
+        SetPrivateMemberValue(builder, "_phase1bSolved", false);
+        SetPrivateMemberValue(builder, "_feasibleCompactStateEstimate", 100);
+        SetPrivateMemberValue(builder, "_proofTightenInitialBudget", 9);
+        SetPrivateMemberValue(builder, "_proofTightenLowerBound", 5);
 
         // Stage 1 near completion at budget=9.
-        type.GetField("_proofTightenCurrentBudget", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, 9);
-        type.GetField("_compactStatesSolved", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, 900);
+        SetPrivateMemberValue(builder, "_proofTightenCurrentBudget", 9);
+        SetPrivateMemberValue(builder, "_compactStatesSolved", 900);
         double stage1NearDone = InvokeEstimateProgress(builder, elapsedMs: 1000);
 
         // Stage 2 just started at budget=8 (solved counter reset).
-        type.GetField("_proofTightenCurrentBudget", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, 8);
-        type.GetField("_compactStatesSolved", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, 0);
+        SetPrivateMemberValue(builder, "_proofTightenCurrentBudget", 8);
+        SetPrivateMemberValue(builder, "_compactStatesSolved", 0);
         double stage2Start = InvokeEstimateProgress(builder, elapsedMs: 1001);
 
         Assert.True(
@@ -323,16 +323,16 @@ public class GreedyPipelineTests
         object compactFeasibleScope = Enum.Parse(progressScopeField.FieldType, "CompactFeasibleInCombinedRun");
         progressScopeField.SetValue(builder, compactFeasibleScope);
 
-        type.GetField("_phase1bSolved", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, false);
-        type.GetField("_feasibleCompactStateEstimate", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, 100);
+        SetPrivateMemberValue(builder, "_phase1bSolved", false);
+        SetPrivateMemberValue(builder, "_feasibleCompactStateEstimate", 100);
 
         // Force an oversized (yet non-negative and internally consistent) context so
         // rawCombined > soft cap if unclamped:
         // completedStages = 999, totalRange = 1000 => rawCombined ~= 0.999 + stageFraction.
-        type.GetField("_proofTightenInitialBudget", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, 1000);
-        type.GetField("_proofTightenCurrentBudget", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, 1);
-        type.GetField("_proofTightenLowerBound", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, 1);
-        type.GetField("_compactStatesSolved", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(builder, 0);
+        SetPrivateMemberValue(builder, "_proofTightenInitialBudget", 1000);
+        SetPrivateMemberValue(builder, "_proofTightenCurrentBudget", 1);
+        SetPrivateMemberValue(builder, "_proofTightenLowerBound", 1);
+        SetPrivateMemberValue(builder, "_compactStatesSolved", 0);
 
         double progress = InvokeEstimateProgress(builder, elapsedMs: 1000);
         Assert.Equal(0.999, progress, precision: 12);
@@ -588,6 +588,28 @@ public class GreedyPipelineTests
         object? value = method.Invoke(builder, new object[] { elapsedMs });
         Assert.NotNull(value);
         return (double)value!;
+    }
+
+    private static void SetPrivateMemberValue(StrategyBuilder builder, string memberName, object value)
+    {
+        Type type = typeof(StrategyBuilder);
+        const BindingFlags Flags = BindingFlags.Instance | BindingFlags.NonPublic;
+
+        FieldInfo? field = type.GetField(memberName, Flags);
+        if (field is not null)
+        {
+            field.SetValue(builder, value);
+            return;
+        }
+
+        PropertyInfo? property = type.GetProperty(memberName, Flags);
+        if (property is not null)
+        {
+            property.SetValue(builder, value);
+            return;
+        }
+
+        throw new InvalidOperationException($"Could not find private field/property '{memberName}' on StrategyBuilder.");
     }
 
     private static void AssertEveryDecisionHasGroup(StrategyNode node)
