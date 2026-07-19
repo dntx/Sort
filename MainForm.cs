@@ -102,7 +102,6 @@ partial class MainForm : Form
     private StrategyPlan? _feasiblePlan;
     private StrategyPlan? _defaultPlan;
     private StrategyPlan? _compactPlan;
-    private bool _exactImproved;
     private bool _compactImproved;
     private bool _feasibleMode;
     private Stopwatch? _runStopwatch;

@@ -36,7 +36,7 @@ public sealed class MainFormRenderingTests
         StrategyOverview expectedOverview = Engine.BuildOverview(plan);
 
         using var form = new MainForm();
-        InvokePrivateInstanceVoid(form, "RebuildOverview", plan, null, null, false, false);
+        InvokePrivateInstanceVoid(form, "RebuildOverview", plan, null, null, false);
 
         TreeView overviewTree = GetPrivateField<TreeView>(form, "_overviewTree");
         Assert.True(overviewTree.Nodes.Count > 0);

@@ -410,8 +410,8 @@ partial class StrategyBuilder
     //     final edge-minimized tree.
     //
     // Fast and interruptible, not proven optimal. onStageCompleted, when supplied, is invoked synchronously on
-    // this thread each time a downstream stage becomes available: once per successful tightening ceiling
-    // ("proof-tighten≤N", carrying the smaller plan), once for the terminal ceiling that stops tightening
+    // this thread each time a downstream stage becomes available: once per successful proof-tighten stage
+    // (carrying the smaller plan), once for the terminal ceiling that stops tightening
     // (a no-solution/incomplete stage whose plan is null), and finally once for the edge-compaction pass
     // ("greedy-edge-compact@S"). This drives an anytime UI/CLI that surfaces the full progression as it is found; a
     // user who no longer wants to wait cancels (GUI Stop / CLI Ctrl+C), which propagates out with the
@@ -455,7 +455,7 @@ partial class StrategyBuilder
             {
                 _cancellationToken.ThrowIfCancellationRequested();
                 _proofTightenCurrentBudget = budget;
-                string stageName = FormatProofTightenStageName(budget);
+                string stageName = StageNames.FormatProofTighten(budget);
                 onStageStart?.Invoke(stageName);
                 StageResult stage = ExecuteProofTightenStage(budget);
                 onStageCompleted?.Invoke(stage);
@@ -485,7 +485,7 @@ partial class StrategyBuilder
         }
 
         // Phase B: one edge-compaction pass at the determined step S.
-        string edgeCompactStageName = FormatGreedyEdgeCompactStageName(bestStep);
+        string edgeCompactStageName = StageNames.FormatGreedyEdgeCompact(bestStep);
         onStageStart?.Invoke(edgeCompactStageName);
         var edgeStopwatch = Stopwatch.StartNew();
         StrategyPlan finalPlan = BuildEdgeCompactPlanAtBudget(bestStep)
@@ -496,18 +496,6 @@ partial class StrategyBuilder
         return finalPlan;
     }
 
-    private static string FormatProofTightenStageName(int budget)
-        => $"proof-tighten\u2264{budget}";
-
-    internal const string ExactEdgeCompactStagePrefix = "exact-edge-compact@";
-    internal const string GreedyEdgeCompactStagePrefix = "greedy-edge-compact@";
-
-    internal static string FormatExactEdgeCompactStageName(int step)
-        => $"{ExactEdgeCompactStagePrefix}{step}";
-
-    internal static string FormatGreedyEdgeCompactStageName(int step)
-        => $"{GreedyEdgeCompactStagePrefix}{step}";
-
     public StageResult ExecuteProofTightenStage(int budget)
     {
         _progressScope = _reportCombinedRunProgress
@@ -517,7 +505,7 @@ partial class StrategyBuilder
         _compactFeasibilityOnly = true;
         try
         {
-            string stageName = FormatProofTightenStageName(budget);
+            string stageName = StageNames.FormatProofTighten(budget);
             var stopwatch = Stopwatch.StartNew();
             (StageOutcome outcome, StrategyPlan? candidate) = ProbeAndClassify(budget);
             stopwatch.Stop();

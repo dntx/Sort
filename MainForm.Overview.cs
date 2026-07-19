@@ -57,29 +57,29 @@ partial class MainForm
     }
 
     // Renders the overview panel so it mirrors the tree one-to-one: a step section (named by mode --
-    // "step-proof"/"greedy-feasible") and an edge-compact section ("computing..." placeholder until the edge-compact stage
+    // "step-proof" / "greedy-feasible") and an edge-compact section ("computing..." placeholder until the edge-compact stage
     // finishes). Each section is an independent root, so the strategies' overviews can be browsed and
     // collapsed separately. This is the full-rebuild path used for the initial render and theme switches.
-    private void RebuildOverview(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool exactImproved, bool compactImproved)
+    private void RebuildOverview(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool compactImproved)
     {
         _overviewTree.BeginUpdate();
         _overviewTree.Nodes.Clear();
 
         StrategyPlan stepPlan = defaultPlan ?? feasiblePlan;
-        string stepStageName = defaultPlan is null ? "greedy-feasible" : "step-proof";
+        string stepStageName = defaultPlan is null ? StageNames.GreedyFeasible : StageNames.StepProof;
         _overviewTree.Nodes.Add(BuildOverviewSectionNode(stepPlan, "default", stepStageName, stepPlan.Elapsed));
 
         if (compactPlan is null)
         {
             string firstStageName = defaultPlan is null
                 ? NextProofTightenStageName(feasiblePlan, feasiblePlan.MaxStep)
-                : StrategyBuilder.FormatExactEdgeCompactStageName(feasiblePlan.MaxStep);
+                : StageNames.FormatExactEdgeCompact(feasiblePlan.MaxStep);
             _overviewTree.Nodes.Add(BuildOverviewNoteNode(FormatComputingPlaceholderText(firstStageName)));
         }
         else if (compactImproved)
-            _overviewTree.Nodes.Add(BuildOverviewSectionNode(compactPlan, "compact", defaultPlan is null ? StrategyBuilder.FormatGreedyEdgeCompactStageName(compactPlan.MaxStep) : StrategyBuilder.FormatExactEdgeCompactStageName(compactPlan.MaxStep), compactPlan.Elapsed));
+            _overviewTree.Nodes.Add(BuildOverviewSectionNode(compactPlan, "compact", defaultPlan is null ? StageNames.FormatGreedyEdgeCompact(compactPlan.MaxStep) : StageNames.FormatExactEdgeCompact(compactPlan.MaxStep), compactPlan.Elapsed));
         else
-            _overviewTree.Nodes.Add(BuildOverviewNoteNode(FormatStageRootLabel(defaultPlan is null ? StrategyBuilder.FormatGreedyEdgeCompactStageName(compactPlan.MaxStep) : StrategyBuilder.FormatExactEdgeCompactStageName(compactPlan.MaxStep), compactPlan.Elapsed, plan: null)));
+            _overviewTree.Nodes.Add(BuildOverviewNoteNode(FormatStageRootLabel(defaultPlan is null ? StageNames.FormatGreedyEdgeCompact(compactPlan.MaxStep) : StageNames.FormatExactEdgeCompact(compactPlan.MaxStep), compactPlan.Elapsed, plan: null)));
 
         _overviewTree.EndUpdate();
     }
@@ -93,8 +93,8 @@ partial class MainForm
 
         bool greedyMode = _defaultPlan is null;
         string compactStageName = greedyMode
-            ? StrategyBuilder.FormatGreedyEdgeCompactStageName(compactPlan.MaxStep)
-            : StrategyBuilder.FormatExactEdgeCompactStageName(compactPlan.MaxStep);
+            ? StageNames.FormatGreedyEdgeCompact(compactPlan.MaxStep)
+            : StageNames.FormatExactEdgeCompact(compactPlan.MaxStep);
 
         // Drop the trailing edge-compact "computing..." placeholder root.
         if (_overviewTree.Nodes.Count > 0)

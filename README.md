@@ -103,6 +103,18 @@ single-stage construction and multi-stage orchestration:
 - `StageResult` / `StageOutcome`: the unified stage callback model used by the
   pipelines. Terminal non-tightening stages report `StageOutcome.Completed`.
 
+### Stage-name contract
+
+User-visible stage names are centralized in `StageNames.cs`.
+
+- Fixed stage names live there as constants: `step-proof`, `greedy-feasible`,
+  and `greedy-tighten`.
+- Parameterized stage names are generated there as format rules, not repeated
+  ad hoc at call sites: `proof-tighten≤N`, `exact-edge-compact@S`, and
+  `greedy-edge-compact@S`.
+- CLI headers, GUI tree/overview labels, progress text, and stage-oriented
+  tests all share this same naming contract.
+
 ### Command-line arguments
 
 ```bash

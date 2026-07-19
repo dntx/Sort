@@ -32,7 +32,7 @@ class Program
         "                  greedy = feasible bound, then min-step tightening, then one min-edge pass (interruptible with Ctrl+C).\n" +
         "  --stage <n>     Stop after stage n (1-based).\n" +
         "                  exact: 1=step-proof, 2=exact-edge-compact@S.\n" +
-        "                  greedy: 1=greedy-feasible, 2+=continue along tightening progression.\n" +
+        "                  greedy: 1=greedy-feasible, 2+=continue along proof-tighten progression.\n" +
         "\n" +
         "Arguments:\n" +
         "  n   total number of elements   (1 <= n <= 64)\n" +
@@ -304,35 +304,35 @@ class Program
             }
 
             // The anytime stages (each "proof-tighten≤N" tightening, a terminal no-solution ceiling,
-            // and the final "greedy-edge-compact@S") are produced incrementally for the GUI. The CLI is a batch tool,
+            // and the final "greedy-edge-compact@S" stage are produced incrementally for the GUI. The CLI is a batch tool,
             // so printing every intermediate tree is just noise: collect the stages, then print a
             // one-line progression summary followed by only the final (best) tree. A stage that has a
             // solution but does not strictly improve the incumbent is flagged "no improvement" and never
             // becomes the final tree.
             var stageSummaries = new System.Collections.Generic.List<string>
             {
-                FormatStageSummary("greedy-feasible", baseFeasiblePlan),
+                FormatStageSummary(StageNames.GreedyFeasible, baseFeasiblePlan),
             };
             if (gtProbeRun)
             {
                 if (gtPlan is not null && gtImproved)
-                    stageSummaries.Add(FormatStageSummary("greedy-tighten", gtPlan));
+                    stageSummaries.Add(FormatStageSummary(StageNames.GreedyTighten, gtPlan));
                 else if (gtPlan is not null)
-                    stageSummaries.Add($"{FormatStageSummary("greedy-tighten", gtPlan)}: no improvement");
+                    stageSummaries.Add($"{FormatStageSummary(StageNames.GreedyTighten, gtPlan)}: no improvement");
             }
             else
             {
-                stageSummaries.Add("greedy-tighten: skipped (root probe)");
+                stageSummaries.Add($"{StageNames.GreedyTighten}: skipped (root probe)");
             }
             int emittedStages = 1 + (gtProbeRun ? 1 : 0);
             StrategyPlan incumbentPlan = baseFeasiblePlan;
-            string finalName = "greedy-feasible";
+            string finalName = StageNames.GreedyFeasible;
             StrategyPlan finalPlan = baseFeasiblePlan;
 
             if (gtPlan is not null && gtImproved)
             {
                 incumbentPlan = gtPlan;
-                finalName = "greedy-tighten";
+                finalName = StageNames.GreedyTighten;
                 finalPlan = gtPlan;
             }
 
@@ -458,7 +458,7 @@ class Program
                 builder,
                 stage =>
                 {
-                    if (string.Equals(stage.Name, "step-proof", StringComparison.Ordinal))
+                    if (string.Equals(stage.Name, StageNames.StepProof, StringComparison.Ordinal))
                     {
                         StrategyPlan stepPlan = stage.Plan!;
                         defaultPlan = stepPlan;
@@ -512,7 +512,7 @@ class Program
         if (defaultPlan is null || compactPlan is null || !compactImproved)
             return;
 
-        string edgeCompactStageName = StrategyBuilder.FormatExactEdgeCompactStageName(defaultPlan.MaxStep);
+        string edgeCompactStageName = StageNames.FormatExactEdgeCompact(defaultPlan.MaxStep);
         Console.WriteLine();
         Console.WriteLine($"==================== {edgeCompactStageName} ====================");
         Console.Write(DisplayEngine.RenderOverviewText(compactPlan));

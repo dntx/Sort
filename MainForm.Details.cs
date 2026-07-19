@@ -139,7 +139,7 @@ partial class MainForm
 
         if (_feasiblePlan is not null)
         {
-            PopulateTree(_feasiblePlan, _defaultPlan, _compactPlan, _exactImproved, _compactImproved);
+            PopulateTree(_feasiblePlan, _defaultPlan, _compactPlan, _compactImproved);
             if (_runCancellationSource is null)
                 UpdateSummaryText(_feasiblePlan, _defaultPlan, _compactPlan, _compactImproved);
         }
@@ -233,7 +233,7 @@ partial class MainForm
         {
             double seconds = feasiblePlan.Elapsed.TotalSeconds + defaultPlan.Elapsed.TotalSeconds;
             _statusLabel.Text =
-                $"{head}, step max={defaultPlan.MaxStep}, elapsed={seconds:F3} s. Computing exact-edge-compact@S stage...";
+                $"{head}, step max={defaultPlan.MaxStep}, elapsed={seconds:F3} s. Computing {StageNames.ExactEdgeCompactPattern} stage...";
             return;
         }
 
@@ -503,7 +503,7 @@ partial class MainForm
         string defaultText = DisplayEngine.RenderStrategyText(defaultPlan).TrimEnd();
         var lines = new List<string>
         {
-            "Step result (exact-edge-compact@S stage in progress)",
+            $"Step result ({StageNames.ExactEdgeCompactPattern} stage in progress)",
             $"step elapsed: {defaultPlan.Elapsed.TotalSeconds:F3} s",
             $"step total edges: {defaultPlan.TotalBranchEdges}",
             $"step output states: {defaultPlan.SearchStatistics.OutputStates}",

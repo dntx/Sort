@@ -17,12 +17,12 @@ static class PublicPipelineOrchestrator
         Action<StageResult>? onStageCompleted = null,
         Action<string>? onStageStart = null)
     {
-        const string stepStageName = "step-proof";
+        const string stepStageName = StageNames.StepProof;
         onStageStart?.Invoke(stepStageName);
         (StrategyPlan stepPlan, TimeSpan stepElapsed) = ExecuteExactStepStage(builder);
         onStageCompleted?.Invoke(new StageResult(stepStageName, stepPlan, stepElapsed, StageOutcome.Completed));
 
-        string compactStageName = StrategyBuilder.FormatExactEdgeCompactStageName(stepPlan.MaxStep);
+        string compactStageName = StageNames.FormatExactEdgeCompact(stepPlan.MaxStep);
         onStageStart?.Invoke(compactStageName);
         (StrategyPlan compactPlan, TimeSpan compactElapsed) = ExecuteExactCompactStage(builder);
         onStageCompleted?.Invoke(new StageResult(compactStageName, compactPlan, compactElapsed, StageOutcome.Completed));
@@ -38,7 +38,7 @@ static class PublicPipelineOrchestrator
     {
         if (!preparationAlreadyApplied)
         {
-            const string feasibleStageName = "greedy-feasible";
+            const string feasibleStageName = StageNames.GreedyFeasible;
             if (emitPreparationStages)
                 onStageStart?.Invoke(feasibleStageName);
             GreedyPreparationResult prep = PrepareGreedyUpperBound(builder);
@@ -53,7 +53,7 @@ static class PublicPipelineOrchestrator
 
             if (prep.GreedyTightenProbeRun && prep.GreedyTightenPlan is not null)
             {
-                const string tightenStageName = "greedy-tighten";
+                const string tightenStageName = StageNames.GreedyTighten;
                 if (emitPreparationStages)
                 {
                     onStageStart?.Invoke(tightenStageName);
