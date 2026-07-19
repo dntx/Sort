@@ -4,7 +4,7 @@ using System.Linq;
 
 static class ProjectionKernel
 {
-    internal readonly record struct BranchLine<T>(List<T> Members, bool ProjectionMerged);
+    internal readonly record struct KernelBranchLine<T>(List<T> Members, bool ProjectionMerged);
 
     internal readonly record struct ProjectionOutcomeData(IReadOnlyList<int> OrderItems, ulong EliminatedMask);
 
@@ -16,7 +16,7 @@ static class ProjectionKernel
         ProjectedStateCacheHit,
     }
 
-    internal static List<BranchLine<T>> PlanBranchLines<T>(
+    internal static List<KernelBranchLine<T>> PlanBranchLines<T>(
         List<T> families,
         Func<List<T>, EquivalentOrderSummary?> buildSummary,
         Func<List<T>, List<List<T>>> partitionFamiliesIntoOrbits,
@@ -30,13 +30,13 @@ static class ProjectionKernel
         ArgumentNullException.ThrowIfNull(getFamilyCount);
 
         if (families.Count == 1)
-            return new List<BranchLine<T>> { new(families, false) };
+            return new List<KernelBranchLine<T>> { new(families, false) };
 
         EquivalentOrderSummary? fullBucketSummary = buildSummary(families);
         if (IsSingleMergedOrbit(fullBucketSummary))
-            return new List<BranchLine<T>> { new(families, false) };
+            return new List<KernelBranchLine<T>> { new(families, false) };
 
-        var lines = new List<BranchLine<T>>();
+        var lines = new List<KernelBranchLine<T>>();
         List<List<T>> parentOrbits = partitionFamiliesIntoOrbits(families);
         List<(List<T> Members, bool ProjectionMerged)>? orbits = mergeOrbitsByProjection(parentOrbits);
         if (orbits is null)

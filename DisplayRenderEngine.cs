@@ -9,7 +9,7 @@ using System.Linq;
 // type while parity tests keep output stable.
 sealed class DisplayRenderEngine
 {
-    internal readonly record struct BranchLine<T>(List<T> Members, bool ProjectionMerged);
+    internal readonly record struct RenderBranchLine<T>(List<T> Members, bool ProjectionMerged);
 
     public StrategyOverview BuildOverview(StrategyPlan plan)
         => StrategyOverviewRenderer.Build(plan);
@@ -55,20 +55,20 @@ sealed class DisplayRenderEngine
 
     // Internal facade: StrategyBuilder should call display-folding behavior via this
     // render entrypoint rather than reaching helper implementations directly.
-    internal static List<BranchLine<T>> PlanBranchLines<T>(
+    internal static List<RenderBranchLine<T>> PlanBranchLines<T>(
         List<T> families,
         Func<List<T>, EquivalentOrderSummary?> buildSummary,
         Func<List<T>, List<List<T>>> partitionFamiliesIntoOrbits,
         Func<List<List<T>>, List<(List<T> Members, bool ProjectionMerged)>> mergeOrbitsByProjection,
         Func<T, int> getFamilyCount)
     {
-        List<DisplayBranchLinePlanner.DisplayBranchLine<T>> planned = DisplayBranchLinePlanner.SplitMergedBucketIntoBranchLines(
+        List<DisplayBranchLinePlanner.PlannerBranchLine<T>> planned = DisplayBranchLinePlanner.SplitMergedBucketIntoBranchLines(
             families,
             buildSummary,
             partitionFamiliesIntoOrbits,
             mergeOrbitsByProjection,
             getFamilyCount);
-        return planned.Select(line => new BranchLine<T>(line.Members, line.ProjectionMerged)).ToList();
+        return planned.Select(line => new RenderBranchLine<T>(line.Members, line.ProjectionMerged)).ToList();
     }
 
     internal static bool IsSingleMergedOrbit(EquivalentOrderSummary? summary)
