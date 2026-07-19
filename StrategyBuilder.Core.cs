@@ -130,8 +130,8 @@ partial class StrategyBuilder
     private int _peakPendingStates;
     private long _lastProgressReportMs = -ProgressReportIntervalMs;
     private int _lastReportedVisitedStatesCount = 0;
-    private long _feasiblePhase2StartMs = -1;  // When BuildState recursion began in feasible stage
-    private bool _feasiblePhaseSolved = false;  // Mark when feasible stage materialization completes
+    private long _feasiblePhase2StartMs = -1;
+    private bool _feasiblePhaseSolved = false;
     private int _lowerBoundPrunes { get => _session.LowerBoundPrunes; set => _session.LowerBoundPrunes = value; }
     private int _duplicateOutcomeSkips { get => _session.DuplicateOutcomeSkips; set => _session.DuplicateOutcomeSkips = value; }
     private int _mergedOutcomeCollisions { get => _session.MergedOutcomeCollisions; set => _session.MergedOutcomeCollisions = value; }
@@ -147,18 +147,8 @@ partial class StrategyBuilder
     private long _phase1Milliseconds;
     private long _phase1bMilliseconds;
     private long _phase2Milliseconds;
-    // Set true only around the phase-1 iterative-deepening driver so root incumbents are recorded
-    // for the progress UI; other callers (optimality-gap, compact) reuse the search silently.
     private bool _recordRootIncumbents;
-    // First-top-level-entry latch for the single-pass exact search path (matches the pre-ID
-    // algorithm): root incumbents are recorded only for the first (phase-1) search of a build.
     private bool _rootSearchInitialized;
-    // Best proven lower bound on the root optimum (opt >= this). Lifted each failed iterative-
-    // deepening pass; recorded only during the phase-1 root search. The L side of the squeeze.
-    // Like the phase-1 incumbents and the _rootSearchInitialized latch, this is a product of the
-    // once-only phase-1 solve (memoized by _phase1Solved) and is therefore NOT cleared by
-    // ResetPerBuildTransientState; otherwise the later compact build would reset it to 0 and the
-    // squeeze display would regress from "opt = N (proven)" back to "? <= opt <= ?".
     private int _rootProvenLowerBound;
     private bool _phase1Solved;
     private bool _phase1bSolved;
@@ -180,13 +170,9 @@ partial class StrategyBuilder
     private int _cancellationProbeCounter;
     private bool _forceImmediateCancellationProbe;
     private ProgressScope _progressScope;
-    // Outer-loop budget context for proof-tighten progress estimation (CompactFeasibleInCombinedRun
-    // scope). Set at the start of RunGreedyPipeline's Phase A tighten loop; updated each iteration
-    // so EstimateProgress can fold in the L < step < U range alongside the per-stage signal.
-    // -1 when outside a proof-tighten loop.
-    private int _proofTightenInitialBudget = -1;   // first budget tried (= U - 1)
-    private int _proofTightenCurrentBudget = -1;   // budget currently being probed
-    private int _proofTightenLowerBound = -1;       // proven lower bound L at loop start
+    private int _proofTightenInitialBudget = -1;
+    private int _proofTightenCurrentBudget = -1;
+    private int _proofTightenLowerBound = -1;
     private bool _proofTightenProgressEmaInitialized;
     private double _proofTightenProgressEma01;
 
@@ -214,10 +200,6 @@ partial class StrategyBuilder
             && _k >= IterativeDeepeningMinRequestedTopCount
             && _n >= IterativeDeepeningMinNToMScale * _m;
 
-    // The fixed default cap is a good BASE knob, but the actual candidate-generation surface is the
-    // current state's active width times the chosen group size. When callers leave the default in
-    // place, scale that base cap up by a small bounded multiplier on wider states to reduce needless
-    // proof-tighten retries; any explicit non-default override remains exact.
     private static int ScaleDefaultCandidateCap(int configuredCap, int defaultCap, int activeCount, int groupSize)
     {
         if (configuredCap != defaultCap)
@@ -271,151 +253,6 @@ partial class StrategyBuilder
         return BuildPlan(useCompactSelection: true, useFeasibleBudget: false);
     }
 
-    // Mainline-A seam: build exact display + search artifacts inside one active solver session
-    // so both materializers consume the same phase-1 caches without nested entrypoint hand-offs.
-    private (SearchTree SearchTree, DisplayTree DisplayTree) BuildExactProjectionFromCurrentSession()
-    {
-        ComparisonState.SetThreadCancellationToken(_cancellationToken);
-        try
-        {
-            _progressScope = _reportCombinedRunProgress
-                ? ProgressScope.DefaultInCombinedRun
-                : ProgressScope.DefaultStandalone;
-
-            DisplayTree displayTree = BuildPlanWithinSession(
-                useCompactSelection: false,
-                useFeasibleBudget: false,
-                initializeSession: true);
-            SearchTree searchTree = ProjectSearchTreeFromCurrentExactSession();
-            return (searchTree, displayTree);
-        }
-        finally
-        {
-            ComparisonState.SetThreadCancellationToken(default);
-        }
-    }
-
-    // Standalone search-only exact entry: starts its own solver session and materializes
-    // the search tree from that session's exact caches.
-    private SearchTree ProjectSearchTreeFromStandaloneExactSession()
-    {
-        ComparisonState.SetThreadCancellationToken(_cancellationToken);
-        try
-        {
-            InitializeExactSolverSession(useFeasibleBudget: false);
-            return ProjectSearchTreeFromCurrentExactSession();
-        }
-        finally
-        {
-            ComparisonState.SetThreadCancellationToken(default);
-        }
-    }
-
-    // Current-session search materialization path shared by layered exact projection
-    // and standalone search-only exact entry after session initialization.
-    private SearchTree ProjectSearchTreeFromCurrentExactSession()
-    {
-        _useCompact = false;
-        return ProjectSearchTreeFromCurrentExactCaches();
-    }
-
-    // Solver-sourced search builder: phase-1 group selection comes from exact caches,
-    // and the search tree is materialized directly from solver state recursion.
-    private SearchTree ProjectSearchTreeFromCurrentExactCaches()
-    {
-        var context = new SearchMaterializationContext(
-            new Dictionary<IntSequenceKey, ExpandedStateSnapshot>(),
-            new HashSet<IntSequenceKey>());
-        SearchNode root = BuildSearchState(new ComparisonState(_n), 0, _k, 1, context);
-        return new SearchStrategy(
-            _n,
-            _m,
-            _requestedK,
-            _k,
-            root);
-    }
-
-    private SearchNode BuildSearchState(
-        ComparisonState state,
-        ulong fixedTopMask,
-        int remainingSlots,
-        int step,
-        SearchMaterializationContext context)
-    {
-        ThrowIfCancellationRequested();
-        NormalizeState(state, ref fixedTopMask, ref remainingSlots);
-
-        IntSequenceKey expansionKey = SearchStateKeyService.GetDisplayStateKey(state, fixedTopMask);
-        int stateId = GetStateId(expansionKey);
-
-        if (remainingSlots == 0)
-            return SearchNode.Terminal(stateId, ComparisonState.MaskToOrderedList(fixedTopMask));
-
-        if (TryGetDeterminedTopSet(state, remainingSlots, out ulong determinedTopMask))
-            return SearchNode.Terminal(stateId, ComparisonState.MaskToOrderedList(fixedTopMask | determinedTopMask));
-
-        if (state.ActiveCount <= remainingSlots)
-            return SearchNode.Terminal(stateId, ComparisonState.MaskToOrderedList(fixedTopMask | state.ActiveMask));
-
-        var possibleCandidates = GetPossibleCandidates(state);
-        if (state.ActiveCount <= _m)
-            return SearchNode.Decision(stateId, step, possibleCandidates, Array.Empty<SearchBranch>());
-
-        if (context.ExpandedStates.TryGetValue(expansionKey, out ExpandedStateSnapshot snapshot))
-        {
-            IReadOnlyList<ItemRelabel>? relabeling =
-                snapshot.State.TryBuildDisplayRelabeling(snapshot.FixedTopMask, state, fixedTopMask);
-            return SearchNode.Reference(stateId, relabeling);
-        }
-
-        bool trackingExpansionPath = TryTrackExpandedState(
-            expansionKey,
-            state,
-            fixedTopMask,
-            context.ExpandedStates,
-            context.ExpansionPath,
-            "Search materialization detected a recursive display-state expansion path.");
-
-        try
-        {
-            SelectedComparisonGroup chosenGroup = ChooseGroup(state, fixedTopMask, remainingSlots, default);
-            IReadOnlyList<SearchBranch> branches = BuildSearchBranches(
-                state,
-                fixedTopMask,
-                remainingSlots,
-                chosenGroup,
-                step + 1,
-                context);
-            return SearchNode.Decision(stateId, step, chosenGroup.Group, branches);
-        }
-        finally
-        {
-            if (trackingExpansionPath)
-                context.ExpansionPath!.Remove(expansionKey);
-        }
-    }
-
-    private IReadOnlyList<SearchBranch> BuildSearchBranches(
-        ComparisonState state,
-        ulong fixedTopMask,
-        int remainingSlots,
-        SelectedComparisonGroup chosenGroup,
-        int nextStep,
-        SearchMaterializationContext context)
-    {
-        return BuildSearchTransitionSpecs(state, fixedTopMask, remainingSlots, chosenGroup)
-            .Select(spec => new SearchBranch(
-                spec.OrderText,
-                spec.Effect,
-                BuildSearchState(
-                    spec.NextState,
-                    spec.NextFixedTopMask,
-                    spec.NextRemainingSlots,
-                    nextStep,
-                        context)))
-            .ToList();
-    }
-
     // Greedy mode: proof tightening followed by a single edge-compaction pass.
     //
     //   Phase A (ProofTighten): starting from the feasible upper bound U (the greedy step plan's MaxStep,
@@ -444,6 +281,7 @@ partial class StrategyBuilder
         Action<StageResult>? onStageCompleted = null,
         Action<string>? onStageStart = null)
     {
+        var callbacks = new PipelineCallbacks(onStageCompleted, onStageStart);
         _progressScope = _reportCombinedRunProgress
             ? ProgressScope.CompactFeasibleInCombinedRun
             : ProgressScope.DefaultStandalone;
@@ -475,9 +313,9 @@ partial class StrategyBuilder
                 _cancellationToken.ThrowIfCancellationRequested();
                 _proofTightenCurrentBudget = budget;
                 string stageName = StageNames.FormatProofTighten(budget);
-                onStageStart?.Invoke(stageName);
+                callbacks.Start(stageName);
                 StageResult stage = ExecuteProofTightenStage(budget);
-                onStageCompleted?.Invoke(stage);
+                PipelineStageProtocol.EmitStage(stage, callbacks);
 
                 if (stage.Outcome == StageOutcome.Tightened)
                 {
@@ -505,13 +343,16 @@ partial class StrategyBuilder
 
         // Phase B: one edge-compaction pass at the determined step S.
         string edgeCompactStageName = StageNames.FormatGreedyEdgeCompact(bestStep);
-        onStageStart?.Invoke(edgeCompactStageName);
+        callbacks.Start(edgeCompactStageName);
         var edgeStopwatch = Stopwatch.StartNew();
         StrategyPlan finalPlan = BuildEdgeCompactPlanAtBudget(bestStep)
             .WithRootProvenLowerBound(_rootProvenLowerBound);
         edgeStopwatch.Stop();
-        onStageCompleted?.Invoke(new StageResult(
-            edgeCompactStageName, finalPlan, edgeStopwatch.Elapsed, StageOutcome.Completed));
+        PipelineStageProtocol.EmitCompletedPlanStage(
+            edgeCompactStageName,
+            finalPlan,
+            edgeStopwatch.Elapsed,
+            callbacks);
         return finalPlan;
     }
 
@@ -1111,7 +952,7 @@ partial class StrategyBuilder
             yield return entry.Group;
     }
 
-    private static HeuristicGroupScore BuildHeuristicGroupScore(ComparisonState state, int remainingSlots, IReadOnlyList<int> group)
+    private HeuristicGroupScore BuildHeuristicGroupScore(ComparisonState state, int remainingSlots, IReadOnlyList<int> group)
     {
         var components = BranchSelectionScoringService.BuildScoreComponents(state, remainingSlots, group);
         return new HeuristicGroupScore(
@@ -1676,99 +1517,6 @@ partial class StrategyBuilder
         _pendingZeroSearchedAtStart = 0;
         _cancellationProbeCounter = 0;
         _forceImmediateCancellationProbe = false;
-    }
-
-    private sealed class SelectedComparisonGroup
-    {
-        public SelectedComparisonGroup(IReadOnlyList<int> group, IReadOnlyList<MergedBranch> branches)
-        {
-            Group = group;
-            Branches = branches;
-        }
-
-        public IReadOnlyList<int> Group { get; }
-        public IReadOnlyList<MergedBranch> Branches { get; }
-    }
-
-    private readonly struct ExpandedStateSnapshot
-    {
-        public ExpandedStateSnapshot(ComparisonState state, ulong fixedTopMask)
-        {
-            State = state;
-            FixedTopMask = fixedTopMask;
-        }
-
-        public ComparisonState State { get; }
-        public ulong FixedTopMask { get; }
-    }
-
-    private readonly record struct SearchMaterializationContext(
-        Dictionary<IntSequenceKey, ExpandedStateSnapshot> ExpandedStates,
-        HashSet<IntSequenceKey> ExpansionPath);
-
-    private static bool TryTrackExpandedState(
-        IntSequenceKey expansionKey,
-        ComparisonState state,
-        ulong fixedTopMask,
-        Dictionary<IntSequenceKey, ExpandedStateSnapshot> expandedStates,
-        HashSet<IntSequenceKey>? expansionPath,
-        string cycleMessage)
-    {
-        expandedStates.Add(expansionKey, new ExpandedStateSnapshot(state.Clone(), fixedTopMask));
-        if (expansionPath is null)
-            return false;
-
-        if (!expansionPath.Add(expansionKey))
-            throw new InvalidOperationException(cycleMessage);
-
-        return true;
-    }
-
-    private sealed class OutcomeTraversalSummary
-    {
-        public OutcomeTraversalSummary(
-            IReadOnlyList<MergedBranch> mergedBranches,
-            bool isUseful)
-        {
-            MergedBranches = mergedBranches;
-            IsUseful = isUseful;
-        }
-
-        public IReadOnlyList<MergedBranch> MergedBranches { get; }
-        public bool IsUseful { get; }
-    }
-
-    private readonly record struct HeuristicGroupScore(
-        int GuaranteedTopHits,
-        int FreshItems,
-        int UnrelatedScore,
-        int UnresolvedPairs,
-        int GroupSize) : IComparable<HeuristicGroupScore>
-    {
-        // Among groups that achieve the optimal worst-case (the solver only ever caches an
-        // optimal group), prefer the most independent/symmetric comparison: more fresh items
-        // and fewer existing order relations. This keeps the worst-case step count optimal
-        // while producing smaller, more symmetric, and easier-to-verify strategy trees.
-        public int CompareTo(HeuristicGroupScore other)
-        {
-            int result = FreshItems.CompareTo(other.FreshItems);
-            if (result != 0)
-                return result;
-
-            result = UnrelatedScore.CompareTo(other.UnrelatedScore);
-            if (result != 0)
-                return result;
-
-            result = GuaranteedTopHits.CompareTo(other.GuaranteedTopHits);
-            if (result != 0)
-                return result;
-
-            result = UnresolvedPairs.CompareTo(other.UnresolvedPairs);
-            if (result != 0)
-                return result;
-
-            return GroupSize.CompareTo(other.GroupSize);
-        }
     }
 
 }
