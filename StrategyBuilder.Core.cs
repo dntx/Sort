@@ -64,7 +64,6 @@ partial class StrategyBuilder
             public const double TailInflationThreePending = 1.5;
         }
     }
-
     private readonly int _n;
     private readonly int _m;
     private readonly int _requestedK;
