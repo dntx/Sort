@@ -22,7 +22,7 @@ static class PublicPipelineOrchestrator
         (StrategyPlan stepPlan, TimeSpan stepElapsed) = ExecuteExactStepStage(builder);
         onStageCompleted?.Invoke(new StageResult(stepStageName, stepPlan, stepElapsed, StageOutcome.Completed));
 
-        string compactStageName = StrategyBuilder.FormatExactEdgeCompactStageName(stepPlan.MaxStep);
+        string compactStageName = StageNames.FormatExactEdgeCompact(stepPlan.MaxStep);
         onStageStart?.Invoke(compactStageName);
         (StrategyPlan compactPlan, TimeSpan compactElapsed) = ExecuteExactCompactStage(builder);
         onStageCompleted?.Invoke(new StageResult(compactStageName, compactPlan, compactElapsed, StageOutcome.Completed));

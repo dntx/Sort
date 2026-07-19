@@ -28,7 +28,7 @@ public sealed class ExactPipelineTests
         Assert.Equal(StageOutcome.Completed, step.Outcome);
         Assert.Equal(StageOutcome.Completed, compact.Outcome);
 
-        string expectedCompactName = StrategyBuilder.FormatExactEdgeCompactStageName(step.Plan!.MaxStep);
+        string expectedCompactName = StageNames.FormatExactEdgeCompact(step.Plan!.MaxStep);
         Assert.Equal(expectedCompactName, started[1]);
 
         Assert.Equal(started, completed.Select(stage => stage.Name).ToList());

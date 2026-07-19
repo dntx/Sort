@@ -212,7 +212,7 @@ public class GreedyPipelineTests
             onStageCompleted: stage => { if (stage.HasPlan) solvedStages.Add(stage.Name); },
             onStageStart: name => startedStages.Add(name));
 
-        string edgeCompactName = StrategyBuilder.FormatGreedyEdgeCompactStageName(plan.MaxStep);
+        string edgeCompactName = StageNames.FormatGreedyEdgeCompact(plan.MaxStep);
 
         // The final edge-compaction pass is always announced and always carries the returned plan.
         Assert.Contains(edgeCompactName, startedStages);
@@ -220,10 +220,10 @@ public class GreedyPipelineTests
 
         // At least one downward tightening ceiling ran, and every announced stage uses either the
         // "proof-tighten\u2264N" tightening label or the terminal "greedy-edge-compact@S" label.
-        Assert.Contains(startedStages, name => name.StartsWith("proof-tighten\u2264", StringComparison.Ordinal));
+        Assert.Contains(startedStages, name => name.StartsWith(StageNames.ProofTightenPrefix, StringComparison.Ordinal));
         Assert.All(startedStages, name =>
             Assert.True(
-                name.StartsWith("proof-tighten\u2264", StringComparison.Ordinal) || name == edgeCompactName,
+            name.StartsWith(StageNames.ProofTightenPrefix, StringComparison.Ordinal) || name == edgeCompactName,
                 $"unexpected stage label '{name}'"));
 
         // The progression is ordered: every proof-tighten ceiling precedes the terminal edge-compact
@@ -232,13 +232,13 @@ public class GreedyPipelineTests
         Assert.Equal(1, startedStages.Count(name => name == edgeCompactName));
         int firstEdgeCompactIndex = startedStages.IndexOf(edgeCompactName);
         Assert.All(startedStages.Take(firstEdgeCompactIndex), name =>
-            Assert.StartsWith("proof-tighten\u2264", name, StringComparison.Ordinal));
+            Assert.StartsWith(StageNames.ProofTightenPrefix, name, StringComparison.Ordinal));
 
         // The tightening ceilings step strictly downward (U-1, then lower), matching the U-1, U-2, …
         // probe order the CLI/GUI progression surfaces.
         var tightenBudgets = startedStages
-            .Where(name => name.StartsWith("proof-tighten\u2264", StringComparison.Ordinal))
-            .Select(name => int.Parse(name.Substring("proof-tighten\u2264".Length)))
+            .Where(name => name.StartsWith(StageNames.ProofTightenPrefix, StringComparison.Ordinal))
+            .Select(name => int.Parse(name.Substring(StageNames.ProofTightenPrefix.Length)))
             .ToList();
         for (int i = 1; i < tightenBudgets.Count; i++)
             Assert.True(tightenBudgets[i] < tightenBudgets[i - 1],

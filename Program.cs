@@ -31,7 +31,7 @@ class Program
         "  --mode <mode>   Search mode. exact (default) = exact + compact (proven optimal).\n" +
         "                  greedy = feasible bound, then min-step tightening, then one min-edge pass (interruptible with Ctrl+C).\n" +
         "  --stage <n>     Stop after stage n (1-based).\n" +
-        "                  exact: 1=step-proof, 2=exact-edge-compact@S.\n" +
+        "                  exact: 1=" + StageNames.StepProof + ", 2=" + StageNames.ExactEdgeCompactPattern + ".\n" +
         "                  greedy: 1=greedy-feasible, 2+=continue along tightening progression.\n" +
         "\n" +
         "Arguments:\n" +
@@ -512,7 +512,7 @@ class Program
         if (defaultPlan is null || compactPlan is null || !compactImproved)
             return;
 
-        string edgeCompactStageName = StrategyBuilder.FormatExactEdgeCompactStageName(defaultPlan.MaxStep);
+        string edgeCompactStageName = StageNames.FormatExactEdgeCompact(defaultPlan.MaxStep);
         Console.WriteLine();
         Console.WriteLine($"==================== {edgeCompactStageName} ====================");
         Console.Write(DisplayEngine.RenderOverviewText(compactPlan));
