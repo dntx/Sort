@@ -441,9 +441,7 @@ partial class StrategyBuilder
                 var root = BuildState(new ComparisonState(_n), 0, _k, 1);
                 _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1bMilliseconds;
                 stopwatch.Stop();
-                return new StrategyPlan(
-                    _n, _m, _requestedK, _k, root, stopwatch.Elapsed, CreateSearchStatistics(_compactRootCost),
-                    isFeasibleUpperBound: true);
+                return CreatePlan(root, stopwatch.Elapsed, _compactRootCost, isFeasibleUpperBound: true);
             }
             finally
             {
@@ -497,16 +495,23 @@ partial class StrategyBuilder
         ReportProgress(force: true);
         bool feasible = useFeasibleBudget;
         int? searchTreeEdges = useCompactSelection ? _compactRootCost : null;
-        return new StrategyPlan(
+        return CreatePlan(root, stopwatch.Elapsed, searchTreeEdges, feasible);
+    }
+
+    private StrategyPlan CreatePlan(
+        StrategyNode root,
+        TimeSpan elapsed,
+        int? searchTreeEdges = null,
+        bool isFeasibleUpperBound = false)
+        => new StrategyPlan(
             _n,
             _m,
             _requestedK,
             _k,
             root,
-            stopwatch.Elapsed,
+            elapsed,
             CreateSearchStatistics(searchTreeEdges),
-            isFeasibleUpperBound: feasible);
-    }
+            isFeasibleUpperBound: isFeasibleUpperBound);
 
     // Shared exact-session bootstrap used by both display and search entrypoints.
     // Mainline-A objective: keep phase-1 cache initialization semantics in one place.

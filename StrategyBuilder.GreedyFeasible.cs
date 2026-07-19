@@ -59,53 +59,51 @@ partial class StrategyBuilder
     {
         return RunWithComparisonStateCancellation(() =>
         {
-        // The feasible phase is effectively instant. In a combined run it occupies the first band of
-        // the unified progress bar (a single indivisible slice).
-        _progressScope = _reportCombinedRunProgress
-            ? ProgressScope.FeasibleInCombinedRun
-            : ProgressScope.DefaultStandalone;
+            // The feasible phase is effectively instant. In a combined run it occupies the first band of
+            // the unified progress bar (a single indivisible slice).
+            _progressScope = _reportCombinedRunProgress
+                ? ProgressScope.FeasibleInCombinedRun
+                : ProgressScope.DefaultStandalone;
 
-        ResetPerBuildTransientState();
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        ReportProgress(force: true);
+            ResetPerBuildTransientState();
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            ReportProgress(force: true);
 
-        // No phase-1 closure: the constructive policy is computed on the fly during materialization.
-        _phase1Milliseconds = stopwatch.ElapsedMilliseconds;
+            // No phase-1 closure: the constructive policy is computed on the fly during materialization.
+            _phase1Milliseconds = stopwatch.ElapsedMilliseconds;
 
-        // L side of the squeeze: a proven analytic lower bound on the root optimum, computed
-        // independently of the (never-finishing) exact search. Surfaced via
-        // SearchStatistics.RootProvenLowerBound, identical to the default path.
-        RecordRootProvenLowerBound(GetMinWorstCaseLowerBound(new ComparisonState(_n), _k));
-        _phase1bMilliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds;
+            // L side of the squeeze: a proven analytic lower bound on the root optimum, computed
+            // independently of the (never-finishing) exact search. Surfaced via
+            // SearchStatistics.RootProvenLowerBound, identical to the default path.
+            RecordRootProvenLowerBound(GetMinWorstCaseLowerBound(new ComparisonState(_n), _k));
+            _phase1bMilliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds;
 
-        _useCompact = false;
-        _feasiblePhase2StartMs = _progressStopwatch.ElapsedMilliseconds;  // Mark the start of the costly BuildState phase
-        StrategyNode root = BuildState(
-            new ComparisonState(_n),
-            0,
-            _k,
-            1,
-            new MaterializationContext(
-                ForceFixedConstructiveSelection: true));
-        _feasiblePhaseSolved = true;  // Mark feasible stage complete so progress jumps to 100%
-        _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds - _phase1bMilliseconds;
-        stopwatch.Stop();
-        ReportProgress(force: true);
+            _useCompact = false;
+            _feasiblePhase2StartMs = _progressStopwatch.ElapsedMilliseconds;  // Mark the start of the costly BuildState phase
+            StrategyNode root = BuildState(
+                new ComparisonState(_n),
+                0,
+                _k,
+                1,
+                new MaterializationContext(
+                    ForceFixedConstructiveSelection: true));
+            _feasiblePhaseSolved = true;  // Mark feasible stage complete so progress jumps to 100%
+            _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds - _phase1bMilliseconds;
+            stopwatch.Stop();
+            ReportProgress(force: true);
 
-        var plan = new StrategyPlan(
-            _n, _m, _requestedK, _k, root, stopwatch.Elapsed, CreateSearchStatistics(),
-            isFeasibleUpperBound: true);
+            StrategyPlan plan = CreatePlan(root, stopwatch.Elapsed, isFeasibleUpperBound: true);
 
-        // Surface the exact U this materialized tree achieves so the edge (compact) phase in the same
-        // combined run uses it as its step ceiling -- the tightest sound budget, guaranteeing the edge
-        // plan is never worse than this step plan.
-        _feasibleRootBudget = plan.MaxStep;
-        _latestGreedyIncumbentPlan = plan;
+            // Surface the exact U this materialized tree achieves so the edge (compact) phase in the same
+            // combined run uses it as its step ceiling -- the tightest sound budget, guaranteeing the edge
+            // plan is never worse than this step plan.
+            _feasibleRootBudget = plan.MaxStep;
+            _latestGreedyIncumbentPlan = plan;
 
-        // Denominator estimate for the edge phase's live progress (see field doc): the distinct
-        // canonical states this step pass touched approximate the compact solve's total work.
-        _feasibleCompactStateEstimate = _visitedSearchStates.Count;
-        return plan;
+            // Denominator estimate for the edge phase's live progress (see field doc): the distinct
+            // canonical states this step pass touched approximate the compact solve's total work.
+            _feasibleCompactStateEstimate = _visitedSearchStates.Count;
+            return plan;
         });
     }
 
