@@ -61,3 +61,25 @@ index 1111111..2222222 100644
     assert "Unexplained formatting-only code change" in finding
     assert "StrategyBuilder.Compact.cs" in finding
     assert "@@ -36,8 +36,9 @@" in finding
+
+
+def test_combined_review_upgrades_blocking_bullets_to_block_verdict():
+    review = """## Summary
+Looks mostly fine.
+
+_Verdict: **COMMENT**_
+
+## Findings
+- **[BLOCK]** This is a blocking issue.
+
+VERDICT: COMMENT
+"""
+
+    combined = ai_review.combine_batch_reviews(
+        [(1, 1, "COMMENT", review)],
+        structural=None,
+        policy_findings=None,
+    )
+
+    assert "## 🚫 Blocking (must fix)" in combined
+    assert "VERDICT: BLOCK" in combined
