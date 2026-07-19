@@ -126,14 +126,14 @@ partial class MainForm
                 : _feasiblePlan is not null
                     ? " Showing the step upper-bound strategy."
                     : string.Empty;
-            _statusLabel.Text = $"Stopped after {GetElapsedSeconds():F1} s.{shownDefault} {FormatSearchStatsSummary(_latestProgress, includeOutputStates: true)}. {FormatLiveDiagnosticsSummary(_latestProgress)}.";
+            _statusLabel.Text = $"Stopped after {GetRunElapsedSeconds():F1} s.{shownDefault} {FormatSearchStatsSummary(_latestProgress, includeOutputStates: true)}. {FormatLiveDiagnosticsSummary(_latestProgress)}.";
             _detailsTextBox.Text = BuildLiveDiagnosticsText(_latestProgress);
             MarkResultsStopped();
         }
         catch (Exception ex)
         {
             _runStopwatch?.Stop();
-            _statusLabel.Text = $"Run failed after {GetElapsedSeconds():F1} s. {FormatSearchStatsSummary(_latestProgress, includeOutputStates: true)}. {FormatLiveDiagnosticsSummary(_latestProgress)}.";
+            _statusLabel.Text = $"Run failed after {GetRunElapsedSeconds():F1} s. {FormatSearchStatsSummary(_latestProgress, includeOutputStates: true)}. {FormatLiveDiagnosticsSummary(_latestProgress)}.";
             _detailsTextBox.Text = BuildLiveDiagnosticsText(_latestProgress);
             MessageBox.Show(this, ex.Message, "Run failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
