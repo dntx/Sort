@@ -335,7 +335,7 @@ partial class StrategyBuilder
         ThrowIfCancellationRequested();
         NormalizeState(state, ref fixedTopMask, ref remainingSlots);
 
-        IntSequenceKey expansionKey = GetDisplayStateKey(state, fixedTopMask);
+        IntSequenceKey expansionKey = SearchStateKeyService.GetDisplayStateKey(state, fixedTopMask);
         int stateId = GetStateId(expansionKey);
 
         if (remainingSlots == 0)
@@ -728,7 +728,7 @@ partial class StrategyBuilder
         NormalizeState(state, ref fixedTopMask, ref remainingSlots);
         ObserveSearchState(state, remainingSlots);
 
-        IntSequenceKey expansionKey = GetDisplayStateKey(state, fixedTopMask);
+        IntSequenceKey expansionKey = SearchStateKeyService.GetDisplayStateKey(state, fixedTopMask);
         int stateId = GetStateId(expansionKey);
 
         if (remainingSlots == 0)
@@ -823,7 +823,7 @@ partial class StrategyBuilder
         // the same constructive selector for un-edited states (so an empty map == greedy-feasible).
         if (_useGreedyTightenSelection)
         {
-            SearchStateKey key = GetSearchStateKey(state, remainingSlots);
+            SearchStateKey key = SearchStateKeyService.BuildSearchStateKey(state, remainingSlots, _canonicalKeyMemo);
             List<int> tightenGroup = CurrentGreedyTightenGroup(state, remainingSlots, key);
             if (!GroupAvoidsDisplayBackEdge(state, fixedTopMask, remainingSlots, tightenGroup))
             {
@@ -844,7 +844,7 @@ partial class StrategyBuilder
         }
 
         var candidates = state.GetActiveItemsOrdered();
-        SearchStateKey currentKey = GetSearchStateKey(state, remainingSlots);
+        SearchStateKey currentKey = SearchStateKeyService.BuildSearchStateKey(state, remainingSlots, _canonicalKeyMemo);
 
         // Phase 1 solves the optimal worst-case for every reachable state and caches the
         // chosen comparison-group pattern, so phase 2 always finds a populated entry here.
@@ -875,7 +875,10 @@ partial class StrategyBuilder
         int[]? colorSignature = cachedPattern.ColorSignature;
         int[]? activeColors = colorSignature is null ? null : state.GetActiveItemColors();
 
-        foreach (var group in EnumerateCombinations(candidates, cachedPattern.GroupSize))
+        foreach (var group in CombinatoricsService.EnumerateCombinations(
+            candidates,
+            cachedPattern.GroupSize,
+            () => ProbeCancellation(0)))
         {
             if (activeColors is not null && !GroupEnumerationService.GroupMatchesColorSignature(activeColors, group, colorSignature!))
                 continue;
@@ -916,7 +919,7 @@ partial class StrategyBuilder
         foreach (ComparisonOutcome outcome in EnumerateDisplayOutcomes(state, remainingSlots, group))
         {
             anyOutcome = true;
-            IntSequenceKey nextDisplayKey = GetDisplayStateKey(
+            IntSequenceKey nextDisplayKey = SearchStateKeyService.GetDisplayStateKey(
                 outcome.NextState,
                 fixedTopMask | outcome.AddedFixedTopMask);
             if (_materializationDisplayPath.Contains(nextDisplayKey))
@@ -1100,50 +1103,13 @@ partial class StrategyBuilder
 
     private static HeuristicGroupScore BuildHeuristicGroupScore(ComparisonState state, int remainingSlots, IReadOnlyList<int> group)
     {
-        int guaranteedTopHits = 0;
-        for (int i = 0; i < group.Count; i++)
-        {
-            if (state.ActiveCount - 1 - state.GetDescendantCount(group[i]) <= remainingSlots - 1)
-                guaranteedTopHits++;
-        }
-
+        var components = BranchSelectionScoringService.BuildScoreComponents(state, remainingSlots, group);
         return new HeuristicGroupScore(
-            guaranteedTopHits,
-            GroupEnumerationService.CountFreshItems(state, group),
-            GroupEnumerationService.CalculateUnrelatedScore(state, group),
-            GroupEnumerationService.CountUnresolvedPairs(state, group),
-            group.Count);
-    }
-
-    private IEnumerable<List<int>> EnumerateCombinations(IReadOnlyList<int> items, int count)
-    {
-        ProbeCancellation(0);
-        var current = new List<int>(count);
-        foreach (var combination in EnumerateCombinations(items, count, 0, current))
-            yield return combination;
-    }
-
-    private IEnumerable<List<int>> EnumerateCombinations(
-        IReadOnlyList<int> items,
-        int count,
-        int start,
-        List<int> current)
-    {
-        ProbeCancellation(0);
-        if (current.Count == count)
-        {
-            yield return new List<int>(current);
-            yield break;
-        }
-
-        for (int i = start; i <= items.Count - (count - current.Count); i++)
-        {
-            ProbeCancellation(0);
-            current.Add(items[i]);
-            foreach (var combination in EnumerateCombinations(items, count, i + 1, current))
-                yield return combination;
-            current.RemoveAt(current.Count - 1);
-        }
+            components.GuaranteedTopHits,
+            components.FreshItems,
+            components.UnrelatedScore,
+            components.UnresolvedPairs,
+            components.GroupSize);
     }
 
     private int GetStateId(IntSequenceKey key)
@@ -1157,25 +1123,17 @@ partial class StrategyBuilder
         return id;
     }
 
+    // Compatibility seam for partial files: keep call sites stable while routing key construction
+    // through the extracted stateless key service.
     private SearchStateKey GetSearchStateKey(ComparisonState state, int remainingSlots)
     {
-        return new SearchStateKey(remainingSlots, GetCanonicalKeyMemoized(state));
+        return SearchStateKeyService.BuildSearchStateKey(state, remainingSlots, _canonicalKeyMemo);
     }
 
-    private IntSequenceKey GetCanonicalKeyMemoized(ComparisonState state)
+    // Compatibility seam for partial files: preserve existing helper name while delegating.
+    private static IntSequenceKey GetDisplayStateKey(ComparisonState state, ulong fixedTopMask)
     {
-        RawStructureKey rawKey = state.GetRawStructureKey();
-        if (_canonicalKeyMemo.TryGetValue(rawKey, out IntSequenceKey cached))
-            return cached;
-
-        IntSequenceKey canonical = state.GetCanonicalKey();
-        _canonicalKeyMemo[rawKey] = canonical;
-        return canonical;
-    }
-
-    private IntSequenceKey GetDisplayStateKey(ComparisonState state, ulong fixedTopMask)
-    {
-        return state.GetDisplayCanonicalKey(fixedTopMask);
+        return SearchStateKeyService.GetDisplayStateKey(state, fixedTopMask);
     }
 
     private void NormalizeState(ComparisonState state, ref ulong fixedTopMask, ref int remainingSlots)
@@ -1576,7 +1534,7 @@ partial class StrategyBuilder
 
     private void ObserveSearchState(ComparisonState state, int remainingSlots)
     {
-        _visitedSearchStates.Add(GetSearchStateKey(state, remainingSlots));
+        _visitedSearchStates.Add(SearchStateKeyService.BuildSearchStateKey(state, remainingSlots, _canonicalKeyMemo));
     }
 
     private void RecordRootIncumbent(int bestWorstCaseSteps, IReadOnlyList<int> group)
