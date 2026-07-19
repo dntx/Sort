@@ -43,23 +43,27 @@ partial class StrategyBuilder
     // keeps GreedyTightenHeight (memoized by the canonical key) consistent across isomorphic states --
     // applying a concrete group literally to a sibling labeling would otherwise yield a different
     // subtree height and corrupt the shared height memo.
-    private readonly Dictionary<SearchStateKey, List<int>> _greedyTightenOverrides = new();
-    private readonly Dictionary<SearchStateKey, ComparisonState> _greedyTightenOverrideAnchors = new();
-    private readonly Dictionary<SearchStateKey, int> _greedyTightenSharedHeightMemo = new();
-    private bool _useGreedyTightenSelection;
+    private Dictionary<SearchStateKey, List<int>> _greedyTightenOverrides => _session.GreedyTightenOverrides;
+    private Dictionary<SearchStateKey, ComparisonState> _greedyTightenOverrideAnchors => _session.GreedyTightenOverrideAnchors;
+    private Dictionary<SearchStateKey, int> _greedyTightenSharedHeightMemo => _session.GreedyTightenSharedHeightMemo;
+    private bool _useGreedyTightenSelection
+    {
+        get => _session.UseGreedyTightenSelection;
+        set => _session.UseGreedyTightenSelection = value;
+    }
 
     // Diagnostics (per ExecuteGreedyTightenStage run).
-    private int _greedyTightenRounds;
-    private int _greedyTightenCommits;
-    private int _greedyTightenStatesVisited;
-    private int _greedyTightenCandidateGroupsTried;
-    private int _greedyTightenHeightCalls;
-    private int _greedyTightenHeightMemoHits;
-    private int _greedyTightenHeightUnderGroupCalls;
-    private int _greedyTightenCriticalShortCircuits;
-    private int _greedyTightenCommitCandidateRankSum;
-    private readonly Dictionary<int, int> _greedyTightenVisitedDepthHistogram = new();
-    private readonly Dictionary<int, int> _greedyTightenCommitDepthHistogram = new();
+    private int _greedyTightenRounds { get => _session.GreedyTightenRounds; set => _session.GreedyTightenRounds = value; }
+    private int _greedyTightenCommits { get => _session.GreedyTightenCommits; set => _session.GreedyTightenCommits = value; }
+    private int _greedyTightenStatesVisited { get => _session.GreedyTightenStatesVisited; set => _session.GreedyTightenStatesVisited = value; }
+    private int _greedyTightenCandidateGroupsTried { get => _session.GreedyTightenCandidateGroupsTried; set => _session.GreedyTightenCandidateGroupsTried = value; }
+    private int _greedyTightenHeightCalls { get => _session.GreedyTightenHeightCalls; set => _session.GreedyTightenHeightCalls = value; }
+    private int _greedyTightenHeightMemoHits { get => _session.GreedyTightenHeightMemoHits; set => _session.GreedyTightenHeightMemoHits = value; }
+    private int _greedyTightenHeightUnderGroupCalls { get => _session.GreedyTightenHeightUnderGroupCalls; set => _session.GreedyTightenHeightUnderGroupCalls = value; }
+    private int _greedyTightenCriticalShortCircuits { get => _session.GreedyTightenCriticalShortCircuits; set => _session.GreedyTightenCriticalShortCircuits = value; }
+    private int _greedyTightenCommitCandidateRankSum { get => _session.GreedyTightenCommitCandidateRankSum; set => _session.GreedyTightenCommitCandidateRankSum = value; }
+    private Dictionary<int, int> _greedyTightenVisitedDepthHistogram => _session.GreedyTightenVisitedDepthHistogram;
+    private Dictionary<int, int> _greedyTightenCommitDepthHistogram => _session.GreedyTightenCommitDepthHistogram;
     private readonly List<GreedyTightenRoundDiagnostics> _greedyTightenRoundDiagnostics = new();
     internal int GreedyTightenRounds => _greedyTightenRounds;
     internal int GreedyTightenCommits => _greedyTightenCommits;

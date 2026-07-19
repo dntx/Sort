@@ -31,4 +31,28 @@ sealed class StrategyBuilderSession
     public Dictionary<SearchStateKey, int> CompactGroupPatternTightestBudget { get; } = new();
     public Dictionary<(SearchStateKey Key, int Budget), int> CompactCostMemo { get; } = new();
     public Dictionary<SearchStateKey, int> CompactRealStepsMemo { get; } = new();
+
+    // Phase-4: greedy feasible/tighten session state.
+    public Dictionary<SearchStateKey, int>? ConstructiveDepthMemo;
+    public int GreedyScoreLowerBoundCacheReuseHits;
+    public int ConstructiveDisplayLineTieBreakEvaluations;
+    public int FeasibleRootBudget = -1;
+    public int FeasibleCompactStateEstimate = -1;
+
+    public Dictionary<SearchStateKey, List<int>> GreedyTightenOverrides { get; } = new();
+    public Dictionary<SearchStateKey, ComparisonState> GreedyTightenOverrideAnchors { get; } = new();
+    public Dictionary<SearchStateKey, int> GreedyTightenSharedHeightMemo { get; } = new();
+    public bool UseGreedyTightenSelection;
+
+    public int GreedyTightenRounds;
+    public int GreedyTightenCommits;
+    public int GreedyTightenStatesVisited;
+    public int GreedyTightenCandidateGroupsTried;
+    public int GreedyTightenHeightCalls;
+    public int GreedyTightenHeightMemoHits;
+    public int GreedyTightenHeightUnderGroupCalls;
+    public int GreedyTightenCriticalShortCircuits;
+    public int GreedyTightenCommitCandidateRankSum;
+    public Dictionary<int, int> GreedyTightenVisitedDepthHistogram { get; } = new();
+    public Dictionary<int, int> GreedyTightenCommitDepthHistogram { get; } = new();
 }
