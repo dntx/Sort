@@ -2,7 +2,7 @@ using System.Collections.Generic;
 
 sealed class StrategyBuilderSession
 {
-    // Phase-2: migrated statistics/diagnostics state.
+    // Statistics/diagnostics state.
     public List<SearchMilestone> RootIncumbents { get; } = new();
 
     public int LowerBoundPrunes;
@@ -19,7 +19,7 @@ sealed class StrategyBuilderSession
     public int CompactGroupsEnumerated;
     public int CompactStepOptimalGroups;
 
-    // Phase-3: migrated exact/compact solver caches.
+    // Exact/compact solver caches.
     public HashSet<SearchStateKey> VisitedSearchStates { get; } = new();
     public Dictionary<SearchStateKey, int> MinWorstCaseStepsCache { get; } = new();
     public Dictionary<SearchStateKey, int> LowerBoundStepsCache { get; } = new();
@@ -32,7 +32,7 @@ sealed class StrategyBuilderSession
     public Dictionary<(SearchStateKey Key, int Budget), int> CompactCostMemo { get; } = new();
     public Dictionary<SearchStateKey, int> CompactRealStepsMemo { get; } = new();
 
-    // Phase-4: greedy feasible/tighten session state.
+    // Greedy feasible/tighten session state.
     public Dictionary<SearchStateKey, int>? ConstructiveDepthMemo;
     public int GreedyScoreLowerBoundCacheReuseHits;
     public int ConstructiveDisplayLineTieBreakEvaluations;
