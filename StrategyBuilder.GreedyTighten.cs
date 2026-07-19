@@ -168,21 +168,8 @@ partial class StrategyBuilder
     // for the test/eval round-cap override and future tuning.
     private void RunGreedyTighten()
     {
-        _greedyTightenOverrides.Clear();
-        _greedyTightenOverrideAnchors.Clear();
-        _greedyTightenRounds = 0;
-        _greedyTightenCommits = 0;
-        _greedyTightenStatesVisited = 0;
-        _greedyTightenCandidateGroupsTried = 0;
-        _greedyTightenHeightCalls = 0;
-        _greedyTightenHeightMemoHits = 0;
-        _greedyTightenHeightUnderGroupCalls = 0;
-        _greedyTightenCriticalShortCircuits = 0;
-        _greedyTightenCommitCandidateRankSum = 0;
-        _greedyTightenVisitedDepthHistogram.Clear();
-        _greedyTightenCommitDepthHistogram.Clear();
+        _session.ResetGreedyTightenRunState();
         _greedyTightenRoundDiagnostics.Clear();
-        _greedyTightenSharedHeightMemo.Clear();
 
         while (true)
         {

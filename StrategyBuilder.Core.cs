@@ -1802,27 +1802,13 @@ partial class StrategyBuilder
         _materializationDisplayPath.Clear();
         _nextStateId = 1;
 
-        _visitedSearchStates.Clear();
+        _session.ResetPerBuildTransientState();
         _searchedStates = 0;
         _lastReportedVisitedStatesCount = 0;
         _feasiblePhase2StartMs = -1;
         _feasiblePhaseSolved = false;
         _pendingStates = 0;
         _peakPendingStates = 0;
-
-        _lowerBoundPrunes = 0;
-        _duplicateOutcomeSkips = 0;
-        _mergedOutcomeCollisions = 0;
-        _exactCacheHits = 0;
-        _lowerBoundCacheHits = 0;
-        _feasibleTopSetCacheHits = 0;
-        _bestGroupPatternCacheHits = 0;
-        _greedyScoreLowerBoundCacheReuseHits = 0;
-        _outcomesConstructed = 0;
-        _candidateGroupsEnumerated = 0;
-        _compactStatesSolved = 0;
-        _compactGroupsEnumerated = 0;
-        _compactStepOptimalGroups = 0;
         _progressEstimateInitialized = false;
         _progressEstimateEma01 = 0.0;
         _lastProgressSampleElapsedMs = -1;

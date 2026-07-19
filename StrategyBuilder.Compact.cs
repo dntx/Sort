@@ -72,10 +72,7 @@ partial class StrategyBuilder
     // This resets the compact selection caches, ensuring subsequent phases start with clean state.
     private void ResetCompactState()
     {
-        _compactGroupPatternCache.Clear();
-        _compactGroupPatternTightestBudget.Clear();
-        _compactCostMemo.Clear();
-        _compactRealStepsMemo.Clear();
+        _session.ResetCompactCaches();
         _phase1bSolved = false;
         _compactPatternCacheReadyForMaterialization = false;
         _compactRootCost = int.MaxValue;

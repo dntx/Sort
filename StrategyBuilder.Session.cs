@@ -55,4 +55,56 @@ sealed class StrategyBuilderSession
     public int GreedyTightenCommitCandidateRankSum;
     public Dictionary<int, int> GreedyTightenVisitedDepthHistogram { get; } = new();
     public Dictionary<int, int> GreedyTightenCommitDepthHistogram { get; } = new();
+
+    public void ResetPerBuildTransientState()
+    {
+        VisitedSearchStates.Clear();
+
+        LowerBoundPrunes = 0;
+        DuplicateOutcomeSkips = 0;
+        MergedOutcomeCollisions = 0;
+        ExactCacheHits = 0;
+        LowerBoundCacheHits = 0;
+        FeasibleTopSetCacheHits = 0;
+        BestGroupPatternCacheHits = 0;
+        GreedyScoreLowerBoundCacheReuseHits = 0;
+        OutcomesConstructed = 0;
+        CandidateGroupsEnumerated = 0;
+        CompactStatesSolved = 0;
+        CompactGroupsEnumerated = 0;
+        CompactStepOptimalGroups = 0;
+    }
+
+    public void ResetCompactCaches()
+    {
+        CompactGroupPatternCache.Clear();
+        CompactGroupPatternTightestBudget.Clear();
+        CompactCostMemo.Clear();
+        CompactRealStepsMemo.Clear();
+    }
+
+    public void LoadCompactPatternAssignment(IReadOnlyDictionary<SearchStateKey, BestGroupPattern> assignment)
+    {
+        ResetCompactCaches();
+        foreach (KeyValuePair<SearchStateKey, BestGroupPattern> kv in assignment)
+            CompactGroupPatternCache[kv.Key] = kv.Value;
+    }
+
+    public void ResetGreedyTightenRunState()
+    {
+        GreedyTightenOverrides.Clear();
+        GreedyTightenOverrideAnchors.Clear();
+        GreedyTightenSharedHeightMemo.Clear();
+        GreedyTightenRounds = 0;
+        GreedyTightenCommits = 0;
+        GreedyTightenStatesVisited = 0;
+        GreedyTightenCandidateGroupsTried = 0;
+        GreedyTightenHeightCalls = 0;
+        GreedyTightenHeightMemoHits = 0;
+        GreedyTightenHeightUnderGroupCalls = 0;
+        GreedyTightenCriticalShortCircuits = 0;
+        GreedyTightenCommitCandidateRankSum = 0;
+        GreedyTightenVisitedDepthHistogram.Clear();
+        GreedyTightenCommitDepthHistogram.Clear();
+    }
 }
