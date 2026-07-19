@@ -303,8 +303,8 @@ class Program
                     $"edges={gtPlan.TotalBranchEdges} ({prep.GreedyTightenElapsed.TotalSeconds:F2}s)");
             }
 
-            // The anytime stages (each proof-tighten tightening, a terminal no-solution ceiling,
-            // and the final "greedy-edge-compact@S" stage) are produced incrementally for the GUI. The CLI is a batch tool,
+            // The anytime stages (each "proof-tighten≤N" tightening, a terminal no-solution ceiling,
+            // and the final "greedy-edge-compact@S" stage are produced incrementally for the GUI. The CLI is a batch tool,
             // so printing every intermediate tree is just noise: collect the stages, then print a
             // one-line progression summary followed by only the final (best) tree. A stage that has a
             // solution but does not strictly improve the incumbent is flagged "no improvement" and never
