@@ -7,6 +7,8 @@ using System.Threading;
 
 partial class StrategyBuilder
 {
+    private readonly StrategyBuilderSession _session = new();
+
     private const int ProgressReportIntervalMs = 100;
     private const int IterativeDeepeningMinGroupSize = 5;
     private const int IterativeDeepeningMinRequestedTopCount = 5;
