@@ -103,14 +103,14 @@ public sealed class ProjectionKernelTests
 
         int GetFamilyCount(int family) => family <= 2 ? 1 : 2;
 
-        List<ProjectionKernel.BranchLine<int>> kernel = ProjectionKernel.PlanBranchLines(
+            List<ProjectionKernel.KernelBranchLine<int>> kernel = ProjectionKernel.PlanBranchLines(
             families,
             BuildSummary,
             PartitionFamiliesIntoOrbits,
             MergeOrbitsByProjection,
             GetFamilyCount);
 
-        List<DisplayBranchLinePlanner.DisplayBranchLine<int>> planner = DisplayBranchLinePlanner.SplitMergedBucketIntoBranchLines(
+            List<DisplayBranchLinePlanner.PlannerBranchLine<int>> planner = DisplayBranchLinePlanner.SplitMergedBucketIntoBranchLines(
             families,
             BuildSummary,
             PartitionFamiliesIntoOrbits,

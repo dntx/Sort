@@ -7,9 +7,9 @@ using System.Collections.Generic;
 // Search-state-specific orbit construction and summary generation are supplied by the caller.
 internal static class DisplayBranchLinePlanner
 {
-    internal readonly record struct DisplayBranchLine<T>(List<T> Members, bool ProjectionMerged);
+    internal readonly record struct PlannerBranchLine<T>(List<T> Members, bool ProjectionMerged);
 
-    internal static List<DisplayBranchLine<T>> SplitMergedBucketIntoBranchLines<T>(
+    internal static List<PlannerBranchLine<T>> SplitMergedBucketIntoBranchLines<T>(
         List<T> families,
         Func<List<T>, EquivalentOrderSummary?> buildSummary,
         Func<List<T>, List<List<T>>> partitionFamiliesIntoOrbits,
@@ -17,13 +17,13 @@ internal static class DisplayBranchLinePlanner
         Func<T, int> getFamilyCount)
     {
         if (families.Count == 1)
-            return new List<DisplayBranchLine<T>> { new(families, false) };
+            return new List<PlannerBranchLine<T>> { new(families, false) };
 
         EquivalentOrderSummary? fullBucketSummary = buildSummary(families);
         if (MergedOrderingsFormSingleOrbit(fullBucketSummary))
-            return new List<DisplayBranchLine<T>> { new(families, false) };
+            return new List<PlannerBranchLine<T>> { new(families, false) };
 
-        var lines = new List<DisplayBranchLine<T>>();
+        var lines = new List<PlannerBranchLine<T>>();
         List<List<T>> parentOrbits = partitionFamiliesIntoOrbits(families);
         List<(List<T> Members, bool ProjectionMerged)> orbits = mergeOrbitsByProjection(parentOrbits);
 
