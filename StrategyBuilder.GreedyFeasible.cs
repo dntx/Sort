@@ -26,7 +26,7 @@ partial class StrategyBuilder
     // active items, and ChooseConstructiveGroup guarantees one is included.
     //
     // This builder reuses the existing BuildState materialization: the greedy-feasible stage enables
-    // constructive selection through MaterializationContext (see TopKFinder.cs), so no precomputed
+    // constructive selection through MaterializationContext (see StrategyBuilder.Core.cs), so no precomputed
     // pattern cache / closure pre-solve is needed (the chooser is cheap and deterministic).
     // Test-only switch: when true, candidate lookahead scoring always runs to completion (no
     // incumbent-based early prune). Used by regression tests to A/B lock the pruning win via

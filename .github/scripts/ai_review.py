@@ -557,7 +557,7 @@ def _is_core_algorithm_code_path(path: str) -> bool:
         return False
     base = lower.rsplit("/", 1)[-1]
     return (
-        base == "topkfinder.cs"
+        base in {"topkfinder.cs", "strategybuilder.core.cs"}
         or base == "comparisonstate.cs"
         or base.startswith("strategybuilder.")
     )
