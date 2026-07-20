@@ -41,36 +41,41 @@ static class PublicPipelineOrchestrator
         var callbacks = new PipelineCallbacks(onStageCompleted, onStageStart);
 
         if (!preparationAlreadyApplied)
-        {
-            string feasibleStageName = StageNames.GreedyFeasible;
-            if (emitPreparationStages)
-                callbacks.Start(feasibleStageName);
-            GreedyPreparationResult prep = PrepareGreedyUpperBound(builder);
-            if (emitPreparationStages)
-            {
-                PipelineStageProtocol.EmitCompletedPlanStage(
-                    feasibleStageName,
-                    prep.BaseFeasiblePlan,
-                    prep.GreedyFeasibleElapsed,
-                    callbacks);
-            }
-
-            if (prep.GreedyTightenProbeRun && prep.GreedyTightenPlan is not null)
-            {
-                string tightenStageName = StageNames.GreedyTighten;
-                if (emitPreparationStages)
-                {
-                    callbacks.Start(tightenStageName);
-                    PipelineStageProtocol.EmitCompletedPlanStage(
-                        tightenStageName,
-                        prep.GreedyTightenPlan,
-                        prep.GreedyTightenElapsed,
-                        callbacks);
-                }
-            }
-        }
+            RunGreedyPreparation(builder, onStageCompleted, onStageStart, emitPreparationStages);
 
         return builder.RunGreedyPipelineCore(onStageCompleted, onStageStart);
+    }
+
+    public static GreedyPreparationResult RunGreedyPreparation(
+        StrategyBuilder builder,
+        Action<StageResult>? onStageCompleted = null,
+        Action<string>? onStageStart = null,
+        bool emitStages = true)
+    {
+        var callbacks = new PipelineCallbacks(onStageCompleted, onStageStart);
+        GreedyPreparationResult prep = PrepareGreedyUpperBound(builder);
+
+        if (!emitStages)
+            return prep;
+
+        PipelineStageProtocol.EmitCompletedPlanStage(
+            StageNames.GreedyFeasible,
+            prep.BaseFeasiblePlan,
+            prep.GreedyFeasibleElapsed,
+            callbacks,
+            emitStart: true);
+
+        if (prep.GreedyTightenProbeRun && prep.GreedyTightenPlan is not null)
+        {
+            PipelineStageProtocol.EmitCompletedPlanStage(
+                StageNames.GreedyTighten,
+                prep.GreedyTightenPlan,
+                prep.GreedyTightenElapsed,
+                callbacks,
+                emitStart: true);
+        }
+
+        return prep;
     }
 
     // Executes exact stage-1 inside the shared orchestrator via the shared search projection helper.

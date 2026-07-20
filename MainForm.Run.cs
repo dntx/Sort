@@ -67,7 +67,7 @@ partial class MainForm
                 // Greedy mode: GreedyFeasible gives an instant browsable strategy even on shapes exact
                 // never resolves (e.g. 25,5,5), then ProofTighten + EdgeCompact refine it.
                 GreedyPreparationResult prep = await Task.Run(
-                    () => PublicPipelineOrchestrator.PrepareGreedyUpperBound(builder),
+                    () => PublicPipelineOrchestrator.RunGreedyPreparation(builder, emitStages: false),
                     cancellationToken);
                 StrategyPlan feasiblePlan = prep.EffectiveFeasiblePlan;
 
@@ -157,30 +157,18 @@ partial class MainForm
     // stage. Control.Invoke hops to the UI thread AND blocks the worker until OnProofTightenStage
     // returns, so when the per-stage modal is enabled the search genuinely pauses until the user clicks OK.
     private void MarshalProofTightenStage(StageResult stage)
-    {
-        if (!IsHandleCreated || IsDisposed)
-            return;
-        try
-        {
-            Invoke(() => OnProofTightenStage(stage));
-        }
-        catch (ObjectDisposedException)
-        {
-            // Form closed mid-run; nothing to update.
-        }
-        catch (InvalidOperationException)
-        {
-            // Handle destroyed during shutdown.
-        }
-    }
+        => MarshalStage(stage, OnProofTightenStage);
 
     private void MarshalExactStage(StageResult stage)
+        => MarshalStage(stage, OnExactStage);
+
+    private void MarshalStage(StageResult stage, Action<StageResult> onStage)
     {
         if (!IsHandleCreated || IsDisposed)
             return;
         try
         {
-            Invoke(() => OnExactStage(stage));
+            Invoke(() => onStage(stage));
         }
         catch (ObjectDisposedException)
         {
@@ -239,11 +227,7 @@ partial class MainForm
     // the proven analytic lower bound, otherwise the final "greedy-edge-compact@S" pass runs. Used to label
     // the transient "...: computing..." placeholder so it matches the stage name that actually lands.
     private static string NextProofTightenStageName(StrategyPlan feasiblePlan, int incumbentMaxStep)
-    {
-        int lower = Math.Max(1, feasiblePlan.SearchStatistics.RootProvenLowerBound);
-        int nextBudget = incumbentMaxStep - 1;
-        return nextBudget >= lower ? StageNames.FormatProofTighten(nextBudget) : StageNames.FormatGreedyEdgeCompact(incumbentMaxStep);
-    }
+        => PipelineStageProtocol.NextGreedyStageName(feasiblePlan, incumbentMaxStep);
 
     // Anytime greedy edge handler: invoked on the UI thread once per edge stage as the worker thread
     // produces it (each proof-tighten stage, then the final "greedy-edge-compact@S"
@@ -266,7 +250,7 @@ partial class MainForm
         // only as a leaf note. Tightening
         // continues regardless, since the next ceiling is driven by max-steps, not edges.
         StrategyPlan incumbent = _compactPlan ?? _feasiblePlan;
-        bool improved = stage.HasPlan && stage.Plan!.IsStrictRefinementOver(incumbent);
+        bool improved = PipelineStageProtocol.IsImprovement(stage, incumbent);
 
         // A follow-up stage always lands after every emitted stage except the terminal edge-compact
         // pass: after a proof-tighten stage -- whether it found a solution or proved/failed the
