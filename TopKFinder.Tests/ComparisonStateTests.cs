@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using Xunit;
 
 public sealed class ComparisonStateTests
@@ -78,6 +79,58 @@ public sealed class ComparisonStateTests
         star.AddRelation(0, 3);
 
         Assert.NotEqual(chain.GetCanonicalKey(), star.GetCanonicalKey());
+    }
+
+    [Fact]
+    public void CanonicalKey_RepeatedCallsStayStable_OnHighlySymmetricState()
+    {
+        var first = new ComparisonState(8);
+        first.AddRelation(0, 3);
+        first.AddRelation(0, 4);
+        first.AddRelation(1, 3);
+        first.AddRelation(1, 5);
+        first.AddRelation(2, 4);
+        first.AddRelation(2, 5);
+
+        // Relabel the same structure by swapping each symmetric pair: (0,1), (3,4), (6,7).
+        var second = new ComparisonState(8);
+        second.AddRelation(1, 4);
+        second.AddRelation(1, 3);
+        second.AddRelation(0, 4);
+        second.AddRelation(0, 5);
+        second.AddRelation(2, 3);
+        second.AddRelation(2, 5);
+
+        IntSequenceKey baseline = first.GetCanonicalKey();
+        for (int i = 0; i < 20; i++)
+            Assert.Equal(baseline, first.GetCanonicalKey());
+
+        Assert.Equal(baseline, second.GetCanonicalKey());
+    }
+
+    [Fact]
+    public void ReadCanonicalKey_InvalidColorRank_ThrowsDeterministicInvariantException()
+    {
+        Type? algorithmsType = typeof(ComparisonState).Assembly.GetType("ComparisonStateAlgorithms");
+        Assert.NotNull(algorithmsType);
+
+        MethodInfo? readCanonicalKey = algorithmsType!.GetMethod(
+            "ReadCanonicalKey",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.NotNull(readCanonicalKey);
+
+        object?[] args =
+        {
+            3,
+            new ulong[] { 0UL, 0UL, 0UL },
+            new[] { 0, 0, 0 },
+            new[] { 0, 3, 1 },
+        };
+
+        TargetInvocationException ex = Assert.Throws<TargetInvocationException>(() => readCanonicalKey!.Invoke(null, args));
+        InvalidOperationException inner = Assert.IsType<InvalidOperationException>(ex.InnerException);
+        Assert.Contains("invariant violation", inner.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("out of range", inner.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using System.Numerics;
 using System.Threading;
 using System.Collections.Generic;
@@ -18,24 +17,6 @@ class ComparisonState
     private IntSequenceKey? _canonicalKeyCache;
     private Dictionary<ulong, IntSequenceKey>? _displayCanonicalKeyCache;
     private Dictionary<ulong, IntSequenceKey>? _groupCanonicalKeyCache;
-
-    private sealed class CanonicalizationWorkspace
-    {
-        public CanonicalizationWorkspace(int vertexCount)
-        {
-            Labels = new int[vertexCount];
-            NextLabels = new int[vertexCount];
-            Perm = new int[vertexCount];
-            Individualized = new int[vertexCount];
-            Signature = new int[vertexCount * (1 + 4 * vertexCount)];
-        }
-
-        public int[] Labels { get; }
-        public int[] NextLabels { get; }
-        public int[] Perm { get; }
-        public int[] Individualized { get; }
-        public int[] Signature { get; }
-    }
 
     internal static void SetThreadCancellationToken(CancellationToken cancellationToken)
     {
@@ -183,7 +164,14 @@ class ComparisonState
         if (_canonicalKeyCache is not null)
             return _canonicalKeyCache.Value;
 
-        _canonicalKeyCache = ComputeCanonicalForm(ActiveMask, fixedTopMask: 0, highlightMask: 0);
+        _canonicalKeyCache = ComparisonStateAlgorithms.ComputeCanonicalForm(
+            _n,
+            ActiveMask,
+            fixedTopMask: 0,
+            highlightMask: 0,
+            _ancestors,
+            _descendants,
+            ThrowIfThreadCancellationRequested);
         return _canonicalKeyCache.Value;
     }
 
@@ -215,7 +203,14 @@ class ComparisonState
         if (_displayCanonicalKeyCache.TryGetValue(fixedTopMask, out IntSequenceKey cached))
             return cached;
 
-        IntSequenceKey key = ComputeCanonicalForm(ActiveMask | fixedTopMask, fixedTopMask, highlightMask: 0);
+        IntSequenceKey key = ComparisonStateAlgorithms.ComputeCanonicalForm(
+            _n,
+            ActiveMask | fixedTopMask,
+            fixedTopMask,
+            highlightMask: 0,
+            _ancestors,
+            _descendants,
+            ThrowIfThreadCancellationRequested);
         _displayCanonicalKeyCache[fixedTopMask] = key;
         return key;
     }
@@ -235,7 +230,14 @@ class ComparisonState
         if (_groupCanonicalKeyCache.TryGetValue(groupMask, out IntSequenceKey cached))
             return cached;
 
-        IntSequenceKey key = ComputeCanonicalForm(ActiveMask, fixedTopMask: 0, highlightMask: groupMask);
+        IntSequenceKey key = ComparisonStateAlgorithms.ComputeCanonicalForm(
+            _n,
+            ActiveMask,
+            fixedTopMask: 0,
+            highlightMask: groupMask,
+            _ancestors,
+            _descendants,
+            ThrowIfThreadCancellationRequested);
         _groupCanonicalKeyCache[groupMask] = key;
         return key;
     }
@@ -249,414 +251,12 @@ class ComparisonState
     // expensive canonical-key computation for groups that cannot match a target pattern.
     public int[] GetActiveItemColors()
     {
-        ThrowIfThreadCancellationRequested();
-        int n = _n;
-        var colors = new int[n];
-        for (int i = 0; i < n; i++)
-            colors[i] = -1;
-
-        var verts = new int[n];
-        int a = 0;
-        ulong remaining = ActiveMask;
-        while (remaining != 0)
-        {
-            ThrowIfThreadCancellationRequested();
-            int i = BitOperations.TrailingZeroCount(remaining);
-            remaining &= remaining - 1;
-            verts[a++] = i;
-        }
-
-        if (a == 0)
-            return colors;
-
-        var pos = new int[n];
-        for (int p = 0; p < a; p++)
-            pos[verts[p]] = p;
-
-        var anc = new ulong[a];
-        var desc = new ulong[a];
-        for (int p = 0; p < a; p++)
-        {
-            ThrowIfThreadCancellationRequested();
-            ulong upMask = _ancestors[verts[p]] & ActiveMask;
-            while (upMask != 0)
-            {
-                ThrowIfThreadCancellationRequested();
-                int b = BitOperations.TrailingZeroCount(upMask);
-                upMask &= upMask - 1;
-                desc[p] |= 1UL << pos[b];
-            }
-
-            ulong downMask = _descendants[verts[p]] & ActiveMask;
-            while (downMask != 0)
-            {
-                ThrowIfThreadCancellationRequested();
-                int b = BitOperations.TrailingZeroCount(downMask);
-                downMask &= downMask - 1;
-                anc[p] |= 1UL << pos[b];
-            }
-        }
-
-        var seed = new int[a];
-        var workspace = new CanonicalizationWorkspace(a);
-        int[] refined = RefineCanonicalColoring(a, anc, desc, seed, workspace);
-        for (int p = 0; p < a; p++)
-        {
-            ThrowIfThreadCancellationRequested();
-            colors[verts[p]] = refined[p];
-        }
-
-        return colors;
-    }
-
-    // Produces a COMPLETE canonical invariant of the included sub-poset via
-    // individualization-refinement (a McKay-style canonical labeling). 1-WL color
-    // refinement alone is not a complete graph invariant: non-isomorphic posets can share
-    // a refined coloring and therefore collide. Such collisions corrupt the exact-step
-    // caches (a hard state inherits an easier isomorphism-class's cached cost), which in
-    // turn breaks compact selection's step-budget invariant. Individualization-refinement
-    // distinguishes every non-isomorphic state while still mapping isomorphic states (and
-    // fixed-top elements onto fixed-top elements) to an identical key.
-    private IntSequenceKey ComputeCanonicalForm(ulong includedMask, ulong fixedTopMask, ulong highlightMask)
-    {
-        int n = _n;
-        var verts = new int[n];
-        int a = 0;
-        ulong remaining = includedMask;
-        ThrowIfThreadCancellationRequested();
-        while (remaining != 0)
-        {
-            int i = BitOperations.TrailingZeroCount(remaining);
-            remaining &= remaining - 1;
-            verts[a++] = i;
-        }
-
-        if (a == 0)
-            return new IntSequenceKey(new[] { 0 });
-
-        // Position-space adjacency over the active vertices: anc[p] holds the positions
-        // dominated by verts[p] (i.e. verts[p] is an ancestor / strictly greater).
-        var pos = new int[n];
-        for (int p = 0; p < a; p++)
-            pos[verts[p]] = p;
-
-        var anc = new ulong[a];
-        var desc = new ulong[a];
-        for (int p = 0; p < a; p++)
-        {
-                ThrowIfThreadCancellationRequested();
-            ulong upMask = _ancestors[verts[p]] & includedMask;
-            while (upMask != 0)
-            {
-                    ThrowIfThreadCancellationRequested();
-                int b = BitOperations.TrailingZeroCount(upMask);
-                upMask &= upMask - 1;
-                // verts[p]'s ancestor b means b > verts[p]; record as desc edge b->p.
-                desc[p] |= 1UL << pos[b];
-            }
-
-            ulong downMask = _descendants[verts[p]] & includedMask;
-            while (downMask != 0)
-            {
-                    ThrowIfThreadCancellationRequested();
-                int b = BitOperations.TrailingZeroCount(downMask);
-                downMask &= downMask - 1;
-                anc[p] |= 1UL << pos[b];
-            }
-        }
-
-        // Seed colors distinguish fixed-top elements from ordinary active candidates so the
-        // canonicalization never maps a guaranteed-top item onto a still-contested one. A
-        // highlighted group (if any) gets a further distinct color so a group's canonical key
-        // is a complete invariant of (state, group) up to automorphism.
-        var seed = new int[a];
-        for (int p = 0; p < a; p++)
-        {
-            ulong bit = 1UL << verts[p];
-            int s = (fixedTopMask & bit) != 0 ? 1 : 0;
-            if ((highlightMask & bit) != 0)
-                s += 2;
-            seed[p] = s;
-        }
-
-        var workspace = new CanonicalizationWorkspace(a);
-        var refined = RefineCanonicalColoring(a, anc, desc, seed, workspace);
-
-        int[]? best = null;
-        CanonicalizeRecursive(a, anc, desc, seed, refined, workspace, ref best);
-        return new IntSequenceKey(best!);
-    }
-
-    // Refines a coloring to the 1-WL fixed point using ancestor/descendant color multisets.
-    private static int[] RefineCanonicalColoring(int a, ulong[] anc, ulong[] desc, int[] colors, CanonicalizationWorkspace workspace)
-    {
-        var labels = workspace.Labels;
-        var nextLabels = workspace.NextLabels;
-        var perm = workspace.Perm;
-        var sig = workspace.Signature;
-
-        Array.Copy(colors, labels, a);
-
-        int maxLabel = 0;
-        for (int i = 0; i < a; i++)
-            if (labels[i] > maxLabel)
-                maxLabel = labels[i];
-
-        if (maxLabel + 1 > a)
-        {
-            var present = new bool[maxLabel + 1];
-            for (int i = 0; i < a; i++)
-                present[labels[i]] = true;
-
-            var map = new int[maxLabel + 1];
-            int next = 0;
-            for (int v = 0; v <= maxLabel; v++)
-            {
-                if (present[v])
-                    map[v] = next++;
-            }
-
-            for (int i = 0; i < a; i++)
-                labels[i] = map[labels[i]];
-        }
-
-        bool changed;
-        do
-        {
-            ThrowIfThreadCancellationRequested();
-            int classCount = 0;
-            for (int i = 0; i < a; i++)
-            {
-                ThrowIfThreadCancellationRequested();
-                if (labels[i] > classCount)
-                    classCount = labels[i];
-            }
-            classCount++;
-
-            int width = 1 + 2 * classCount;
-            Array.Clear(sig, 0, a * width);
-            for (int i = 0; i < a; i++)
-            {
-                ThrowIfThreadCancellationRequested();
-                int baseIdx = i * width;
-                sig[baseIdx] = labels[i];
-
-                ulong up = desc[i];
-                while (up != 0)
-                {
-                    ThrowIfThreadCancellationRequested();
-                    int b = BitOperations.TrailingZeroCount(up);
-                    up &= up - 1;
-                    sig[baseIdx + 1 + labels[b]]++;
-                }
-
-                ulong down = anc[i];
-                while (down != 0)
-                {
-                    ThrowIfThreadCancellationRequested();
-                    int b = BitOperations.TrailingZeroCount(down);
-                    down &= down - 1;
-                    sig[baseIdx + 1 + classCount + labels[b]]++;
-                }
-
-                perm[i] = i;
-            }
-
-            for (int x = 1; x < a; x++)
-            {
-                int keyPos = perm[x];
-                int y = x - 1;
-                while (y >= 0 && CompareCanonicalSignatures(sig, perm[y], keyPos, width) > 0)
-                {
-                    perm[y + 1] = perm[y];
-                    y--;
-                }
-
-                perm[y + 1] = keyPos;
-            }
-
-            int color = 0;
-            for (int r = 0; r < a; r++)
-            {
-                if (r > 0 && CompareCanonicalSignatures(sig, perm[r - 1], perm[r], width) != 0)
-                    color++;
-                nextLabels[perm[r]] = color;
-            }
-
-            changed = false;
-            for (int i = 0; i < a; i++)
-            {
-                if (labels[i] != nextLabels[i])
-                {
-                    changed = true;
-                    break;
-                }
-            }
-
-            if (changed)
-            {
-                var tmp = labels;
-                labels = nextLabels;
-                nextLabels = tmp;
-            }
-        }
-        while (changed);
-
-        return (int[])labels.Clone();
-    }
-
-    private static int CompareCanonicalSignatures(int[] sig, int posLeft, int posRight, int width)
-    {
-        int left = posLeft * width;
-        int right = posRight * width;
-        for (int t = 0; t < width; t++)
-        {
-            int diff = sig[left + t] - sig[right + t];
-            if (diff != 0)
-                return diff;
-        }
-
-        return 0;
-    }
-
-    private static void CanonicalizeRecursive(int a, ulong[] anc, ulong[] desc, int[] seed, int[] colors, CanonicalizationWorkspace workspace, ref int[]? best)
-    {
-        ThrowIfThreadCancellationRequested();
-        int classCount = 0;
-        for (int i = 0; i < a; i++)
-        {
-            ThrowIfThreadCancellationRequested();
-            if (colors[i] + 1 > classCount)
-                classCount = colors[i] + 1;
-        }
-
-        // Find the smallest color value owning more than one vertex (the target cell).
-        var cellSize = new int[classCount];
-        for (int i = 0; i < a; i++)
-            cellSize[colors[i]]++;
-
-        int targetColor = -1;
-        for (int c = 0; c < classCount; c++)
-        {
-            if (cellSize[c] > 1)
-            {
-                targetColor = c;
-                break;
-            }
-        }
-
-        if (targetColor < 0)
-        {
-            // Discrete coloring: colors form a bijection onto 0..a-1, giving a canonical order.
-            var candidate = ReadCanonicalKey(a, anc, seed, colors);
-            if (best is null || CompareKeyArrays(candidate, best) < 0)
-                best = candidate;
-            return;
-        }
-
-        // Reuse one individualized buffer for all branches in this recursive cell.
-        for (int i = 0; i < a; i++)
-            workspace.Individualized[i] = 2 * colors[i] + (colors[i] == targetColor ? 1 : 0);
-
-        for (int p = 0; p < a; p++)
-        {
-            ThrowIfThreadCancellationRequested();
-            if (colors[p] != targetColor)
-                continue;
-
-            // Automorphism pruning: skip p when an earlier same-cell vertex is interchangeable
-            // with it (identical poset relations to every other vertex and mutually incomparable).
-            // Individualizing interchangeable vertices yields isomorphic colored posets and hence
-            // the same canonical sub-key, so trying only one representative per interchangeability
-            // class cannot change the minimum. This collapses the otherwise factorial branching on
-            // large symmetric cells (e.g. antichains) to one branch per class.
-            bool redundant = false;
-            for (int q = 0; q < p; q++)
-            {
-                ThrowIfThreadCancellationRequested();
-                if (colors[q] == targetColor && AreInterchangeable(p, q, anc, desc))
-                {
-                    redundant = true;
-                    break;
-                }
-            }
-
-            if (redundant)
-                continue;
-
-            // Individualize p: it sorts ahead of its former cell-mates; all other cells keep
-            // their relative order. Re-refine, then recurse.
-            workspace.Individualized[p] = 2 * colors[p];
-            var refined = RefineCanonicalColoring(a, anc, desc, workspace.Individualized, workspace);
-            CanonicalizeRecursive(a, anc, desc, seed, refined, workspace, ref best);
-            workspace.Individualized[p] = 2 * colors[p] + 1;
-        }
-    }
-
-    // Two vertices (positions) are interchangeable when swapping them is an automorphism of the
-    // colored poset: they must be mutually incomparable and have identical ancestor/descendant
-    // relations to every other vertex.
-    private static bool AreInterchangeable(int p, int q, ulong[] anc, ulong[] desc)
-    {
-        ulong bp = 1UL << p;
-        ulong bq = 1UL << q;
-
-        if (((anc[p] | desc[p]) & bq) != 0)
-            return false;
-
-        if ((anc[p] & ~bq) != (anc[q] & ~bp))
-            return false;
-
-        if ((desc[p] & ~bq) != (desc[q] & ~bp))
-            return false;
-
-        return true;
-    }
-
-    private static int[] ReadCanonicalKey(int a, ulong[] anc, int[] seed, int[] colors)
-    {
-        // colors[v] is the canonical rank of vertex v (a permutation of 0..a-1).
-        var byRank = new int[a];
-        for (int v = 0; v < a; v++)
-            byRank[colors[v]] = v;
-
-        // Per canonical row: the seed flag, then the ancestor relation to every other canonical
-        // column packed as two ints (a <= 64). This is a complete invariant in canonical order.
-        var parts = new int[1 + a * 3];
-        parts[0] = a;
-        int w = 1;
-        for (int rc = 0; rc < a; rc++)
-        {
-            int v = byRank[rc];
-            parts[w++] = seed[v];
-
-            ulong row = 0;
-            ulong ancMask = anc[v];
-            while (ancMask != 0)
-            {
-                int b = BitOperations.TrailingZeroCount(ancMask);
-                ancMask &= ancMask - 1;
-                row |= 1UL << colors[b];
-            }
-
-            parts[w++] = (int)(row & 0xFFFFFFFF);
-            parts[w++] = (int)(row >> 32);
-        }
-
-        return parts;
-    }
-
-    private static int CompareKeyArrays(int[] left, int[] right)
-    {
-        int len = Math.Min(left.Length, right.Length);
-        for (int i = 0; i < len; i++)
-        {
-            int diff = left[i] - right[i];
-            if (diff != 0)
-                return diff;
-        }
-
-        return left.Length - right.Length;
+        return ComparisonStateAlgorithms.GetActiveItemColors(
+            _n,
+            ActiveMask,
+            _ancestors,
+            _descendants,
+            ThrowIfThreadCancellationRequested);
     }
 
     internal ulong GetAncestorMask(int item)
@@ -688,84 +288,15 @@ class ComparisonState
         IReadOnlyList<int> orderB,
         out Dictionary<int, int>? automorphism)
     {
-        ThrowIfThreadCancellationRequested();
-        automorphism = null;
-        if (orderA.Count != orderB.Count)
-            return false;
-
-        ulong mask = ActiveMask | fixedTopMask;
-        List<int> items = MaskToOrderedList(mask);
-
-        var assignment = new Dictionary<int, int>(items.Count);
-        ulong used = 0;
-
-        bool Consistent(int from, int to)
-        {
-            ThrowIfThreadCancellationRequested();
-            if (((fixedTopMask >> from) & 1UL) != ((fixedTopMask >> to) & 1UL))
-                return false;
-            foreach (KeyValuePair<int, int> pair in assignment)
-            {
-                ThrowIfThreadCancellationRequested();
-                int of = pair.Key, ot = pair.Value;
-                if (((_ancestors[of] >> from) & 1UL) != ((_ancestors[ot] >> to) & 1UL))
-                    return false;
-                if (((_descendants[of] >> from) & 1UL) != ((_descendants[ot] >> to) & 1UL))
-                    return false;
-            }
-            return true;
-        }
-
-        for (int i = 0; i < orderA.Count; i++)
-        {
-            ThrowIfThreadCancellationRequested();
-            int from = orderA[i], to = orderB[i];
-            if ((used & (1UL << to)) != 0)
-            {
-                if (assignment.TryGetValue(from, out int existing) && existing == to)
-                    continue;
-                return false;
-            }
-            if (assignment.ContainsKey(from) || !Consistent(from, to))
-                return false;
-            assignment[from] = to;
-            used |= 1UL << to;
-        }
-
-        var unassigned = new List<int>();
-        foreach (int item in items)
-        {
-            ThrowIfThreadCancellationRequested();
-            if (!assignment.ContainsKey(item))
-                unassigned.Add(item);
-        }
-
-        bool Search(int idx)
-        {
-            ThrowIfThreadCancellationRequested();
-            if (idx == unassigned.Count)
-                return true;
-            int from = unassigned[idx];
-            foreach (int to in items)
-            {
-                ThrowIfThreadCancellationRequested();
-                if ((used & (1UL << to)) != 0 || !Consistent(from, to))
-                    continue;
-                assignment[from] = to;
-                used |= 1UL << to;
-                if (Search(idx + 1))
-                    return true;
-                assignment.Remove(from);
-                used &= ~(1UL << to);
-            }
-            return false;
-        }
-
-        if (!Search(0))
-            return false;
-
-        automorphism = assignment;
-        return true;
+        return ComparisonStateAlgorithms.TryFindOrderAutomorphism(
+            ActiveMask,
+            fixedTopMask,
+            _ancestors,
+            _descendants,
+            orderA,
+            orderB,
+            ThrowIfThreadCancellationRequested,
+            out automorphism);
     }
 
     [ThreadStatic] private static int[]? _scratchNextLabels;
