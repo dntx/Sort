@@ -285,7 +285,7 @@ class Program
             // Greedy mode: GreedyFeasible gives a valid upper bound, then ProofTighten lowers the
             // step ceiling when it can, and EdgeCompact minimizes edges at the final step.
             WriteStageStatus("stage greedy-feasible: started");
-            GreedyPreparationResult prep = PublicPipelineOrchestrator.PrepareGreedyUpperBound(builder);
+            GreedyPreparationResult prep = PublicPipelineOrchestrator.RunGreedyPreparation(builder, emitStages: false);
             StrategyPlan feasiblePlan = prep.EffectiveFeasiblePlan;
             StrategyPlan baseFeasiblePlan = prep.BaseFeasiblePlan;
             WriteStageStatus($"stage greedy-feasible: steps={feasiblePlan.MaxStep}, " +
@@ -336,7 +336,7 @@ class Program
                 finalPlan = gtPlan;
             }
 
-            if (stageLimit.HasValue && emittedStages >= stageLimit.Value)
+            if (PipelineStageProtocol.ReachedStageLimit(emittedStages, stageLimit))
             {
                 ClearProgressLine();
                 Console.WriteLine($"progression: {string.Join(" -> ", stageSummaries)}");
@@ -355,13 +355,14 @@ class Program
 
                 if (!stage.HasPlan)
                 {
+                    string noSolutionMarker = PipelineStageProtocol.NoSolutionMarker(stage);
                     if (stage.Outcome == StageOutcome.ProvenInfeasible)
                         {
                             // Proven infeasible at this ceiling (complete enumeration) => the incumbent is
                             // optimal (opt = incumbent.MaxStep). Close its squeeze so the final tree reports
                             // proven optimal.
-                            stageSummaries.Add($"{stage.Name}: no solution");
-                            WriteStageStatus($"stage {stage.Name}: no solution " +
+                            stageSummaries.Add($"{stage.Name}: {noSolutionMarker}");
+                            WriteStageStatus($"stage {stage.Name}: {noSolutionMarker} " +
                                 $"({stage.Elapsed.TotalSeconds:F2}s)");
                             finalPlan = finalPlan.WithRootProvenLowerBound(finalPlan.MaxStep);
                             incumbentPlan = finalPlan;
@@ -371,12 +372,12 @@ class Program
                             // Probe finished but the greedy candidate cap truncated the group enumeration, so
                             // "no group fit" is not a proof. Leave the squeeze open (no proven-optimal claim);
                             // the incumbent simply stands.
-                            stageSummaries.Add($"{stage.Name}: search incomplete (candidate cap reached)");
+                            stageSummaries.Add($"{stage.Name}: {noSolutionMarker}");
                             WriteStageStatus($"stage {stage.Name}: search incomplete, candidate cap reached " +
                                 $"({stage.Elapsed.TotalSeconds:F2}s)");
                         }
 
-                        if (stageLimit.HasValue && emittedStages >= stageLimit.Value)
+                        if (PipelineStageProtocol.ReachedStageLimit(emittedStages, stageLimit))
                             throw new StageLimitReachedException();
 
                         return;
@@ -398,7 +399,7 @@ class Program
                         $"edges={stage.Plan.TotalBranchEdges} ({stage.Elapsed.TotalSeconds:F2}s), no improvement");
                 }
 
-                if (stageLimit.HasValue && emittedStages >= stageLimit.Value)
+                if (PipelineStageProtocol.ReachedStageLimit(emittedStages, stageLimit))
                     throw new StageLimitReachedException();
             }
 
@@ -469,7 +470,7 @@ class Program
                         Console.WriteLine();
                         Console.Write(DisplayEngine.RenderStrategyText(stepPlan));
 
-                        if (stageLimit.HasValue && stageLimit.Value <= 1)
+                        if (PipelineStageProtocol.ReachedStageLimit(1, stageLimit))
                             throw new StageLimitReachedException();
 
                         return;
