@@ -197,3 +197,24 @@ def test_post_review_retries_transient_failure_then_succeeds():
 
     assert run_mock.call_count == 2
     sleep_mock.assert_called_once()
+
+
+def test_combine_batch_reviews_filters_false_empty_description_structural_block():
+    structural_review = """## Structural Review
+Looks fine overall.
+
+## Findings
+- **[BLOCK]** DESCRIPTION ↔ CHANGE CONSISTENCY: The PR description is empty, but the change is non-trivial.
+
+VERDICT: BLOCK
+"""
+
+    combined = ai_review.combine_batch_reviews(
+        batch_reviews=[(1, 1, "APPROVE", "## Summary\nNo issues found.\n\n## Findings\nNo issues found.\n\nVERDICT: APPROVE")],
+        structural=("BLOCK", structural_review),
+        policy_findings=None,
+        pr_body="## Summary\nNon-empty description present",
+    )
+
+    assert "PR description is empty" not in combined
+    assert ai_review.parse_verdict(combined) == "APPROVE"
