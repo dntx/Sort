@@ -390,9 +390,6 @@ internal static class ComparisonStateAlgorithms
             return;
         }
 
-        for (int i = 0; i < a; i++)
-            workspace.Individualized[i] = 2 * colors[i] + (colors[i] == targetColor ? 1 : 0);
-
         for (int p = 0; p < a; p++)
         {
             throwIfCancellationRequested();
@@ -413,10 +410,14 @@ internal static class ComparisonStateAlgorithms
             if (redundant)
                 continue;
 
+            // Rebuild the individualized baseline for each branch so deeper recursion cannot
+            // leak workspace mutations into sibling branches in this frame.
+            for (int i = 0; i < a; i++)
+                workspace.Individualized[i] = 2 * colors[i] + (colors[i] == targetColor ? 1 : 0);
+
             workspace.Individualized[p] = 2 * colors[p];
             int[] refined = RefineCanonicalColoring(a, anc, desc, workspace.Individualized, workspace, throwIfCancellationRequested);
             CanonicalizeRecursive(a, anc, desc, seed, refined, workspace, throwIfCancellationRequested, ref best);
-            workspace.Individualized[p] = 2 * colors[p] + 1;
         }
     }
 

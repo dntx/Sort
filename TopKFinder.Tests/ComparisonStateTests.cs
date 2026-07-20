@@ -82,6 +82,33 @@ public sealed class ComparisonStateTests
     }
 
     [Fact]
+    public void CanonicalKey_RepeatedCallsStayStable_OnHighlySymmetricState()
+    {
+        var first = new ComparisonState(8);
+        first.AddRelation(0, 3);
+        first.AddRelation(0, 4);
+        first.AddRelation(1, 3);
+        first.AddRelation(1, 5);
+        first.AddRelation(2, 4);
+        first.AddRelation(2, 5);
+
+        // Relabel the same structure by swapping each symmetric pair: (0,1), (3,4), (6,7).
+        var second = new ComparisonState(8);
+        second.AddRelation(1, 4);
+        second.AddRelation(1, 3);
+        second.AddRelation(0, 4);
+        second.AddRelation(0, 5);
+        second.AddRelation(2, 3);
+        second.AddRelation(2, 5);
+
+        IntSequenceKey baseline = first.GetCanonicalKey();
+        for (int i = 0; i < 20; i++)
+            Assert.Equal(baseline, first.GetCanonicalKey());
+
+        Assert.Equal(baseline, second.GetCanonicalKey());
+    }
+
+    [Fact]
     public void ReadCanonicalKey_InvalidColorRank_ThrowsDeterministicInvariantException()
     {
         Type? algorithmsType = typeof(ComparisonState).Assembly.GetType("ComparisonStateAlgorithms");
