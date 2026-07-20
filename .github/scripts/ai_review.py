@@ -360,6 +360,14 @@ def load_pr_metadata() -> dict[str, str]:
     return metadata
 
 
+def sync_pr_metadata_env(metadata: dict[str, str]) -> None:
+    """Publish loaded PR metadata to env for downstream prompt builders."""
+    os.environ["PR_TITLE"] = metadata.get("title", "")
+    os.environ["PR_BODY"] = metadata.get("body", "")
+    os.environ["PR_BASE_REF"] = metadata.get("base_ref", "")
+    os.environ["PR_HEAD_SHA"] = metadata.get("head_sha", "")
+
+
 def ensure_diff_file(base_ref: str, base_sha: str, head_sha: str) -> str:
     """Build the review diff locally when the workflow did not provide one."""
     existing = (os.environ.get("DIFF_FILE") or "").strip()
@@ -2007,6 +2015,9 @@ def main() -> int:
     pr_body = metadata["body"]
     pr_base_ref = metadata["base_ref"]
     pr_head_sha = metadata["head_sha"]
+
+    sync_pr_metadata_env(metadata)
+
     ensure_diff_file(metadata["base_ref"], metadata["base_sha"], metadata["head_sha"])
 
     format_ok, format_review = validate_pr_description_format(pr_body)

@@ -218,3 +218,20 @@ VERDICT: BLOCK
 
     assert "PR description is empty" not in combined
     assert ai_review.parse_verdict(combined) == "APPROVE"
+
+
+def test_sync_pr_metadata_env_sets_prompt_variables():
+    metadata = {
+        "title": "My PR title",
+        "body": "## Summary\nHas description",
+        "base_ref": "main",
+        "base_sha": "abc",
+        "head_sha": "def",
+    }
+
+    with mock.patch.dict(ai_review.os.environ, {}, clear=True):
+        ai_review.sync_pr_metadata_env(metadata)
+        assert ai_review.os.environ["PR_TITLE"] == "My PR title"
+        assert ai_review.os.environ["PR_BODY"] == "## Summary\nHas description"
+        assert ai_review.os.environ["PR_BASE_REF"] == "main"
+        assert ai_review.os.environ["PR_HEAD_SHA"] == "def"
