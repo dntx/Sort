@@ -514,7 +514,7 @@ partial class StrategyBuilder
 
     private static string FormatBraceSet(IEnumerable<int> items)
     {
-        return "{" + StrategyTextRenderer.FormatSet(items) + "}";
+        return "{" + ItemSetFormatter.FormatSet(items) + "}";
     }
 
 }

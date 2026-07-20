@@ -1354,7 +1354,7 @@ partial class StrategyBuilder
         _searchedStates = _visitedSearchStates.Count;
         _rootIncumbents.Add(new SearchMilestone(
             bestWorstCaseSteps,
-            $"sort({StrategyTextRenderer.FormatSet(group)})",
+            $"sort({ItemSetFormatter.FormatSet(group)})",
             _progressStopwatch.ElapsedMilliseconds,
             _searchedStates,
             _pendingStates,
