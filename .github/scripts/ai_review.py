@@ -14,6 +14,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -75,6 +76,12 @@ STRUCTURAL_DIFF_CHARS = 14000
 MODEL_MAX_RETRIES = 3
 MODEL_RETRY_BASE_SECONDS = 4
 MODEL_RETRY_MAX_SECONDS = 20
+PR_METADATA_MAX_RETRIES = 3
+PR_METADATA_RETRY_BASE_SECONDS = 2
+PR_METADATA_RETRY_MAX_SECONDS = 10
+REVIEW_PUBLISH_MAX_RETRIES = 3
+REVIEW_PUBLISH_RETRY_BASE_SECONDS = 2
+REVIEW_PUBLISH_RETRY_MAX_SECONDS = 10
 EXCLUDED_REVIEW_PATHS = {".github/scripts/ai_review.py", ".github/workflows/ai-code-review.yml"}
 
 SYSTEM_PROMPT = """\
@@ -279,6 +286,114 @@ def read_diff() -> str:
             + "\n\n[diff truncated for review — only the first part is shown]\n"
         )
     return diff
+
+
+def _is_transient_gh_api_failure(stderr: str, stdout: str) -> bool:
+    text = f"{stderr}\n{stdout}".lower()
+    return (
+        "http 5" in text
+        or "no server is currently available" in text
+        or "timed out" in text
+        or "timeout" in text
+    )
+
+
+def _run_gh_api_with_retry(args: list[str], *, description: str) -> str:
+    last_error = ""
+    for attempt in range(1, PR_METADATA_MAX_RETRIES + 1):
+        proc = subprocess.run(
+            ["gh", "api", *args],
+            text=True,
+            capture_output=True,
+        )
+        if proc.returncode == 0:
+            return proc.stdout
+
+        stderr = proc.stderr.strip()
+        stdout = proc.stdout.strip()
+        last_error = stderr or stdout or f"gh api exited {proc.returncode}"
+        is_transient = _is_transient_gh_api_failure(stderr, stdout)
+        if not is_transient or attempt == PR_METADATA_MAX_RETRIES:
+            break
+
+        delay = min(
+            PR_METADATA_RETRY_BASE_SECONDS * (2 ** (attempt - 1)),
+            PR_METADATA_RETRY_MAX_SECONDS,
+        )
+        print(
+            f"Transient GitHub API failure during {description} "
+            f"(attempt {attempt}/{PR_METADATA_MAX_RETRIES}): {last_error}. "
+            f"Retrying in {delay}s..."
+        )
+        time.sleep(delay)
+
+    raise RuntimeError(f"Could not {description}: {last_error}")
+
+
+def load_pr_metadata() -> dict[str, str]:
+    """Load the PR title/body/base/head directly from GitHub with retries."""
+    repo = (os.environ.get("GITHUB_REPOSITORY") or "").strip()
+    pr_number = (os.environ.get("PR_NUMBER") or "").strip()
+    if not repo:
+        raise RuntimeError("GITHUB_REPOSITORY is required.")
+    if not pr_number:
+        raise RuntimeError("PR_NUMBER is required.")
+
+    payload = _run_gh_api_with_retry(
+        [f"repos/{repo}/pulls/{pr_number}"],
+        description=f"load PR metadata for {repo}#{pr_number}",
+    )
+    try:
+        data = json.loads(payload or "{}")
+    except json.JSONDecodeError as err:
+        raise RuntimeError(f"Could not parse PR metadata JSON: {err}") from err
+
+    metadata = {
+        "title": (data.get("title") or ""),
+        "body": (data.get("body") or ""),
+        "base_ref": (((data.get("base") or {}).get("ref")) or ""),
+        "base_sha": (((data.get("base") or {}).get("sha")) or ""),
+        "head_sha": (((data.get("head") or {}).get("sha")) or ""),
+    }
+    if not metadata["base_ref"] or not metadata["base_sha"] or not metadata["head_sha"]:
+        raise RuntimeError("PR metadata response did not include base/head refs.")
+    return metadata
+
+
+def ensure_diff_file(base_ref: str, base_sha: str, head_sha: str) -> str:
+    """Build the review diff locally when the workflow did not provide one."""
+    existing = (os.environ.get("DIFF_FILE") or "").strip()
+    if existing and os.path.exists(existing):
+        return existing
+
+    fetch_proc = subprocess.run(
+        ["git", "fetch", "--no-tags", "origin", base_ref, base_sha, head_sha],
+        text=True,
+        capture_output=True,
+    )
+    if fetch_proc.returncode != 0:
+        raise RuntimeError(
+            "Could not fetch PR base/head refs for diff construction: "
+            f"{fetch_proc.stderr.strip() or fetch_proc.stdout.strip()}"
+        )
+
+    diff_proc = subprocess.run(
+        ["git", "diff", f"{base_sha}...{head_sha}"],
+        text=True,
+        capture_output=True,
+    )
+    if diff_proc.returncode != 0:
+        raise RuntimeError(
+            "Could not build PR diff: "
+            f"{diff_proc.stderr.strip() or diff_proc.stdout.strip()}"
+        )
+
+    fd, path = tempfile.mkstemp(prefix="ai-review-", suffix=".diff")
+    os.close(fd)
+    with open(path, "w", encoding="utf-8", errors="replace") as fh:
+        fh.write(diff_proc.stdout)
+    os.environ["DIFF_FILE"] = path
+    return path
 
 
 def split_diff_sections(diff: str) -> list[str]:
@@ -1750,7 +1865,42 @@ def post_review(review_body: str, verdict: str) -> None:
     event = "REQUEST_CHANGES" if verdict == "BLOCK" else "APPROVE" if verdict == "APPROVE" else "COMMENT"
 
     payload = {"body": body, "event": event}
-    proc = subprocess.run(
+
+    def run_post_with_retry(cmd: list[str], request_body: dict, description: str) -> subprocess.CompletedProcess:
+        last_proc: subprocess.CompletedProcess | None = None
+        for attempt in range(1, REVIEW_PUBLISH_MAX_RETRIES + 1):
+            proc = subprocess.run(
+                cmd,
+                input=json.dumps(request_body),
+                text=True,
+                capture_output=True,
+            )
+            if proc.returncode == 0:
+                return proc
+
+            last_proc = proc
+            stderr = (proc.stderr or "").strip()
+            stdout = (proc.stdout or "").strip()
+            is_transient = _is_transient_gh_api_failure(stderr, stdout)
+            if not is_transient or attempt == REVIEW_PUBLISH_MAX_RETRIES:
+                break
+
+            delay = min(
+                REVIEW_PUBLISH_RETRY_BASE_SECONDS * (2 ** (attempt - 1)),
+                REVIEW_PUBLISH_RETRY_MAX_SECONDS,
+            )
+            print(
+                f"Transient failure while {description} "
+                f"(attempt {attempt}/{REVIEW_PUBLISH_MAX_RETRIES}): "
+                f"{stderr or stdout or f'gh api exited {proc.returncode}'}. "
+                f"Retrying in {delay}s..."
+            )
+            time.sleep(delay)
+
+        assert last_proc is not None
+        return last_proc
+
+    proc = run_post_with_retry(
         [
             "gh",
             "api",
@@ -1762,23 +1912,27 @@ def post_review(review_body: str, verdict: str) -> None:
             "--jq",
             ".id",
         ],
-        input=json.dumps(payload),
-        text=True,
-        capture_output=True,
+        payload,
+        "posting pull-request review",
     )
 
     keep_review_id: int | None = None
     keep_comment_id: str | None = None
+    published_any = False
+    review_error = ""
+    comment_error = ""
     if proc.returncode == 0:
         try:
             keep_review_id = int(proc.stdout.strip())
         except ValueError:
             keep_review_id = None
+        published_any = True
     else:
+        review_error = proc.stderr.strip() or proc.stdout.strip() or f"gh api exited {proc.returncode}"
         # Fall back to a plain issue comment if a formal review can't be posted
         # (e.g. the PR author cannot request changes on their own PR).
-        print(f"Could not post review ({proc.stderr.strip()}); posting comment instead.")
-        comment_proc = subprocess.run(
+        print(f"Could not post review ({review_error}); posting comment instead.")
+        comment_proc = run_post_with_retry(
             [
                 "gh",
                 "api",
@@ -1790,14 +1944,25 @@ def post_review(review_body: str, verdict: str) -> None:
                 "--jq",
                 ".node_id",
             ],
-            input=json.dumps({"body": body}),
-            text=True,
-            capture_output=True,
+            {"body": body},
+            "posting fallback issue comment",
         )
         if comment_proc.returncode == 0:
             keep_comment_id = comment_proc.stdout.strip() or None
+            published_any = True
         else:
-            print(f"Failed to post fallback comment: {comment_proc.stderr.strip()}")
+            comment_error = (
+                comment_proc.stderr.strip()
+                or comment_proc.stdout.strip()
+                or f"gh api exited {comment_proc.returncode}"
+            )
+            print(f"Failed to post fallback comment: {comment_error}")
+
+    if not published_any:
+        raise RuntimeError(
+            "Could not publish AI review artifact. "
+            f"review_error={review_error!r}; fallback_error={comment_error!r}"
+        )
 
     # Keep only the newest bot review; if the current post failed and the verdict
     # is BLOCK, preserve the old blocking review instead of accidentally unblocking.
@@ -1818,10 +1983,12 @@ def post_review(review_body: str, verdict: str) -> None:
         print(f"Skipping stale-comment hiding due to error: {err}")
 
 def main() -> int:
-    pr_title = os.environ.get("PR_TITLE", "")
-    pr_body = os.environ.get("PR_BODY", "")
-    pr_base_ref = os.environ.get("PR_BASE_REF", "")
-    pr_head_sha = os.environ.get("PR_HEAD_SHA", "")
+    metadata = load_pr_metadata()
+    pr_title = metadata["title"]
+    pr_body = metadata["body"]
+    pr_base_ref = metadata["base_ref"]
+    pr_head_sha = metadata["head_sha"]
+    ensure_diff_file(metadata["base_ref"], metadata["base_sha"], metadata["head_sha"])
 
     format_ok, format_review = validate_pr_description_format(pr_body)
     if not format_ok:
@@ -1926,17 +2093,7 @@ def main() -> int:
         structural=structural,
         policy_findings=policy_findings,
     )
-    verdict_order = {"APPROVE": 0, "COMMENT": 1, "BLOCK": 2}
-    candidate_verdicts = [item[2] for item in batch_reviews]
-    if structural is not None:
-        candidate_verdicts.append(structural[0])
-    if policy_findings:
-        candidate_verdicts.append("BLOCK")
-    verdict = (
-        max(candidate_verdicts, key=lambda v: verdict_order[v])
-        if candidate_verdicts
-        else "APPROVE"
-    )
+    verdict = parse_verdict(review)
 
     print(f"Verdict: {verdict}")
     print("----- Review -----")

@@ -27,43 +27,10 @@ jobs:
   review:
     runs-on: ubuntu-latest
     steps:
-      - name: Resolve PR metadata
-        id: pr
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            number="${{ github.event.inputs.pr_number }}"
-          else
-            number="${{ github.event.pull_request.number }}"
-          fi
-          data=$(gh api "repos/${{ github.repository }}/pulls/$number")
-          echo "number=$number" >> "$GITHUB_OUTPUT"
-          echo "base_ref=$(echo "$data" | jq -r .base.ref)" >> "$GITHUB_OUTPUT"
-          echo "base_sha=$(echo "$data" | jq -r .base.sha)" >> "$GITHUB_OUTPUT"
-          echo "head_sha=$(echo "$data" | jq -r .head.sha)" >> "$GITHUB_OUTPUT"
-          # Export title/body via $GITHUB_ENV so they are populated for both
-          # pull_request and workflow_dispatch events (the dispatch event payload
-          # has no pull_request context).
-          {
-            echo "PR_TITLE<<PR_METADATA_EOF"
-            echo "$data" | jq -r '.title // ""'
-            echo "PR_METADATA_EOF"
-            echo "PR_BODY<<PR_METADATA_EOF"
-            echo "$data" | jq -r '.body // ""'
-            echo "PR_METADATA_EOF"
-          } >> "$GITHUB_ENV"
-
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Build diff
-        run: |
-          git fetch --no-tags origin "${{ steps.pr.outputs.base_ref }}" "${{ steps.pr.outputs.base_sha }}" "${{ steps.pr.outputs.head_sha }}"
-          git diff "${{ steps.pr.outputs.base_sha }}...${{ steps.pr.outputs.head_sha }}" > pr.diff
-          echo "Diff size: $(wc -c < pr.diff) bytes"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -75,10 +42,7 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          PR_NUMBER: ${{ steps.pr.outputs.number }}
-          DIFF_FILE: pr.diff
-          PR_BASE_REF: ${{ steps.pr.outputs.base_ref }}
-          PR_HEAD_SHA: ${{ steps.pr.outputs.head_sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.inputs.pr_number }}
           # Comma-separated fallback chain. Each model has its own GitHub Models
           # quota, so the reviewer rotates to the next one on HTTP 429. The most
           # capable (high rate-limit tier) models are tried first for review
