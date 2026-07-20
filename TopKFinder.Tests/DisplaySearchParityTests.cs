@@ -17,6 +17,8 @@ public sealed class DisplaySearchParityTests
         new object[] { 9, 3, 3 },
         new object[] { 9, 4, 4 },
         new object[] { 10, 5, 5 },
+        new object[] { 11, 3, 3 },
+        new object[] { 12, 3, 3 },
         new object[] { 8, 2, 2 },
     };
 
