@@ -130,6 +130,16 @@ partial class StrategyBuilder
         return best;
     }
 
+    private IEnumerable<PlannedBranchLine> PlanTransitionBranchLinesForMergedBranch(
+        ComparisonState state,
+        MergedBranch merged)
+    {
+        if (EnableProjectionPairingProbe)
+            RecordProjectionPairingBucket(state, merged.FamilyOutcomes);
+
+        return SplitMergedBucketIntoBranchLines(state, merged.FamilyOutcomes);
+    }
+
     // Splits one merged bucket's order families into the exact set of displayed branch lines.
     // The line-planning policy is now hosted in DisplayBranchLinePlanner (display layer), while this
     // adapter provides the builder-specific orbit partition/projection merge hooks.
@@ -437,7 +447,7 @@ partial class StrategyBuilder
             yield return CreateComparisonOutcome(state, remainingSlots, order, null);
     }
 
-    private readonly struct BranchSpec
+    internal readonly struct BranchSpec
     {
         public BranchSpec(string orderText, MergedFamilyOutcome outcome, EquivalentOrderSummary? summary)
         {
@@ -451,7 +461,7 @@ partial class StrategyBuilder
         public EquivalentOrderSummary? Summary { get; }
     }
 
-    private readonly struct PlannedBranchLine
+    internal readonly struct PlannedBranchLine
     {
         public PlannedBranchLine(List<MergedFamilyOutcome> members, bool projectionMerged)
         {
@@ -463,7 +473,7 @@ partial class StrategyBuilder
         public bool ProjectionMerged { get; }
     }
 
-    private readonly struct SearchBranchSpec
+    internal readonly struct SearchBranchSpec
     {
         public SearchBranchSpec(
             string orderText,
@@ -483,7 +493,7 @@ partial class StrategyBuilder
         public int NextRemainingSlots { get; }
     }
 
-    private readonly struct SearchTransitionSpec
+    internal readonly struct SearchTransitionSpec
     {
         public SearchTransitionSpec(
             string orderText,
@@ -526,7 +536,7 @@ partial class StrategyBuilder
         public IReadOnlyList<int> PossibleCandidates { get; }
     }
 
-    private readonly struct TransitionTargetFields
+    internal readonly struct TransitionTargetFields
     {
         public TransitionTargetFields(
             string orderText,
@@ -546,7 +556,7 @@ partial class StrategyBuilder
         public int NextRemainingSlots { get; }
     }
 
-    private readonly struct TransitionSpec
+    internal readonly struct TransitionSpec
     {
         public TransitionSpec(
             string orderText,
@@ -572,7 +582,7 @@ partial class StrategyBuilder
         public int NextRemainingSlots { get; }
     }
 
-    private sealed class MergedBranch
+    internal sealed class MergedBranch
     {
         public List<MergedFamilyOutcome> FamilyOutcomes { get; }
 
@@ -587,7 +597,7 @@ partial class StrategyBuilder
         }
     }
 
-    private sealed class MergedFamilyOutcome
+    internal sealed class MergedFamilyOutcome
     {
         public MergedFamilyOutcome(
             OrderFamilyDescriptor family,

@@ -583,7 +583,7 @@ partial class StrategyBuilder
             classSequence);
     }
 
-    private sealed class GroupSymmetryClass
+    internal sealed class GroupSymmetryClass
     {
         public GroupSymmetryClass(int index, int[] items, ulong ancestorMask)
         {
@@ -597,7 +597,7 @@ partial class StrategyBuilder
         public ulong AncestorMask { get; }
     }
 
-    private sealed class GroupSymmetryInfo
+    internal sealed class GroupSymmetryInfo
     {
         public GroupSymmetryInfo(
             IReadOnlyList<GroupSymmetryClass> classes,
@@ -611,7 +611,7 @@ partial class StrategyBuilder
         public IReadOnlyDictionary<int, int> ItemToClassIndex { get; }
     }
 
-    private sealed class OrderFamilyDescriptor
+    internal sealed class OrderFamilyDescriptor
     {
         private readonly GroupSymmetryInfo? _symmetryInfo;
         private readonly int[]? _classSequence;

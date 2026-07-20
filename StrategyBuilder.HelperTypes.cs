@@ -6,7 +6,7 @@ partial class StrategyBuilder
 {
     private const int FormatItemSetMinRangeLength = 4;
 
-    private sealed class SelectedComparisonGroup
+    internal sealed class SelectedComparisonGroup
     {
         public SelectedComparisonGroup(IReadOnlyList<int> group, IReadOnlyList<MergedBranch> branches)
         {
