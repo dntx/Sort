@@ -106,6 +106,22 @@ Unify mode and stage wording to exact/greedy; remove legacy A/B language.
 - Risks/notes:
 
 ## Batch Execution Record (latest)
+- Batch: B2.3
+- Status: Done
+- Changed files:
+  - StrategyBuilder.Core.cs
+  - StrategyBuilder.Materialization.cs
+- Behavior impact: Equivalent (BuildState-adjacent display materialization and group-selection flow were extracted behind an internal helper; no algorithm, cache-ownership, or public API changes)
+- Verification commands:
+  - dotnet build d:/Code/Sort2/TopKFinder.csproj
+  - dotnet test ./TopKFinder.Tests/TopKFinder.Tests.csproj --filter "ExactPipelineTests|GreedyPipelineTests|ProgramHeadlessRenderingTests|MainFormRenderingTests|StrategyRegressionTests|DisplaySearchParityTests"
+- Verification result:
+  - build: succeeded
+  - tests: blocked in this environment by application control policy when loading TopKFinder.Tests.dll (`0x800711C7`)
+- Risks/notes:
+  - StrategyBuilder.Core.cs now acts as a thinner orchestration shell around the BuildState / ChooseGroup slice.
+  - The new internal helper keeps StrategyBuilder as the owner of session state, caches, counters, and lifecycle.
+
 - Batch: B2.2
 - Status: Done
 - Changed files:
