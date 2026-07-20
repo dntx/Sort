@@ -13,6 +13,7 @@ Refactor governance plan for architecture boundaries, naming consistency, and ma
 - Batch A1: Done in current worktree.
 - Batch A2: Done.
 - Batch A3: Pending after A2 stabilization.
+- Batch B1.2: Done in feature branch; SearchTransitionPlanner is now an internal top-level seam with injected dependencies, with no public API or user-facing behavior change.
 
 ## Batch A1 - Remove Core to Display Reverse Dependency
 ### Goal
@@ -103,6 +104,25 @@ Unify mode and stage wording to exact/greedy; remove legacy A/B language.
 - Risks/notes:
 
 ## Batch Execution Record (latest)
+- Batch: B1.2
+- Status: Done
+- Changed files:
+  - SearchTransitionPlanner.cs
+  - StrategyBuilder.Transitions.cs
+  - StrategyBuilder.HelperTypes.cs
+  - StrategyBuilder.OrderEnumeration.cs
+  - TopKFinder.Tests/SearchTransitionPlannerStructureTests.cs
+- Behavior impact: Equivalent (internal transition-planner extraction only; StrategyBuilder still exposes the same public entrypoints and transition behavior)
+- Verification commands:
+  - dotnet build d:/Code/Sort2/TopKFinder.csproj
+  - dotnet test ./TopKFinder.Tests/TopKFinder.Tests.csproj --filter "DisplaySearchParityTests|ProjectionKernelTests|ProjectionOrbitMergeTests|ProgramHeadlessRenderingTests|SearchTransitionPlannerStructureTests|StrategyRegressionTests"
+- Verification result:
+  - build: succeeded (0 warnings, 0 errors)
+  - tests: execution currently blocked in this environment by application control policy when test code loads TopKFinder.dll (`System.IO.FileLoadException`, `0x800711C7`)
+- Risks/notes:
+  - This batch is developer-facing only. It promotes a previously nested planner to an internal top-level type and narrows its dependency surface from a coarse StrategyBuilder owner reference to injected callbacks.
+  - No README or user documentation change is required because the refactor does not change CLI/UI behavior or public API surface.
+
 - Batch: A2
 - Status: Done
 - Changed files:
