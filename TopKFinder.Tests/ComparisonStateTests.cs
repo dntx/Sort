@@ -129,7 +129,8 @@ public sealed class ComparisonStateTests
 
         TargetInvocationException ex = Assert.Throws<TargetInvocationException>(() => readCanonicalKey!.Invoke(null, args));
         InvalidOperationException inner = Assert.IsType<InvalidOperationException>(ex.InnerException);
-        Assert.Contains("outside", inner.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("invariant violation", inner.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("out of range", inner.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
