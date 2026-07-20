@@ -28,8 +28,8 @@ class Program
         "\n" +
         "Options:\n" +
         "  -h, --help      Show this help and exit.\n" +
-        "  --mode <mode>   Search mode. exact (default) = exact + compact (proven optimal).\n" +
-        "                  greedy = feasible bound, then min-step tightening, then one min-edge pass (interruptible with Ctrl+C).\n" +
+        "  --mode <mode>   Search mode. exact (proven) = exact + compact (proven optimal).\n" +
+        "                  greedy (fast) = feasible bound, then min-step tightening, then one min-edge pass (interruptible with Ctrl+C).\n" +
         "  --stage <n>     Stop after stage n (1-based).\n" +
         "                  exact: 1=step-proof, 2=exact-edge-compact@S.\n" +
         "                  greedy: 1=greedy-feasible, 2+=continue along proof-tighten progression.\n" +
