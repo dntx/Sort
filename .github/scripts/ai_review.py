@@ -360,6 +360,14 @@ def load_pr_metadata() -> dict[str, str]:
     return metadata
 
 
+def sync_pr_metadata_env(metadata: dict[str, str]) -> None:
+    """Publish loaded PR metadata to env for downstream prompt builders."""
+    os.environ["PR_TITLE"] = metadata.get("title", "")
+    os.environ["PR_BODY"] = metadata.get("body", "")
+    os.environ["PR_BASE_REF"] = metadata.get("base_ref", "")
+    os.environ["PR_HEAD_SHA"] = metadata.get("head_sha", "")
+
+
 def ensure_diff_file(base_ref: str, base_sha: str, head_sha: str) -> str:
     """Build the review diff locally when the workflow did not provide one."""
     existing = (os.environ.get("DIFF_FILE") or "").strip()
@@ -1548,18 +1556,41 @@ def combine_batch_reviews(
     all_verdicts = [verdict for _, _, verdict, _ in batch_reviews]
     struct_summary, struct_findings = ("", "")
     effective_structural_verdict = "APPROVE"
+    filtered_self_negating = 0
+    filtered_false_empty_desc = 0
+    sample_self_negating = ""
+    sample_false_empty_desc = ""
     if structural is not None:
         effective_structural_verdict = structural[0]
         struct_summary, struct_findings = _split_summary_findings(structural[1])
-    struct_bullets = [
-        b
-        for b in _parse_bullets(struct_findings)
-        if (
-            not _is_noise_bullet(b)
-            and not _is_self_negating_structural_bullet(b)
-            and not _is_false_empty_description_structural_bullet(b, pr_body)
+
+    struct_bullets: list[str] = []
+    for bullet in _parse_bullets(struct_findings):
+        if _is_noise_bullet(bullet):
+            continue
+        if _is_self_negating_structural_bullet(bullet):
+            filtered_self_negating += 1
+            if not sample_self_negating:
+                sample_self_negating = " ".join(bullet.split())[:160]
+            continue
+        if _is_false_empty_description_structural_bullet(bullet, pr_body):
+            filtered_false_empty_desc += 1
+            if not sample_false_empty_desc:
+                sample_false_empty_desc = " ".join(bullet.split())[:160]
+            continue
+        struct_bullets.append(bullet)
+
+    if filtered_self_negating:
+        print(
+            "Suppressed contradictory structural bullet(s): "
+            f"count={filtered_self_negating}; sample={sample_self_negating!r}"
         )
-    ]
+    if filtered_false_empty_desc:
+        print(
+            "Suppressed false empty-description structural bullet(s): "
+            f"count={filtered_false_empty_desc}; sample={sample_false_empty_desc!r}"
+        )
+
     if effective_structural_verdict != "APPROVE" and not struct_bullets:
         effective_structural_verdict = "APPROVE"
 
@@ -2007,6 +2038,7 @@ def main() -> int:
     pr_body = metadata["body"]
     pr_base_ref = metadata["base_ref"]
     pr_head_sha = metadata["head_sha"]
+    sync_pr_metadata_env(metadata)
     ensure_diff_file(metadata["base_ref"], metadata["base_sha"], metadata["head_sha"])
 
     format_ok, format_review = validate_pr_description_format(pr_body)
