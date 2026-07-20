@@ -218,3 +218,46 @@ VERDICT: BLOCK
 
     assert "PR description is empty" not in combined
     assert ai_review.parse_verdict(combined) == "APPROVE"
+
+
+def test_sync_pr_metadata_env_sets_prompt_variables():
+    metadata = {
+        "title": "My PR title",
+        "body": "## Summary\nHas description",
+        "base_ref": "main",
+        "base_sha": "abc",
+        "head_sha": "def",
+    }
+
+    with mock.patch.dict(ai_review.os.environ, {}, clear=True):
+        ai_review.sync_pr_metadata_env(metadata)
+        assert ai_review.os.environ["PR_TITLE"] == "My PR title"
+        assert ai_review.os.environ["PR_BODY"] == "## Summary\nHas description"
+        assert ai_review.os.environ["PR_BASE_REF"] == "main"
+        assert ai_review.os.environ["PR_HEAD_SHA"] == "def"
+
+
+def test_combine_batch_reviews_logs_false_empty_description_suppression():
+    structural_review = """## Structural Review
+Looks fine overall.
+
+## Findings
+- **[BLOCK]** DESCRIPTION ↔ CHANGE CONSISTENCY: The PR description is empty, but the change is non-trivial.
+
+VERDICT: BLOCK
+"""
+
+    with mock.patch("builtins.print") as print_mock:
+        combined = ai_review.combine_batch_reviews(
+            batch_reviews=[(1, 1, "APPROVE", "## Summary\nNo issues found.\n\n## Findings\nNo issues found.\n\nVERDICT: APPROVE")],
+            structural=("BLOCK", structural_review),
+            policy_findings=None,
+            pr_body="## Summary\nNon-empty description present",
+        )
+
+    assert ai_review.parse_verdict(combined) == "APPROVE"
+    log_messages = [
+        " ".join(str(arg) for arg in call.args)
+        for call in print_mock.call_args_list
+    ]
+    assert any("Suppressed false empty-description structural bullet(s)" in msg for msg in log_messages)
