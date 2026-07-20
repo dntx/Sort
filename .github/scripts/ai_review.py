@@ -1490,6 +1490,20 @@ def _is_self_negating_structural_bullet(bullet: str) -> bool:
     return bool(re.match(r"^[a-z][a-z\s/*_-]+:\s*none\.", lowered))
 
 
+_EMPTY_DESCRIPTION_STRUCTURAL_RE = re.compile(
+    r"\b(?:pr|pull request)\s+description\b[^\n]*\b(?:empty|missing|absent|not provided|completely absent)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_false_empty_description_structural_bullet(bullet: str, pr_body: str) -> bool:
+    """Drop structural bullets claiming description is empty when it is not."""
+    if not (pr_body or "").strip():
+        return False
+    normalized = " ".join((bullet or "").split())
+    return bool(_EMPTY_DESCRIPTION_STRUCTURAL_RE.search(normalized))
+
+
 _BULLET_MARKER_RE = re.compile(r"^\s*[-*]\s+")
 _LEADING_SEVERITY_RE = re.compile(
     r"^\**\[(?:BLOCK|COMMENT|APPROVE)\]\**\s*", re.IGNORECASE
@@ -1525,6 +1539,7 @@ def combine_batch_reviews(
     batch_reviews: list[tuple[int, int, str, str]],
     structural: tuple[str, str] | None = None,
     policy_findings: list[str] | None = None,
+    pr_body: str = "",
 ) -> str:
     """Merge the structural review and per-batch reviews into ONE consolidated
     review body. Batches are an internal chunking detail and are never exposed:
@@ -1539,7 +1554,11 @@ def combine_batch_reviews(
     struct_bullets = [
         b
         for b in _parse_bullets(struct_findings)
-        if not _is_noise_bullet(b) and not _is_self_negating_structural_bullet(b)
+        if (
+            not _is_noise_bullet(b)
+            and not _is_self_negating_structural_bullet(b)
+            and not _is_false_empty_description_structural_bullet(b, pr_body)
+        )
     ]
     if effective_structural_verdict != "APPROVE" and not struct_bullets:
         effective_structural_verdict = "APPROVE"
@@ -2092,6 +2111,7 @@ def main() -> int:
         batch_reviews,
         structural=structural,
         policy_findings=policy_findings,
+        pr_body=pr_body,
     )
     verdict = parse_verdict(review)
 
