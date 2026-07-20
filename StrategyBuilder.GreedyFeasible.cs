@@ -35,54 +35,6 @@ partial class StrategyBuilder
     // Test-only switch: when true, disables the active-count gate for display-line tie-break so
     // tests can A/B compare heavy tie-break evaluation work.
     internal bool DisableConstructiveDisplayLineTieBreakActiveGateForTesting { get; set; }
-    private Dictionary<SearchStateKey, int>? _constructiveDepthMemo
-    {
-        get => _session.ConstructiveDepthMemo;
-        set => _session.ConstructiveDepthMemo = value;
-    }
-
-    private int _greedyScoreLowerBoundCacheReuseHits
-    {
-        get => _session.GreedyScoreLowerBoundCacheReuseHits;
-        set => _session.GreedyScoreLowerBoundCacheReuseHits = value;
-    }
-
-    private int _constructiveDisplayLineTieBreakEvaluations
-    {
-        get => _session.ConstructiveDisplayLineTieBreakEvaluations;
-        set => _session.ConstructiveDisplayLineTieBreakEvaluations = value;
-    }
-
-    internal int GreedyScoreLowerBoundCacheReuseHits => _greedyScoreLowerBoundCacheReuseHits;
-    internal int ConstructiveDisplayLineTieBreakEvaluations => _constructiveDisplayLineTieBreakEvaluations;
-
-    // Feasible step budget U threaded from the step phase to the edge phase within one combined run.
-    // ExecuteGreedyFeasibleStage sets it to the MATERIALIZED MaxStep of the just-built step tree (the tightest
-    // sound budget: the step plan itself witnesses a U-step solution, so the compact pass under this
-    // ceiling can never need more than U). The edge phase (RunGreedyPipeline) reads it so it
-    // never produces a plan worse than the step phase. -1 until a step plan is built; deliberately NOT
-    // cleared by ResetPerBuildTransientState so it survives the step->edge build boundary on the same
-    // builder. When the edge phase runs standalone (no prior step build) it falls back to the lean
-    // ConstructiveRootUpperBound, which is sound but looser.
-    private int _feasibleRootBudget
-    {
-        get => _session.FeasibleRootBudget;
-        set => _session.FeasibleRootBudget = value;
-    }
-
-    // Total distinct canonical search states the step phase visited, captured at the end of
-    // ExecuteGreedyFeasibleStage and (like _feasibleRootBudget) deliberately NOT cleared by
-    // ResetPerBuildTransientState so it survives the step->edge boundary on the same builder. The edge
-    // phase has no pending/searched signal, so this serves as the SCALE anchor for a self-correcting
-    // asymptote (see EstimateProgress) that turns _compactStatesSolved into a live progress fraction --
-    // it is only a rough scale (edge work can be many times larger or smaller than the step state
-    // count), not a hard denominator. -1 until a step plan is built; the standalone edge phase (no
-    // prior step build) leaves it -1 and keeps the pinned-progress behavior.
-    private int _feasibleCompactStateEstimate
-    {
-        get => _session.FeasibleCompactStateEstimate;
-        set => _session.FeasibleCompactStateEstimate = value;
-    }
 
     // Allows a caller that computed a tighter feasible plan on the same builder (for example an
     // optional GreedyTighten pre-step) to seed the proof-tighten loop with that tighter U.
@@ -105,61 +57,54 @@ partial class StrategyBuilder
     // phase-1 closure / pattern cache: the policy is computed on the fly during materialization.
     public StrategyPlan ExecuteGreedyFeasibleStage()
     {
-        ComparisonState.SetThreadCancellationToken(_cancellationToken);
-        try
+        return RunWithComparisonStateCancellation(() =>
         {
-        // The feasible phase is effectively instant. In a combined run it occupies the first band of
-        // the unified progress bar (a single indivisible slice).
-        _progressScope = _reportCombinedRunProgress
-            ? ProgressScope.FeasibleInCombinedRun
-            : ProgressScope.DefaultStandalone;
+            // The feasible phase is effectively instant. In a combined run it occupies the first band of
+            // the unified progress bar (a single indivisible slice).
+            _progressScope = _reportCombinedRunProgress
+                ? ProgressScope.FeasibleInCombinedRun
+                : ProgressScope.DefaultStandalone;
 
-        ResetPerBuildTransientState();
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-        ReportProgress(force: true);
+            ResetPerBuildTransientState();
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            ReportProgress(force: true);
 
-        // No phase-1 closure: the constructive policy is computed on the fly during materialization.
-        _phase1Milliseconds = stopwatch.ElapsedMilliseconds;
+            // No phase-1 closure: the constructive policy is computed on the fly during materialization.
+            _phase1Milliseconds = stopwatch.ElapsedMilliseconds;
 
-        // L side of the squeeze: a proven analytic lower bound on the root optimum, computed
-        // independently of the (never-finishing) exact search. Surfaced via
-        // SearchStatistics.RootProvenLowerBound, identical to the default path.
-        RecordRootProvenLowerBound(GetMinWorstCaseLowerBound(new ComparisonState(_n), _k));
-        _phase1bMilliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds;
+            // L side of the squeeze: a proven analytic lower bound on the root optimum, computed
+            // independently of the (never-finishing) exact search. Surfaced via
+            // SearchStatistics.RootProvenLowerBound, identical to the default path.
+            RecordRootProvenLowerBound(GetMinWorstCaseLowerBound(new ComparisonState(_n), _k));
+            _phase1bMilliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds;
 
-        _useCompact = false;
-        _feasiblePhase2StartMs = _progressStopwatch.ElapsedMilliseconds;  // Mark the start of the costly BuildState phase
-        StrategyNode root = BuildState(
-            new ComparisonState(_n),
-            0,
-            _k,
-            1,
-            new MaterializationContext(
-                ForceFixedConstructiveSelection: true));
-        _feasiblePhaseSolved = true;  // Mark feasible stage complete so progress jumps to 100%
-        _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds - _phase1bMilliseconds;
-        stopwatch.Stop();
-        ReportProgress(force: true);
+            _useCompact = false;
+            _feasiblePhase2StartMs = _progressStopwatch.ElapsedMilliseconds;  // Mark the start of the costly BuildState phase
+            StrategyNode root = BuildState(
+                new ComparisonState(_n),
+                0,
+                _k,
+                1,
+                new MaterializationContext(
+                    ForceFixedConstructiveSelection: true));
+            _feasiblePhaseSolved = true;  // Mark feasible stage complete so progress jumps to 100%
+            _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds - _phase1bMilliseconds;
+            stopwatch.Stop();
+            ReportProgress(force: true);
 
-        var plan = new StrategyPlan(
-            _n, _m, _requestedK, _k, root, stopwatch.Elapsed, CreateSearchStatistics(),
-            isFeasibleUpperBound: true);
+            StrategyPlan plan = CreatePlan(root, stopwatch.Elapsed, isFeasibleUpperBound: true);
 
-        // Surface the exact U this materialized tree achieves so the edge (compact) phase in the same
-        // combined run uses it as its step ceiling -- the tightest sound budget, guaranteeing the edge
-        // plan is never worse than this step plan.
-        _feasibleRootBudget = plan.MaxStep;
-        _latestGreedyIncumbentPlan = plan;
+            // Surface the exact U this materialized tree achieves so the edge (compact) phase in the same
+            // combined run uses it as its step ceiling -- the tightest sound budget, guaranteeing the edge
+            // plan is never worse than this step plan.
+            _feasibleRootBudget = plan.MaxStep;
+            _latestGreedyIncumbentPlan = plan;
 
-        // Denominator estimate for the edge phase's live progress (see field doc): the distinct
-        // canonical states this step pass touched approximate the compact solve's total work.
-        _feasibleCompactStateEstimate = _visitedSearchStates.Count;
-        return plan;
-        }
-        finally
-        {
-            ComparisonState.SetThreadCancellationToken(default);
-        }
+            // Denominator estimate for the edge phase's live progress (see field doc): the distinct
+            // canonical states this step pass touched approximate the compact solve's total work.
+            _feasibleCompactStateEstimate = _visitedSearchStates.Count;
+            return plan;
+        });
     }
 
     // Lean worst-case step count of the constructive strategy from the root: a sound but looser

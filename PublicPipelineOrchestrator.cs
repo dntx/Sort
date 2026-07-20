@@ -17,15 +17,17 @@ static class PublicPipelineOrchestrator
         Action<StageResult>? onStageCompleted = null,
         Action<string>? onStageStart = null)
     {
-        const string stepStageName = StageNames.StepProof;
-        onStageStart?.Invoke(stepStageName);
-        (StrategyPlan stepPlan, TimeSpan stepElapsed) = ExecuteExactStepStage(builder);
-        onStageCompleted?.Invoke(new StageResult(stepStageName, stepPlan, stepElapsed, StageOutcome.Completed));
+        var callbacks = new PipelineCallbacks(onStageCompleted, onStageStart);
 
-        string compactStageName = StageNames.FormatExactEdgeCompact(stepPlan.MaxStep);
-        onStageStart?.Invoke(compactStageName);
-        (StrategyPlan compactPlan, TimeSpan compactElapsed) = ExecuteExactCompactStage(builder);
-        onStageCompleted?.Invoke(new StageResult(compactStageName, compactPlan, compactElapsed, StageOutcome.Completed));
+        StrategyPlan stepPlan = PipelineStageProtocol.ExecuteCompletedPlanStage(
+            StageNames.StepProof,
+            () => ExecuteExactStepStage(builder),
+            callbacks);
+
+        StrategyPlan compactPlan = PipelineStageProtocol.ExecuteCompletedPlanStage(
+            StageNames.FormatExactEdgeCompact(stepPlan.MaxStep),
+            () => ExecuteExactCompactStage(builder),
+            callbacks);
         return compactPlan;
     }
 
@@ -36,32 +38,34 @@ static class PublicPipelineOrchestrator
         bool emitPreparationStages = true,
         bool preparationAlreadyApplied = false)
     {
+        var callbacks = new PipelineCallbacks(onStageCompleted, onStageStart);
+
         if (!preparationAlreadyApplied)
         {
-            const string feasibleStageName = StageNames.GreedyFeasible;
+            string feasibleStageName = StageNames.GreedyFeasible;
             if (emitPreparationStages)
-                onStageStart?.Invoke(feasibleStageName);
+                callbacks.Start(feasibleStageName);
             GreedyPreparationResult prep = PrepareGreedyUpperBound(builder);
             if (emitPreparationStages)
             {
-                onStageCompleted?.Invoke(new StageResult(
+                PipelineStageProtocol.EmitCompletedPlanStage(
                     feasibleStageName,
                     prep.BaseFeasiblePlan,
                     prep.GreedyFeasibleElapsed,
-                    StageOutcome.Completed));
+                    callbacks);
             }
 
             if (prep.GreedyTightenProbeRun && prep.GreedyTightenPlan is not null)
             {
-                const string tightenStageName = StageNames.GreedyTighten;
+                string tightenStageName = StageNames.GreedyTighten;
                 if (emitPreparationStages)
                 {
-                    onStageStart?.Invoke(tightenStageName);
-                    onStageCompleted?.Invoke(new StageResult(
+                    callbacks.Start(tightenStageName);
+                    PipelineStageProtocol.EmitCompletedPlanStage(
                         tightenStageName,
                         prep.GreedyTightenPlan,
                         prep.GreedyTightenElapsed,
-                        StageOutcome.Completed));
+                        callbacks);
                 }
             }
         }
