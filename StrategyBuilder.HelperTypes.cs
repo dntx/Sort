@@ -1,8 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 partial class StrategyBuilder
 {
+    private const int FormatItemSetMinRangeLength = 4;
+
     private sealed class SelectedComparisonGroup
     {
         public SelectedComparisonGroup(IReadOnlyList<int> group, IReadOnlyList<MergedBranch> branches)
@@ -90,5 +93,35 @@ partial class StrategyBuilder
 
             return GroupSize.CompareTo(other.GroupSize);
         }
+    }
+
+    private static string FormatItemSet(IEnumerable<int> items)
+    {
+        List<int> sorted = items.ToList();
+        sorted.Sort();
+
+        var segments = new List<string>();
+        int i = 0;
+        while (i < sorted.Count)
+        {
+            int runStart = i;
+            while (i + 1 < sorted.Count && sorted[i + 1] == sorted[i] + 1)
+                i++;
+
+            int runLength = i - runStart + 1;
+            if (runLength >= FormatItemSetMinRangeLength)
+            {
+                segments.Add($"#{sorted[runStart] + 1} ~ #{sorted[i] + 1}");
+            }
+            else
+            {
+                for (int j = runStart; j <= i; j++)
+                    segments.Add($"#{sorted[j] + 1}");
+            }
+
+            i++;
+        }
+
+        return string.Join(", ", segments);
     }
 }
