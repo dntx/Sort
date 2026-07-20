@@ -440,6 +440,12 @@ internal static class ComparisonStateAlgorithms
 
     private static int[] ReadCanonicalKey(int a, ulong[] anc, int[] seed, int[] colors)
     {
+        if (a < 0 || anc.Length < a || seed.Length < a || colors.Length < a)
+        {
+            throw new InvalidOperationException(
+                $"Canonical key invariant violation: invalid inputs (a={a}, anc.Length={anc.Length}, seed.Length={seed.Length}, colors.Length={colors.Length}).");
+        }
+
         var byRank = new int[a];
         var seen = new bool[a];
         for (int v = 0; v < a; v++)
@@ -448,13 +454,13 @@ internal static class ComparisonStateAlgorithms
             if ((uint)rank >= (uint)a)
             {
                 throw new InvalidOperationException(
-                    $"Invalid canonical coloring: colors[{v}]={rank} is outside [0, {a - 1}].");
+                    $"Canonical key invariant violation: rank out of range at colors[{v}]={rank} with a={a}. Input state may be inconsistent.");
             }
 
             if (seen[rank])
             {
                 throw new InvalidOperationException(
-                    $"Invalid canonical coloring: duplicate rank {rank} in discrete coloring.");
+                    $"Canonical key invariant violation: duplicate rank {rank} in discrete coloring with a={a}. Input state may be inconsistent.");
             }
 
             seen[rank] = true;
@@ -479,7 +485,7 @@ internal static class ComparisonStateAlgorithms
                 if ((uint)rank >= (uint)a)
                 {
                     throw new InvalidOperationException(
-                        $"Invalid canonical coloring: colors[{b}]={rank} is outside [0, {a - 1}].");
+                        $"Canonical key invariant violation: ancestor rank out of range at colors[{b}]={rank} with a={a}. Input state may be inconsistent.");
                 }
 
                 row |= 1UL << rank;
