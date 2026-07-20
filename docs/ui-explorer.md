@@ -87,6 +87,22 @@ UI 使用与 CLI 相同的阶段名展示进度：
 - 节点详情选择与异步加载：`MainForm.Details.NodeSelection.cs`
 - 控件初始化：`MainForm.Controls.cs`
 
+### MainForm partial 职责图
+
+| 文件 | 主要职责 | 典型边界 |
+| --- | --- | --- |
+| `MainForm.cs` | 窗体主装配、控件布局与事件绑定入口 | 不承载阶段算法或重型渲染细节 |
+| `MainForm.Controls.cs` | 控件构造与通用 UI 小工具 | 仅做控件创建/排版辅助，不做运行流程判断 |
+| `MainForm.Settings.cs` | GUI 配置读取/保存（输入、模式、主题） | 仅处理持久化，不改搜索语义 |
+| `MainForm.Run.cs` | 运行流程编排、阶段回调接入、取消/异常主流程 | 不直接承载树节点渲染细节 |
+| `MainForm.Run.TreePresentation.cs` | 运行期树根标签、占位节点、compact 阶段落盘展示 | 仅处理展示层树结构组织 |
+| `MainForm.Tree.cs` | 策略树节点构建、惰性展开、引用跳转、复制子树 | 不负责运行阶段调度 |
+| `MainForm.Overview.cs` | Overview 树构建、展开/复制、与主树跳转联动 | 不实现主树节点绘制算法 |
+| `MainForm.Details.cs` | 主题应用、Run/Stop UI 状态切换 | 不拼装重型诊断文本 |
+| `MainForm.Details.Summary.cs` | 结果摘要/详情文本（step/compact）组装 | 只负责文本内容，不控制线程 |
+| `MainForm.Details.Diagnostics.cs` | 实时统计面板、progress/eta、诊断文案 | 不做节点选择事件处理 |
+| `MainForm.Details.NodeSelection.cs` | 选中节点详情展示与异步懒加载 | 只处理选中详情链路 |
+
 ## 7. UI 术语与标识（非算法语义变更）
 
 以下字符串属于 UI 展示或内部作用域标识，用于帮助阅读树/概览，不改变求解算法：
