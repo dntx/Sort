@@ -106,10 +106,11 @@ Unify mode and stage wording to exact/greedy; remove legacy A/B language.
 - Batch: A1
 - Status: Done
 - Changed files:
+  - ItemSetFormatter.cs (new; neutral shared formatter for item-set text formatting used across core/display boundary)
   - StrategyBuilder.Core.cs
   - StrategyBuilder.RelabelingOrbit.cs
-  - StrategyBuilder.HelperTypes.cs
-- Behavior impact: Equivalent (formatting output preserved while removing direct renderer dependency from core StrategyBuilder files)
+  - StrategyTextRenderer.cs
+- Behavior impact: Equivalent (set-format output rules remain unchanged; the shared formatter is extracted to ItemSetFormatter.cs and renderer delegates to it)
 - Verification commands:
   - rg --line-number "StrategyTextRenderer\\." StrategyBuilder*.cs
   - dotnet build d:/Code/Sort2/TopKFinder.csproj
@@ -119,7 +120,7 @@ Unify mode and stage wording to exact/greedy; remove legacy A/B language.
   - build: succeeded (0 warnings, 0 errors)
   - tests: passed (19/19)
 - Risks/notes:
-  - Core now uses a local item-set formatter helper; if display-layer set formatting rules change in future, keep this helper aligned intentionally.
+  - ItemSetFormatter.cs is intentionally the single shared implementation of set formatting; if formatting rules change in future, update this shared formatter to keep core and display behavior aligned.
 
 ## Next Action
 Dispatch Batch A2 using the Agent Dispatch Card above.
