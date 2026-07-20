@@ -148,3 +148,52 @@ def test_ensure_diff_file_builds_diff_when_workflow_does_not_supply_one():
         finally:
             if os.path.exists(path):
                 os.remove(path)
+
+
+def test_post_review_raises_when_review_and_fallback_comment_both_fail():
+    responses = [
+        subprocess.CompletedProcess(["gh", "api"], 1, stdout="", stderr="HTTP 503"),
+        subprocess.CompletedProcess(["gh", "api"], 1, stdout="", stderr="HTTP 503"),
+        subprocess.CompletedProcess(["gh", "api"], 1, stdout="", stderr="HTTP 503"),
+        subprocess.CompletedProcess(["gh", "api"], 1, stdout="", stderr="HTTP 503"),
+        subprocess.CompletedProcess(["gh", "api"], 1, stdout="", stderr="HTTP 503"),
+        subprocess.CompletedProcess(["gh", "api"], 1, stdout="", stderr="HTTP 503"),
+    ]
+
+    with mock.patch.dict(
+        ai_review.os.environ,
+        {"GITHUB_REPOSITORY": "dntx/Sort", "PR_NUMBER": "389"},
+        clear=False,
+    ):
+        with mock.patch.object(ai_review.subprocess, "run", side_effect=responses):
+            with mock.patch.object(ai_review.time, "sleep"):
+                try:
+                    ai_review.post_review("## Summary\nFail\n\nVERDICT: BLOCK", "BLOCK")
+                    assert False, "post_review should raise when publication paths both fail"
+                except RuntimeError as err:
+                    message = str(err)
+
+    assert "Could not publish AI review artifact" in message
+    assert "review_error=" in message
+    assert "fallback_error=" in message
+
+
+def test_post_review_retries_transient_failure_then_succeeds():
+    responses = [
+        subprocess.CompletedProcess(["gh", "api"], 1, stdout="", stderr="HTTP 503"),
+        subprocess.CompletedProcess(["gh", "api"], 0, stdout="123\n", stderr=""),
+    ]
+
+    with mock.patch.dict(
+        ai_review.os.environ,
+        {"GITHUB_REPOSITORY": "dntx/Sort", "PR_NUMBER": "389"},
+        clear=False,
+    ):
+        with mock.patch.object(ai_review.subprocess, "run", side_effect=responses) as run_mock:
+            with mock.patch.object(ai_review.time, "sleep") as sleep_mock:
+                with mock.patch.object(ai_review, "dismiss_previous_bot_reviews"):
+                    with mock.patch.object(ai_review, "hide_previous_bot_comments"):
+                        ai_review.post_review("## Summary\nRetry\n\nVERDICT: COMMENT", "COMMENT")
+
+    assert run_mock.call_count == 2
+    sleep_mock.assert_called_once()

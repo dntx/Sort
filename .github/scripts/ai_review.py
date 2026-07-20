@@ -79,6 +79,9 @@ MODEL_RETRY_MAX_SECONDS = 20
 PR_METADATA_MAX_RETRIES = 3
 PR_METADATA_RETRY_BASE_SECONDS = 2
 PR_METADATA_RETRY_MAX_SECONDS = 10
+REVIEW_PUBLISH_MAX_RETRIES = 3
+REVIEW_PUBLISH_RETRY_BASE_SECONDS = 2
+REVIEW_PUBLISH_RETRY_MAX_SECONDS = 10
 EXCLUDED_REVIEW_PATHS = {".github/scripts/ai_review.py", ".github/workflows/ai-code-review.yml"}
 
 SYSTEM_PROMPT = """\
@@ -1862,7 +1865,42 @@ def post_review(review_body: str, verdict: str) -> None:
     event = "REQUEST_CHANGES" if verdict == "BLOCK" else "APPROVE" if verdict == "APPROVE" else "COMMENT"
 
     payload = {"body": body, "event": event}
-    proc = subprocess.run(
+
+    def run_post_with_retry(cmd: list[str], request_body: dict, description: str) -> subprocess.CompletedProcess:
+        last_proc: subprocess.CompletedProcess | None = None
+        for attempt in range(1, REVIEW_PUBLISH_MAX_RETRIES + 1):
+            proc = subprocess.run(
+                cmd,
+                input=json.dumps(request_body),
+                text=True,
+                capture_output=True,
+            )
+            if proc.returncode == 0:
+                return proc
+
+            last_proc = proc
+            stderr = (proc.stderr or "").strip()
+            stdout = (proc.stdout or "").strip()
+            is_transient = _is_transient_gh_api_failure(stderr, stdout)
+            if not is_transient or attempt == REVIEW_PUBLISH_MAX_RETRIES:
+                break
+
+            delay = min(
+                REVIEW_PUBLISH_RETRY_BASE_SECONDS * (2 ** (attempt - 1)),
+                REVIEW_PUBLISH_RETRY_MAX_SECONDS,
+            )
+            print(
+                f"Transient failure while {description} "
+                f"(attempt {attempt}/{REVIEW_PUBLISH_MAX_RETRIES}): "
+                f"{stderr or stdout or f'gh api exited {proc.returncode}'}. "
+                f"Retrying in {delay}s..."
+            )
+            time.sleep(delay)
+
+        assert last_proc is not None
+        return last_proc
+
+    proc = run_post_with_retry(
         [
             "gh",
             "api",
@@ -1874,23 +1912,27 @@ def post_review(review_body: str, verdict: str) -> None:
             "--jq",
             ".id",
         ],
-        input=json.dumps(payload),
-        text=True,
-        capture_output=True,
+        payload,
+        "posting pull-request review",
     )
 
     keep_review_id: int | None = None
     keep_comment_id: str | None = None
+    published_any = False
+    review_error = ""
+    comment_error = ""
     if proc.returncode == 0:
         try:
             keep_review_id = int(proc.stdout.strip())
         except ValueError:
             keep_review_id = None
+        published_any = True
     else:
+        review_error = proc.stderr.strip() or proc.stdout.strip() or f"gh api exited {proc.returncode}"
         # Fall back to a plain issue comment if a formal review can't be posted
         # (e.g. the PR author cannot request changes on their own PR).
-        print(f"Could not post review ({proc.stderr.strip()}); posting comment instead.")
-        comment_proc = subprocess.run(
+        print(f"Could not post review ({review_error}); posting comment instead.")
+        comment_proc = run_post_with_retry(
             [
                 "gh",
                 "api",
@@ -1902,14 +1944,25 @@ def post_review(review_body: str, verdict: str) -> None:
                 "--jq",
                 ".node_id",
             ],
-            input=json.dumps({"body": body}),
-            text=True,
-            capture_output=True,
+            {"body": body},
+            "posting fallback issue comment",
         )
         if comment_proc.returncode == 0:
             keep_comment_id = comment_proc.stdout.strip() or None
+            published_any = True
         else:
-            print(f"Failed to post fallback comment: {comment_proc.stderr.strip()}")
+            comment_error = (
+                comment_proc.stderr.strip()
+                or comment_proc.stdout.strip()
+                or f"gh api exited {comment_proc.returncode}"
+            )
+            print(f"Failed to post fallback comment: {comment_error}")
+
+    if not published_any:
+        raise RuntimeError(
+            "Could not publish AI review artifact. "
+            f"review_error={review_error!r}; fallback_error={comment_error!r}"
+        )
 
     # Keep only the newest bot review; if the current post failed and the verdict
     # is BLOCK, preserve the old blocking review instead of accidentally unblocking.
