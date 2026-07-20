@@ -12,8 +12,10 @@ Refactor governance plan for architecture boundaries, naming consistency, and ma
 - Implementation sync: Done. main already contains copilot/worktree-2026-07-19T13-02-57 via merge commit edec22e.
 - Batch A1: Done in current worktree.
 - Batch A2: Done.
-- Batch A3: Pending after A2 stabilization.
-- Batch B1.2: Done in feature branch; SearchTransitionPlanner is now an internal top-level seam with injected dependencies, with no public API or user-facing behavior change.
+- Batch A3: Done.
+- Batch B1.2: Done. SearchTransitionPlanner is now an internal top-level seam with injected dependencies, with no public API or user-facing behavior change.
+- Batch B2.1: Done. State key types were extracted from ComparisonState into StateKeyTypes.cs with no behavioral change.
+- Batch B2.2: Done. Canonicalization and automorphism helpers were extracted to ComparisonState.Algorithms.cs; ComparisonState now primarily owns state, caches, mutation entrypoints, and delegating calls.
 
 ## Batch A1 - Remove Core to Display Reverse Dependency
 ### Goal
@@ -104,6 +106,41 @@ Unify mode and stage wording to exact/greedy; remove legacy A/B language.
 - Risks/notes:
 
 ## Batch Execution Record (latest)
+- Batch: B2.2
+- Status: Done
+- Changed files:
+  - ComparisonState.cs
+  - ComparisonState.Algorithms.cs
+  - TopKFinder.Tests/ComparisonStateTests.cs
+- Behavior impact: Equivalent (pure helper extraction only; canonicalization, active-item colors, and order-automorphism behavior remain unchanged)
+- Verification commands:
+  - dotnet build d:/Code/Sort2/TopKFinder.csproj
+  - dotnet test ./TopKFinder.Tests/TopKFinder.Tests.csproj --filter "ComparisonStateTests|FreeSymmetryClassTests|SearchStateKeyServiceTests|ProjectionOrbitMergeTests"
+- Verification result:
+  - build: succeeded
+  - tests: implementation session reported passing before PR 400 check-in
+  - local acceptance review: relevant files and tests showed no diagnostics
+- Risks/notes:
+  - ComparisonState now delegates canonicalization and automorphism logic to ComparisonState.Algorithms.cs while retaining state ownership and cache invalidation.
+  - Repo documentation sync was completed after PR 400 merge to match the session plan.
+
+- Batch: B2.1
+- Status: Done
+- Changed files:
+  - StateKeyTypes.cs
+  - ComparisonState.cs
+- Behavior impact: Equivalent (key-type extraction only; no canonicalization or search behavior change)
+- Verification commands:
+  - dotnet build d:/Code/Sort2/TopKFinder.csproj
+  - dotnet test ./TopKFinder.Tests/TopKFinder.Tests.csproj --filter "ComparisonStateTests|SearchStateKeyServiceTests|FreeSymmetryClassTests|StrategyBuilderSessionTests"
+- Verification result:
+  - build: succeeded
+  - tests: implementation session reported passing before PR 399 check-in
+  - local acceptance review: relevant files and tests showed no diagnostics
+- Risks/notes:
+  - IntSequenceKey, RawStructureKey, SearchStateKey, and BuildStateKey were moved out of ComparisonState into StateKeyTypes.cs.
+  - This batch intentionally avoided algorithm extraction; that follow-up was completed in B2.2.
+
 - Batch: B1.2
 - Status: Done
 - Changed files:
@@ -161,4 +198,4 @@ Unify mode and stage wording to exact/greedy; remove legacy A/B language.
   - ItemSetFormatter.cs is intentionally the single shared implementation of set formatting; if formatting rules change in future, update this shared formatter to keep core and display behavior aligned.
 
 ## Next Action
-Dispatch Batch A2 using the Agent Dispatch Card above.
+Decide whether to stop after B2.2 or dispatch a smaller B2.3 follow-up for any remaining ComparisonState state/cache split that still provides clear value.
