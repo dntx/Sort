@@ -83,3 +83,4 @@ VERDICT: COMMENT
 
     assert "## 🚫 Blocking (must fix)" in combined
     assert "VERDICT: BLOCK" in combined
+    assert ai_review.parse_verdict(combined) == "BLOCK"

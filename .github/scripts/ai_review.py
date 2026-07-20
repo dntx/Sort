@@ -1924,17 +1924,7 @@ def main() -> int:
         structural=structural,
         policy_findings=policy_findings,
     )
-    verdict_order = {"APPROVE": 0, "COMMENT": 1, "BLOCK": 2}
-    candidate_verdicts = [item[2] for item in batch_reviews]
-    if structural is not None:
-        candidate_verdicts.append(structural[0])
-    if policy_findings:
-        candidate_verdicts.append("BLOCK")
-    verdict = (
-        max(candidate_verdicts, key=lambda v: verdict_order[v])
-        if candidate_verdicts
-        else "APPROVE"
-    )
+    verdict = parse_verdict(review)
 
     print(f"Verdict: {verdict}")
     print("----- Review -----")
