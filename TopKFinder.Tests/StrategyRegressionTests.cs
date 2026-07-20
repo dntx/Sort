@@ -448,6 +448,9 @@ public sealed class StrategyRegressionTests
         SearchDiagnostics diagnostics = plan.SearchStatistics.Diagnostics;
         Assert.NotEmpty(diagnostics.RootIncumbents);
         Assert.Equal(plan.MaxStep, diagnostics.RootIncumbents[^1].BestWorstCaseSteps);
+        Assert.Equal(
+            $"sort({StrategyTextRenderer.FormatSet(plan.Root.Group)})",
+            diagnostics.RootIncumbents[^1].ComparisonGroupText);
         Assert.True(diagnostics.LowerBoundPrunes > 0);
 
         int previousSteps = int.MaxValue;
@@ -455,6 +458,31 @@ public sealed class StrategyRegressionTests
         {
             Assert.True(milestone.BestWorstCaseSteps < previousSteps, "root incumbent steps should strictly decrease");
             previousSteps = milestone.BestWorstCaseSteps;
+        }
+    }
+
+    [Fact]
+    public void StrategyBuilderFormatItemSet_MatchesStrategyTextRenderer()
+    {
+        const System.Reflection.BindingFlags flags =
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static;
+        System.Reflection.MethodInfo? method = typeof(StrategyBuilder).GetMethod("FormatItemSet", flags);
+        Assert.NotNull(method);
+
+        int[][] cases =
+        {
+            new[] { 0, 1, 2 },
+            new[] { 3, 2, 1, 0 },
+            new[] { 0, 1, 2, 3 },
+            new[] { 5, 2, 3, 4, 9, 10, 11, 12, 13 },
+            new[] { 0, 2, 4, 6 },
+        };
+
+        foreach (int[] items in cases)
+        {
+            string actual = Assert.IsType<string>(method!.Invoke(null, new object[] { items })!);
+            string expected = StrategyTextRenderer.FormatSet(items);
+            Assert.Equal(expected, actual);
         }
     }
 

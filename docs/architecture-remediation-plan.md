@@ -10,8 +10,8 @@ Refactor governance plan for architecture boundaries, naming consistency, and ma
 
 ## Status (2026-07-20)
 - Implementation sync: Done. main already contains copilot/worktree-2026-07-19T13-02-57 via merge commit edec22e.
-- Batch A1: Not done in current worktree.
-- Batch A2: Blocked by A1.
+- Batch A1: Done in current worktree.
+- Batch A2: Ready.
 - Batch A3: Pending after A2 stabilization.
 
 ## Batch A1 - Remove Core to Display Reverse Dependency
@@ -102,5 +102,24 @@ Unify mode and stage wording to exact/greedy; remove legacy A/B language.
 - Verification result:
 - Risks/notes:
 
+## Batch Execution Record (latest)
+- Batch: A1
+- Status: Done
+- Changed files:
+  - StrategyBuilder.Core.cs
+  - StrategyBuilder.RelabelingOrbit.cs
+  - StrategyBuilder.HelperTypes.cs
+- Behavior impact: Equivalent (formatting output preserved while removing direct renderer dependency from core StrategyBuilder files)
+- Verification commands:
+  - rg --line-number "StrategyTextRenderer\\." StrategyBuilder*.cs
+  - dotnet build d:/Code/Sort2/TopKFinder.csproj
+  - dotnet test ./TopKFinder.Tests/TopKFinder.Tests.csproj --filter "DisplayRenderEngineTests|StrategyTextRendererTests|ProgramHeadlessRenderingTests|MainFormRenderingTests"
+- Verification result:
+  - rg: no matches
+  - build: succeeded (0 warnings, 0 errors)
+  - tests: passed (19/19)
+- Risks/notes:
+  - Core now uses a local item-set formatter helper; if display-layer set formatting rules change in future, keep this helper aligned intentionally.
+
 ## Next Action
-Dispatch Batch A1 using the Agent Dispatch Card above.
+Dispatch Batch A2 using the Agent Dispatch Card above.
