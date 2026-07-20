@@ -77,8 +77,21 @@ UI 使用与 CLI 相同的阶段名展示进度：
 
 ## 6. 代码入口索引
 
-- 运行编排与阶段回调：`MainForm.Run.cs`
+- 运行编排与阶段回调（线程切换、阶段推进）：`MainForm.Run.cs`
+- 运行期树展示与占位文案（`computing...`/`stopped`、root label、compact 收尾）：`MainForm.Run.TreePresentation.cs`
 - 概览与统计展示：`MainForm.Overview.cs`
 - 树视图渲染：`MainForm.Tree.cs`
-- 详情面板：`MainForm.Details.cs`
+- 详情面板（主题、Run/Stop 状态切换）：`MainForm.Details.cs`
+- 详情摘要文本（summary/headline/detail 组装）：`MainForm.Details.Summary.cs`
+- 详情诊断文本与实时统计（progress/eta/diagnostics）：`MainForm.Details.Diagnostics.cs`
+- 节点详情选择与异步加载：`MainForm.Details.NodeSelection.cs`
 - 控件初始化：`MainForm.Controls.cs`
+
+## 7. UI 术语与标识（非算法语义变更）
+
+以下字符串属于 UI 展示或内部作用域标识，用于帮助阅读树/概览，不改变求解算法：
+
+- `default` / `compact`：树节点 scope 标识（分别对应 step 结果与 compact 结果）。
+- `step-proof` / `greedy-feasible`：阶段名（与 `StageNames.cs` 契约一致）。
+- `step-opt`：进度/诊断文案中对 phase-1 全局最优步数夹逼（L..U）的简称。
+- `stopped`：用户点击 Stop 后对占位文案的状态重写，表示该后续阶段未执行。
