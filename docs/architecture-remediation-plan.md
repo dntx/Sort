@@ -11,7 +11,7 @@ Refactor governance plan for architecture boundaries, naming consistency, and ma
 ## Status (2026-07-20)
 - Implementation sync: Done. main already contains copilot/worktree-2026-07-19T13-02-57 via merge commit edec22e.
 - Batch A1: Done in current worktree.
-- Batch A2: Ready.
+- Batch A2: Done.
 - Batch A3: Pending after A2 stabilization.
 
 ## Batch A1 - Remove Core to Display Reverse Dependency
@@ -103,6 +103,24 @@ Unify mode and stage wording to exact/greedy; remove legacy A/B language.
 - Risks/notes:
 
 ## Batch Execution Record (latest)
+- Batch: A2
+- Status: Done
+- Changed files:
+  - Program.cs
+  - MainForm.Run.cs
+  - PublicPipelineOrchestrator.cs
+  - PipelineStageProtocol.cs
+  - README.md
+- Behavior impact: Equivalent (entry orchestration and stage protocol exits are consolidated; algorithm/output semantics unchanged)
+- Verification commands:
+  - dotnet build d:/Code/Sort2/TopKFinder.csproj
+  - dotnet test ./TopKFinder.Tests/TopKFinder.Tests.csproj --filter "CliArgsTests|ProgramHeadlessRenderingTests|MainFormRenderingTests|ExactPipelineTests|GreedyPipelineTests"
+- Verification result:
+  - build: succeeded (0 warnings, 0 errors)
+  - tests: passed (65/65)
+- Risks/notes:
+  - A2 adds explicit public documentation for shared entry orchestration boundaries and protocol ownership in README.
+
 - Batch: A1
 - Status: Done
 - Changed files:

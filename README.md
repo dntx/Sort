@@ -112,6 +112,23 @@ User-visible stage names are centralized in `StageNames.cs`.
 - CLI headers, GUI tree/overview labels, progress text, and stage-oriented
   tests all share this same naming contract.
 
+### Entry orchestration contract
+
+CLI and WinForms UI entrypoints now share one orchestration contract instead of
+duplicating stage policy in each entry file.
+
+- `PublicPipelineOrchestrator` owns public pipeline sequencing for exact and
+  greedy flows, including shared preparation routing.
+- `PipelineStageProtocol` owns stage callback protocol helpers used by both
+  entrypoints (stage completion emission, stage-limit checks, improvement
+  checks, no-solution markers, and next greedy-stage naming).
+- `Program` and `MainForm.Run` are kept at boundary responsibilities: input
+  parsing/validation, user interaction, thread marshaling, rendering surface,
+  and error/cancellation handling.
+
+This is a structural consolidation only: algorithm semantics and user-visible
+stage/output semantics are unchanged.
+
 ### Command-line arguments
 
 ```bash
