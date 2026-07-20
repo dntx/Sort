@@ -440,8 +440,25 @@ internal static class ComparisonStateAlgorithms
     private static int[] ReadCanonicalKey(int a, ulong[] anc, int[] seed, int[] colors)
     {
         var byRank = new int[a];
+        var seen = new bool[a];
         for (int v = 0; v < a; v++)
-            byRank[colors[v]] = v;
+        {
+            int rank = colors[v];
+            if ((uint)rank >= (uint)a)
+            {
+                throw new InvalidOperationException(
+                    $"Invalid canonical coloring: colors[{v}]={rank} is outside [0, {a - 1}].");
+            }
+
+            if (seen[rank])
+            {
+                throw new InvalidOperationException(
+                    $"Invalid canonical coloring: duplicate rank {rank} in discrete coloring.");
+            }
+
+            seen[rank] = true;
+            byRank[rank] = v;
+        }
 
         var parts = new int[1 + a * 3];
         parts[0] = a;
@@ -457,7 +474,14 @@ internal static class ComparisonStateAlgorithms
             {
                 int b = BitOperations.TrailingZeroCount(ancMask);
                 ancMask &= ancMask - 1;
-                row |= 1UL << colors[b];
+                int rank = colors[b];
+                if ((uint)rank >= (uint)a)
+                {
+                    throw new InvalidOperationException(
+                        $"Invalid canonical coloring: colors[{b}]={rank} is outside [0, {a - 1}].");
+                }
+
+                row |= 1UL << rank;
             }
 
             parts[w++] = (int)(row & 0xFFFFFFFF);
