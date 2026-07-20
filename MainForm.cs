@@ -164,8 +164,7 @@ partial class MainForm : Form
         _themeComboBox.SelectedItem = ColorTheme.Dark.ToString();
         _themeComboBox.SelectedIndexChanged += (_, _) => ApplyTheme(ParseSelectedTheme());
 
-        // Search mode: B (default) = exact + compact (proven optimal); A = feasible + compact
-        // (fast, interruptible, not proven optimal).
+        // Search mode matches the UI labels: exact (proven) and greedy (fast).
         _modeComboBox = new ComboBox
         {
             Width = 280,
