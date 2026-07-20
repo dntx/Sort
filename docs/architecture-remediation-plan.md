@@ -198,4 +198,10 @@ Unify mode and stage wording to exact/greedy; remove legacy A/B language.
   - ItemSetFormatter.cs is intentionally the single shared implementation of set formatting; if formatting rules change in future, update this shared formatter to keep core and display behavior aligned.
 
 ## Next Action
-Decide whether to stop after B2.2 or dispatch a smaller B2.3 follow-up for any remaining ComparisonState state/cache split that still provides clear value.
+Stop the ComparisonState split at B2.2. Treat the current ComparisonState boundary as sufficient for this remediation pass, and only reopen it if a later change reveals a concrete maintenance or testing pain point.
+
+## Execution Order
+1. Continue with 1-2 additional internal code-structure batches, prioritizing StrategyBuilder.Core.cs responsibility/size reduction around BuildState, ChooseGroup, and nearby materialization/group-selection collaboration.
+2. Once that internal refactor cadence stabilizes, execute a dedicated Repo Layout Batch to introduce src/ and tests/ and remove the main project's structural need to exclude test sources.
+3. After the repository layout is stable, reassess Phase C naming cleanup and any broader directory/prefix normalization.
+4. Do not continue deeper ComparisonState splitting unless a later change reveals a concrete maintenance or testing pain point.
