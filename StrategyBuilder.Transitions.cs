@@ -46,10 +46,11 @@ partial class StrategyBuilder
         int remainingSlots,
         SelectedComparisonGroup chosenGroup)
     {
-        return BuildTransitionSpecsFromBranchSpecs(
+        return TransitionPlanner.BuildDisplayTransitionSpecs(
             state,
             fixedTopMask,
-            BuildBranchSpecs(state, remainingSlots, chosenGroup));
+            remainingSlots,
+            chosenGroup);
     }
 
     // Search transition planner seam: currently reuses the display branch-line planner so behavior
@@ -60,82 +61,11 @@ partial class StrategyBuilder
         int remainingSlots,
         SelectedComparisonGroup chosenGroup)
     {
-        return BuildTransitionSpecsFromSearchBranchSpecs(
+        return TransitionPlanner.BuildSearchTransitionSpecs(
             state,
             fixedTopMask,
-            BuildSearchBranchSpecs(state, remainingSlots, chosenGroup));
-    }
-
-    // Search branch planner: mirrors the current display line-planning policy, but keeps a
-    // search-only branch payload that does not carry display summary fields.
-    private List<SearchBranchSpec> BuildSearchBranchSpecs(
-        ComparisonState state,
-        int remainingSlots,
-        SelectedComparisonGroup chosenGroup)
-    {
-        return BuildOrderedBranchSpecsWithDoomedTailFallback(
-            state,
-            chosenGroup,
-            tryBuildDoomedTailSpecs: group => TryBuildSearchDoomedTailSpecs(state, remainingSlots, group),
-            line => BuildSearchBranchSpecForLine(state, line.Members, line.ProjectionMerged),
-            spec => spec.OrderText);
-    }
-
-    private SearchBranchSpec BuildSearchBranchSpecForLine(
-        ComparisonState state,
-        List<MergedFamilyOutcome> line,
-        bool projectionMerged)
-    {
-        MergedFamilyOutcome representative =
-            SelectSearchRepresentativeForLine(state, line, projectionMerged);
-
-        return new SearchBranchSpec(
-            representative.Family.RepresentativeOrder,
-            representative.NextState,
-            representative.NextFixedTopMask,
-            representative.NextRemainingSlots);
-    }
-
-    private MergedFamilyOutcome SelectSearchRepresentativeForLine(
-        ComparisonState state,
-        List<MergedFamilyOutcome> line,
-        bool projectionMerged)
-    {
-        if (line.Count <= 1)
-            return line[0];
-
-        List<OrderFamilyDescriptor> families = CollectLineFamilies(line);
-        bool allSingleton = HasOnlySingletonFamilies(families);
-        if (TrySelectProjectionQuotientRepresentativeForLine(
-                state,
-                line,
-                projectionMerged,
-                allSingleton,
-                out MergedFamilyOutcome quotientRepresentative,
-                out _))
-        {
-            return quotientRepresentative;
-        }
-
-        if (!allSingleton)
-            return line[0];
-
-        if (projectionMerged)
-            return SelectOrbitRepresentative(line);
-
-        EquivalentOrderSummary? summary = BuildEquivalentOrderSummary(families);
-        if (ShouldFoldSingletonOrbitRepresentative(summary))
-            return SelectOrbitRepresentative(line);
-
-        return line[0];
-    }
-
-    private static bool ShouldFoldSingletonOrbitRepresentative(EquivalentOrderSummary? summary)
-    {
-        if (summary is null)
-            return false;
-
-        return !MergedOrderingsFormSingleOrbit(summary);
+            remainingSlots,
+            chosenGroup);
     }
 
     private static List<OrderFamilyDescriptor> CollectLineFamilies(List<MergedFamilyOutcome> line)
@@ -143,141 +73,6 @@ partial class StrategyBuilder
         return line
             .Select(outcome => outcome.Family)
             .ToList();
-    }
-
-    private static bool HasOnlySingletonFamilies(List<OrderFamilyDescriptor> families)
-    {
-        return families.All(family => family.Count == 1);
-    }
-
-    private BranchSpec BuildRelabelRepresentativeBranchSpec(
-        ComparisonState state,
-        List<MergedFamilyOutcome> line)
-    {
-        MergedFamilyOutcome representative = SelectOrbitRepresentative(line);
-        EquivalentOrderSummary relabelSummary =
-            BuildRelabelingOrbitSummary(state, line, representative);
-        return new BranchSpec(
-            representative.Family.RepresentativeOrder,
-            representative,
-            relabelSummary);
-    }
-
-    private bool TryBuildProjectionQuotientSummaryForLine(
-        ComparisonState state,
-        List<MergedFamilyOutcome> line,
-        out MergedFamilyOutcome representative,
-        out EquivalentOrderSummary? quotientSummary)
-    {
-        representative = SelectOrbitRepresentative(line);
-        quotientSummary = BuildProjectionQuotientSummary(state, line, representative);
-        return quotientSummary is not null;
-    }
-
-    private bool TrySelectProjectionQuotientRepresentativeForLine(
-        ComparisonState state,
-        List<MergedFamilyOutcome> line,
-        bool projectionMerged,
-        bool allSingleton,
-        out MergedFamilyOutcome representative,
-        out EquivalentOrderSummary? quotientSummary)
-    {
-        if (!projectionMerged || allSingleton)
-        {
-            representative = line[0];
-            quotientSummary = null;
-            return false;
-        }
-
-        return TryBuildProjectionQuotientSummaryForLine(
-            state,
-            line,
-            out representative,
-            out quotientSummary);
-    }
-
-    private IReadOnlyList<TransitionSpec> BuildTransitionSpecsFromBranchSpecs(
-        ComparisonState state,
-        ulong fixedTopMask,
-        IReadOnlyList<BranchSpec> branchSpecs)
-    {
-        IReadOnlyList<TransitionTargetFields> targets = BuildTransitionTargetFields(branchSpecs);
-
-        return BuildTransitionSpecsFromTargets(
-            targets,
-            (index, target) => new TransitionSpec(
-                target.OrderText,
-                branchSpecs[index].Summary,
-                BuildComparisonEffect(state, fixedTopMask, target.NextState, target.NextFixedTopMask),
-                target.NextState,
-                target.NextFixedTopMask,
-                target.NextRemainingSlots));
-    }
-
-    private IReadOnlyList<SearchTransitionSpec> BuildTransitionSpecsFromSearchBranchSpecs(
-        ComparisonState state,
-        ulong fixedTopMask,
-        IReadOnlyList<SearchBranchSpec> branchSpecs)
-    {
-        IReadOnlyList<TransitionTargetFields> targets = BuildTransitionTargetFields(branchSpecs);
-
-        return BuildTransitionSpecsFromTargets(
-            targets,
-            (_, target) => new SearchTransitionSpec(
-                target.OrderText,
-                BuildSearchComparisonEffect(state, fixedTopMask, target.NextState, target.NextFixedTopMask),
-                target.NextState,
-                target.NextFixedTopMask,
-                target.NextRemainingSlots));
-    }
-
-    private static IReadOnlyList<TransitionTargetFields> BuildTransitionTargetFields<TSpec>(
-        IReadOnlyList<TSpec> branchSpecs,
-        Func<TSpec, string> getOrderText,
-        Func<TSpec, ComparisonState> getNextState,
-        Func<TSpec, ulong> getNextFixedTopMask,
-        Func<TSpec, int> getNextRemainingSlots)
-    {
-        return branchSpecs
-            .Select(spec => new TransitionTargetFields(
-                getOrderText(spec),
-                getNextState(spec),
-                getNextFixedTopMask(spec),
-                getNextRemainingSlots(spec)))
-            .ToList();
-    }
-
-    private static IReadOnlyList<TransitionTargetFields> BuildTransitionTargetFields(
-        IReadOnlyList<BranchSpec> branchSpecs)
-    {
-        return BuildTransitionTargetFields(
-            branchSpecs,
-            spec => spec.OrderText,
-            spec => spec.Outcome.NextState,
-            spec => spec.Outcome.NextFixedTopMask,
-            spec => spec.Outcome.NextRemainingSlots);
-    }
-
-    private static IReadOnlyList<TransitionTargetFields> BuildTransitionTargetFields(
-        IReadOnlyList<SearchBranchSpec> branchSpecs)
-    {
-        return BuildTransitionTargetFields(
-            branchSpecs,
-            spec => spec.OrderText,
-            spec => spec.NextState,
-            spec => spec.NextFixedTopMask,
-            spec => spec.NextRemainingSlots);
-    }
-
-    private static IReadOnlyList<TTransitionSpec> BuildTransitionSpecsFromTargets<TTransitionSpec>(
-        IReadOnlyList<TransitionTargetFields> targets,
-        Func<int, TransitionTargetFields, TTransitionSpec> buildSpec)
-    {
-        var specs = new List<TTransitionSpec>(targets.Count);
-        for (int i = 0; i < targets.Count; i++)
-            specs.Add(buildSpec(i, targets[i]));
-
-        return specs;
     }
 
     private SearchEffect BuildSearchComparisonEffect(
@@ -301,87 +96,7 @@ partial class StrategyBuilder
     // so its Count is exactly the number of branch lines this node will render.
     private List<BranchSpec> BuildBranchSpecs(ComparisonState state, int remainingSlots, SelectedComparisonGroup chosenGroup)
     {
-        // A merged branch groups every order family whose outcome maps to the same
-        // display-canonical next state. Two very different situations land here:
-        //
-        //   1. A genuine relabeling-symmetry orbit. The merged orderings are interchangeable
-        //      (e.g. the three triple-winners #1, #4, #7), so the pattern engine unifies them
-        //      into one disjunction-free template such as "permute {#1, #4, #7}". These stay a
-        //      single branch; showing the representative effect (up to relabeling) is honest.
-        //
-        //   2. Distinct orderings that merely converge to isomorphic (but differently-labeled)
-        //      next states (e.g. sort(#2, #4, #5) where #4 > #5 is already known). The pattern
-        //      engine cannot unify them and falls back to a disjunction "(… | …)" with a partial
-        //      "permute", which reads like a false symmetry claim and hides the per-ordering
-        //      effect. We split these into one branch per family so each shows its own effect;
-        //      the shared result subtree is materialized once under the first branch (build order
-        //      follows display order) and the rest become →S references with a relabel map via
-        //      the existing BuildState dedup.
-        // When the chosen sort produces a genuinely doomed tail (items already eliminated whatever
-        // their final rank), fold every tail permutation into a single edge whose pattern carries
-        // the tail as an unordered brace set. This replaces the per-family listing, which would
-        // otherwise spell out each tail permutation as its own misleading branch.
-        return BuildOrderedBranchSpecsWithDoomedTailFallback(
-            state,
-            chosenGroup,
-            tryBuildDoomedTailSpecs: group => TryBuildDoomedTailSpecs(state, remainingSlots, group),
-            line => BuildBranchSpecForLine(state, line.Members, line.ProjectionMerged),
-            spec => spec.OrderText);
-    }
-
-    private List<TSpec> BuildOrderedBranchSpecsWithDoomedTailFallback<TSpec>(
-        ComparisonState state,
-        SelectedComparisonGroup chosenGroup,
-        Func<SelectedComparisonGroup, List<TSpec>?> tryBuildDoomedTailSpecs,
-        Func<PlannedBranchLine, TSpec> buildSpec,
-        Func<TSpec, string> getOrderText)
-    {
-        ThrowIfCancellationRequested();
-
-        List<TSpec>? doomedTailSpecs = tryBuildDoomedTailSpecs(chosenGroup);
-        if (doomedTailSpecs is not null)
-            return doomedTailSpecs
-                .OrderBy(getOrderText, StringComparer.Ordinal)
-                .ToList();
-
-        return BuildPlannedBranchSpecsForChosenGroup(
-            state,
-            chosenGroup,
-            buildSpec,
-            getOrderText);
-    }
-
-    private List<TSpec> BuildPlannedBranchSpecsForChosenGroup<TSpec>(
-        ComparisonState state,
-        SelectedComparisonGroup chosenGroup,
-        Func<PlannedBranchLine, TSpec> buildSpec,
-        Func<TSpec, string> getOrderText)
-    {
-        var specs = new List<TSpec>();
-        foreach (var line in PlanBranchLinesForChosenGroup(state, chosenGroup))
-            specs.Add(buildSpec(line));
-
-        return specs
-            .OrderBy(getOrderText, StringComparer.Ordinal)
-            .ToList();
-    }
-
-    private List<PlannedBranchLine> PlanBranchLinesForChosenGroup(
-        ComparisonState state,
-        SelectedComparisonGroup chosenGroup)
-    {
-        var plannedLines = new List<PlannedBranchLine>();
-        foreach (MergedBranch merged in chosenGroup.Branches)
-        {
-            if (EnableProjectionPairingProbe)
-            {
-                RecordProjectionPairingBucket(state, merged.FamilyOutcomes);
-            }
-
-            plannedLines.AddRange(SplitMergedBucketIntoBranchLines(state, merged.FamilyOutcomes));
-        }
-
-        return plannedLines;
+        return TransitionPlanner.BuildBranchSpecs(state, remainingSlots, chosenGroup);
     }
 
     // Builds the spec for one displayed branch line. A line with a single family, or several
@@ -397,45 +112,6 @@ partial class StrategyBuilder
     // brace would claim a parent symmetry that does not hold -- so it always routes through the
     // relabeling summary, which renders a total-order representative plus a "... ; drop {...}" legend
     // disclosing the doomed set. Parent orbits (projectionMerged == false) keep their exact rendering.
-    private BranchSpec BuildBranchSpecForLine(ComparisonState state, List<MergedFamilyOutcome> line, bool projectionMerged)
-    {
-        List<OrderFamilyDescriptor> families = CollectLineFamilies(line);
-        bool allSingleton = HasOnlySingletonFamilies(families);
-        if (TrySelectProjectionQuotientRepresentativeForLine(
-                state,
-                line,
-                projectionMerged,
-                allSingleton,
-                out MergedFamilyOutcome quotientRepresentative,
-                out EquivalentOrderSummary? quotientSummary))
-        {
-            return new BranchSpec(
-                quotientRepresentative.Family.RepresentativeOrder,
-                quotientRepresentative,
-                quotientSummary);
-        }
-
-        if (allSingleton
-            && projectionMerged)
-        {
-            return BuildRelabelRepresentativeBranchSpec(state, line);
-        }
-
-        EquivalentOrderSummary? summary = BuildEquivalentOrderSummary(families);
-
-        if (allSingleton
-            && ShouldFoldSingletonOrbitRepresentative(summary))
-        {
-            return BuildRelabelRepresentativeBranchSpec(state, line);
-        }
-
-        MergedFamilyOutcome fallbackRepresentative = line[0];
-        return new BranchSpec(
-            fallbackRepresentative.Family.RepresentativeOrder,
-            fallbackRepresentative,
-            summary);
-    }
-
     // The lexicographically smallest ordering in a relabeling orbit, so the folded line shows the
     // most natural representative (e.g. the "#1 > ..." form rather than a mirror "#11 > ..." form).
     private static MergedFamilyOutcome SelectOrbitRepresentative(List<MergedFamilyOutcome> line)
