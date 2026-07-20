@@ -676,7 +676,17 @@ greedy-feasible(U) → (optional) greedy-tighten → proof-tighten≤N → greed
   步数正确性；individualization-refinement 通过「逐个个体化 + 细化」区分所有非同构状态。
 - 还能给「候选比较组」算规范键（`GetGroupCanonicalKey`），把会生成同构子树的组合并，进一步约减。
 
-相关代码：`ComparisonState.ComputeCanonicalForm`、`GetCanonicalKey`、`GetGroupCanonicalKey`。
+相关代码：`ComparisonState.GetCanonicalKey`、`GetDisplayCanonicalKey`、`GetGroupCanonicalKey`；
+内部实现位于 `ComparisonState.Algorithms.cs`（`ComputeCanonicalForm`、`RefineCanonicalColoring`、`CanonicalizeRecursive`、`TryFindOrderAutomorphism`）。
+
+### 5.2 B2.2 内部职责外移（结构重构，行为等价）
+
+为收缩 `ComparisonState` 的职责边界，B2.2 将大体量纯算法 helper 外移到内部协作者
+`ComparisonState.Algorithms.cs`，`ComparisonState` 保留状态所有权与入口委托。
+
+- **保留在 `ComparisonState.cs`**：`_ancestors` / `_descendants`、`ActiveMask` / `ActiveCount`、缓存字段与失效、线程取消入口、对外 API（键与 automorphism 入口）。
+- **外移到 `ComparisonState.Algorithms.cs`**：canonicalization 与 automorphism 的纯计算主体（只消费只读状态视图，不直接变更 `ComparisonState` 状态）。
+- **语义约束**：搜索语义、key 语义（canonical/display/group/raw）与 `StrategyBuilder` 调用链保持不变。
 
 ### 5.1 规范键的跨实例记忆化（`GetCanonicalKey` 已落地；`GetGroupCanonicalKey` 已探测无收益）
 
@@ -1059,7 +1069,7 @@ width = ActiveCount - maxBipartiteMatching;   // GetActivePosetWidth
 | 夹逼报告（已证明下界 L） | `StrategyBuilder.SearchBounds.cs` → `RecordRootProvenLowerBound`；`SearchStatistics.RootProvenLowerBound` / `SearchProgressSnapshot.RootProvenLowerBound`；GUI `MainForm.FormatSqueeze` |
 | 反链下界 / 宽度 / 匹配 | `GetAntichainLowerBound`、`GetActivePosetWidth`、`TryAugmentMatching` |
 | 状态 / 偏序 / 归一化 | `ComparisonState.cs`（`Eliminate`、`Deactivate`、`ActiveMask`、`GetDescendantMask`） |
-| 规范形 / 对称约减 | `ComparisonState.ComputeCanonicalForm`、`GetCanonicalKey`、`GetGroupCanonicalKey` |
+| 规范形 / 对称约减 | `ComparisonState.Algorithms.cs`（`ComputeCanonicalForm`、`RefineCanonicalColoring`、`CanonicalizeRecursive`、`TryFindOrderAutomorphism`）+ `ComparisonState.cs` 入口（`GetCanonicalKey`、`GetDisplayCanonicalKey`、`GetGroupCanonicalKey`、`TryMapOrderByAutomorphism`） |
 | 支配下界 | `StrategyBuilder.Dominance.cs`、`ApplyDominanceLowerBound` |
 | 紧凑搜索变体 | `StrategyBuilder.Compact.cs` |
 | 构造式可行解（greedy 模式 step / 可行上界 U） | `StrategyBuilder.GreedyFeasible.cs` → `ExecuteGreedyFeasibleStage`、`ChooseConstructiveGroup`、`ConstructiveRootUpperBound`；`StrategyPlan.IsFeasibleUpperBound` |
