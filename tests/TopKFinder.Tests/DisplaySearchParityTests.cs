@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using TopKFinder;
 using Xunit;
 
 // Locks in the "what you see is what was searched" invariant: for every materialized decision node
