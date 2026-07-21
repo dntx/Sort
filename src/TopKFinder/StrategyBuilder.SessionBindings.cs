@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 
+namespace TopKFinder;
+
 partial class StrategyBuilder
 {
     // Session-backed state/cache bindings are centralized here to keep core solver flow readable.

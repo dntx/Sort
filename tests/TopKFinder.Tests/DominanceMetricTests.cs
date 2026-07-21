@@ -1,3 +1,4 @@
+using TopKFinder;
 using Xunit;
 
 // Guards the always-on phase-1 dominance (subsumption) lower-bound pruning on two axes:

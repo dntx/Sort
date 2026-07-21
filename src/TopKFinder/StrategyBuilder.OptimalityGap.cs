@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 
+namespace TopKFinder;
+
 // Measurement-only exact oracle (option D). It quantifies how far the production "patched compact"
 // plan is from the TRUE minimum number of displayed branch edges over all step-optimal selections.
 //

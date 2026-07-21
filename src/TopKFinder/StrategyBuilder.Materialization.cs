@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 
+namespace TopKFinder;
+
 partial class StrategyBuilder
 {
     private MaterializationHelper? _materializationHelper;

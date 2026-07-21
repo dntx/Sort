@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 
+namespace TopKFinder;
+
 partial class StrategyBuilder
 {
     // Encapsulates compact-stage solve algorithms while reusing StrategyBuilder's session/state.

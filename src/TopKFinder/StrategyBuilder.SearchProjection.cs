@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
+namespace TopKFinder;
+
 partial class StrategyBuilder
 {
     // Mainline-A seam: build exact display + search artifacts inside one active solver session

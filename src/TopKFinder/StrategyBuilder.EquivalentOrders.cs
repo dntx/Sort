@@ -4,6 +4,8 @@ using System.Linq;
 using System.Numerics;
 using System.Text.RegularExpressions;
 
+namespace TopKFinder;
+
 partial class StrategyBuilder
 {
     private const int PermutationTemplateMinRemainingItems = 4;

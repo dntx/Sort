@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
+namespace TopKFinder;
+
 partial class StrategyBuilder
 {
     // Principle-D rendering (default ON). When true, MergeOrbitsByProjection folds sibling orderings

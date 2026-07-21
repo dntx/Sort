@@ -4,6 +4,8 @@ using System.Linq;
 using System.Numerics;
 using System.Text.RegularExpressions;
 
+namespace TopKFinder;
+
 partial class StrategyBuilder
 {
     // Renders a genuine parent-automorphism orbit (e.g. two interchangeable sorted chains) as one

@@ -1,4 +1,5 @@
 using System.Reflection;
+using TopKFinder;
 using Xunit;
 
 public sealed class SearchTransitionPlannerStructureTests

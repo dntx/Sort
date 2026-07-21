@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using TopKFinder;
 using Xunit;
 using Xunit.Abstractions;
 
