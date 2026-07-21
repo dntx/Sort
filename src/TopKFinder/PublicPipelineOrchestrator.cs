@@ -82,7 +82,7 @@ static class PublicPipelineOrchestrator
     private static (StrategyPlan StepPlan, TimeSpan Elapsed) ExecuteExactStepStage(StrategyBuilder builder)
     {
         var stopwatch = Stopwatch.StartNew();
-        (SearchTree _, DisplayTree stepPlan) = builder.ProjectDisplayAndSearchTrees();
+        (SearchStrategy _, StrategyPlan stepPlan) = builder.ProjectDisplayAndSearchTrees();
         stopwatch.Stop();
         return (stepPlan, stopwatch.Elapsed);
     }

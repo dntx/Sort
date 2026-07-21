@@ -6,7 +6,7 @@ partial class StrategyBuilder
 {
     // Mainline-A seam: build exact display + search artifacts inside one active solver session
     // so both materializers consume the same phase-1 caches without nested entrypoint hand-offs.
-    private (SearchTree SearchTree, DisplayTree DisplayTree) BuildExactProjectionFromCurrentSession()
+    private (SearchStrategy SearchTree, StrategyPlan DisplayTree) BuildExactProjectionFromCurrentSession()
     {
         return RunWithComparisonStateCancellation(() =>
         {
@@ -14,18 +14,18 @@ partial class StrategyBuilder
                 ? ProgressScope.DefaultInCombinedRun
                 : ProgressScope.DefaultStandalone;
 
-            DisplayTree displayTree = BuildPlanWithinSession(
+            StrategyPlan displayTree = BuildPlanWithinSession(
                 useCompactSelection: false,
                 useFeasibleBudget: false,
                 initializeSession: true);
-            SearchTree searchTree = ProjectSearchTreeFromCurrentExactSession();
+            SearchStrategy searchTree = ProjectSearchTreeFromCurrentExactSession();
             return (searchTree, displayTree);
         });
     }
 
     // Standalone search-only exact entry: starts its own solver session and materializes
     // the search tree from that session's exact caches.
-    private SearchTree ProjectSearchTreeFromStandaloneExactSession()
+    private SearchStrategy ProjectSearchTreeFromStandaloneExactSession()
     {
         return RunWithComparisonStateCancellation(() =>
         {
@@ -36,7 +36,7 @@ partial class StrategyBuilder
 
     // Current-session search materialization path shared by layered exact projection
     // and standalone search-only exact entry after session initialization.
-    private SearchTree ProjectSearchTreeFromCurrentExactSession()
+    private SearchStrategy ProjectSearchTreeFromCurrentExactSession()
     {
         _useCompact = false;
         return ProjectSearchTreeFromCurrentExactCaches();
@@ -44,7 +44,7 @@ partial class StrategyBuilder
 
     // Solver-sourced search builder: phase-1 group selection comes from exact caches,
     // and the search tree is materialized directly from solver state recursion.
-    private SearchTree ProjectSearchTreeFromCurrentExactCaches()
+    private SearchStrategy ProjectSearchTreeFromCurrentExactCaches()
     {
         var context = new SearchMaterializationContext(
             new Dictionary<IntSequenceKey, ExpandedStateSnapshot>(),

@@ -189,7 +189,7 @@ partial class StrategyBuilder
     }
 
     // Exact-stage entrypoint: materialize display/search artifacts in one solver session.
-    public (SearchTree SearchTree, DisplayTree DisplayTree) ProjectDisplayAndSearchTrees()
+    public (SearchStrategy SearchTree, StrategyPlan DisplayTree) ProjectDisplayAndSearchTrees()
         => BuildExactProjectionFromCurrentSession();
 
     // Search-model entrypoint used by public callers. It shares the same exact solver caches
