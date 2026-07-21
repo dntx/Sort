@@ -9,6 +9,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
+namespace TopKFinder;
+
 partial class MainForm
 {
     private readonly Dictionary<string, TreeNode> _stateNodesByKey = new();

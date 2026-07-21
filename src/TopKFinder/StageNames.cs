@@ -1,3 +1,5 @@
+namespace TopKFinder;
+
 static class StageNames
 {
     public const string StepProof = "step-proof";

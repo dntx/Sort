@@ -2,6 +2,8 @@ using System;
 using System.IO;
 using System.Text.Json;
 
+namespace TopKFinder;
+
 partial class MainForm
 {
     private sealed class GuiSettings

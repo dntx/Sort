@@ -9,6 +9,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
+namespace TopKFinder;
+
 partial class MainForm
 {
     // Read-only, borderless, selectable text box used for the live stat panels so users can

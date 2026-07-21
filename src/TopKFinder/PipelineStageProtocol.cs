@@ -1,5 +1,7 @@
 using System;
 
+namespace TopKFinder;
+
 readonly record struct PipelineCallbacks(
     Action<StageResult>? OnStageCompleted,
     Action<string>? OnStageStart)

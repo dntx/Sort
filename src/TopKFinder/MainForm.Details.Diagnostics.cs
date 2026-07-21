@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 
+namespace TopKFinder;
+
 partial class MainForm
 {
     private void UpdateElapsedLabel()

@@ -9,6 +9,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
+namespace TopKFinder;
+
 partial class MainForm
 {
     // Wraps a tree in a panel with a small top toolbar holding that tree's own buttons (Expand /
