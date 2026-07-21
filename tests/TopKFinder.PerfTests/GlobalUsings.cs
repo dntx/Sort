@@ -1,1 +1,1 @@
-global using TopKFinder;
+// Intentionally empty: tests should use explicit imports instead of global using.

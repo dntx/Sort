@@ -1,6 +1,7 @@
 using System;
 using System.Reflection;
 using Xunit;
+using TopKFinder;
 
 public sealed class ZeroStepDisplayTests
 {
