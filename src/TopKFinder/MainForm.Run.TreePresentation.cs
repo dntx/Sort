@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
 
+namespace TopKFinder;
+
 partial class MainForm
 {
     private const string ComputingSuffix = ": computing...";

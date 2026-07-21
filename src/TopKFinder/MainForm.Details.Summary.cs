@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 
+namespace TopKFinder;
+
 partial class MainForm
 {
     private void UpdateSummaryText(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool compactImproved)

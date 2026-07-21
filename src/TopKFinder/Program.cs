@@ -1,6 +1,8 @@
 using System;
 using System.Windows.Forms;
 
+namespace TopKFinder;
+
 class Program
 {
     private static readonly DisplayRenderEngine DisplayEngine = new();

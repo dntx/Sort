@@ -1,6 +1,8 @@
 using System;
 using System.Diagnostics;
 
+namespace TopKFinder;
+
 readonly record struct GreedyPreparationResult(
     StrategyPlan BaseFeasiblePlan,
     StrategyPlan EffectiveFeasiblePlan,
