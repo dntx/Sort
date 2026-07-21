@@ -1,4 +1,5 @@
 using System;
+using TopKFinder;
 using Xunit;
 
 // Locks the reference-aware MaxStep logic with CONCRETE, hand-built trees (independent of any

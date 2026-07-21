@@ -1,4 +1,5 @@
 using System;
+using TopKFinder;
 using Xunit;
 
 // Guards the opt-in principle-D projection-orbit merging (EnableProjectionOrbitMerging). The default

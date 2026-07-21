@@ -1,6 +1,8 @@
 using System.Collections.Generic;
 using System.Linq;
 
+namespace TopKFinder;
+
 static class ItemSetFormatter
 {
     private const int RangeCompressionMinRunLength = 4;
