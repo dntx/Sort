@@ -1,6 +1,6 @@
-# Counter Guardrail Budgets
+﻿# Counter Guardrail Budgets
 
-This document is the ratchet map for deterministic counter guardrails in `TopKFinder.Tests/StrategyRegressionTests.cs`.
+This document is the ratchet map for deterministic counter guardrails in `tests/TopKFinder.Tests/StrategyRegressionTests.cs`.
 
 Use this with:
 - `scripts/run-counter-guardrails.ps1`
@@ -103,3 +103,4 @@ pwsh .\scripts\collect-iterative-counter-snapshot.ps1 -Configuration Release
 # Collect all snapshots + combined summary
 pwsh .\scripts\collect-all-counter-snapshots.ps1 -Configuration Release
 ```
+

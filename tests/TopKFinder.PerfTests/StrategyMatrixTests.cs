@@ -12,7 +12,7 @@ using Xunit;
 //
 // Enable:
 //   $env:RUN_STRATEGY_MATRIX = "1"
-//   dotnet test TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter StrategyMatrixTests
+//   dotnet test tests\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter StrategyMatrixTests
 //
 // Optional knobs:
 //   STRATEGY_MATRIX_TIMEOUT_SECONDS        (default 180)
@@ -458,7 +458,7 @@ public sealed class StrategyMatrixTests
     private static string FindRepoRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "TopKFinder.csproj")))
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "src", "TopKFinder", "TopKFinder.csproj")))
             dir = dir.Parent;
         return dir?.FullName ?? AppContext.BaseDirectory;
     }

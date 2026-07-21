@@ -45,4 +45,4 @@ jobs:
           PROOF_TIGHTEN_CANDIDATES_CAP: ${{ inputs.candidates_cap }}
           PROOF_TIGHTEN_SEARCHED_STATES_CAP: ${{ inputs.searched_states_cap }}
         run: |
-          dotnet test .\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj -c Release --filter "ProofTightenPerfGateTests"
+          dotnet test .\tests\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj -c Release --filter "ProofTightenPerfGateTests"

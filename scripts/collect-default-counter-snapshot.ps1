@@ -65,7 +65,7 @@ foreach ($case in $cases) {
 	$k = [int]$case.k
 
 	Write-Host "Collecting counters for ($n,$m,$k)..." -ForegroundColor Cyan
-	$output = dotnet run --project .\TopKFinder.csproj --configuration $Configuration -- $n $m $k --mode exact --stage 1
+	$output = dotnet run --project .\src\TopKFinder\TopKFinder.csproj --configuration $Configuration -- $n $m $k --mode exact --stage 1
 	if ($LASTEXITCODE -ne 0) {
 		throw "dotnet run failed for ($n,$m,$k)."
 	}

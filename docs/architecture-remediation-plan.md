@@ -1,4 +1,4 @@
-# Architecture Remediation Plan
+﻿# Architecture Remediation Plan
 
 ## Scope
 Refactor governance plan for architecture boundaries, naming consistency, and maintainability improvements.
@@ -16,6 +16,10 @@ Refactor governance plan for architecture boundaries, naming consistency, and ma
 - Batch B1.2: Done. SearchTransitionPlanner is now an internal top-level seam with injected dependencies, with no public API or user-facing behavior change.
 - Batch B2.1: Done. State key types were extracted from ComparisonState into StateKeyTypes.cs with no behavioral change.
 - Batch B2.2: Done. Canonicalization and automorphism helpers were extracted to ComparisonState.Algorithms.cs; ComparisonState now primarily owns state, caches, mutation entrypoints, and delegating calls.
+
+## Repo Layout Acceptance Closeout (2026-07-21)
+- Repo Layout: Code/Layout Done.
+- Runtime Verification: Blocked in this environment by runtime policy constraints (test execution hangs at VSTest startup in this environment), while code/layout migration and build validation are complete.
 
 ## Batch A1 - Remove Core to Display Reverse Dependency
 ### Goal
@@ -39,8 +43,8 @@ Core search logic must not directly depend on text rendering APIs.
 
 4. Verification commands
 - rg --line-number "StrategyTextRenderer\\." StrategyBuilder*.cs
-- dotnet build d:/Code/Sort2/TopKFinder.csproj
-- dotnet test ./TopKFinder.Tests/TopKFinder.Tests.csproj --filter "DisplayRenderEngineTests|StrategyTextRendererTests|ProgramHeadlessRenderingTests|MainFormRenderingTests"
+- dotnet build d:/Code/Sort2/src/TopKFinder/TopKFinder.csproj
+- dotnet test ./tests/TopKFinder.Tests/TopKFinder.Tests.csproj --filter "DisplayRenderEngineTests|StrategyTextRendererTests|ProgramHeadlessRenderingTests|MainFormRenderingTests"
 
 5. Return format
 - Changed files
@@ -59,7 +63,7 @@ Core search logic must not directly depend on text rendering APIs.
 - Behavior equivalent outputs and tests pass.
 
 ### Verification
-- dotnet build d:/Code/Sort2/TopKFinder.csproj
+- dotnet build d:/Code/Sort2/src/TopKFinder/TopKFinder.csproj
 - Run affected rendering and regression tests.
 
 ## Batch A2 - Consolidate Entry Orchestration
@@ -113,8 +117,8 @@ Unify mode and stage wording to exact/greedy; remove legacy A/B language.
   - StrategyBuilder.Materialization.cs
 - Behavior impact: Equivalent (BuildState-adjacent display materialization and group-selection flow were extracted behind an internal helper; no algorithm, cache-ownership, or public API changes)
 - Verification commands:
-  - dotnet build d:/Code/Sort2/TopKFinder.csproj
-  - dotnet test ./TopKFinder.Tests/TopKFinder.Tests.csproj --filter "ExactPipelineTests|GreedyPipelineTests|ProgramHeadlessRenderingTests|MainFormRenderingTests|StrategyRegressionTests|DisplaySearchParityTests"
+  - dotnet build d:/Code/Sort2/src/TopKFinder/TopKFinder.csproj
+  - dotnet test ./tests/TopKFinder.Tests/TopKFinder.Tests.csproj --filter "ExactPipelineTests|GreedyPipelineTests|ProgramHeadlessRenderingTests|MainFormRenderingTests|StrategyRegressionTests|DisplaySearchParityTests"
 - Verification result:
   - build: succeeded
   - tests: blocked in this environment by application control policy when loading TopKFinder.Tests.dll (`0x800711C7`)
@@ -127,11 +131,11 @@ Unify mode and stage wording to exact/greedy; remove legacy A/B language.
 - Changed files:
   - ComparisonState.cs
   - ComparisonState.Algorithms.cs
-  - TopKFinder.Tests/ComparisonStateTests.cs
+  - tests/TopKFinder.Tests/ComparisonStateTests.cs
 - Behavior impact: Equivalent (pure helper extraction only; canonicalization, active-item colors, and order-automorphism behavior remain unchanged)
 - Verification commands:
-  - dotnet build d:/Code/Sort2/TopKFinder.csproj
-  - dotnet test ./TopKFinder.Tests/TopKFinder.Tests.csproj --filter "ComparisonStateTests|FreeSymmetryClassTests|SearchStateKeyServiceTests|ProjectionOrbitMergeTests"
+  - dotnet build d:/Code/Sort2/src/TopKFinder/TopKFinder.csproj
+  - dotnet test ./tests/TopKFinder.Tests/TopKFinder.Tests.csproj --filter "ComparisonStateTests|FreeSymmetryClassTests|SearchStateKeyServiceTests|ProjectionOrbitMergeTests"
 - Verification result:
   - build: succeeded
   - tests: implementation session reported passing before PR 400 check-in
@@ -147,8 +151,8 @@ Unify mode and stage wording to exact/greedy; remove legacy A/B language.
   - ComparisonState.cs
 - Behavior impact: Equivalent (key-type extraction only; no canonicalization or search behavior change)
 - Verification commands:
-  - dotnet build d:/Code/Sort2/TopKFinder.csproj
-  - dotnet test ./TopKFinder.Tests/TopKFinder.Tests.csproj --filter "ComparisonStateTests|SearchStateKeyServiceTests|FreeSymmetryClassTests|StrategyBuilderSessionTests"
+  - dotnet build d:/Code/Sort2/src/TopKFinder/TopKFinder.csproj
+  - dotnet test ./tests/TopKFinder.Tests/TopKFinder.Tests.csproj --filter "ComparisonStateTests|SearchStateKeyServiceTests|FreeSymmetryClassTests|StrategyBuilderSessionTests"
 - Verification result:
   - build: succeeded
   - tests: implementation session reported passing before PR 399 check-in
@@ -164,11 +168,11 @@ Unify mode and stage wording to exact/greedy; remove legacy A/B language.
   - StrategyBuilder.Transitions.cs
   - StrategyBuilder.HelperTypes.cs
   - StrategyBuilder.OrderEnumeration.cs
-  - TopKFinder.Tests/SearchTransitionPlannerStructureTests.cs
+  - tests/TopKFinder.Tests/SearchTransitionPlannerStructureTests.cs
 - Behavior impact: Equivalent (internal transition-planner extraction only; StrategyBuilder still exposes the same public entrypoints and transition behavior)
 - Verification commands:
-  - dotnet build d:/Code/Sort2/TopKFinder.csproj
-  - dotnet test ./TopKFinder.Tests/TopKFinder.Tests.csproj --filter "DisplaySearchParityTests|ProjectionKernelTests|ProjectionOrbitMergeTests|ProgramHeadlessRenderingTests|SearchTransitionPlannerStructureTests|StrategyRegressionTests"
+  - dotnet build d:/Code/Sort2/src/TopKFinder/TopKFinder.csproj
+  - dotnet test ./tests/TopKFinder.Tests/TopKFinder.Tests.csproj --filter "DisplaySearchParityTests|ProjectionKernelTests|ProjectionOrbitMergeTests|ProgramHeadlessRenderingTests|SearchTransitionPlannerStructureTests|StrategyRegressionTests"
 - Verification result:
   - build: succeeded (0 warnings, 0 errors)
   - tests: execution currently blocked in this environment by application control policy when test code loads TopKFinder.dll (`System.IO.FileLoadException`, `0x800711C7`)
@@ -186,8 +190,8 @@ Unify mode and stage wording to exact/greedy; remove legacy A/B language.
   - README.md
 - Behavior impact: Equivalent (entry orchestration and stage protocol exits are consolidated; algorithm/output semantics unchanged)
 - Verification commands:
-  - dotnet build d:/Code/Sort2/TopKFinder.csproj
-  - dotnet test ./TopKFinder.Tests/TopKFinder.Tests.csproj --filter "CliArgsTests|ProgramHeadlessRenderingTests|MainFormRenderingTests|ExactPipelineTests|GreedyPipelineTests"
+  - dotnet build d:/Code/Sort2/src/TopKFinder/TopKFinder.csproj
+  - dotnet test ./tests/TopKFinder.Tests/TopKFinder.Tests.csproj --filter "CliArgsTests|ProgramHeadlessRenderingTests|MainFormRenderingTests|ExactPipelineTests|GreedyPipelineTests"
 - Verification result:
   - build: succeeded (0 warnings, 0 errors)
   - tests: passed (65/65)
@@ -204,8 +208,8 @@ Unify mode and stage wording to exact/greedy; remove legacy A/B language.
 - Behavior impact: Equivalent (set-format output rules remain unchanged; the shared formatter is extracted to ItemSetFormatter.cs and renderer delegates to it)
 - Verification commands:
   - rg --line-number "StrategyTextRenderer\\." StrategyBuilder*.cs
-  - dotnet build d:/Code/Sort2/TopKFinder.csproj
-  - dotnet test ./TopKFinder.Tests/TopKFinder.Tests.csproj --filter "DisplayRenderEngineTests|StrategyTextRendererTests|ProgramHeadlessRenderingTests|MainFormRenderingTests"
+  - dotnet build d:/Code/Sort2/src/TopKFinder/TopKFinder.csproj
+  - dotnet test ./tests/TopKFinder.Tests/TopKFinder.Tests.csproj --filter "DisplayRenderEngineTests|StrategyTextRendererTests|ProgramHeadlessRenderingTests|MainFormRenderingTests"
 - Verification result:
   - rg: no matches
   - build: succeeded (0 warnings, 0 errors)
@@ -221,3 +225,4 @@ Stop the ComparisonState split at B2.2. Treat the current ComparisonState bounda
 2. Once that internal refactor cadence stabilizes, execute a dedicated Repo Layout Batch to introduce src/ and tests/ and remove the main project's structural need to exclude test sources.
 3. After the repository layout is stable, reassess Phase C naming cleanup and any broader directory/prefix normalization.
 4. Do not continue deeper ComparisonState splitting unless a later change reveals a concrete maintenance or testing pain point.
+

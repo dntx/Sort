@@ -1,4 +1,4 @@
-# 分支等价 Pattern 渲染逻辑
+﻿# 分支等价 Pattern 渲染逻辑
 
 本文用中文讲解本项目**输出层**的一块独立逻辑：如何把一条策略树分支所代表的**一族等价排序**，
 渲染成一行人类易读的 `pattern: ...`。
@@ -157,7 +157,7 @@ pattern: #1 > #11 > ... > #5 ; (#1 ~ #10) ↔ (#11 ~ #20)
 
 > 诚实性边界：仅「父状态自同构连起来」的镜像才折叠；纯收敛（下一状态同构但父状态**无**自同构）
 > 不会被 `TryFindOrderAutomorphism` 接受、也就不会并轨道，仍各自成行。回归网由
-> `TopKFinder.PerfTests/RelabelingOrbitFoldingTests.cs` 用计数断言守护（20,10,10 可行解的
+> `tests/TopKFinder.PerfTests/RelabelingOrbitFoldingTests.cs` 用计数断言守护（20,10,10 可行解的
 > `CheckPlanFalseSplits` 必须为 0）。
 
 #### 4.2 投影轨道合并（principle-D，默认开启）
@@ -424,22 +424,22 @@ doomed-tail 边的计数被分解为**对称因子 × 尾部因子**：
 
 可读性改写是**等价改写**，所以由回归快照与专项断言守护，而非靠算法测试：
 
-- `TopKFinder.Tests/StrategyRegressionTests.cs`
+- `tests/TopKFinder.Tests/StrategyRegressionTests.cs`
   - `N25M6K3_FifthStepRendersNineteenDoomedTailEdges` / `N25M6K3_DoomedTailEdgeCarriesExpectedPatternAndFormula`：
     pin doomed-tail 边的 pattern、计数公式、图例，并断言边数之和 = 全排列数（折叠诚实）。
   - `N12M4K3_CompactForcedTailHeadPeelsIntoLeadingChain`：pin §7 的 peel 结果，并断言一个「类被拆开」的
     兄弟边仍保留 `{...}` + 图例。
   - 多个 `..._RenderedTextMatchesSnapshot` 快照对小算例的整段文本做逐字节比对。
-- `TopKFinder.Tests/ProjectionOrbitMergeTests.cs`：钉 §4.2 投影合并的两种形态——单序合并的
+- `tests/TopKFinder.Tests/ProjectionOrbitMergeTests.cs`：钉 §4.2 投影合并的两种形态——单序合并的
   `drop {...}` 披露（9,4,4 / 8,3,3）与多族结构商（canonical 7,3,2：`A1 > {A2, #7} ; ... ; drop tail(A2)`；
   镜像形态 A 6,3,2：`A1 > {A2, #1} ; A = {#4, #5} ; drop tail(#1)`；
   底锚定形态 B 8,3,3：`{A1, #5} > A2 ; A = {#2 > #3, #7 > #8} ; drop chain(A2)`；
   双块形态 C1 10,4,3：`A1 > B1 > {A2, B2} ; A = {#2 > #3, #6 > #7}, B = {#9, #10} ; drop {chain(A2), B2}`；
   三元块形态 C3 11,4,3：`{A1, A2} > {A3, #1} ; A = {#9, #10, #11} ; drop tail(#1)`），
   并断言 `MaxStep` 不变、边数下降、且干净对称 brace（`{#1, #5} > #2`）不被误改。
-- `TopKFinder.Tests/ProjectionPairingProbeTests.cs`：测量型探针（`EnableProjectionPairingProbe`，不影响渲染），
+- `tests/TopKFinder.Tests/ProjectionPairingProbeTests.cs`：测量型探针（`EnableProjectionPairingProbe`，不影响渲染），
   扫描小算例量化合并节省并断言 0 诚实性泄漏。
-- `TopKFinder.PerfTests/OrderedBlockHonestyTests.cs`：跨小算例断言 residual 不出现「假分裂」，保证
+- `tests/TopKFinder.PerfTests/OrderedBlockHonestyTests.cs`：跨小算例断言 residual 不出现「假分裂」，保证
   折叠后的 pattern 仍诚实地覆盖每一个真实排序。
 
 判断原则：改了渲染逻辑后，**物化树结构 / `MaxStep` / 边数必须不变**，变的只能是 `pattern:` 文字；
@@ -462,7 +462,8 @@ doomed-tail 边的计数被分解为**对称因子 × 尾部因子**：
 | 对称类信息 | `StrategyBuilder.OrderEnumeration.cs` → `BuildGroupSymmetryInfo`；`GroupSymmetryInfo` / `GroupSymmetryClass` |
 | doomed-tail 检测/分桶/轨道 | `StrategyBuilder.DoomedTailEdges.cs` → `TryBuildDoomedTailSpecs`、`ComputeDoomedPrefixLength`、`BuildDoomedPrefixKey`、`PartitionDoomedBucketsIntoOrbits` |
 | doomed-tail 渲染 | `StrategyBuilder.DoomedTailEdges.cs` → `BuildDoomedTailSummary`、`BuildTailResidualConstraints`、`BuildTailFactorFormula`、peel forced-first head（~L285–349） |
-| 回归 / 诚实性测试 | `TopKFinder.Tests/StrategyRegressionTests.cs`、`TopKFinder.Tests/ProjectionOrbitMergeTests.cs`、`TopKFinder.Tests/ProjectionPairingProbeTests.cs`、`TopKFinder.PerfTests/OrderedBlockHonestyTests.cs`、`TopKFinder.PerfTests/RelabelingOrbitFoldingTests.cs` |
+| 回归 / 诚实性测试 | `tests/TopKFinder.Tests/StrategyRegressionTests.cs`、`tests/TopKFinder.Tests/ProjectionOrbitMergeTests.cs`、`tests/TopKFinder.Tests/ProjectionPairingProbeTests.cs`、`tests/TopKFinder.PerfTests/OrderedBlockHonestyTests.cs`、`tests/TopKFinder.PerfTests/RelabelingOrbitFoldingTests.cs` |
 
 > 搜索 / 剪枝 / 最优性相关内容见 [`core-algorithm.md`](./core-algorithm.md)。本文只覆盖它未涉及的
 > **分支等价 pattern 渲染（可读性）** 部分。
+

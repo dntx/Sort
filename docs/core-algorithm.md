@@ -1,4 +1,4 @@
-# Core Algorithm: Optimal Top-k Strategy Search
+﻿# Core Algorithm: Optimal Top-k Strategy Search
 
 本文用中文系统地讲解本项目核心搜索算法的原理，包括问题定义、状态表示、归一化、极小化最坏步数的
 minimax 搜索、对称性约减，以及三种剪枝下界（信息论下界、反链宽度下界、支配下界）。其中反链宽度
@@ -1073,4 +1073,5 @@ width = ActiveCount - maxBipartiteMatching;   // GetActivePosetWidth
 | 支配下界 | `StrategyBuilder.Dominance.cs`、`ApplyDominanceLowerBound` |
 | 紧凑搜索变体 | `StrategyBuilder.Compact.cs` |
 | 构造式可行解（greedy 模式 step / 可行上界 U） | `StrategyBuilder.GreedyFeasible.cs` → `ExecuteGreedyFeasibleStage`、`ChooseConstructiveGroup`、`ConstructiveRootUpperBound`；`StrategyPlan.IsFeasibleUpperBound` |
-| 回归 / 计数监控 | `TopKFinder.Tests/StrategyRegressionTests.cs`、`DominanceMetricTests.cs` |
+| 回归 / 计数监控 | `tests/TopKFinder.Tests/StrategyRegressionTests.cs`、`DominanceMetricTests.cs` |
+

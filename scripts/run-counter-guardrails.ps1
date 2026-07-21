@@ -1,4 +1,4 @@
-param(
+﻿param(
     [ValidateSet("fast-default", "iterative-frontier", "compact", "full-counter-suite")]
     [string]$Profile = "fast-default",
     [ValidateSet("Debug", "Release")]
@@ -56,7 +56,7 @@ function Get-MatchedTests {
         [string]$Filter
     )
 
-    $listOutput = dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --configuration $Configuration --nologo --list-tests --filter $Filter
+    $listOutput = dotnet test .\tests\TopKFinder.Tests\TopKFinder.Tests.csproj --configuration $Configuration --nologo --list-tests --filter $Filter
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to list tests for filter preflight."
     }
@@ -114,7 +114,7 @@ $summary = [ordered]@{
     methods = @($profileMethods[$Profile])
     selectors = @($selectors)
     filter = $filter
-    command = "dotnet test .\\TopKFinder.Tests\\TopKFinder.Tests.csproj --configuration $Configuration --nologo --filter $filter"
+    command = "dotnet test .\\tests\\TopKFinder.Tests\\TopKFinder.Tests.csproj --configuration $Configuration --nologo --filter $filter"
 }
 
 Write-Host "Counter guardrail profile '$Profile'" -ForegroundColor Cyan
@@ -147,7 +147,7 @@ if ($ListOnly) {
     exit 0
 }
 
-dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj --configuration $Configuration --nologo --filter $filter
+dotnet test .\tests\TopKFinder.Tests\TopKFinder.Tests.csproj --configuration $Configuration --nologo --filter $filter
 $exitCode = $LASTEXITCODE
 $summary["executed"] = $true
 $summary["exitCode"] = $exitCode
@@ -156,3 +156,4 @@ Write-SummaryJson -Summary $summary -Path $SummaryJsonPath
 if ($exitCode -ne 0) {
     exit $exitCode
 }
+

@@ -8,7 +8,7 @@ using Xunit.Sdk;
 //
 // Enable:
 //   $env:RUN_PROOF_TIGHTEN_GATE = "1"
-//   dotnet test TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter ProofTightenPerfGateTests
+//   dotnet test tests\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter ProofTightenPerfGateTests
 //
 // Optional knobs:
 //   PROOF_TIGHTEN_TIMEOUT_SECONDS       (default 200)
