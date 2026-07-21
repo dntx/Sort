@@ -4,6 +4,7 @@ using System.Linq;
 using System.Reflection;
 using System.Threading;
 using Xunit;
+using TopKFinder;
 
 // Guards the greedy-mode proof-tighten pipeline (RunGreedyPipeline), whose step ceiling is the
 // constructive feasible upper bound U (ConstructiveRootUpperBound). The step phase has its own

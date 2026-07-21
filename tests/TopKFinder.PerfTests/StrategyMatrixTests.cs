@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using Xunit;
+using TopKFinder;
 
 // Nightly matrix gate for representative performance coverage across exact, greedy, greedy-tighten,
 // proof-tighten, and edge-compact stages. This is intentionally broader than the single-case

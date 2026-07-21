@@ -2,6 +2,7 @@ using System;
 using System.Reflection;
 using System.Windows.Forms;
 using Xunit;
+using TopKFinder;
 
 public sealed class MainFormRenderingTests
 {

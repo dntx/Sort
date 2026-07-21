@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Xunit;
+using TopKFinder;
 
 public sealed class ExactPipelineTests
 {
