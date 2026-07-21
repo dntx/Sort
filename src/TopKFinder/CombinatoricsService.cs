@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 
+namespace TopKFinder;
+
 static class CombinatoricsService
 {
     internal static IEnumerable<List<int>> EnumerateCombinations(

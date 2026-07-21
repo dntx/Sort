@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
+namespace TopKFinder;
+
 // Lightweight display-layer facade for the refactor track.
 //
 // Initial skeleton: keep rendering behavior byte-for-byte by delegating to the
