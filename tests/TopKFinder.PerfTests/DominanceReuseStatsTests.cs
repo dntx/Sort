@@ -1,4 +1,5 @@
 using System.Text;
+using TopKFinder;
 using Xunit;
 
 // On-demand measurement of the "subset reuse" opportunity: how often a state being solved (S2) has
