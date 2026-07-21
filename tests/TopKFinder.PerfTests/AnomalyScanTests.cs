@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Text;
+using TopKFinder;
 using Xunit;
 
 // On-demand automated anomaly scanner. It sweeps a grid of (n, m, k) inputs, builds the default
