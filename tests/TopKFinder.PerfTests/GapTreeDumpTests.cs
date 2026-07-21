@@ -1,3 +1,4 @@
+using TopKFinder;
 using Xunit;
 
 // On-demand dump that renders, for a single (n, m, k), the production DEFAULT plan next to the
