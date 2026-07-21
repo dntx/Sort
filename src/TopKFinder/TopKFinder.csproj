@@ -1,8 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
+    <AssemblyName>TopKFinder</AssemblyName>
     <TargetFramework>net8.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
+    <RootNamespace>TopKFinder</RootNamespace>
     <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
 </Project>
