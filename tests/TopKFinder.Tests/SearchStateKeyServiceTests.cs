@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using Xunit;
+using TopKFinder;
 
 public sealed class SearchStateKeyServiceTests
 {
