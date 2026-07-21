@@ -1,4 +1,5 @@
 using System;
+using TopKFinder;
 using Xunit;
 
 // Framework-level guards for the GreedyTighten (Phase 0) stage (StrategyBuilder.GreedyTighten.cs).
