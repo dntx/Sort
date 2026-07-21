@@ -1,5 +1,7 @@
 using System;
 
+namespace TopKFinder;
+
 readonly struct IntSequenceKey : IEquatable<IntSequenceKey>, IComparable<IntSequenceKey>
 {
     private readonly int[] _parts;

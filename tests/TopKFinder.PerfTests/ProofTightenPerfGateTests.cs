@@ -1,4 +1,5 @@
 using System;
+using TopKFinder;
 using Xunit;
 using Xunit.Abstractions;
 using Xunit.Sdk;

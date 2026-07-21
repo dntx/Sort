@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 
+namespace TopKFinder;
+
 sealed class StrategyDepthIndex
 {
     private readonly Dictionary<StrategyNode, int> _subtreeMaxStep = new(ReferenceEqualityComparer.Instance);

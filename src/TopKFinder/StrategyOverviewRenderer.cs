@@ -2,6 +2,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
+namespace TopKFinder;
+
 // A high-level, human-readable summary of a strategy. The detailed tree (see StrategyTextRenderer)
 // shows every state and outcome; this overview collapses the *representative* main line into a few
 // "rounds" so a reader can grasp the comparison structure at a glance -- e.g. "split 25 into 5

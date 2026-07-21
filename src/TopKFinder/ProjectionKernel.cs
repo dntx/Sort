@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
+namespace TopKFinder;
+
 static class ProjectionKernel
 {
     internal readonly record struct KernelBranchLine<T>(List<T> Members, bool ProjectionMerged);

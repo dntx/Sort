@@ -1,3 +1,4 @@
+using TopKFinder;
 using Xunit;
 
 public sealed class StrategyPerformanceTests

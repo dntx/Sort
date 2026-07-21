@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using TopKFinder;
 using Xunit;
 
 public sealed class StrategyRegressionTests

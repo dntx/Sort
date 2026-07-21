@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 
+namespace TopKFinder;
+
 // Display-layer planner for deciding how one merged search bucket is exposed as rendered branch
 // lines. It owns only the display-shaping policy: keep a whole bucket when the summary is honest,
 // otherwise fall back through parent orbits / projection-merged orbits / per-family lines.

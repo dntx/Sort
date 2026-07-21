@@ -1,3 +1,5 @@
+namespace TopKFinder;
+
 sealed class StrategyBuilderCompactState
 {
     public bool UseCompact;

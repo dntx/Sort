@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 
+namespace TopKFinder;
+
 static class GroupEnumerationService
 {
     internal static int[] BuildSortedColorSignature(int[] colors, IReadOnlyList<int> group)

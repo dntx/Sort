@@ -1,5 +1,7 @@
 using System;
 
+namespace TopKFinder;
+
 static class ProgressEstimationService
 {
     internal static double MapToReportedProgress(

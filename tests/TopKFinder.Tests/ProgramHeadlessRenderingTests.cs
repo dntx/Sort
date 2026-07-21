@@ -3,6 +3,7 @@ using System.IO;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using Xunit;
+using TopKFinder;
 
 public sealed class ProgramHeadlessRenderingTests
 {

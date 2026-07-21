@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using TopKFinder;
 using Xunit;
 
 // Verifies the core invariant behind symmetry-aware group generation: enumerating one

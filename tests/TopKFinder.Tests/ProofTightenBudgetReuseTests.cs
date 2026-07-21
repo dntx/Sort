@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using TopKFinder;
 using Xunit;
 
 // Guards the feasibility-only compact tightening cache behavior this change introduced:

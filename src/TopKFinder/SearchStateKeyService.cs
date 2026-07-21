@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 
+namespace TopKFinder;
+
 static class SearchStateKeyService
 {
     internal static SearchStateKey BuildSearchStateKey(
