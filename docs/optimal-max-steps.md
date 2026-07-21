@@ -1,4 +1,4 @@
-# 已证明的最优 max steps 速查表（known-optimal reference）
+﻿# 已证明的最优 max steps 速查表（known-optimal reference）
 
 本表记录一批 `(n, m, k)` 输入在 **exact 模式**下已证明的最优最坏步数（`max steps`，即
 `StrategyPlan.MaxStep`）。这些值都来自 exact / 精确搜索给出的 **proven optimal** 结果，可作为
@@ -15,7 +15,7 @@
   `k' = n−k`（见 `Program.RunHeadless` 的 `canonicalK`），所以本表里凡是 `k > n/2` 的行，其值与
   对应的 `n−k` 行一致。
 - **来源**：
-  - `tests`：来自 `TopKFinder.Tests/StrategyRegressionTests.cs` 的 `InlineData`（`ExecuteStepProofStage`，
+  - `tests`：来自 `tests/TopKFinder.Tests/StrategyRegressionTests.cs` 的 `InlineData`（`ExecuteStepProofStage`，
     已 pin 为回归基线）。
   - `exact-run`：通过 `TopKFinder <n> <m> <k> --mode exact` 实测，输出为
     `max steps = N (proven optimal)`。
@@ -93,3 +93,4 @@
 - 若某行同时被 `StrategyRegressionTests.cs` pin，请优先标 `tests`（那是会被 CI 校验的真源）。
 - 25,5,5 等前沿规模 exact 尚无法在合理时间内证明最优，故不在本表（20,5,5 已于本机 exact 证明 opt=7，
   38.4s，已入表）。
+

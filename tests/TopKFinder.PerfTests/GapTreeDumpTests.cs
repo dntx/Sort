@@ -6,7 +6,7 @@ using Xunit;
 //
 // Gated behind RUN_GAP_DUMP. To run:
 //   $env:RUN_GAP_DUMP = "1"; $env:GAP_DUMP_CASE = "10,4,8"
-//   dotnet test TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter GapTreeDump
+//   dotnet test tests\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter GapTreeDump
 // Knobs: GAP_DUMP_CASE (default "10,4,8"), GAP_DUMP_CAP (default 2000000),
 //   GAP_DUMP_PATH (default <repo>\compact-gap-dump.txt).
 public sealed class GapTreeDumpTests
@@ -94,7 +94,7 @@ public sealed class GapTreeDumpTests
     private static string FindRepoRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "TopKFinder.csproj")))
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "src", "TopKFinder", "TopKFinder.csproj")))
             dir = dir.Parent;
         return dir?.FullName ?? AppContext.BaseDirectory;
     }

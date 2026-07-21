@@ -10,7 +10,7 @@ using Xunit;
 // It is gated behind the RUN_ANOMALY_SCAN environment variable so it never runs in the normal
 // suite. To run:
 //   $env:RUN_ANOMALY_SCAN = "1"
-//   dotnet test TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter AnomalyScan
+//   dotnet test tests\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter AnomalyScan
 // Optional knobs: SCAN_NMAX (default 12), SCAN_CASE_TIMEOUT_SECONDS (default 25),
 //   SCAN_REPORT_PATH (default <repo>\anomaly-report.txt).
 //
@@ -412,7 +412,7 @@ public sealed class AnomalyScanTests
     private static string FindRepoRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "TopKFinder.csproj")))
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "src", "TopKFinder", "TopKFinder.csproj")))
             dir = dir.Parent;
         return dir?.FullName ?? AppContext.BaseDirectory;
     }

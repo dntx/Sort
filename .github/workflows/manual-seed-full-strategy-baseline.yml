@@ -55,7 +55,7 @@ jobs:
           dotnet-version: 8.0.x
 
       - name: Seed full strategy-matrix baseline
-        run: dotnet test .\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj -c Release --filter "StrategyMatrixTests"
+        run: dotnet test .\tests\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj -c Release --filter "StrategyMatrixTests"
 
       - name: Open PR with baseline update
         uses: peter-evans/create-pull-request@v6

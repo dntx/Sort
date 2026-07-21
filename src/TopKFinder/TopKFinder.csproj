@@ -5,8 +5,4 @@
     <Nullable>enable</Nullable>
     <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
-  <ItemGroup>
-    <Compile Remove="TopKFinder.Tests\**\*.cs" />
-    <Compile Remove="TopKFinder.PerfTests\**\*.cs" />
-  </ItemGroup>
 </Project>

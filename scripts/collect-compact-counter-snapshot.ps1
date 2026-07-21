@@ -1,4 +1,4 @@
-param(
+﻿param(
 	[ValidateSet("Debug", "Release")]
 	[string]$Configuration = "Release",
 	[string]$OutputJsonPath = ".\\artifacts\\compact-counter-snapshot.json",
@@ -22,9 +22,9 @@ $cases = @(
 	@{ n = 10; m = 2; k = 4; searchedCap = 17104; outcomesCap = 471864; duplicateCap = 469; compactStatesCap = 4118;       compactGroupsCap = 120336; compactStepOptimalCap = 29291 }
 )
 
-dotnet build .\TopKFinder.csproj -c $Configuration --nologo | Out-Null
+dotnet build .\src\TopKFinder\TopKFinder.csproj -c $Configuration --nologo | Out-Null
 
-$assemblyPath = Resolve-Path ".\\bin\\$Configuration\\net8.0-windows\\TopKFinder.dll"
+$assemblyPath = Resolve-Path ".\\src\\TopKFinder\\bin\\$Configuration\\net8.0-windows\\TopKFinder.dll"
 $assembly = [System.Reflection.Assembly]::LoadFrom($assemblyPath)
 $builderType = $assembly.GetType("StrategyBuilder", $true)
 
@@ -125,3 +125,4 @@ $rows |
 	} |
 	Sort-Object n, m, k |
 	Format-Table n, m, k, searchedDelta, outcomesDelta, duplicateDelta, compactStatesDelta, compactGroupsDelta, compactStepOptimalDelta -AutoSize
+

@@ -11,7 +11,7 @@ using Xunit;
 //
 // Gated behind RUN_DOMINANCE_STATS=1 so it never runs in the normal suite. To run:
 //   $env:RUN_DOMINANCE_STATS = "1"
-//   dotnet test TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter DominanceReuseStats
+//   dotnet test tests\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter DominanceReuseStats
 // Optional knobs: STATS_CASE_TIMEOUT_SECONDS (default 25), STATS_REPORT_PATH
 //   (default <repo>\dominance-reuse-report.txt).
 public sealed class DominanceReuseStatsTests
@@ -120,7 +120,7 @@ public sealed class DominanceReuseStatsTests
     private static string FindRepoRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "TopKFinder.csproj")))
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "src", "TopKFinder", "TopKFinder.csproj")))
             dir = dir.Parent;
         return dir?.FullName ?? AppContext.BaseDirectory;
     }

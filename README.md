@@ -1,4 +1,4 @@
-# TopK Finder
+﻿# TopK Finder
 
 Generate a **comparison strategy** for finding the top-k elements from n numbers when the only allowed operation is sorting at most m elements at a time.
 
@@ -47,7 +47,7 @@ The program has three entry points that share the same input validation
 ### Test lane quickstart
 
 - Core test lane (default local/PR validation):
-  - `dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj`
+  - `dotnet test .\tests\TopKFinder.Tests\TopKFinder.Tests.csproj`
 - Deterministic counter guardrail lane (machine-independent budgets):
   - `pwsh .\scripts\run-counter-guardrails.ps1 -Profile fast-default`
   - dry-run + summary: `pwsh .\scripts\run-counter-guardrails.ps1 -Profile compact -ListOnly -SummaryJsonPath .\artifacts\counter-guardrails-summary.json`
@@ -234,6 +234,7 @@ keeps the best plan found so far.
 For algorithmic details, proofs, and edge-case semantics, see
 `docs/core-algorithm.md` (sections on greedy pipeline and compact stage).
 
-Regression coverage lives in `TopKFinder.Tests/GreedyFeasibleStageTests.cs`,
-`TopKFinder.Tests/GreedyPipelineTests.cs`, `TopKFinder.Tests/GreedyTightenTests.cs`,
-and `TopKFinder.Tests/ProofTightenTests.cs`.
+Regression coverage lives in `tests/TopKFinder.Tests/GreedyFeasibleStageTests.cs`,
+`tests/TopKFinder.Tests/GreedyPipelineTests.cs`, `tests/TopKFinder.Tests/GreedyTightenTests.cs`,
+and `tests/TopKFinder.Tests/ProofTightenTests.cs`.
+

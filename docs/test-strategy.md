@@ -1,4 +1,4 @@
-# Test Strategy: Regression, Performance, and Correctness Guards
+﻿# Test Strategy: Regression, Performance, and Correctness Guards
 
 本文用中文系统地讲解本项目的测试体系：分层结构、各测试文件的职责、以「确定性计数器」作为
 **机器无关的时间代理**的性能监控哲学，以及如何新增 / 收紧（ratchet）各类基线。它与
@@ -19,7 +19,7 @@
 | 层 | 位置 | 机制 | 性质 | 职责 |
 | --- | --- | --- | --- | --- |
 | **A. 确定性计数器上限** | `TopKFinder.Tests`（主要在 `StrategyRegressionTests.cs`） | 断言各种**工作量计数器** `<= 上限`，或结构量 `==` 快照 | 零噪声、**机器无关**、可复现 | **主防线**：真正拦截性能 / 正确性退化 |
-| **B. 墙钟烟雾测试** | `TopKFinder.PerfTests/StrategyPerformanceTests.cs` | 跑若干次取中位数，断言 `中位数 ≤ X ms` | 有噪声、**机器相关** | **仅诊断**：只抓数量级爆炸或彻底卡死 |
+| **B. 墙钟烟雾测试** | `tests/TopKFinder.PerfTests/StrategyPerformanceTests.cs` | 跑若干次取中位数，断言 `中位数 ≤ X ms` | 有噪声、**机器相关** | **仅诊断**：只抓数量级爆炸或彻底卡死 |
 
 ### 1.1 为什么墙钟时间不可靠
 
@@ -196,7 +196,7 @@ GitHub Actions 侧提供了手动门槛工作流：
 
 ```powershell
 # Core（默认日常回归）
-dotnet test .\TopKFinder.Tests\TopKFinder.Tests.csproj
+dotnet test .\tests\TopKFinder.Tests\TopKFinder.Tests.csproj
 
 # 手动计数器护栏（机器无关）
 pwsh .\scripts\run-counter-guardrails.ps1 -Profile fast-default
@@ -311,7 +311,7 @@ Lane 决策表（先选信号，再选车道）：
 
 ```powershell
 $env:RUN_PROOF_TIGHTEN_GATE = "1"
-dotnet test TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter ProofTightenPerfGateTests
+dotnet test .\tests\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter ProofTightenPerfGateTests
 ```
 
 - 可选环境变量：
@@ -374,8 +374,10 @@ full nightly 报警（一步一步）:
    **上升**的改动都会让测试变红 → 视为性能退化，除非是有意 / 有记录的权衡。
 4. **删除临时 harness**：基线锁定后删掉测量代码，保持套件干净。
 
-> 注意构建陷阱：仓库**没有 .sln**，`dotnet build` 只会编译 `TopKFinder.csproj`。跑测试前必须显式
-> `dotnet build TopKFinder.Tests -c Release`（以及 PerfTests），否则会用到过期 dll。
+> 注意构建陷阱：仓库**没有 .sln**。请显式使用当前布局命令：
+> `dotnet build .\src\TopKFinder\TopKFinder.csproj`、
+> `dotnet test .\tests\TopKFinder.Tests\TopKFinder.Tests.csproj`、
+> `dotnet test .\tests\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter ProofTightenPerfGateTests`。
 
 ---
 
@@ -438,3 +440,4 @@ No tests added.
 max steps**，来源于 `StrategyRegressionTests.cs` 的 `InlineData` 基线与 `--mode exact` 实测。
 调研 greedy 上界紧度、验证算法改动、或需要“标准答案”时，可直接查表，避免重复跑耗时的 exact
 搜索。新增行请只填 exact 已证明（`proven optimal`）的值并注明来源。
+

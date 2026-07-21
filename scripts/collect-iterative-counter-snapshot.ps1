@@ -1,4 +1,4 @@
-param(
+﻿param(
     [ValidateSet("Debug", "Release")]
     [string]$Configuration = "Release",
     [string]$OutputJsonPath = ".\\artifacts\\iterative-counter-snapshot.json",
@@ -17,9 +17,9 @@ $cases = @(
     @{ n = 14; m = 6; k = 6; maxStep = 4; rootGroupCount = 6; totalEdges = 92; outputStates = 23; expandedOutputStates = 3; searchedCap = 45; outcomesCap = 404; candidateCap = 2341 }
 )
 
-dotnet build .\TopKFinder.csproj -c $Configuration --nologo | Out-Null
+dotnet build .\src\TopKFinder\TopKFinder.csproj -c $Configuration --nologo | Out-Null
 
-$assemblyPath = Resolve-Path ".\\bin\\$Configuration\\net8.0-windows\\TopKFinder.dll"
+$assemblyPath = Resolve-Path ".\\src\\TopKFinder\\bin\\$Configuration\\net8.0-windows\\TopKFinder.dll"
 $assembly = [System.Reflection.Assembly]::LoadFrom($assemblyPath)
 $builderType = $assembly.GetType("StrategyBuilder", $true)
 
@@ -116,3 +116,4 @@ Write-Host "Wrote snapshot CSV:  $OutputCsvPath" -ForegroundColor Green
 Write-Host ""
 Write-Host "Ratchet opportunities (delta > 0):" -ForegroundColor Cyan
 $rows | Where-Object { $_.searchedDelta -gt 0 -or $_.outcomesDelta -gt 0 -or $_.candidateDelta -gt 0 } | Sort-Object n,m,k | Format-Table n,m,k,searchedDelta,outcomesDelta,candidateDelta -AutoSize
+

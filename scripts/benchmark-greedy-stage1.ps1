@@ -69,7 +69,7 @@ function Invoke-CaseRun {
         $process = Start-Process -FilePath dotnet -ArgumentList @(
             'run',
             '--project',
-            '.\TopKFinder.csproj',
+            '.\src\TopKFinder\TopKFinder.csproj',
             '--configuration',
             $Configuration,
             '--',

@@ -12,7 +12,7 @@ using Xunit;
 //
 // Gated behind RUN_BLOCK_HONESTY. To run:
 //   $env:RUN_BLOCK_HONESTY = "1"
-//   dotnet test TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter OrderedBlockHonesty
+//   dotnet test tests\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter OrderedBlockHonesty
 // Knobs: BLOCK_HONESTY_NMAX (default 10), BLOCK_HONESTY_CAP (default 2000000),
 //   BLOCK_HONESTY_PATH (default <repo>\block-honesty-report.txt).
 public sealed class OrderedBlockHonestyTests
@@ -73,7 +73,7 @@ public sealed class OrderedBlockHonestyTests
     private static string FindRepoRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "TopKFinder.csproj")))
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "src", "TopKFinder", "TopKFinder.csproj")))
             dir = dir.Parent;
         return dir?.FullName ?? AppContext.BaseDirectory;
     }
