@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 
+namespace TopKFinder;
+
 static class BranchSelectionScoringService
 {
     internal static (int GuaranteedTopHits, int FreshItems, int UnrelatedScore, int UnresolvedPairs, int GroupSize)

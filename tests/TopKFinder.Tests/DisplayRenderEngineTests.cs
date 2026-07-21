@@ -1,4 +1,5 @@
 using Xunit;
+using TopKFinder;
 
 public sealed class DisplayRenderEngineTests
 {

@@ -1,3 +1,5 @@
+namespace TopKFinder;
+
 enum ProgressScope
 {
     DefaultStandalone = 0,
