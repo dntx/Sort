@@ -1,3 +1,3 @@
 global using DisplayTree = StrategyPlan;
 
-global using SearchTree = SearchStrategy;
+global using SearchTree = TopKFinder.SearchStrategy;
