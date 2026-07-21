@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 
+namespace TopKFinder;
+
 partial class StrategyBuilder
 {
     // Constructive feasible-strategy upper bound ("tournament keeping the poset").

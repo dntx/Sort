@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 
+namespace TopKFinder;
+
 sealed class StrategyBuilderSession
 {
     public StrategyBuilderCompactState Compact { get; } = new();

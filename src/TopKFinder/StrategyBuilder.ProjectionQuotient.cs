@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 
+namespace TopKFinder;
+
 // Principle-D projection-orbit merging, generalized to multi-family components. This is the engine
 // behind EnableProjectionOrbitMerging (Transitions.cs; default ON). It unions ALL parent orbits related
 // by a projection automorphism -- including count>=2 symmetric families, not just single orderings --

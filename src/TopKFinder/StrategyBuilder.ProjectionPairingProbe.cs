@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
+namespace TopKFinder;
+
 // Measurement-only probe (opt-in via EnableProjectionPairingProbe). It NEVER changes rendering or
 // the plan; it only accumulates per-bucket statistics during display materialization.
 //

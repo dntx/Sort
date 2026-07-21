@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using TopKFinder;
 using Xunit;
 
 namespace TopKFinder.Tests

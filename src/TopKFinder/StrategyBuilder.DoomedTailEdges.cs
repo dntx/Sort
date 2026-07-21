@@ -4,6 +4,8 @@ using System.Linq;
 using System.Numerics;
 using System.Text;
 
+namespace TopKFinder;
+
 partial class StrategyBuilder
 {
     // Builds the "doomed-tail edge" view of a comparison step, in which every ordering that

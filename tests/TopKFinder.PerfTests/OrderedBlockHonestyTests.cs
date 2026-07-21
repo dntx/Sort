@@ -1,3 +1,4 @@
+using TopKFinder;
 using Xunit;
 
 // Honesty/completeness sweep for the ordered-block-permutation detector (StrategyBuilder.EquivalentOrders.cs).

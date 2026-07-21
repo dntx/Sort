@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 
+namespace TopKFinder;
+
 partial class StrategyBuilder
 {
     private Dictionary<SearchStateKey, int>? _constructiveDepthMemo

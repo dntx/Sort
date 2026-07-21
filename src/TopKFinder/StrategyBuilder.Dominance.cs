@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 
+namespace TopKFinder;
+
 // Measurement-only instrumentation (opt-in via EnableDominanceMetric).
 //
 // It quantifies how often a "dominance" / subsumption relation between the state currently being

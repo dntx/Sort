@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 
+namespace TopKFinder;
+
 partial class StrategyBuilder
 {
     private const int DefaultGreedyTightenCandidateCap = 128;

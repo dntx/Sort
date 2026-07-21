@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 
+namespace TopKFinder;
+
 partial class StrategyBuilder
 {
     private ulong GetGuaranteedTopMask(ComparisonState state, int remainingSlots)

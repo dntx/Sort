@@ -4,6 +4,8 @@ using System.Linq;
 using System.Numerics;
 using System.Text.RegularExpressions;
 
+namespace TopKFinder;
+
 partial class StrategyBuilder
 {
     private IEnumerable<OrderFamilyDescriptor> EnumerateFeasibleOrderFamilies(ComparisonState state, IReadOnlyList<int> group)

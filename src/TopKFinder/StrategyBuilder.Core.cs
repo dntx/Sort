@@ -5,6 +5,8 @@ using System.Linq;
 using System.Numerics;
 using System.Threading;
 
+namespace TopKFinder;
+
 partial class StrategyBuilder
 {
     private readonly StrategyBuilderSession _session = new();
