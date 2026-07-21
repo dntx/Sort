@@ -261,3 +261,12 @@ VERDICT: BLOCK
         for call in print_mock.call_args_list
     ]
     assert any("Suppressed false empty-description structural bullet(s)" in msg for msg in log_messages)
+
+
+def test_has_reasonable_no_test_explanation_accepts_namespace_normalization_wording():
+    pr_body = """## Why no test
+1. Behavior risk is low: this change is namespace/import normalization only (no algorithm/control-flow/data-path edits).
+2. Existing coverage/verification already guards the change: build succeeds, get_errors is clean, and targeted subset tests pass.
+"""
+
+    assert ai_review._has_reasonable_no_test_explanation(pr_body)
