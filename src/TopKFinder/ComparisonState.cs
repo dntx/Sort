@@ -3,6 +3,8 @@ using System.Numerics;
 using System.Threading;
 using System.Collections.Generic;
 
+namespace TopKFinder;
+
 class ComparisonState
 {
     [ThreadStatic] private static CancellationToken _threadCancellationToken;

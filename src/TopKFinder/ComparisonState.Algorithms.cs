@@ -1,6 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Reflection;
+
+namespace TopKFinder
+{
 
 internal static class ComparisonStateAlgorithms
 {
@@ -541,5 +545,33 @@ internal static class ComparisonStateAlgorithms
         public int[] Perm { get; }
         public int[] Individualized { get; }
         public int[] Signature { get; }
+    }
+}
+
+}
+
+internal static class ComparisonStateAlgorithms
+{
+    private static int[] ReadCanonicalKey(int a, ulong[] anc, int[] seed, int[] colors)
+    {
+        Type? targetType = typeof(ComparisonState).Assembly.GetType("TopKFinder.ComparisonStateAlgorithms");
+        if (targetType is null)
+            throw new InvalidOperationException("Canonical key helper type was not found.");
+
+        MethodInfo? target = targetType.GetMethod(
+            "ReadCanonicalKey",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        if (target is null)
+            throw new InvalidOperationException("Canonical key helper method was not found.");
+
+        try
+        {
+            return (int[])target.Invoke(null, new object?[] { a, anc, seed, colors })!;
+        }
+        catch (TargetInvocationException ex) when (ex.InnerException is not null)
+        {
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+            throw;
+        }
     }
 }
