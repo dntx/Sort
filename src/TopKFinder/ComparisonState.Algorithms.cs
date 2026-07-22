@@ -1,6 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Reflection;
+
+namespace TopKFinder
+{
 
 internal static class ComparisonStateAlgorithms
 {
@@ -542,4 +546,6 @@ internal static class ComparisonStateAlgorithms
         public int[] Individualized { get; }
         public int[] Signature { get; }
     }
+}
+
 }
