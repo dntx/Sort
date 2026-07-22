@@ -112,10 +112,11 @@ public sealed class ComparisonStateTests
     [Fact]
     public void ReadCanonicalKey_InvalidColorRank_ThrowsDeterministicInvariantException()
     {
-        Type? algorithmsType = typeof(ComparisonState).Assembly.GetType("ComparisonStateAlgorithms");
+        Type? algorithmsType = typeof(ComparisonState).Assembly.GetType("TopKFinder.ComparisonStateAlgorithms");
         Assert.NotNull(algorithmsType);
+        Assert.Equal("TopKFinder", algorithmsType!.Namespace);
 
-        MethodInfo? readCanonicalKey = algorithmsType!.GetMethod(
+        MethodInfo? readCanonicalKey = algorithmsType.GetMethod(
             "ReadCanonicalKey",
             BindingFlags.NonPublic | BindingFlags.Static);
         Assert.NotNull(readCanonicalKey);
