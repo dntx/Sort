@@ -43,4 +43,56 @@ partial class StrategyBuilder
     private int _compactStatesSolved { get => _session.CompactStatesSolved; set => _session.CompactStatesSolved = value; }
     private int _compactGroupsEnumerated { get => _session.CompactGroupsEnumerated; set => _session.CompactGroupsEnumerated = value; }
     private int _compactStepOptimalGroups { get => _session.CompactStepOptimalGroups; set => _session.CompactStepOptimalGroups = value; }
+
+    private void EnsureCompactSolved()
+    {
+        if (_phase1bSolved && _compactPatternCacheReadyForMaterialization)
+            return;
+
+        // Optional phase 1b: among equally-optimal groups, choose the ones that minimize the
+        // materialized subtree size (a proxy for displayed output states). The root budget is the
+        // proven optimum for exact mode, or the constructive feasible upper bound U for feasible mode:
+        // the materialized U threaded from the step phase when present (tightest, keeps the edge plan
+        // no worse than step), else the sound-but-looser lean ConstructiveRootUpperBound.
+        int rootBudget = _compactUsesFeasibleBudget
+            ? (_feasibleRootBudgetActive >= 0
+                ? _feasibleRootBudgetActive
+                : (_feasibleRootBudget >= 0 ? _feasibleRootBudget : ConstructiveRootUpperBound()))
+            : int.MaxValue;
+        _compactRootCost = SolveCompact(new ComparisonState(_n), _k, rootBudget);
+        _phase1bSolved = true;
+        _compactPatternCacheReadyForMaterialization = _compactRootCost != int.MaxValue;
+    }
+
+    private void ResetPerBuildTransientState()
+    {
+        _stateIds.Clear();
+        _expandedStates.Clear();
+        _materializationDisplayPath.Clear();
+        _nextStateId = 1;
+
+        _session.ResetPerBuildTransientState();
+        _searchedStates = 0;
+        _lastReportedVisitedStatesCount = 0;
+        _feasiblePhase2StartMs = -1;
+        _feasiblePhaseSolved = false;
+        _pendingStates = 0;
+        _peakPendingStates = 0;
+        _progressEstimateInitialized = false;
+        _progressEstimateEma01 = 0.0;
+        _lastProgressSampleElapsedMs = -1;
+        _lastProgressSampleSearched = 0;
+        _pendingCostEstimateInitialized = false;
+        _pendingCostStatesPerPending = 0.0;
+        _pendingCostConservativeStatesPerPending = 0.0;
+        _pendingAtCostSample = -1;
+        _searchedSinceCostSample = 0;
+        _searchRateEstimateInitialized = false;
+        _searchRateStatesPerMs = 0.0;
+        _pendingZeroSettling = false;
+        _pendingZeroSinceMs = 0;
+        _pendingZeroSearchedAtStart = 0;
+        _cancellationProbeCounter = 0;
+        _forceImmediateCancellationProbe = false;
+    }
 }
