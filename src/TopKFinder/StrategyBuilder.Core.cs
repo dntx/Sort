@@ -90,6 +90,10 @@ partial class StrategyBuilder
     internal bool? ForceIterativeDeepeningForTesting { get; set; }
     private CompactSolver? _compactSolver;
     private CompactSolver CompactSolverInstance => _compactSolver ??= new CompactSolver(this);
+    private ProgressOrchestrator? _progressOrchestrator;
+    private ProgressOrchestrator Progress => _progressOrchestrator ??= new ProgressOrchestrator(this);
+    private SearchBoundsOrchestrator? _searchBoundsOrchestrator;
+    private SearchBoundsOrchestrator SearchBounds => _searchBoundsOrchestrator ??= new SearchBoundsOrchestrator(this);
     private readonly Dictionary<IntSequenceKey, int> _stateIds = new();
     private readonly Dictionary<IntSequenceKey, ExpandedStateSnapshot> _expandedStates = new();
     // Active display-key recursion path while materializing a GreedyTighten tree. Used to reject
@@ -862,42 +866,7 @@ partial class StrategyBuilder
 
     private void ReportProgress(bool force = false)
     {
-        if (_progressCallback is null)
-            return;
-
-        _searchedStates = _visitedSearchStates.Count;
-        long elapsedMs = _progressStopwatch.ElapsedMilliseconds;
-        if (!force && elapsedMs - _lastProgressReportMs < ProgressReportIntervalMs)
-            return;
-
-        _lastProgressReportMs = elapsedMs;
-            double localProgress = EstimateProgress(elapsedMs);
-            double estimatedProgress01 = MapToReportedProgress(localProgress);
-        _progressCallback(new SearchProgressSnapshot(
-            elapsedMs,
-            _searchedStates,
-            _pendingStates,
-            _peakPendingStates,
-            _stateIds.Count,
-            _rootIncumbents.Count == 0 ? null : _rootIncumbents[^1],
-            _rootIncumbents.Count,
-            _lowerBoundPrunes,
-            _duplicateOutcomeSkips,
-            _mergedOutcomeCollisions,
-            _exactCacheHits,
-            _lowerBoundCacheHits,
-            _feasibleTopSetCacheHits,
-            _bestGroupPatternCacheHits,
-            _outcomesConstructed,
-            _candidateGroupsEnumerated,
-            _lowerBoundStepsCache.Count,
-            _feasibleTopSetCache.Count,
-            _compactStatesSolved,
-            _compactGroupsEnumerated,
-            _compactStepOptimalGroups,
-            _feasibleCompactStateEstimate,
-            estimatedProgress01,
-            _rootProvenLowerBound));
+        Progress.ReportProgress(force);
     }
 
     // For feasible-stage incremental progress: periodically check visited-state count and report
@@ -905,291 +874,17 @@ partial class StrategyBuilder
     // progress updates during the possibly-slow recursive materialization of the greedy tree.
     internal void ThrottledReportProgressDuringFeasibleBuild()
     {
-        if (_progressCallback is null || _progressScope != ProgressScope.FeasibleInCombinedRun)
-            return;
-
-        long elapsedMs = _progressStopwatch.ElapsedMilliseconds;
-        if (elapsedMs - _lastProgressReportMs < ProgressReportIntervalMs)
-            return;
-
-        // Only report if the visited-state count has actually changed, to avoid redundant calls.
-        int currentVisitedCount = _visitedSearchStates.Count;
-        if (currentVisitedCount <= _lastReportedVisitedStatesCount)
-            return;
-
-        _lastReportedVisitedStatesCount = currentVisitedCount;
-        _searchedStates = currentVisitedCount;
-        _lastProgressReportMs = elapsedMs;
-
-        double localProgress = EstimateProgress(elapsedMs);
-        double estimatedProgress01 = MapToReportedProgress(localProgress);
-        _progressCallback(new SearchProgressSnapshot(
-            elapsedMs,
-            _searchedStates,
-            _pendingStates,
-            _peakPendingStates,
-            _stateIds.Count,
-            _rootIncumbents.Count == 0 ? null : _rootIncumbents[^1],
-            _rootIncumbents.Count,
-            _lowerBoundPrunes,
-            _duplicateOutcomeSkips,
-            _mergedOutcomeCollisions,
-            _exactCacheHits,
-            _lowerBoundCacheHits,
-            _feasibleTopSetCacheHits,
-            _bestGroupPatternCacheHits,
-            _outcomesConstructed,
-            _candidateGroupsEnumerated,
-            _lowerBoundStepsCache.Count,
-            _feasibleTopSetCache.Count,
-            _compactStatesSolved,
-            _compactGroupsEnumerated,
-            _compactStepOptimalGroups,
-            _feasibleCompactStateEstimate,
-            estimatedProgress01,
-            _rootProvenLowerBound));
+        Progress.ThrottledReportProgressDuringFeasibleBuild();
     }
 
     private double MapToReportedProgress(double localProgress01)
     {
-        return ProgressEstimationService.MapToReportedProgress(
-            _reportCombinedRunProgress,
-            _progressScope,
-            localProgress01,
-            ProgressTuning.CombinedRun.FeasibleSpanPercent,
-            ProgressTuning.CombinedRun.DefaultSpanPercent,
-            ProgressTuning.CombinedRun.CompactPrimaryBasePercent,
-            ProgressTuning.CombinedRun.CompactPrimarySpanPercent,
-            ProgressTuning.CombinedRun.CompactFeasibleBasePercent,
-            ProgressTuning.CombinedRun.CompactFeasibleSpanPercent);
+        return Progress.MapToReportedProgress(localProgress01);
     }
 
     private double EstimateProgress(long elapsedMs)
     {
-        // Greedy-mode feasible (step) phase: use a self-correcting asymptote like the edge phase.
-        // progress = elapsed / (elapsed + remaining_estimate), which smoothly grows from 0% toward 100%
-        // without plateauing. We conservatively assume at least 500ms of remaining work ahead.
-        if (_progressScope == ProgressScope.FeasibleInCombinedRun)
-        {
-            if (_feasiblePhaseSolved)
-                return 1.0;
-
-            if (_feasiblePhase2StartMs < 0)
-                return 0.0;
-
-            long elapsedInPhase2 = elapsedMs - _feasiblePhase2StartMs;
-            return ProgressEstimationService.EstimateAsymptoticProgress(
-                elapsedInPhase2,
-                ProgressTuning.Asymptote.MinimumRemainingMs,
-                ProgressTuning.Asymptote.InitialRemainingMs,
-                ProgressTuning.Asymptote.ElapsedDivisor,
-                ProgressTuning.Asymptote.FeasibleSoftCap);
-        }
-
-        // Greedy-mode edge phase: the compact solve has no pending/searched signal (those counters are
-        // reset and never touched here), so drive progress off _compactStatesSolved. Once the solve
-        // finishes (_phase1bSolved) the remaining phase-2 materialization is effectively instant, so
-        // report a full local fraction. MapToReportedProgress bands this into the edge stage's
-        // 10%..100% slice for the displayed progress.
-        if (_progressScope == ProgressScope.CompactFeasibleInCombinedRun)
-        {
-            if (_phase1bSolved)
-                return 1.0;
-
-            // Per-stage fraction: fraction = solved / (solved + scale) asymptote.
-            // Falls back to 0 when the scale anchor is unavailable (standalone edge with no prior step).
-            double stageFraction = 0.0;
-            if (_feasibleCompactStateEstimate > 0)
-            {
-                stageFraction = ProgressEstimationService.EstimateSolvedVsScaleProgress(
-                    _compactStatesSolved,
-                    _feasibleCompactStateEstimate,
-                    ProgressTuning.Asymptote.CompactFeasibleSoftCap);
-            }
-
-            // Blend with the outer L < step < U loop structure: in the worst case every budget level
-            // from U-1 down to L is tried one by one, for totalRange = (U-1) - L + 1 = U - L stages.
-            // completedStages is the number of budget levels already resolved; each successful tighten
-            // can jump by more than 1, so the bar leaps forward whenever the step drops sharply.
-            if (_proofTightenInitialBudget >= 0 && _proofTightenCurrentBudget >= 0)
-            {
-                int totalRange = _proofTightenInitialBudget - _proofTightenLowerBound + 1;
-                if (totalRange > 0)
-                {
-                    int completedStages = _proofTightenInitialBudget - _proofTightenCurrentBudget;
-                    double rawCombined = (completedStages + stageFraction) / totalRange;
-                    rawCombined = Math.Clamp(rawCombined, 0.0, ProgressTuning.Asymptote.CompactFeasibleSoftCap);
-
-                    // Slight smoothing for budget-boundary jumps: preserve trend but make abrupt
-                    // "next proof ceiling" transitions visually less hard.
-                    if (!_proofTightenProgressEmaInitialized)
-                    {
-                        _proofTightenProgressEmaInitialized = true;
-                        _proofTightenProgressEma01 = rawCombined;
-                    }
-                    else
-                    {
-                        _proofTightenProgressEma01 +=
-                            ProgressTuning.Ema.ProofTightenCombinedProgressAlpha *
-                            (rawCombined - _proofTightenProgressEma01);
-                    }
-
-                    return _proofTightenProgressEma01;
-                }
-            }
-
-            return stageFraction;
-        }
-
-        if (_searchedStates <= 0)
-            return 0.0;
-
-        if (_lastProgressSampleElapsedMs >= 0)
-        {
-            int deltaSearched = Math.Max(0, _searchedStates - _lastProgressSampleSearched);
-            long deltaElapsedMs = Math.Max(0, elapsedMs - _lastProgressSampleElapsedMs);
-            if (deltaElapsedMs > 0 && deltaSearched > 0)
-            {
-                double observedSearchRate = deltaSearched / (double)deltaElapsedMs;
-                if (!_searchRateEstimateInitialized)
-                {
-                    _searchRateEstimateInitialized = true;
-                    _searchRateStatesPerMs = observedSearchRate;
-                }
-                else
-                {
-                    _searchRateStatesPerMs += ProgressTuning.Ema.SearchRateAlpha * (observedSearchRate - _searchRateStatesPerMs);
-                }
-            }
-
-            if (_pendingAtCostSample < 0)
-                _pendingAtCostSample = _pendingStates;
-
-            _searchedSinceCostSample += deltaSearched;
-
-            int consumedPending = _pendingAtCostSample - _pendingStates;
-            if (consumedPending > 0 && _searchedSinceCostSample > 0)
-            {
-                // Download-like adaptive throughput: estimate how many searched states are
-                // needed to consume one pending state, then update continuously.
-                double observedCostPerPending = _searchedSinceCostSample / (double)consumedPending;
-                if (!_pendingCostEstimateInitialized)
-                {
-                    _pendingCostEstimateInitialized = true;
-                    _pendingCostStatesPerPending = observedCostPerPending;
-                    _pendingCostConservativeStatesPerPending = observedCostPerPending;
-                }
-                else
-                {
-                    _pendingCostStatesPerPending += ProgressTuning.Ema.PendingCostAlpha * (observedCostPerPending - _pendingCostStatesPerPending);
-
-                    double conservativeAlpha =
-                        observedCostPerPending >= _pendingCostConservativeStatesPerPending
-                            ? ProgressTuning.Ema.PendingCostConservativeRiseAlpha
-                            : ProgressTuning.Ema.PendingCostConservativeFallAlpha;
-                    _pendingCostConservativeStatesPerPending +=
-                        conservativeAlpha * (observedCostPerPending - _pendingCostConservativeStatesPerPending);
-                }
-
-                _searchedSinceCostSample = 0;
-                _pendingAtCostSample = _pendingStates;
-            }
-            else if (_pendingStates > _pendingAtCostSample)
-            {
-                _pendingAtCostSample = _pendingStates;
-            }
-
-            if (_pendingStates > 0 && _searchedSinceCostSample > 0 && _pendingCostEstimateInitialized)
-            {
-                double noDrainFloor = _searchedSinceCostSample / (double)_pendingStates;
-                _pendingCostStatesPerPending = Math.Max(_pendingCostStatesPerPending, noDrainFloor);
-                _pendingCostConservativeStatesPerPending = Math.Max(_pendingCostConservativeStatesPerPending, noDrainFloor);
-            }
-        }
-
-        _lastProgressSampleElapsedMs = elapsedMs;
-        _lastProgressSampleSearched = _searchedStates;
-
-        if (!_pendingCostEstimateInitialized)
-        {
-            _pendingCostEstimateInitialized = true;
-            _pendingCostStatesPerPending = _pendingStates > 0
-                ? Math.Max(ProgressTuning.Pending.CostBootstrapFloor, _searchedStates / (double)_pendingStates)
-                : ProgressTuning.Pending.CostBootstrapFloor;
-            _pendingCostConservativeStatesPerPending = _pendingCostStatesPerPending;
-        }
-
-        bool isDefaultScope =
-            _progressScope is ProgressScope.DefaultStandalone or ProgressScope.DefaultInCombinedRun;
-        double costPerPending = Math.Max(1.0, _pendingCostStatesPerPending);
-        if (isDefaultScope)
-            costPerPending = Math.Max(costPerPending, _pendingCostConservativeStatesPerPending);
-
-        int effectivePending = _pendingStates;
-        if (_pendingStates == 0)
-        {
-            if (!_pendingZeroSettling)
-            {
-                _pendingZeroSettling = true;
-                _pendingZeroSinceMs = elapsedMs;
-                _pendingZeroSearchedAtStart = _searchedStates;
-            }
-
-            bool zeroSettled =
-                elapsedMs - _pendingZeroSinceMs >= ProgressTuning.Pending.ZeroSettlingWindowMs &&
-                _searchedStates == _pendingZeroSearchedAtStart;
-            if (zeroSettled)
-            {
-                _progressEstimateInitialized = true;
-                _progressEstimateEma01 = 1.0;
-                return 1.0;
-            }
-
-            // Avoid instant "100%" spikes when pending briefly touches zero mid-search.
-            effectivePending = 1;
-        }
-        else
-        {
-            _pendingZeroSettling = false;
-        }
-
-        if (isDefaultScope && effectivePending <= ProgressTuning.Pending.TailThreshold)
-        {
-            // In default phase, tiny pending counts are often heavy tails rather than near-finish.
-            // Apply a conservative inflation so progress does not pin near 100% too early.
-            double inflation = effectivePending switch
-            {
-                1 => ProgressTuning.Pending.TailInflationOnePending,
-                2 => ProgressTuning.Pending.TailInflationTwoPending,
-                _ => ProgressTuning.Pending.TailInflationThreePending,
-            };
-            costPerPending *= inflation;
-        }
-
-        double estimatedRemainingSearchStates = effectivePending * costPerPending;
-        double estimatedTotal = _searchedStates + estimatedRemainingSearchStates;
-        if (estimatedTotal <= 0)
-            return 0.0;
-
-        double rawProgress = Math.Clamp(_searchedStates / estimatedTotal, 0.0, 1.0);
-        if (effectivePending > 0)
-            rawProgress = Math.Min(rawProgress, ProgressTuning.Asymptote.RawProgressSoftCapWithPending);
-
-        if (!_progressEstimateInitialized)
-        {
-            _progressEstimateInitialized = true;
-            _progressEstimateEma01 = rawProgress;
-        }
-        else
-        {
-            double alpha = rawProgress >= _progressEstimateEma01
-                ? ProgressTuning.Ema.ProgressRiseAlpha
-                : ProgressTuning.Ema.ProgressFallAlpha;
-            _progressEstimateEma01 += alpha * (rawProgress - _progressEstimateEma01);
-        }
-
-        double progress = Math.Clamp(_progressEstimateEma01, 0.0, 1.0);
-        return progress;
+        return Progress.EstimateProgress(elapsedMs);
     }
 
     private void ObserveSearchState(ComparisonState state, int remainingSlots)
@@ -1199,17 +894,7 @@ partial class StrategyBuilder
 
     private void RecordRootIncumbent(int bestWorstCaseSteps, IReadOnlyList<int> group)
     {
-        _searchedStates = _visitedSearchStates.Count;
-        _rootIncumbents.Add(new SearchMilestone(
-            bestWorstCaseSteps,
-            $"sort({FormatItemSet(group)})",
-            _progressStopwatch.ElapsedMilliseconds,
-            _searchedStates,
-            _pendingStates,
-            _peakPendingStates,
-            _stateIds.Count,
-            _lowerBoundPrunes));
-        ReportProgress(force: true);
+        Progress.RecordRootIncumbent(bestWorstCaseSteps, group);
     }
 
     // Monotonically lifts the root proven lower bound (the L side of the squeeze). Called only
@@ -1217,10 +902,7 @@ partial class StrategyBuilder
     // though the single-pass path reports the analytic bound before the exact result.
     private void RecordRootProvenLowerBound(int provenLowerBound)
     {
-        if (provenLowerBound <= _rootProvenLowerBound)
-            return;
-        _rootProvenLowerBound = provenLowerBound;
-        ReportProgress(force: true);
+        Progress.RecordRootProvenLowerBound(provenLowerBound);
     }
     private void ThrowIfCancellationRequested()
     {
