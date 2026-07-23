@@ -44,7 +44,7 @@ Core search logic must not directly depend on text rendering APIs.
 4. Verification commands
 - rg --line-number "StrategyTextRenderer\\." StrategyBuilder*.cs
 - dotnet build d:/Code/Sort2/src/TopKFinder/TopKFinder.csproj
-- dotnet test ./tests/TopKFinder.Tests/TopKFinder.Tests.csproj --filter "DisplayRenderEngineTests|StrategyTextRendererTests|ProgramHeadlessRenderingTests|MainFormRenderingTests"
+- dotnet test TopKFinder.Tests.csproj --filter "DisplayRenderEngineTests|StrategyTextRendererTests|ProgramHeadlessRenderingTests|MainFormRenderingTests"
 
 5. Return format
 - Changed files
@@ -118,7 +118,7 @@ Unify mode and stage wording to exact/greedy; remove legacy A/B language.
 - Behavior impact: Equivalent (BuildState-adjacent display materialization and group-selection flow were extracted behind an internal helper; no algorithm, cache-ownership, or public API changes)
 - Verification commands:
   - dotnet build d:/Code/Sort2/src/TopKFinder/TopKFinder.csproj
-  - dotnet test ./tests/TopKFinder.Tests/TopKFinder.Tests.csproj --filter "ExactPipelineTests|GreedyPipelineTests|ProgramHeadlessRenderingTests|MainFormRenderingTests|StrategyRegressionTests|DisplaySearchParityTests"
+  - dotnet test TopKFinder.Tests.csproj --filter "ExactPipelineTests|GreedyPipelineTests|ProgramHeadlessRenderingTests|MainFormRenderingTests|StrategyRegressionTests|DisplaySearchParityTests"
 - Verification result:
   - build: succeeded
   - tests: blocked in this environment by application control policy when loading TopKFinder.Tests.dll (`0x800711C7`)
@@ -135,7 +135,7 @@ Unify mode and stage wording to exact/greedy; remove legacy A/B language.
 - Behavior impact: Equivalent (pure helper extraction only; canonicalization, active-item colors, and order-automorphism behavior remain unchanged)
 - Verification commands:
   - dotnet build d:/Code/Sort2/src/TopKFinder/TopKFinder.csproj
-  - dotnet test ./tests/TopKFinder.Tests/TopKFinder.Tests.csproj --filter "ComparisonStateTests|FreeSymmetryClassTests|SearchStateKeyServiceTests|ProjectionOrbitMergeTests"
+  - dotnet test TopKFinder.Tests.csproj --filter "ComparisonStateTests|FreeSymmetryClassTests|SearchStateKeyServiceTests|ProjectionOrbitMergeTests"
 - Verification result:
   - build: succeeded
   - tests: implementation session reported passing before PR 400 check-in
@@ -152,7 +152,7 @@ Unify mode and stage wording to exact/greedy; remove legacy A/B language.
 - Behavior impact: Equivalent (key-type extraction only; no canonicalization or search behavior change)
 - Verification commands:
   - dotnet build d:/Code/Sort2/src/TopKFinder/TopKFinder.csproj
-  - dotnet test ./tests/TopKFinder.Tests/TopKFinder.Tests.csproj --filter "ComparisonStateTests|SearchStateKeyServiceTests|FreeSymmetryClassTests|StrategyBuilderSessionTests"
+  - dotnet test TopKFinder.Tests.csproj --filter "ComparisonStateTests|SearchStateKeyServiceTests|FreeSymmetryClassTests|StrategyBuilderSessionTests"
 - Verification result:
   - build: succeeded
   - tests: implementation session reported passing before PR 399 check-in
@@ -172,7 +172,7 @@ Unify mode and stage wording to exact/greedy; remove legacy A/B language.
 - Behavior impact: Equivalent (internal transition-planner extraction only; StrategyBuilder still exposes the same public entrypoints and transition behavior)
 - Verification commands:
   - dotnet build d:/Code/Sort2/src/TopKFinder/TopKFinder.csproj
-  - dotnet test ./tests/TopKFinder.Tests/TopKFinder.Tests.csproj --filter "DisplaySearchParityTests|ProjectionKernelTests|ProjectionOrbitMergeTests|ProgramHeadlessRenderingTests|SearchTransitionPlannerStructureTests|StrategyRegressionTests"
+  - dotnet test TopKFinder.Tests.csproj --filter "DisplaySearchParityTests|ProjectionKernelTests|ProjectionOrbitMergeTests|ProgramHeadlessRenderingTests|SearchTransitionPlannerStructureTests|StrategyRegressionTests"
 - Verification result:
   - build: succeeded (0 warnings, 0 errors)
   - tests: execution currently blocked in this environment by application control policy when test code loads TopKFinder.dll (`System.IO.FileLoadException`, `0x800711C7`)
@@ -191,7 +191,7 @@ Unify mode and stage wording to exact/greedy; remove legacy A/B language.
 - Behavior impact: Equivalent (entry orchestration and stage protocol exits are consolidated; algorithm/output semantics unchanged)
 - Verification commands:
   - dotnet build d:/Code/Sort2/src/TopKFinder/TopKFinder.csproj
-  - dotnet test ./tests/TopKFinder.Tests/TopKFinder.Tests.csproj --filter "CliArgsTests|ProgramHeadlessRenderingTests|MainFormRenderingTests|ExactPipelineTests|GreedyPipelineTests"
+  - dotnet test TopKFinder.Tests.csproj --filter "CliArgsTests|ProgramHeadlessRenderingTests|MainFormRenderingTests|ExactPipelineTests|GreedyPipelineTests"
 - Verification result:
   - build: succeeded (0 warnings, 0 errors)
   - tests: passed (65/65)
@@ -209,7 +209,7 @@ Unify mode and stage wording to exact/greedy; remove legacy A/B language.
 - Verification commands:
   - rg --line-number "StrategyTextRenderer\\." StrategyBuilder*.cs
   - dotnet build d:/Code/Sort2/src/TopKFinder/TopKFinder.csproj
-  - dotnet test ./tests/TopKFinder.Tests/TopKFinder.Tests.csproj --filter "DisplayRenderEngineTests|StrategyTextRendererTests|ProgramHeadlessRenderingTests|MainFormRenderingTests"
+  - dotnet test TopKFinder.Tests.csproj --filter "DisplayRenderEngineTests|StrategyTextRendererTests|ProgramHeadlessRenderingTests|MainFormRenderingTests"
 - Verification result:
   - rg: no matches
   - build: succeeded (0 warnings, 0 errors)

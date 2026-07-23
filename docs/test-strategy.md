@@ -19,7 +19,7 @@
 | 层 | 位置 | 机制 | 性质 | 职责 |
 | --- | --- | --- | --- | --- |
 | **A. 确定性计数器上限** | `TopKFinder.Tests`（主要在 `StrategyRegressionTests.cs`） | 断言各种**工作量计数器** `<= 上限`，或结构量 `==` 快照 | 零噪声、**机器无关**、可复现 | **主防线**：真正拦截性能 / 正确性退化 |
-| **B. 墙钟烟雾测试** | `tests/TopKFinder.PerfTests/StrategyPerformanceTests.cs` | 跑若干次取中位数，断言 `中位数 ≤ X ms` | 有噪声、**机器相关** | **仅诊断**：只抓数量级爆炸或彻底卡死 |
+| **B. 墙钟烟雾测试** | `TopKFinder.PerfTests`（主要在 `StrategyPerformanceTests.cs`） | 跑若干次取中位数，断言 `中位数 ≤ X ms` | 有噪声、**机器相关** | **仅诊断**：只抓数量级爆炸或彻底卡死 |
 
 ### 1.1 为什么墙钟时间不可靠
 
@@ -188,7 +188,7 @@ GitHub Actions 侧提供了手动门槛工作流：
 
 仓库按以下规则分层：
 
-- PR 必跑（required gate）：运行完整 `TopKFinder.Tests` + 轻量 perf tests。
+- PR 必跑（required gate）：运行完整 `TopKFinder.Tests` + 轻量 `TopKFinder.PerfTests`。
 - deterministic counter guardrails：按需触发 `manual-counter-guardrails`（机器无关计数器门槛）。
 - perf baseline gate：按需触发 `manual-perf-gate`（对比基线 CSV）。
 
@@ -196,7 +196,7 @@ GitHub Actions 侧提供了手动门槛工作流：
 
 ```powershell
 # Core（默认日常回归）
-dotnet test .\tests\TopKFinder.Tests\TopKFinder.Tests.csproj
+dotnet test TopKFinder.Tests.csproj
 
 # 手动计数器护栏（机器无关）
 pwsh .\scripts\run-counter-guardrails.ps1 -Profile fast-default
@@ -216,7 +216,7 @@ pwsh .\scripts\run-perf-gate.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-sta
 
 GitHub Actions 入口：
 
-- `required-pr-tests`：PR 自动触发（完整 TopKFinder.Tests + 轻量 perf tests）。
+- `required-pr-tests`：PR 自动触发（完整 `TopKFinder.Tests` + 轻量 `TopKFinder.PerfTests`）。
 - `manual-counter-guardrails`：手动触发确定性计数器护栏（counter-cap tests）。
 - `manual-counter-full-audit`：手动触发 full-counter-suite + matched-tests drift diff + unified snapshots 的组合审计。
 - `nightly-counter-full-audit`：夜间自动跑 full deterministic audit，持续监控 matched-tests drift 与 snapshot 回归。
@@ -311,7 +311,7 @@ Lane 决策表（先选信号，再选车道）：
 
 ```powershell
 $env:RUN_PROOF_TIGHTEN_GATE = "1"
-dotnet test .\tests\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter ProofTightenPerfGateTests
+dotnet test TopKFinder.PerfTests.csproj --filter ProofTightenPerfGateTests
 ```
 
 - 可选环境变量：
@@ -376,8 +376,8 @@ full nightly 报警（一步一步）:
 
 > 注意构建陷阱：仓库**没有 .sln**。请显式使用当前布局命令：
 > `dotnet build .\src\TopKFinder\TopKFinder.csproj`、
-> `dotnet test .\tests\TopKFinder.Tests\TopKFinder.Tests.csproj`、
-> `dotnet test .\tests\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter ProofTightenPerfGateTests`。
+> `dotnet test TopKFinder.Tests.csproj`、
+> `dotnet test TopKFinder.PerfTests.csproj --filter ProofTightenPerfGateTests`。
 
 ---
 

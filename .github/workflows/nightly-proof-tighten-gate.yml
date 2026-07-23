@@ -43,7 +43,8 @@ jobs:
           dotnet-version: 8.0.x
 
       - name: Run strategy matrix test
-        run: dotnet test .\tests\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj -c Release --filter "StrategyMatrixTests"
+        working-directory: ./tests/TopKFinder.PerfTests
+        run: dotnet test TopKFinder.PerfTests.csproj -c Release --filter "StrategyMatrixTests"
 
       - name: Alert on failure (create or update issue)
         if: failure()
@@ -108,8 +109,9 @@ jobs:
         env:
           RUN_PROOF_TIGHTEN_GATE: "1"
           PROOF_TIGHTEN_TIMEOUT_SECONDS: "150"
+        working-directory: ./tests/TopKFinder.PerfTests
         run: |
-          dotnet test .\tests\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj -c Release --filter "ProofTightenPerfGateTests"
+          dotnet test TopKFinder.PerfTests.csproj -c Release --filter "ProofTightenPerfGateTests"
 
       - name: Alert on failure (create or update issue)
         if: failure()
