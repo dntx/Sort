@@ -47,10 +47,10 @@ The program has three entry points that share the same input validation
 ### Test lane quickstart
 
 - Core test lane (default local/PR validation):
-  - `dotnet test TopKFinder.Tests.csproj`
+  - `dotnet test .\tests\TopKFinder.Tests\TopKFinder.Tests.csproj`
 - Deterministic counter guardrail lane (machine-independent budgets):
-  - `pwsh .\scripts\run-counter-guardrails.ps1 -Profile fast-default`
-  - dry-run + summary: `pwsh .\scripts\run-counter-guardrails.ps1 -Profile compact -ListOnly -SummaryJsonPath .\artifacts\counter-guardrails-summary.json`
+  - `pwsh .\scripts\run-counter-guardrails.ps1 -SelectedGuardrail fast-default`
+  - dry-run + summary: `pwsh .\scripts\run-counter-guardrails.ps1 -SelectedGuardrail compact -ListOnly -SummaryJsonPath .\artifacts\counter-guardrails-summary.json`
 - Perf baseline lane (manual regression gate):
   - `pwsh .\scripts\run-perf-gate.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-stage1-baseline.csv -RegressionTolerancePercent 5 -EnforceBaseline`
   - dry-run: `pwsh .\scripts\run-perf-gate.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-stage1-baseline.csv -ListOnly`

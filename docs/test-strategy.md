@@ -196,13 +196,13 @@ GitHub Actions 侧提供了手动门槛工作流：
 
 ```powershell
 # Core（默认日常回归）
-dotnet test TopKFinder.Tests.csproj
+dotnet test .\tests\TopKFinder.Tests\TopKFinder.Tests.csproj
 
 # 手动计数器护栏（机器无关）
-pwsh .\scripts\run-counter-guardrails.ps1 -Profile fast-default
+pwsh .\scripts\run-counter-guardrails.ps1 -SelectedGuardrail fast-default
 
 # 计数器护栏 dry-run + 机器可读摘要
-pwsh .\scripts\run-counter-guardrails.ps1 -Profile compact -ListOnly -SummaryJsonPath .\artifacts\counter-guardrails-summary.json
+pwsh .\scripts\run-counter-guardrails.ps1 -SelectedGuardrail compact -ListOnly -SummaryJsonPath .\artifacts\counter-guardrails-summary.json
 
 # 手动 perf gate（本地脚本）
 pwsh .\scripts\run-perf-gate.ps1 -BaselineCsvPath .\scripts\benchmark-greedy-stage1-baseline.csv -RegressionTolerancePercent 5 -EnforceBaseline
@@ -311,7 +311,7 @@ Lane 决策表（先选信号，再选车道）：
 
 ```powershell
 $env:RUN_PROOF_TIGHTEN_GATE = "1"
-dotnet test TopKFinder.PerfTests.csproj --filter ProofTightenPerfGateTests
+dotnet test .\tests\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter ProofTightenPerfGateTests
 ```
 
 - 可选环境变量：
@@ -376,8 +376,8 @@ full nightly 报警（一步一步）:
 
 > 注意构建陷阱：仓库**没有 .sln**。请显式使用当前布局命令：
 > `dotnet build .\src\TopKFinder\TopKFinder.csproj`、
-> `dotnet test TopKFinder.Tests.csproj`、
-> `dotnet test TopKFinder.PerfTests.csproj --filter ProofTightenPerfGateTests`。
+> `dotnet test .\tests\TopKFinder.Tests\TopKFinder.Tests.csproj`、
+> `dotnet test .\tests\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter ProofTightenPerfGateTests`。
 
 ---
 

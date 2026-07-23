@@ -68,22 +68,22 @@ These shape families are intentionally present in counter-cap tests and should r
 
 ```powershell
 # Daily default deterministic guard
-pwsh .\scripts\run-counter-guardrails.ps1 -Profile fast-default
+pwsh .\scripts\run-counter-guardrails.ps1 -SelectedGuardrail fast-default
 
 # ID-focused changes
-pwsh .\scripts\run-counter-guardrails.ps1 -Profile iterative-frontier
+pwsh .\scripts\run-counter-guardrails.ps1 -SelectedGuardrail iterative-frontier
 
 # Compact-focused changes
-pwsh .\scripts\run-counter-guardrails.ps1 -Profile compact
+pwsh .\scripts\run-counter-guardrails.ps1 -SelectedGuardrail compact
 
 # Pre-merge deterministic full audit
-pwsh .\scripts\run-counter-guardrails.ps1 -Profile full-counter-suite
+pwsh .\scripts\run-counter-guardrails.ps1 -SelectedGuardrail full-counter-suite
 
 # Dry-run (show selectors only)
-pwsh .\scripts\run-counter-guardrails.ps1 -Profile compact -ListOnly
+pwsh .\scripts\run-counter-guardrails.ps1 -SelectedGuardrail compact -ListOnly
 
 # Dry-run + write matched test list for selector audit
-pwsh .\scripts\run-counter-guardrails.ps1 -Profile compact -ListOnly -MatchedTestsPath .\artifacts\counter-guardrails-matched-tests.txt
+pwsh .\scripts\run-counter-guardrails.ps1 -SelectedGuardrail compact -ListOnly -MatchedTestsPath .\artifacts\counter-guardrails-matched-tests.txt
 
 # Full deterministic audit bundle
 pwsh .\scripts\run-counter-full-audit.ps1 -Configuration Release
