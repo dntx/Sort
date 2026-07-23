@@ -13,23 +13,89 @@ namespace TopKFinder;
 
 partial class MainForm
 {
+    private readonly record struct RunRequest(
+        int N,
+        int M,
+        int K,
+        bool FeasibleMode,
+        StrategyBuilder Builder,
+        CancellationToken CancellationToken);
+
     private async void RunStrategy()
     {
-        if (!Program.TryParseAndValidate(_nTextBox.Text, _mTextBox.Text, _kTextBox.Text, out int n, out int m, out int k, out string? error))
+        if (!TryCreateRunRequest(out RunRequest request, out string? error))
         {
             MessageBox.Show(this, error, "Invalid input", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
+        try
+        {
+            InitializeRunUi(request);
+            _activeBuilder = request.Builder;
 
+            if (request.FeasibleMode)
+            {
+                await RunFeasibleModeAsync(request);
+                return;
+            }
+
+            await RunExactModeAsync(request);
+        }
+        catch (OperationCanceledException)
+        {
+            HandleRunCanceled();
+        }
+        catch (Exception ex)
+        {
+            HandleRunFailed(ex);
+        }
+        finally
+        {
+            TeardownRunSession();
+        }
+    }
+
+    private bool TryCreateRunRequest(out RunRequest request, out string? error)
+    {
+        request = default;
+        error = null;
+
+        if (!Program.TryParseAndValidate(_nTextBox.Text, _mTextBox.Text, _kTextBox.Text, out int n, out int m, out int k, out error))
+            return false;
+
+        ResetRunCancellationInfrastructure();
+
+        bool feasibleMode = _modeComboBox.SelectedIndex == 1;
+        CancellationToken cancellationToken = _runCancellationSource!.Token;
+        IProgress<SearchProgressSnapshot> progress = new Progress<SearchProgressSnapshot>(UpdateSearchProgress);
+
+        // The builder is shared across all phases so the default/compact passes reuse the search
+        // caches the earlier passes already populated.
+        StrategyBuilder builder = new(
+            n,
+            m,
+            k,
+            cancellationToken,
+            snapshot => progress.Report(snapshot),
+            reportCombinedRunProgress: true);
+
+        request = new RunRequest(n, m, k, feasibleMode, builder, cancellationToken);
+        return true;
+    }
+
+    private void ResetRunCancellationInfrastructure()
+    {
         _runCancellationSource?.Dispose();
         _runCancellationSource = new CancellationTokenSource();
+
         _stopEscalationSource?.Cancel();
         _stopEscalationSource?.Dispose();
         _stopEscalationSource = null;
-        bool feasibleMode = _modeComboBox.SelectedIndex == 1;
-        _feasibleMode = feasibleMode;
-        CancellationToken cancellationToken = _runCancellationSource.Token;
-        IProgress<SearchProgressSnapshot> progress = new Progress<SearchProgressSnapshot>(UpdateSearchProgress);
+    }
+
+    private void InitializeRunUi(RunRequest request)
+    {
+        _feasibleMode = request.FeasibleMode;
         _latestProgress = CreateInitialProgressSnapshot();
         _completedDefaultStats = null;
         _completedCompactStats = null;
@@ -40,118 +106,115 @@ partial class MainForm
         _compactImproved = false;
         _activePhase = 0;
         _proofTightenStages.Clear();
-        _currentStageName = feasibleMode ? StageNames.GreedyFeasible : StageNames.StepProof;
+        _currentStageName = request.FeasibleMode ? StageNames.GreedyFeasible : StageNames.StepProof;
         _stageStartMs = 0;
+
         ClearResultsView();
-        ShowInitialStagePlaceholder(n, m, k, feasibleMode);
+        ShowInitialStagePlaceholder(request.N, request.M, request.K, request.FeasibleMode);
+
         _runStopwatch = Stopwatch.StartNew();
         UpdateElapsedLabel();
         UpdateStatsPanels();
         _elapsedTimer.Start();
         SetRunningState(isRunning: true);
-        _statusLabel.Text = $"Running n={n}, m={m}, k={k}...";
+        _statusLabel.Text = $"Running n={request.N}, m={request.M}, k={request.K}...";
         _detailsTextBox.Text = BuildLiveDiagnosticsText(_latestProgress);
+    }
 
-        // The builder is shared across all phases so the default/compact passes reuse the search
-        // caches the earlier passes already populated.
-        var builder = new StrategyBuilder(
-            n,
-            m,
-            k,
-            cancellationToken,
-            snapshot => progress.Report(snapshot),
-            reportCombinedRunProgress: true);
-        _activeBuilder = builder;
-        try
-        {
-            if (feasibleMode)
-            {
-                // Greedy mode: GreedyFeasible gives an instant browsable strategy even on shapes exact
-                // never resolves (e.g. 25,5,5), then ProofTighten + EdgeCompact refine it.
-                GreedyPreparationResult prep = await Task.Run(
-                    () => PublicPipelineOrchestrator.RunGreedyPreparation(builder, emitStages: false),
-                    cancellationToken);
-                StrategyPlan feasiblePlan = prep.EffectiveFeasiblePlan;
+    private async Task RunFeasibleModeAsync(RunRequest request)
+    {
+        // Greedy mode: GreedyFeasible gives an instant browsable strategy even on shapes exact
+        // never resolves (e.g. 25,5,5), then ProofTighten + EdgeCompact refine it.
+        GreedyPreparationResult prep = await Task.Run(
+            () => PublicPipelineOrchestrator.RunGreedyPreparation(request.Builder, emitStages: false),
+            request.CancellationToken);
+        StrategyPlan feasiblePlan = prep.EffectiveFeasiblePlan;
 
-                _feasiblePlan = feasiblePlan;
-                _latestProgress = CreateSnapshotFromPlan(feasiblePlan);
-                PopulateTree(feasiblePlan, defaultPlan: null, compactPlan: null, compactImproved: false);
-                _completedFeasibleStats = feasiblePlan.SearchStatistics;
-                UpdateSummaryText(feasiblePlan, defaultPlan: null, compactPlan: null, compactImproved: false);
-                UpdateStatsPanels();
-                SetRunUiState(RunUiState.CompactComputingInteractive);
+        _feasiblePlan = feasiblePlan;
+        _latestProgress = CreateSnapshotFromPlan(feasiblePlan);
+        PopulateTree(feasiblePlan, defaultPlan: null, compactPlan: null, compactImproved: false);
+        _completedFeasibleStats = feasiblePlan.SearchStatistics;
+        UpdateSummaryText(feasiblePlan, defaultPlan: null, compactPlan: null, compactImproved: false);
+        UpdateStatsPanels();
+        SetRunUiState(RunUiState.CompactComputingInteractive);
 
-                Interlocked.Exchange(ref _activePhase, 2);
-                _proofTightenStages.Clear();
-                _currentStageName = NextProofTightenStageName(feasiblePlan, feasiblePlan.MaxStep);
-                _stageStartMs = _runStopwatch?.ElapsedMilliseconds ?? 0;
-                // Each edge stage is surfaced live. The callback runs on the worker thread; a synchronous
-                // Invoke marshals it onto the UI thread AND blocks the worker until the handler returns,
-                // which is what lets the optional per-stage modal pause the search until the user clicks OK.
-                StrategyPlan feasibleCompactPlan = await Task.Run(
-                    () => PublicPipelineOrchestrator.RunGreedyPipeline(
-                        builder,
-                        MarshalProofTightenStage,
-                        emitPreparationStages: false,
-                        preparationAlreadyApplied: true),
-                    cancellationToken);
-                _runStopwatch?.Stop();
+        Interlocked.Exchange(ref _activePhase, 2);
+        _proofTightenStages.Clear();
+        _currentStageName = NextProofTightenStageName(feasiblePlan, feasiblePlan.MaxStep);
+        _stageStartMs = _runStopwatch?.ElapsedMilliseconds ?? 0;
 
-                RemoveTrailingComputingPlaceholder();
-                _compactPlan = feasibleCompactPlan;
-                _compactImproved = feasibleCompactPlan.IsStrictRefinementOver(feasiblePlan);
-                _latestProgress = CreateSnapshotFromPlan(feasibleCompactPlan);
-                _completedCompactStats = feasibleCompactPlan.SearchStatistics;
-                UpdateSummaryText(feasiblePlan, defaultPlan: feasiblePlan, compactPlan: feasibleCompactPlan, compactImproved: _compactImproved);
-                UpdateStatsPanels();
-                return;
-            }
+        // Each edge stage is surfaced live. The callback runs on the worker thread; a synchronous
+        // Invoke marshals it onto the UI thread AND blocks the worker until the handler returns,
+        // which is what lets the optional per-stage modal pause the search until the user clicks OK.
+        StrategyPlan feasibleCompactPlan = await Task.Run(
+            () => PublicPipelineOrchestrator.RunGreedyPipeline(
+                request.Builder,
+                MarshalProofTightenStage,
+                emitPreparationStages: false,
+                preparationAlreadyApplied: true),
+            request.CancellationToken);
+        _runStopwatch?.Stop();
 
-            // Exact mode: no feasible phase. Phase 1 is the proven-optimal StepProof plan, used as both
-            // the incumbent and the displayed strategy; phase 2 is EdgeCompact. The exact plan is
-            // MaxStep-optimal, so EdgeCompact only trims edges among equally optimal groups.
-            Interlocked.Exchange(ref _activePhase, 1);
-            StrategyPlan compactPlan = await Task.Run(
-                () => PublicPipelineOrchestrator.RunExactPipeline(builder, MarshalExactStage),
-                cancellationToken);
-            _runStopwatch?.Stop();
+        RemoveTrailingComputingPlaceholder();
+        _compactPlan = feasibleCompactPlan;
+        _compactImproved = feasibleCompactPlan.IsStrictRefinementOver(feasiblePlan);
+        _latestProgress = CreateSnapshotFromPlan(feasibleCompactPlan);
+        _completedCompactStats = feasibleCompactPlan.SearchStatistics;
+        UpdateSummaryText(feasiblePlan, defaultPlan: feasiblePlan, compactPlan: feasibleCompactPlan, compactImproved: _compactImproved);
+        UpdateStatsPanels();
+    }
 
-            // Keep final references aligned with the exact facade return value even when the compact
-            // stage produced no strict refinement and the displayed tree stayed on the default plan.
-            _compactPlan = compactPlan;
-        }
-        catch (OperationCanceledException)
-        {
-            _runStopwatch?.Stop();
-            string shownDefault = _defaultPlan is not null
-                ? " Showing the completed step strategy."
-                : _feasiblePlan is not null
-                    ? " Showing the step upper-bound strategy."
-                    : string.Empty;
-            _statusLabel.Text = $"Stopped after {GetRunElapsedSeconds():F1} s.{shownDefault} {FormatSearchStatsSummary(_latestProgress, includeOutputStates: true)}. {FormatLiveDiagnosticsSummary(_latestProgress)}.";
-            _detailsTextBox.Text = BuildLiveDiagnosticsText(_latestProgress);
-            MarkResultsStopped();
-        }
-        catch (Exception ex)
-        {
-            _runStopwatch?.Stop();
-            _statusLabel.Text = $"Run failed after {GetRunElapsedSeconds():F1} s. {FormatSearchStatsSummary(_latestProgress, includeOutputStates: true)}. {FormatLiveDiagnosticsSummary(_latestProgress)}.";
-            _detailsTextBox.Text = BuildLiveDiagnosticsText(_latestProgress);
-            MessageBox.Show(this, ex.Message, "Run failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
-        }
-        finally
-        {
-            _activePhase = 0;
-            _elapsedTimer.Stop();
-            UpdateElapsedLabel();
-            SetRunningState(isRunning: false);
-            _stopEscalationSource?.Cancel();
-            _stopEscalationSource?.Dispose();
-            _stopEscalationSource = null;
-            _runCancellationSource?.Dispose();
-            _runCancellationSource = null;
-            _activeBuilder = null;
-        }
+    private async Task RunExactModeAsync(RunRequest request)
+    {
+        // Exact mode: no feasible phase. Phase 1 is the proven-optimal StepProof plan, used as both
+        // the incumbent and the displayed strategy; phase 2 is EdgeCompact. The exact plan is
+        // MaxStep-optimal, so EdgeCompact only trims edges among equally optimal groups.
+        Interlocked.Exchange(ref _activePhase, 1);
+        StrategyPlan compactPlan = await Task.Run(
+            () => PublicPipelineOrchestrator.RunExactPipeline(request.Builder, MarshalExactStage),
+            request.CancellationToken);
+        _runStopwatch?.Stop();
+
+        // Keep final references aligned with the exact facade return value even when the compact
+        // stage produced no strict refinement and the displayed tree stayed on the default plan.
+        _compactPlan = compactPlan;
+    }
+
+    private void HandleRunCanceled()
+    {
+        _runStopwatch?.Stop();
+        string shownDefault = _defaultPlan is not null
+            ? " Showing the completed step strategy."
+            : _feasiblePlan is not null
+                ? " Showing the step upper-bound strategy."
+                : string.Empty;
+        _statusLabel.Text = $"Stopped after {GetRunElapsedSeconds():F1} s.{shownDefault} {FormatSearchStatsSummary(_latestProgress, includeOutputStates: true)}. {FormatLiveDiagnosticsSummary(_latestProgress)}.";
+        _detailsTextBox.Text = BuildLiveDiagnosticsText(_latestProgress);
+        MarkResultsStopped();
+    }
+
+    private void HandleRunFailed(Exception ex)
+    {
+        _runStopwatch?.Stop();
+        _statusLabel.Text = $"Run failed after {GetRunElapsedSeconds():F1} s. {FormatSearchStatsSummary(_latestProgress, includeOutputStates: true)}. {FormatLiveDiagnosticsSummary(_latestProgress)}.";
+        _detailsTextBox.Text = BuildLiveDiagnosticsText(_latestProgress);
+        MessageBox.Show(this, ex.Message, "Run failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+    }
+
+    private void TeardownRunSession()
+    {
+        _activePhase = 0;
+        _elapsedTimer.Stop();
+        UpdateElapsedLabel();
+        SetRunningState(isRunning: false);
+
+        _stopEscalationSource?.Cancel();
+        _stopEscalationSource?.Dispose();
+        _stopEscalationSource = null;
+
+        _runCancellationSource?.Dispose();
+        _runCancellationSource = null;
+        _activeBuilder = null;
     }
 
 
@@ -159,15 +222,16 @@ partial class MainForm
     // stage. Control.Invoke hops to the UI thread AND blocks the worker until OnProofTightenStage
     // returns, so when the per-stage modal is enabled the search genuinely pauses until the user clicks OK.
     private void MarshalProofTightenStage(StageResult stage)
-        => MarshalStage(stage, OnProofTightenStage);
+        => MarshalStageToUiThread(stage, OnProofTightenStage);
 
     private void MarshalExactStage(StageResult stage)
-        => MarshalStage(stage, OnExactStage);
+        => MarshalStageToUiThread(stage, OnExactStage);
 
-    private void MarshalStage(StageResult stage, Action<StageResult> onStage)
+    private void MarshalStageToUiThread(StageResult stage, Action<StageResult> onStage)
     {
-        if (!IsHandleCreated || IsDisposed)
+        if (!CanAcceptStageCallback())
             return;
+
         try
         {
             Invoke(() => onStage(stage));
@@ -181,6 +245,9 @@ partial class MainForm
             // Handle destroyed during shutdown.
         }
     }
+
+    private bool CanAcceptStageCallback()
+        => IsHandleCreated && !IsDisposed;
 
     private void OnExactStage(StageResult stage)
     {
