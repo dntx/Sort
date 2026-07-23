@@ -69,6 +69,83 @@ class ComparisonState
         _groupCanonicalKeyCache = null;
     }
 
+    private void RemoveFromActiveSet(ulong removedMask)
+    {
+        InvalidateDerivedCaches();
+        ActiveMask &= ~removedMask;
+        ActiveCount -= BitOperations.PopCount(removedMask);
+    }
+
+    private IntSequenceKey ComputeCanonicalKeyForMasks(ulong includedMask, ulong fixedTopMask, ulong highlightMask)
+    {
+        return ComparisonStateAlgorithms.ComputeCanonicalForm(
+            _n,
+            includedMask,
+            fixedTopMask,
+            highlightMask,
+            _ancestors,
+            _descendants,
+            ThrowIfThreadCancellationRequested);
+    }
+
+    private IntSequenceKey GetMaskedCanonicalKey(
+        ref Dictionary<ulong, IntSequenceKey>? cache,
+        ulong cacheKey,
+        ulong includedMask,
+        ulong fixedTopMask,
+        ulong highlightMask)
+    {
+        cache ??= new Dictionary<ulong, IntSequenceKey>();
+        if (cache.TryGetValue(cacheKey, out IntSequenceKey cached))
+            return cached;
+
+        IntSequenceKey key = ComputeCanonicalKeyForMasks(includedMask, fixedTopMask, highlightMask);
+        cache[cacheKey] = key;
+        return key;
+    }
+
+    private void PropagateNewAncestors(int greater, int lesser, ulong greaterBit, ulong lesserBit)
+    {
+        ulong newAncestorsForLesser = (_ancestors[greater] | greaterBit) & ~_ancestors[lesser] & _allMask;
+        if (newAncestorsForLesser == 0)
+            return;
+
+        ulong belowMask = _descendants[lesser] | lesserBit;
+        while (belowMask != 0)
+        {
+            int below = BitOperations.TrailingZeroCount(belowMask);
+            belowMask &= belowMask - 1;
+            ThrowIfThreadCancellationRequested();
+            _ancestors[below] |= newAncestorsForLesser;
+        }
+    }
+
+    private void PropagateNewDescendants(int greater, int lesser, ulong greaterBit, ulong lesserBit)
+    {
+        ulong newDescendantsForGreater = (_descendants[lesser] | lesserBit) & ~_descendants[greater] & _allMask;
+        if (newDescendantsForGreater == 0)
+            return;
+
+        ulong aboveMask = _ancestors[greater] | greaterBit;
+        while (aboveMask != 0)
+        {
+            int above = BitOperations.TrailingZeroCount(aboveMask);
+            aboveMask &= aboveMask - 1;
+            ThrowIfThreadCancellationRequested();
+            _descendants[above] |= newDescendantsForGreater;
+        }
+    }
+
+    private void ApplyOrderFromPivot(IReadOnlyList<int> sorted, int pivot)
+    {
+        int greater = sorted[pivot];
+        for (int j = pivot + 1; j < sorted.Count; j++)
+        {
+            ThrowIfThreadCancellationRequested();
+            AddRelation(greater, sorted[j]);
+        }
+    }
+
     public void AddRelation(int greater, int lesser)
     {
         ThrowIfThreadCancellationRequested();
@@ -79,31 +156,8 @@ class ComparisonState
 
         InvalidateDerivedCaches();
 
-        ulong newAncestorsForLesser = (_ancestors[greater] | greaterBit) & ~_ancestors[lesser] & _allMask;
-        if (newAncestorsForLesser != 0)
-        {
-            ulong belowMask = _descendants[lesser] | lesserBit;
-            while (belowMask != 0)
-            {
-                int below = BitOperations.TrailingZeroCount(belowMask);
-                belowMask &= belowMask - 1;
-                ThrowIfThreadCancellationRequested();
-                _ancestors[below] |= newAncestorsForLesser;
-            }
-        }
-
-        ulong newDescendantsForGreater = (_descendants[lesser] | lesserBit) & ~_descendants[greater] & _allMask;
-        if (newDescendantsForGreater != 0)
-        {
-            ulong aboveMask = _ancestors[greater] | greaterBit;
-            while (aboveMask != 0)
-            {
-                int above = BitOperations.TrailingZeroCount(aboveMask);
-                aboveMask &= aboveMask - 1;
-                ThrowIfThreadCancellationRequested();
-                _descendants[above] |= newDescendantsForGreater;
-            }
-        }
+        PropagateNewAncestors(greater, lesser, greaterBit, lesserBit);
+        PropagateNewDescendants(greater, lesser, greaterBit, lesserBit);
     }
 
     public void ApplyOrder(IReadOnlyList<int> sorted)
@@ -111,11 +165,7 @@ class ComparisonState
         for (int i = 0; i < sorted.Count - 1; i++)
         {
             ThrowIfThreadCancellationRequested();
-            for (int j = i + 1; j < sorted.Count; j++)
-            {
-                ThrowIfThreadCancellationRequested();
-                AddRelation(sorted[i], sorted[j]);
-            }
+            ApplyOrderFromPivot(sorted, i);
         }
     }
 
@@ -136,9 +186,7 @@ class ComparisonState
         if (removedMask == 0)
             return;
 
-        InvalidateDerivedCaches();
-        ActiveMask &= ~removedMask;
-        ActiveCount -= BitOperations.PopCount(removedMask);
+        RemoveFromActiveSet(removedMask);
     }
 
     public void Deactivate(ulong removedMask)
@@ -147,9 +195,7 @@ class ComparisonState
         if (removedMask == 0)
             return;
 
-        InvalidateDerivedCaches();
-        ActiveMask &= ~removedMask;
-        ActiveCount -= BitOperations.PopCount(removedMask);
+        RemoveFromActiveSet(removedMask);
     }
 
     public int[] GetStructuralLabels()
@@ -166,14 +212,10 @@ class ComparisonState
         if (_canonicalKeyCache is not null)
             return _canonicalKeyCache.Value;
 
-        _canonicalKeyCache = ComparisonStateAlgorithms.ComputeCanonicalForm(
-            _n,
+        _canonicalKeyCache = ComputeCanonicalKeyForMasks(
             ActiveMask,
             fixedTopMask: 0,
-            highlightMask: 0,
-            _ancestors,
-            _descendants,
-            ThrowIfThreadCancellationRequested);
+            highlightMask: 0);
         return _canonicalKeyCache.Value;
     }
 
@@ -201,20 +243,12 @@ class ComparisonState
         if (fixedTopMask == 0)
             return GetCanonicalKey();
 
-        _displayCanonicalKeyCache ??= new Dictionary<ulong, IntSequenceKey>();
-        if (_displayCanonicalKeyCache.TryGetValue(fixedTopMask, out IntSequenceKey cached))
-            return cached;
-
-        IntSequenceKey key = ComparisonStateAlgorithms.ComputeCanonicalForm(
-            _n,
+        return GetMaskedCanonicalKey(
+            ref _displayCanonicalKeyCache,
+            fixedTopMask,
             ActiveMask | fixedTopMask,
             fixedTopMask,
-            highlightMask: 0,
-            _ancestors,
-            _descendants,
-            ThrowIfThreadCancellationRequested);
-        _displayCanonicalKeyCache[fixedTopMask] = key;
-        return key;
+            highlightMask: 0);
     }
 
     // Produces a COMPLETE isomorphism invariant of a comparison group within the active
@@ -228,20 +262,12 @@ class ComparisonState
         if (groupMask == 0)
             return GetCanonicalKey();
 
-        _groupCanonicalKeyCache ??= new Dictionary<ulong, IntSequenceKey>();
-        if (_groupCanonicalKeyCache.TryGetValue(groupMask, out IntSequenceKey cached))
-            return cached;
-
-        IntSequenceKey key = ComparisonStateAlgorithms.ComputeCanonicalForm(
-            _n,
+        return GetMaskedCanonicalKey(
+            ref _groupCanonicalKeyCache,
+            groupMask,
             ActiveMask,
             fixedTopMask: 0,
-            highlightMask: groupMask,
-            _ancestors,
-            _descendants,
-            ThrowIfThreadCancellationRequested);
-        _groupCanonicalKeyCache[groupMask] = key;
-        return key;
+            highlightMask: groupMask);
     }
 
     // Per-item 1-WL color of the active sub-poset (no group highlighted), matching the coloring
