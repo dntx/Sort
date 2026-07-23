@@ -90,6 +90,8 @@ partial class StrategyBuilder
     internal bool? ForceIterativeDeepeningForTesting { get; set; }
     private CompactSolver? _compactSolver;
     private CompactSolver CompactSolverInstance => _compactSolver ??= new CompactSolver(this);
+    private GreedyPipelineOrchestrator? _greedyPipelineOrchestrator;
+    private GreedyPipelineOrchestrator GreedyPipeline => _greedyPipelineOrchestrator ??= new GreedyPipelineOrchestrator(this);
     private ProgressOrchestrator? _progressOrchestrator;
     private ProgressOrchestrator Progress => _progressOrchestrator ??= new ProgressOrchestrator(this);
     private SearchBoundsOrchestrator? _searchBoundsOrchestrator;
@@ -251,104 +253,10 @@ partial class StrategyBuilder
     internal StrategyPlan RunGreedyPipelineCore(
         Action<StageResult>? onStageCompleted = null,
         Action<string>? onStageStart = null)
-    {
-        var callbacks = new PipelineCallbacks(onStageCompleted, onStageStart);
-        _progressScope = _reportCombinedRunProgress
-            ? ProgressScope.CompactFeasibleInCombinedRun
-            : ProgressScope.DefaultStandalone;
-
-        // The step ceiling U comes from the greedy feasible plan. Production callers (Program.cs /
-        // MainForm.cs) build it first and reuse this builder, so _feasibleRootBudget is already set;
-        // standalone callers (e.g. tests invoking RunGreedyPipeline directly) have not, so
-        // establish it here. ExecuteGreedyFeasibleStage deliberately does not clear _feasibleRootBudget, so this
-        // never double-builds when the caller already ran the step phase.
-        if (_feasibleRootBudget < 0)
-            ExecuteGreedyFeasibleStage();
-
-        int U = _feasibleRootBudget;
-        int provenLowerBound = Math.Max(1, _rootProvenLowerBound);
-
-        // Phase A: proof tightening to find the smallest feasible step S.
-        _compactFeasibilityOnly = true;
-        int bestStep = U;
-        int budget = U - 1;
-        _proofTightenInitialBudget = budget;
-        _proofTightenCurrentBudget = budget;
-        _proofTightenLowerBound = provenLowerBound;
-        _proofTightenProgressEmaInitialized = false;
-        _proofTightenProgressEma01 = 0.0;
-        try
-        {
-            while (budget >= provenLowerBound)
-            {
-                _cancellationToken.ThrowIfCancellationRequested();
-                _proofTightenCurrentBudget = budget;
-                string stageName = StageNames.FormatProofTighten(budget);
-                callbacks.Start(stageName);
-                StageResult stage = ExecuteProofTightenStage(budget);
-                PipelineStageProtocol.EmitStage(stage, callbacks);
-
-                if (stage.Outcome == StageOutcome.Tightened)
-                {
-                    bestStep = stage.Plan!.MaxStep;
-                    budget = bestStep - 1; // realized max-step may already be below the attempted ceiling
-                    continue;
-                }
-
-                // ProvenInfeasible / Incomplete both stop tightening. Only a complete-
-                // enumeration infeasibility proof closes the squeeze to a proven optimum.
-                if (stage.Outcome == StageOutcome.ProvenInfeasible)
-                    RecordRootProvenLowerBound(budget + 1);
-                break;
-            }
-        }
-        finally
-        {
-            _compactFeasibilityOnly = false;
-            _proofTightenInitialBudget = -1;
-            _proofTightenCurrentBudget = -1;
-            _proofTightenLowerBound = -1;
-            _proofTightenProgressEmaInitialized = false;
-            _proofTightenProgressEma01 = 0.0;
-        }
-
-        // Phase B: one edge-compaction pass at the determined step S.
-        string edgeCompactStageName = StageNames.FormatGreedyEdgeCompact(bestStep);
-        callbacks.Start(edgeCompactStageName);
-        var edgeStopwatch = Stopwatch.StartNew();
-        StrategyPlan finalPlan = BuildEdgeCompactPlanAtBudget(bestStep)
-            .WithRootProvenLowerBound(_rootProvenLowerBound);
-        edgeStopwatch.Stop();
-        PipelineStageProtocol.EmitCompletedPlanStage(
-            edgeCompactStageName,
-            finalPlan,
-            edgeStopwatch.Elapsed,
-            callbacks);
-        return finalPlan;
-    }
+        => GreedyPipeline.RunGreedyPipelineCore(onStageCompleted, onStageStart);
 
     public StageResult ExecuteProofTightenStage(int budget)
-    {
-        _progressScope = _reportCombinedRunProgress
-            ? ProgressScope.CompactFeasibleInCombinedRun
-            : ProgressScope.DefaultStandalone;
-
-        _compactFeasibilityOnly = true;
-        try
-        {
-            string stageName = StageNames.FormatProofTighten(budget);
-            var stopwatch = Stopwatch.StartNew();
-            (StageOutcome outcome, StrategyPlan? candidate) = ProbeAndClassify(budget);
-            stopwatch.Stop();
-            if (candidate is not null)
-                _latestGreedyIncumbentPlan = candidate;
-            return new StageResult(stageName, candidate, stopwatch.Elapsed, outcome);
-        }
-        finally
-        {
-            _compactFeasibilityOnly = false;
-        }
-    }
+        => GreedyPipeline.ExecuteProofTightenStage(budget);
 
     // Runs one feasibility probe at the given step ceiling and classifies it into the single typed
     // outcome the tightening driver consumes. Keeping this classification here (separate from the
@@ -361,49 +269,7 @@ partial class StrategyBuilder
     // an overshoot; since the tighter-budget-keep fix (PR #223) the compact proxy and the materialized
     // tree agree, so that case is an internal invariant violation and throws rather than being reported.
     private (StageOutcome Outcome, StrategyPlan? Plan) ProbeAndClassify(int budget)
-    {
-        int configuredCap = CompactGreedyCandidateCap;
-        int attemptCap = NormalizeGreedyCandidateCap(configuredCap);
-        try
-        {
-            while (true)
-            {
-                // Keep one user-facing knob (CompactGreedyCandidateCap) as the starting point, but
-                // internally escalate capped incomplete probes on the same budget until they either
-                // resolve conclusively or reach full enumeration.
-                CompactGreedyCandidateCap = attemptCap;
-
-                StrategyPlan? candidate = ProbeFeasibleCompact(budget);
-                if (candidate is null)
-                {
-                    if (!_lastProbeEnumerationCapped)
-                        return (StageOutcome.ProvenInfeasible, null);
-
-                    if (attemptCap == int.MaxValue)
-                        return (StageOutcome.Incomplete, null);
-
-                    attemptCap = NextGreedyCandidateCap(attemptCap);
-                    continue;
-                }
-
-                // A complete probe that materializes a plan must honor the ceiling: the feasibility proxy proves
-                // a within-budget strategy exists and, with the tightest-budget pattern kept, materialization
-                // renders exactly that strategy. An overshoot means the proxy diverged from materialization -- a
-                // broken invariant we surface loudly instead of silently reporting an over-budget plan.
-                if (candidate.MaxStep > budget)
-                    throw new InvalidOperationException(
-                        $"Compact feasibility probe at budget {budget} materialized a plan whose realized MaxStep " +
-                        $"{candidate.MaxStep} overshoots the ceiling. The tighter-budget-keep invariant should make " +
-                        $"this unreachable; an overshoot indicates the feasibility proxy diverged from materialization.");
-
-                return (StageOutcome.Tightened, candidate);
-            }
-        }
-        finally
-        {
-            CompactGreedyCandidateCap = configuredCap;
-        }
-    }
+        => GreedyPipeline.ProbeAndClassify(budget);
 
     private static int NormalizeGreedyCandidateCap(int cap)
         => cap <= 0 ? GreedyCandidateCapMinimum : cap;
@@ -421,57 +287,10 @@ partial class StrategyBuilder
     // ceiling is infeasible (root solve yields the unsolvable sentinel). Resets the per-budget compact
     // caches first. Progress snapshots flow normally so the bar/ETA track the current tightening probe.
     private StrategyPlan? ProbeFeasibleCompact(int rootBudget)
-    {
-        return RunWithComparisonStateCancellation(() =>
-        {
-            PrepareFeasibleCompactProbe();
-
-            var stopwatch = Stopwatch.StartNew();
-            _compactUsesFeasibleBudget = true;
-            _feasibleRootBudgetActive = rootBudget;
-            try
-            {
-                EnsureCompactSolved();
-                _phase1bMilliseconds = stopwatch.ElapsedMilliseconds;
-                if (_compactRootCost == int.MaxValue)
-                {
-                    // Record whether the cap truncated any state's enumeration during this probe. When set,
-                    // "no group fit within budget" is not a proof of infeasibility (an untried group might
-                    // have fit), so the caller must not close the squeeze / claim proven optimality.
-                    _lastProbeEnumerationCapped = _compactEnumerationCapped;
-                    ResetCompactState();
-                    return null;
-                }
-
-                _useCompact = true;
-                var root = BuildState(new ComparisonState(_n), 0, _k, 1);
-                _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1bMilliseconds;
-                stopwatch.Stop();
-                return CreatePlan(root, stopwatch.Elapsed, _compactRootCost, isFeasibleUpperBound: true);
-            }
-            finally
-            {
-                _feasibleRootBudgetActive = -1;
-            }
-        });
-    }
+        => GreedyPipeline.ProbeFeasibleCompact(rootBudget);
 
     private StrategyPlan BuildEdgeCompactPlanAtBudget(int rootBudget)
-    {
-        StrategyPlan? plan = ProbeFeasibleCompact(rootBudget);
-        if (plan is not null)
-            return plan;
-
-        if (_lastProbeEnumerationCapped
-            && _latestGreedyIncumbentPlan is not null
-            && _latestGreedyIncumbentPlan.MaxStep <= rootBudget)
-        {
-            return _latestGreedyIncumbentPlan;
-        }
-
-        throw new InvalidOperationException(
-            $"Greedy edge-compaction could not materialize a plan at the proven-feasible budget {rootBudget}.");
-    }
+        => GreedyPipeline.BuildEdgeCompactPlanAtBudget(rootBudget);
 
     private StrategyPlan BuildPlan(bool useCompactSelection, bool useFeasibleBudget = false)
     {
