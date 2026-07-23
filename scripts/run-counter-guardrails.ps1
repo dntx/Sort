@@ -1,6 +1,6 @@
 ﻿param(
     [ValidateSet("fast-default", "iterative-frontier", "compact", "full-counter-suite")]
-    [string]$Profile = "fast-default",
+    [string]$SelectedGuardrail = "fast-default",
     [ValidateSet("Debug", "Release")]
     [string]$Configuration = "Release",
     [switch]$ListOnly,
@@ -10,6 +10,9 @@
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+$testsProject = "TopKFinder.Tests.csproj"
+$testsProjectDirectory = ".\tests\TopKFinder.Tests"
 
 $profileMethods = @{
     "fast-default" = @(
@@ -35,11 +38,11 @@ $profileMethods = @{
     )
 }
 
-if (-not $profileMethods.ContainsKey($Profile)) {
-    throw "Unknown profile: $Profile"
+if (-not $profileMethods.ContainsKey($SelectedGuardrail)) {
+    throw "Unknown profile: $SelectedGuardrail"
 }
 
-$selectors = @($profileMethods[$Profile] | ForEach-Object { "FullyQualifiedName~$_" })
+$selectors = @($profileMethods[$SelectedGuardrail] | ForEach-Object { "FullyQualifiedName~$_" })
 $filter = ($selectors -join "|")
 $minimumMatchedTestsByProfile = @{
     "fast-default" = 60
@@ -56,9 +59,15 @@ function Get-MatchedTests {
         [string]$Filter
     )
 
-    $listOutput = dotnet test .\tests\TopKFinder.Tests\TopKFinder.Tests.csproj --configuration $Configuration --nologo --list-tests --filter $Filter
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to list tests for filter preflight."
+    Push-Location $testsProjectDirectory
+    try {
+        $listOutput = dotnet test $testsProject --configuration $Configuration --nologo --list-tests --filter $Filter
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to list tests for filter preflight."
+        }
+    }
+    finally {
+        Pop-Location
     }
 
     $matchedTests = @($listOutput | Where-Object { $_ -match '^\s*StrategyRegressionTests\.' })
@@ -108,19 +117,19 @@ function Write-MatchedTests {
 $summary = [ordered]@{
     runner = "run-counter-guardrails"
     timestampUtc = [DateTime]::UtcNow.ToString("o")
-    profile = $Profile
+    profile = $SelectedGuardrail
     configuration = $Configuration
     listOnly = [bool]$ListOnly
-    methods = @($profileMethods[$Profile])
+    methods = @($profileMethods[$SelectedGuardrail])
     selectors = @($selectors)
     filter = $filter
-    command = "dotnet test .\\tests\\TopKFinder.Tests\\TopKFinder.Tests.csproj --configuration $Configuration --nologo --filter $filter"
+    command = "Push-Location $testsProjectDirectory; dotnet test $testsProject --configuration $Configuration --nologo --filter $filter; Pop-Location"
 }
 
-Write-Host "Counter guardrail profile '$Profile'" -ForegroundColor Cyan
+Write-Host "Counter guardrail profile '$SelectedGuardrail'" -ForegroundColor Cyan
 Write-Host "Configuration=$Configuration ListOnly=$ListOnly" -ForegroundColor Cyan
 Write-Host "Method selectors:" -ForegroundColor Cyan
-foreach ($method in $profileMethods[$Profile]) {
+foreach ($method in $profileMethods[$SelectedGuardrail]) {
     Write-Host "  - $method"
 }
 Write-Host "Filter: $filter"
@@ -131,11 +140,11 @@ Write-Host "Matched tests (preflight): $matchedTestCount" -ForegroundColor Cyan
 $summary["matchedTestsCount"] = $matchedTestCount
 Write-MatchedTests -MatchedTests $matchedTests -Path $MatchedTestsPath
 
-if ($minimumMatchedTestsByProfile.ContainsKey($Profile)) {
-    $minimumExpected = [int]$minimumMatchedTestsByProfile[$Profile]
+if ($minimumMatchedTestsByProfile.ContainsKey($SelectedGuardrail)) {
+    $minimumExpected = [int]$minimumMatchedTestsByProfile[$SelectedGuardrail]
     $summary["minimumExpectedMatchedTests"] = $minimumExpected
     if ($matchedTestCount -lt $minimumExpected) {
-        throw "Preflight matched only $matchedTestCount tests for profile '$Profile' (minimum expected $minimumExpected). Check filter selectors."
+        throw "Preflight matched only $matchedTestCount tests for profile '$SelectedGuardrail' (minimum expected $minimumExpected). Check filter selectors."
     }
 }
 
@@ -147,8 +156,15 @@ if ($ListOnly) {
     exit 0
 }
 
-dotnet test .\tests\TopKFinder.Tests\TopKFinder.Tests.csproj --configuration $Configuration --nologo --filter $filter
-$exitCode = $LASTEXITCODE
+Push-Location $testsProjectDirectory
+try {
+    dotnet test $testsProject --configuration $Configuration --nologo --filter $filter
+    $exitCode = $LASTEXITCODE
+}
+finally {
+    Pop-Location
+}
+
 $summary["executed"] = $true
 $summary["exitCode"] = $exitCode
 Write-SummaryJson -Summary $summary -Path $SummaryJsonPath

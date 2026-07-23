@@ -39,8 +39,10 @@ jobs:
 
       - name: Run structural regression tests
         if: steps.changes.outputs.has_code == 'true'
-        run: dotnet test .\tests\TopKFinder.Tests\TopKFinder.Tests.csproj --configuration Release --nologo
+        working-directory: ./tests/TopKFinder.Tests
+        run: dotnet test TopKFinder.Tests.csproj --configuration Release --nologo
 
       - name: Run lightweight performance tests
         if: steps.changes.outputs.has_code == 'true'
-        run: dotnet test .\tests\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --configuration Release --nologo
+        working-directory: ./tests/TopKFinder.PerfTests
+        run: dotnet test TopKFinder.PerfTests.csproj --configuration Release --nologo

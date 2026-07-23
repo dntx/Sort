@@ -45,7 +45,8 @@ jobs:
           }
 
       - name: Run full strategy matrix compare
-        run: dotnet test .\tests\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj -c Release --filter "StrategyMatrixTests"
+        working-directory: ./tests/TopKFinder.PerfTests
+        run: dotnet test TopKFinder.PerfTests.csproj -c Release --filter "StrategyMatrixTests"
 
       - name: Alert on failure (create or update issue)
         if: failure()
