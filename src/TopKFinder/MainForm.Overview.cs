@@ -67,21 +67,8 @@ partial class MainForm
         _overviewTree.BeginUpdate();
         _overviewTree.Nodes.Clear();
 
-        StrategyPlan stepPlan = defaultPlan ?? feasiblePlan;
-        string stepStageName = defaultPlan is null ? StageNames.GreedyFeasible : StageNames.StepProof;
-        _overviewTree.Nodes.Add(BuildOverviewSectionNode(stepPlan, "default", stepStageName, stepPlan.Elapsed));
-
-        if (compactPlan is null)
-        {
-            string firstStageName = defaultPlan is null
-                ? NextProofTightenStageName(feasiblePlan, feasiblePlan.MaxStep)
-                : StageNames.FormatExactEdgeCompact(feasiblePlan.MaxStep);
-            _overviewTree.Nodes.Add(BuildOverviewNoteNode(FormatComputingPlaceholderText(firstStageName)));
-        }
-        else if (compactImproved)
-            _overviewTree.Nodes.Add(BuildOverviewSectionNode(compactPlan, "compact", defaultPlan is null ? StageNames.FormatGreedyEdgeCompact(compactPlan.MaxStep) : StageNames.FormatExactEdgeCompact(compactPlan.MaxStep), compactPlan.Elapsed));
-        else
-            _overviewTree.Nodes.Add(BuildOverviewNoteNode(FormatStageRootLabel(defaultPlan is null ? StageNames.FormatGreedyEdgeCompact(compactPlan.MaxStep) : StageNames.FormatExactEdgeCompact(compactPlan.MaxStep), compactPlan.Elapsed, plan: null)));
+        _overviewTree.Nodes.Add(BuildStepOverviewSectionNode(feasiblePlan, defaultPlan));
+        _overviewTree.Nodes.Add(BuildCompactOverviewSlotNode(feasiblePlan, defaultPlan, compactPlan, compactImproved));
 
         _overviewTree.EndUpdate();
     }
@@ -93,21 +80,56 @@ partial class MainForm
     {
         _overviewTree.BeginUpdate();
 
-        bool greedyMode = _defaultPlan is null;
+        ReplaceTrailingOverviewRoot(BuildFinalCompactOverviewNode(compactPlan, compactImproved));
+
+        _overviewTree.EndUpdate();
+    }
+
+    private TreeNode BuildStepOverviewSectionNode(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan)
+    {
+        StrategyPlan stepPlan = defaultPlan ?? feasiblePlan;
+        string stepStageName = defaultPlan is null ? StageNames.GreedyFeasible : StageNames.StepProof;
+        return BuildOverviewSectionNode(stepPlan, "default", stepStageName, stepPlan.Elapsed);
+    }
+
+    private TreeNode BuildCompactOverviewSlotNode(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool compactImproved)
+    {
+        if (compactPlan is null)
+            return BuildCompactOverviewPlaceholderNode(feasiblePlan, defaultPlan);
+
+        return BuildCompactOverviewResultNode(compactPlan, defaultPlan is null, compactImproved);
+    }
+
+    private TreeNode BuildCompactOverviewPlaceholderNode(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan)
+    {
+        string firstStageName = defaultPlan is null
+            ? NextProofTightenStageName(feasiblePlan, feasiblePlan.MaxStep)
+            : StageNames.FormatExactEdgeCompact(feasiblePlan.MaxStep);
+        return BuildOverviewNoteNode(FormatComputingPlaceholderText(firstStageName));
+    }
+
+    private TreeNode BuildFinalCompactOverviewNode(StrategyPlan compactPlan, bool compactImproved)
+        => BuildCompactOverviewResultNode(compactPlan, _defaultPlan is null, compactImproved);
+
+    private TreeNode BuildCompactOverviewResultNode(StrategyPlan compactPlan, bool greedyMode, bool compactImproved)
+    {
         string compactStageName = greedyMode
             ? StageNames.FormatGreedyEdgeCompact(compactPlan.MaxStep)
             : StageNames.FormatExactEdgeCompact(compactPlan.MaxStep);
 
+        if (compactImproved)
+            return BuildOverviewSectionNode(compactPlan, "compact", compactStageName, compactPlan.Elapsed);
+
+        return BuildOverviewNoteNode(FormatStageRootLabel(compactStageName, compactPlan.Elapsed, plan: null));
+    }
+
+    private void ReplaceTrailingOverviewRoot(TreeNode replacement)
+    {
         // Drop the trailing edge-compact "computing..." placeholder root.
         if (_overviewTree.Nodes.Count > 0)
             _overviewTree.Nodes.RemoveAt(_overviewTree.Nodes.Count - 1);
 
-        if (compactImproved)
-            _overviewTree.Nodes.Add(BuildOverviewSectionNode(compactPlan, "compact", compactStageName, compactPlan.Elapsed));
-        else
-            _overviewTree.Nodes.Add(BuildOverviewNoteNode(FormatStageRootLabel(compactStageName, compactPlan.Elapsed, plan: null)));
-
-        _overviewTree.EndUpdate();
+        _overviewTree.Nodes.Add(replacement);
     }
 
     private TreeNode BuildOverviewSectionNode(StrategyPlan plan, string scope, string stageName, TimeSpan elapsed)

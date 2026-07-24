@@ -52,42 +52,54 @@ partial class MainForm
     {
         SearchProgressSnapshot snapshot = _latestProgress;
 
+        bool edgePhase = Volatile.Read(ref _activePhase) == 2;
+        SetStatText(_statesTextBox, BuildStatesPanelText(snapshot, edgePhase));
+        SetStatText(_workTextBox, BuildWorkPanelText(snapshot));
+    }
+
+    private static string BuildStatesPanelText(SearchProgressSnapshot snapshot, bool edgePhase)
+    {
         // During the edge phase the step counters (searched/pending/output/...) are frozen at 0, so
         // repurpose the States panel to surface the compact solve's live progress instead of a dead
         // all-zero block. The "solved / ~estimate (pct%)" denominator comes from the step phase's
         // distinct-state count (CompactStateEstimate); when unknown (-1) we just show the raw count.
-        if (Volatile.Read(ref _activePhase) == 2)
-        {
-            string solvedLine = snapshot.CompactStateEstimate > 0
-                ? $"compact solved: {snapshot.CompactStatesSolved} ({ComputeEdgeLocalProgressFraction(snapshot) * 100.0:F1}%)"
-                : $"compact solved: {snapshot.CompactStatesSolved}";
-            SetStatText(_statesTextBox,
-                solvedLine + "\n" +
-                $"compact groups: {snapshot.CompactGroupsEnumerated} ({snapshot.CompactStepOptimalGroups} opt)\n" +
-                $"(step) output: {snapshot.OutputStates}\n" +
-                $"(step) lower-bound: {snapshot.LowerBoundStates}\n" +
-                $"(step) top-set: {snapshot.FeasibleTopSetStates}");
-        }
-        else
-        {
-            SetStatText(_statesTextBox,
-                $"searched: {snapshot.SearchedStates}\n" +
-                $"pending: {snapshot.PendingStates} (peak {snapshot.PeakPendingStates})\n" +
-                $"output: {snapshot.OutputStates}\n" +
-                $"lower-bound: {snapshot.LowerBoundStates}\n" +
-                $"top-set: {snapshot.FeasibleTopSetStates}");
-        }
+        if (edgePhase)
+            return BuildEdgePhaseStatesPanelText(snapshot);
 
+        return
+            $"searched: {snapshot.SearchedStates}\n" +
+            $"pending: {snapshot.PendingStates} (peak {snapshot.PeakPendingStates})\n" +
+            $"output: {snapshot.OutputStates}\n" +
+            $"lower-bound: {snapshot.LowerBoundStates}\n" +
+            $"top-set: {snapshot.FeasibleTopSetStates}";
+    }
+
+    private static string BuildEdgePhaseStatesPanelText(SearchProgressSnapshot snapshot)
+    {
+        string solvedLine = snapshot.CompactStateEstimate > 0
+            ? $"compact solved: {snapshot.CompactStatesSolved} ({ComputeEdgeLocalProgressFraction(snapshot) * 100.0:F1}%)"
+            : $"compact solved: {snapshot.CompactStatesSolved}";
+
+        return solvedLine + "\n" +
+            $"compact groups: {snapshot.CompactGroupsEnumerated} ({snapshot.CompactStepOptimalGroups} opt)\n" +
+            $"(step) output: {snapshot.OutputStates}\n" +
+            $"(step) lower-bound: {snapshot.LowerBoundStates}\n" +
+            $"(step) top-set: {snapshot.FeasibleTopSetStates}";
+    }
+
+    private static string BuildWorkPanelText(SearchProgressSnapshot snapshot)
+    {
         string edgeText = snapshot.CompactStatesSolved > 0
             ? $"[compact] {snapshot.CompactStatesSolved} solved, {snapshot.CompactGroupsEnumerated} groups ({snapshot.CompactStepOptimalGroups} opt)"
             : "[compact] -";
-        SetStatText(_workTextBox,
+
+        return
             $"outcomes: {snapshot.OutcomesConstructed} (cand groups {snapshot.CandidateGroupsEnumerated})\n" +
             $"duplicate skips: {snapshot.DuplicateOutcomeSkips}\n" +
             $"merged collisions: {snapshot.MergedOutcomeCollisions}\n" +
             $"prunes: {snapshot.LowerBoundPrunes}\n" +
             $"cache: {snapshot.ExactCacheHits}/{snapshot.LowerBoundCacheHits}/{snapshot.FeasibleTopSetCacheHits}/{snapshot.BestGroupPatternCacheHits}\n" +
-            edgeText);
+            edgeText;
     }
 
     // Local 0..1 fraction of the edge phase's compact solve, mirroring the engine's own self-correcting
