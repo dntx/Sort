@@ -44,6 +44,17 @@ partial class MainForm
 
     private void ApplyThemeToControlTree(Control control)
     {
+        ApplyThemeToControl(control);
+
+        if (control is SplitContainer splitContainer)
+            ApplyThemeToSplitContainer(splitContainer);
+
+        foreach (Control child in control.Controls)
+            ApplyThemeToControlTree(child);
+    }
+
+    private void ApplyThemeToControl(Control control)
+    {
         switch (control)
         {
             case TreeView treeView:
@@ -86,18 +97,15 @@ partial class MainForm
                 control.ForeColor = _palette.ForeColor;
                 break;
         }
+    }
 
-        if (control is SplitContainer splitContainer)
-        {
-            splitContainer.BackColor = _palette.BorderColor;
-            splitContainer.Panel1.BackColor = _palette.SurfaceBackColor;
-            splitContainer.Panel1.ForeColor = _palette.ForeColor;
-            splitContainer.Panel2.BackColor = _palette.SurfaceBackColor;
-            splitContainer.Panel2.ForeColor = _palette.ForeColor;
-        }
-
-        foreach (Control child in control.Controls)
-            ApplyThemeToControlTree(child);
+    private void ApplyThemeToSplitContainer(SplitContainer splitContainer)
+    {
+        splitContainer.BackColor = _palette.BorderColor;
+        splitContainer.Panel1.BackColor = _palette.SurfaceBackColor;
+        splitContainer.Panel1.ForeColor = _palette.ForeColor;
+        splitContainer.Panel2.BackColor = _palette.SurfaceBackColor;
+        splitContainer.Panel2.ForeColor = _palette.ForeColor;
     }
 
     private void StopStrategy()

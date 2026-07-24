@@ -126,132 +126,29 @@ partial class MainForm : Form
 
     public MainForm()
     {
-        Text = "Top-K Strategy Explorer";
-        StartPosition = FormStartPosition.CenterScreen;
-        WindowState = FormWindowState.Maximized;
-        MinimumSize = new Size(1100, 760);
-        Size = new Size(1200, 820);
-
-        var layout = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 1,
-            RowCount = 2,
-            Padding = new Padding(12),
-        };
-        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-
-        var headerLayout = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            AutoSize = true,
-            ColumnCount = 1,
-            RowCount = 2,
-            Margin = new Padding(0, 0, 0, -1),
-        };
-        headerLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        headerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, StatsRowHeight));
+        ConfigureWindow();
+        var (layout, headerLayout) = CreateRootLayouts();
 
         _nTextBox = CreateInputTextBox("25");
         _mTextBox = CreateInputTextBox("5");
         _kTextBox = CreateInputTextBox("5");
-        _themeComboBox = new ComboBox
-        {
-            Width = 140,
-            DropDownStyle = ComboBoxStyle.DropDownList,
-            Margin = new Padding(0, 4, 0, 0),
-        };
-        _themeComboBox.Items.AddRange(Enum.GetNames<ColorTheme>());
-        _themeComboBox.SelectedItem = ColorTheme.Dark.ToString();
-        _themeComboBox.SelectedIndexChanged += (_, _) => ApplyTheme(ParseSelectedTheme());
+        _themeComboBox = CreateThemeComboBox();
 
         // Search mode matches the UI labels: exact (proven) and greedy (fast).
-        _modeComboBox = new ComboBox
-        {
-            Width = 280,
-            DropDownStyle = ComboBoxStyle.DropDownList,
-            Margin = new Padding(0, 4, 0, 0),
-        };
-        _modeComboBox.Items.AddRange(new object[] { "exact (proven)", "greedy (fast)" });
-        _modeComboBox.SelectedIndex = 0;
+        _modeComboBox = CreateModeComboBox();
 
         // When checked, the run pauses after each new stage tree appears (a modal shows that stage's
         // summary and the search blocks until OK). Default off so runs are uninterrupted.
-        _pauseEachStageCheckBox = new CheckBox
-        {
-            Text = "pause each stage",
-            AutoSize = true,
-            Margin = new Padding(0, 8, 0, 0),
-        };
+        _pauseEachStageCheckBox = CreatePauseEachStageCheckBox();
 
-        _runButton = new Button
-        {
-            Text = "Run",
-            AutoSize = true,
-            Height = 30,
-            Margin = new Padding(0, 4, 8, 0),
-        };
-        _runButton.Click += (_, _) => RunStrategy();
-
-        _stopButton = new Button
-        {
-            Text = "Stop",
-            AutoSize = true,
-            Height = 30,
-            Margin = new Padding(0, 4, 8, 0),
-            Enabled = false,
-        };
-        _stopButton.Click += (_, _) => StopStrategy();
-
-        _treeExpandButton = new Button
-        {
-            Text = "Expand",
-            AutoSize = true,
-            Height = 26,
-            Margin = new Padding(0, 0, 6, 0),
-        };
-
-        _treeCollapseButton = new Button
-        {
-            Text = "Collapse",
-            AutoSize = true,
-            Height = 26,
-            Margin = new Padding(0, 0, 0, 0),
-        };
-
-        _overviewExpandButton = new Button
-        {
-            Text = "Expand",
-            AutoSize = true,
-            Height = 26,
-            Margin = new Padding(0, 0, 6, 0),
-        };
-
-        _overviewCollapseButton = new Button
-        {
-            Text = "Collapse",
-            AutoSize = true,
-            Height = 26,
-            Margin = new Padding(0, 0, 0, 0),
-        };
-
-        _backButton = new Button
-        {
-            Text = "Back",
-            AutoSize = true,
-            Height = 26,
-            Enabled = false,
-            Margin = new Padding(12, 0, 0, 0),
-        };
-
-        _toggleDetailsButton = new Button
-        {
-            Text = "Show Details",
-            AutoSize = true,
-            Height = 30,
-            Margin = new Padding(8, 4, 0, 0),
-        };
+        _runButton = CreateRunButton();
+        _stopButton = CreateStopButton();
+        _treeExpandButton = CreateExpandButton();
+        _treeCollapseButton = CreateCollapseButton();
+        _overviewExpandButton = CreateExpandButton();
+        _overviewCollapseButton = CreateCollapseButton();
+        _backButton = CreateBackButton();
+        _toggleDetailsButton = CreateToggleDetailsButton();
 
         _progressTextBox = CreateStatTextBox(
             "0.000 s\n-: 0.000 s\nprogress: 0.0%\neta: -",
@@ -260,13 +157,7 @@ partial class MainForm : Form
             "searched: 0\npending: 0 (peak 0)\noutput: 0\nlower-bound: 0\ntop-set: 0");
         _workTextBox = CreateStatTextBox(
             "outcomes: 0\nduplicate skips: 0\nmerged collisions: 0\nprunes: 0\ncache: 0/0/0/0\n[edge-compact] -");
-        var inputsPanel = new FlowLayoutPanel
-        {
-            AutoSize = true,
-            WrapContents = false,
-            Dock = DockStyle.Fill,
-            Margin = Padding.Empty,
-        };
+        var inputsPanel = CreatePanelRow();
         inputsPanel.Controls.Add(CreateLabeledInput("n", _nTextBox));
         inputsPanel.Controls.Add(CreateLabeledInput("m", _mTextBox));
         inputsPanel.Controls.Add(CreateLabeledInput("k", _kTextBox));
@@ -274,73 +165,27 @@ partial class MainForm : Form
         inputsPanel.Controls.Add(CreateLabeledInput("theme", _themeComboBox));
         inputsPanel.Controls.Add(_pauseEachStageCheckBox);
 
-        var actionsPanel = new FlowLayoutPanel
-        {
-            AutoSize = true,
-            WrapContents = false,
-            Dock = DockStyle.Fill,
-            Margin = Padding.Empty,
-        };
+        var actionsPanel = CreatePanelRow();
         actionsPanel.Controls.Add(_runButton);
         actionsPanel.Controls.Add(_stopButton);
         actionsPanel.Controls.Add(_toggleDetailsButton);
 
-        var controlsLayout = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            AutoSize = true,
-            ColumnCount = 2,
-            Margin = Padding.Empty,
-        };
-        controlsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55));
-        controlsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
+        var controlsLayout = CreateControlsLayout();
         controlsLayout.Controls.Add(CreateSectionPanel("Inputs", inputsPanel), 0, 0);
         controlsLayout.Controls.Add(CreateSectionPanel("Actions", actionsPanel), 1, 0);
 
-        var statsLayout = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            AutoSize = false,
-            Height = StatsRowHeight,
-            ColumnCount = 3,
-            Margin = Padding.Empty,
-        };
-        statsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33));
-        statsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 29));
-        statsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 38));
+        var statsLayout = CreateStatsLayout();
 
         statsLayout.Controls.Add(CreateSectionPanel("Progress", _progressTextBox, fillCell: true), 0, 0);
         statsLayout.Controls.Add(CreateSectionPanel("States", _statesTextBox, fillCell: true), 1, 0);
         statsLayout.Controls.Add(CreateSectionPanel("Work", _workTextBox, fillCell: true), 2, 0);
 
-        _statusStrip = new StatusStrip
-        {
-            SizingGrip = false,
-        };
-        _statusLabel = new ToolStripStatusLabel
-        {
-            Spring = true,
-            TextAlign = ContentAlignment.MiddleLeft,
-            Text = "Ready.",
-        };
+        (_statusStrip, _statusLabel) = CreateStatusStripAndLabel();
         _statusStrip.Items.Add(_statusLabel);
 
-        var split = new SplitContainer
-        {
-            Dock = DockStyle.Fill,
-            Orientation = Orientation.Vertical,
-            SplitterWidth = 6,
-            Margin = Padding.Empty,
-        };
+        var split = CreateOuterSplitContainer();
 
-        _treeView = new TreeView
-        {
-            Dock = DockStyle.Fill,
-            HideSelection = false,
-            FullRowSelect = true,
-            DrawMode = TreeViewDrawMode.OwnerDrawText,
-            Font = new Font(FontFamily.GenericSansSerif, 10),
-        };
+        _treeView = CreateStrategyTreeView();
         _treeView.AfterSelect += (_, e) => ShowNodeDetails(e.Node);
         _treeView.DrawNode += TreeView_DrawNode;
         _treeView.BeforeExpand += (_, e) => { if (e.Node is { } n) MaterializeDecision(n); };
@@ -352,15 +197,7 @@ partial class MainForm : Form
         _treeCollapseButton.Click += (_, _) => _treeView.CollapseAll();
         _backButton.Click += (_, _) => NavigateBack();
 
-        _overviewTree = new TreeView
-        {
-            Dock = DockStyle.Fill,
-            HideSelection = false,
-            ShowLines = true,
-            ShowPlusMinus = true,
-            ShowRootLines = true,
-            Font = new Font(FontFamily.GenericSansSerif, 9),
-        };
+        _overviewTree = CreateOverviewTreeView();
         _overviewTree.AfterSelect += (_, _) => JumpFromOverviewSelection();
         _overviewTree.BeforeExpand += (_, e) => { if (e.Node is { } n) MaterializeOverviewSection(n); };
         _overviewTree.ContextMenuStrip = CreateOverviewContextMenu();
@@ -368,23 +205,10 @@ partial class MainForm : Form
         _overviewExpandButton.Click += (_, _) => _overviewTree.ExpandAll();
         _overviewCollapseButton.Click += (_, _) => _overviewTree.CollapseAll();
 
-        var innerSplit = new SplitContainer
-        {
-            Dock = DockStyle.Fill,
-            Orientation = Orientation.Vertical,
-            Panel2Collapsed = true,
-            SplitterWidth = 6,
-        };
+        var innerSplit = CreateInnerSplitContainer();
         innerSplit.Panel1.Controls.Add(CreateTreeRegion(_treeView, _treeExpandButton, _treeCollapseButton, _backButton));
 
-        _detailsTextBox = new RichTextBox
-        {
-            Dock = DockStyle.Fill,
-            ReadOnly = true,
-            Font = new Font(FontFamily.GenericMonospace, 10),
-            WordWrap = false,
-            ScrollBars = RichTextBoxScrollBars.Both,
-        };
+        _detailsTextBox = CreateDetailsTextBox();
         var detailsContextMenu = new ContextMenuStrip();
         var detailsCopy = new ToolStripMenuItem("Copy") { ShortcutKeyDisplayString = "Ctrl+C" };
         detailsCopy.Click += (_, _) => SetClipboardText(_detailsTextBox.SelectedText);
@@ -414,27 +238,7 @@ partial class MainForm : Form
 
         Controls.Add(layout);
         Controls.Add(_statusStrip);
-        Shown += (_, _) =>
-        {
-            int progressColumn = MeasureStatHeight(_progressTextBox) + 6;
-            int statsBody = Math.Max(
-                progressColumn,
-                Math.Max(MeasureStatHeight(_statesTextBox), MeasureStatHeight(_workTextBox)));
-            int statsHeight = statsBody + StatsRowChrome;
-            headerLayout.RowStyles[1].Height = statsHeight;
-            statsLayout.Height = statsHeight;
-
-            split.Panel1MinSize = 200;
-            split.Panel2MinSize = 360;
-            int overviewWidth = (int)(split.Width * 4.0 / 9.0);
-            split.SplitterDistance = Math.Clamp(overviewWidth, split.Panel1MinSize, split.Width - split.Panel2MinSize);
-
-            innerSplit.Panel1MinSize = 240;
-            innerSplit.Panel2MinSize = 160;
-            int treeWidth = (int)(innerSplit.Width * 0.6);
-            innerSplit.SplitterDistance = Math.Clamp(
-                treeWidth, innerSplit.Panel1MinSize, Math.Max(innerSplit.Panel1MinSize, innerSplit.Width - innerSplit.Panel2MinSize));
-        };
+        Shown += (_, _) => ConfigureInitialLayoutMetrics(headerLayout, statsLayout, split, innerSplit);
         AcceptButton = _runButton;
         _elapsedTimer = new System.Windows.Forms.Timer { Interval = 100 };
         _elapsedTimer.Tick += (_, _) => UpdateElapsedLabel();
@@ -442,6 +246,293 @@ partial class MainForm : Form
         LoadSettings();
         ApplyTheme(ParseSelectedTheme());
         FormClosing += (_, _) => SaveSettings();
+    }
+
+    private void ConfigureWindow()
+    {
+        Text = "Top-K Strategy Explorer";
+        StartPosition = FormStartPosition.CenterScreen;
+        WindowState = FormWindowState.Maximized;
+        MinimumSize = new Size(1100, 760);
+        Size = new Size(1200, 820);
+    }
+
+    private static (TableLayoutPanel Layout, TableLayoutPanel HeaderLayout) CreateRootLayouts()
+    {
+        var layout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            Padding = new Padding(12),
+        };
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+        var headerLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            ColumnCount = 1,
+            RowCount = 2,
+            Margin = new Padding(0, 0, 0, -1),
+        };
+        headerLayout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        headerLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, StatsRowHeight));
+
+        return (layout, headerLayout);
+    }
+
+    private ComboBox CreateThemeComboBox()
+    {
+        var comboBox = new ComboBox
+        {
+            Width = 140,
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Margin = new Padding(0, 4, 0, 0),
+        };
+        comboBox.Items.AddRange(Enum.GetNames<ColorTheme>());
+        comboBox.SelectedItem = ColorTheme.Dark.ToString();
+        comboBox.SelectedIndexChanged += (_, _) => ApplyTheme(ParseSelectedTheme());
+        return comboBox;
+    }
+
+    private static ComboBox CreateModeComboBox()
+    {
+        var comboBox = new ComboBox
+        {
+            Width = 280,
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Margin = new Padding(0, 4, 0, 0),
+        };
+        comboBox.Items.AddRange(new object[] { "exact (proven)", "greedy (fast)" });
+        comboBox.SelectedIndex = 0;
+        return comboBox;
+    }
+
+    private static CheckBox CreatePauseEachStageCheckBox()
+    {
+        return new CheckBox
+        {
+            Text = "pause each stage",
+            AutoSize = true,
+            Margin = new Padding(0, 8, 0, 0),
+        };
+    }
+
+    private Button CreateRunButton()
+    {
+        var button = new Button
+        {
+            Text = "Run",
+            AutoSize = true,
+            Height = 30,
+            Margin = new Padding(0, 4, 8, 0),
+        };
+        button.Click += (_, _) => RunStrategy();
+        return button;
+    }
+
+    private Button CreateStopButton()
+    {
+        var button = new Button
+        {
+            Text = "Stop",
+            AutoSize = true,
+            Height = 30,
+            Margin = new Padding(0, 4, 8, 0),
+            Enabled = false,
+        };
+        button.Click += (_, _) => StopStrategy();
+        return button;
+    }
+
+    private static Button CreateExpandButton()
+    {
+        return new Button
+        {
+            Text = "Expand",
+            AutoSize = true,
+            Height = 26,
+            Margin = new Padding(0, 0, 6, 0),
+        };
+    }
+
+    private static Button CreateCollapseButton()
+    {
+        return new Button
+        {
+            Text = "Collapse",
+            AutoSize = true,
+            Height = 26,
+            Margin = Padding.Empty,
+        };
+    }
+
+    private static Button CreateBackButton()
+    {
+        return new Button
+        {
+            Text = "Back",
+            AutoSize = true,
+            Height = 26,
+            Enabled = false,
+            Margin = new Padding(12, 0, 0, 0),
+        };
+    }
+
+    private static Button CreateToggleDetailsButton()
+    {
+        return new Button
+        {
+            Text = "Show Details",
+            AutoSize = true,
+            Height = 30,
+            Margin = new Padding(8, 4, 0, 0),
+        };
+    }
+
+    private static FlowLayoutPanel CreatePanelRow()
+    {
+        return new FlowLayoutPanel
+        {
+            AutoSize = true,
+            WrapContents = false,
+            Dock = DockStyle.Fill,
+            Margin = Padding.Empty,
+        };
+    }
+
+    private static TableLayoutPanel CreateControlsLayout()
+    {
+        var controlsLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            ColumnCount = 2,
+            Margin = Padding.Empty,
+        };
+        controlsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 55));
+        controlsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 45));
+        return controlsLayout;
+    }
+
+    private static TableLayoutPanel CreateStatsLayout()
+    {
+        var statsLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = false,
+            Height = StatsRowHeight,
+            ColumnCount = 3,
+            Margin = Padding.Empty,
+        };
+        statsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33));
+        statsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 29));
+        statsLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 38));
+        return statsLayout;
+    }
+
+    private static (StatusStrip Strip, ToolStripStatusLabel Label) CreateStatusStripAndLabel()
+    {
+        var strip = new StatusStrip
+        {
+            SizingGrip = false,
+        };
+        var label = new ToolStripStatusLabel
+        {
+            Spring = true,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Text = "Ready.",
+        };
+        return (strip, label);
+    }
+
+    private static SplitContainer CreateOuterSplitContainer()
+    {
+        return new SplitContainer
+        {
+            Dock = DockStyle.Fill,
+            Orientation = Orientation.Vertical,
+            SplitterWidth = 6,
+            Margin = Padding.Empty,
+        };
+    }
+
+    private TreeView CreateStrategyTreeView()
+    {
+        return new TreeView
+        {
+            Dock = DockStyle.Fill,
+            HideSelection = false,
+            FullRowSelect = true,
+            DrawMode = TreeViewDrawMode.OwnerDrawText,
+            Font = new Font(FontFamily.GenericSansSerif, 10),
+        };
+    }
+
+    private static TreeView CreateOverviewTreeView()
+    {
+        return new TreeView
+        {
+            Dock = DockStyle.Fill,
+            HideSelection = false,
+            ShowLines = true,
+            ShowPlusMinus = true,
+            ShowRootLines = true,
+            Font = new Font(FontFamily.GenericSansSerif, 9),
+        };
+    }
+
+    private static SplitContainer CreateInnerSplitContainer()
+    {
+        return new SplitContainer
+        {
+            Dock = DockStyle.Fill,
+            Orientation = Orientation.Vertical,
+            Panel2Collapsed = true,
+            SplitterWidth = 6,
+        };
+    }
+
+    private static RichTextBox CreateDetailsTextBox()
+    {
+        return new RichTextBox
+        {
+            Dock = DockStyle.Fill,
+            ReadOnly = true,
+            Font = new Font(FontFamily.GenericMonospace, 10),
+            WordWrap = false,
+            ScrollBars = RichTextBoxScrollBars.Both,
+        };
+    }
+
+    private void ConfigureInitialLayoutMetrics(
+        TableLayoutPanel headerLayout,
+        TableLayoutPanel statsLayout,
+        SplitContainer split,
+        SplitContainer innerSplit)
+    {
+        int progressColumn = MeasureStatHeight(_progressTextBox) + 6;
+        int statsBody = Math.Max(
+            progressColumn,
+            Math.Max(MeasureStatHeight(_statesTextBox), MeasureStatHeight(_workTextBox)));
+        int statsHeight = statsBody + StatsRowChrome;
+        headerLayout.RowStyles[1].Height = statsHeight;
+        statsLayout.Height = statsHeight;
+
+        split.Panel1MinSize = 200;
+        split.Panel2MinSize = 360;
+        int overviewWidth = (int)(split.Width * 4.0 / 9.0);
+        split.SplitterDistance = Math.Clamp(overviewWidth, split.Panel1MinSize, split.Width - split.Panel2MinSize);
+
+        innerSplit.Panel1MinSize = 240;
+        innerSplit.Panel2MinSize = 160;
+        int treeWidth = (int)(innerSplit.Width * 0.6);
+        innerSplit.SplitterDistance = Math.Clamp(
+            treeWidth,
+            innerSplit.Panel1MinSize,
+            Math.Max(innerSplit.Panel1MinSize, innerSplit.Width - innerSplit.Panel2MinSize));
     }
 
     private const int StatsRowHeight = 150;
