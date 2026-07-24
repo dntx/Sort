@@ -154,18 +154,9 @@ partial class MainForm
 
     private void PopulateTree(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool compactImproved)
     {
+        PrepareTreeForFreshPopulation();
+
         _treeView.BeginUpdate();
-        _treeView.Nodes.Clear();
-        _stateNodesByKey.Clear();
-        _referenceTargets.Clear();
-        _lazyDecisions.Clear();
-        _lazyOverviewSections.Clear();
-        _jumpTargets.Clear();
-        _jumpScopeRoots.Clear();
-        _jumpScopeStrategyRoots.Clear();
-        _indexedJumpScopes.Clear();
-        _navigationHistory.Clear();
-        _backButton.Enabled = false;
 
         string rootLabel = BuildRootLabel(feasiblePlan, defaultPlan, compactPlan);
         var rootDetails = new LazyNodeDetails(() => BuildRootDetails(feasiblePlan, defaultPlan, compactPlan, compactImproved));
@@ -177,28 +168,8 @@ partial class MainForm
             ForeColor = _palette.ForeColor,
         };
 
-        // Slot 0: the step strategy, named by mode -- "step-proof" once the exact pass finishes (it
-        // replaces the placeholder in place), or "greedy-feasible" for the constructive feasible plan
-        // in greedy mode.
-        StrategyPlan stepPlan = defaultPlan ?? feasiblePlan;
-        string stepStageName = defaultPlan is null ? StageNames.GreedyFeasible : StageNames.StepProof;
-        root.Nodes.Add(CreatePlanTreeRoot(stepStageName, stepPlan, "default", stepPlan.Elapsed));
-
-        // Slot 1: the second stage's live placeholder. In exact mode this is the min-edge
-        // "exact-edge-compact@S" pass; in greedy mode it is whatever RunGreedyPipeline emits first --
-        // a proof-tighten stage, or "greedy-edge-compact@S" directly when the greedy bound is
-        // already at the lower bound.
-        if (compactPlan is null)
-        {
-            string firstStageName = defaultPlan is null
-                ? NextProofTightenStageName(feasiblePlan, feasiblePlan.MaxStep)
-                : StageNames.FormatExactEdgeCompact(feasiblePlan.MaxStep);
-            root.Nodes.Add(CreateComputingPlaceholderNode(firstStageName));
-        }
-        else if (compactImproved)
-            root.Nodes.Add(CreatePlanTreeRoot(defaultPlan is null ? StageNames.FormatGreedyEdgeCompact(compactPlan.MaxStep) : StageNames.FormatExactEdgeCompact(compactPlan.MaxStep), compactPlan, "compact", compactPlan.Elapsed));
-        else
-            root.Nodes.Add(CreateNoSolutionTreeRoot(defaultPlan is null ? StageNames.FormatGreedyEdgeCompact(compactPlan.MaxStep) : StageNames.FormatExactEdgeCompact(compactPlan.MaxStep), compactPlan.Elapsed));
+        root.Nodes.Add(BuildStepTreeSlotNode(feasiblePlan, defaultPlan));
+        root.Nodes.Add(BuildCompactTreeSlotNode(feasiblePlan, defaultPlan, compactPlan, compactImproved));
 
         _treeView.Nodes.Add(root);
         root.Expand();
@@ -208,6 +179,49 @@ partial class MainForm
 
         RebuildOverview(feasiblePlan, defaultPlan, compactPlan, compactImproved);
     }
+
+    private void PrepareTreeForFreshPopulation()
+    {
+        _treeView.Nodes.Clear();
+        _stateNodesByKey.Clear();
+        _referenceTargets.Clear();
+        _lazyDecisions.Clear();
+        _lazyOverviewSections.Clear();
+        _jumpTargets.Clear();
+        _jumpScopeRoots.Clear();
+        _jumpScopeStrategyRoots.Clear();
+        _indexedJumpScopes.Clear();
+        _navigationHistory.Clear();
+        _backButton.Enabled = false;
+    }
+
+    private TreeNode BuildStepTreeSlotNode(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan)
+    {
+        StrategyPlan stepPlan = defaultPlan ?? feasiblePlan;
+        string stepStageName = defaultPlan is null ? StageNames.GreedyFeasible : StageNames.StepProof;
+        return CreatePlanTreeRoot(stepStageName, stepPlan, "default", stepPlan.Elapsed);
+    }
+
+    private TreeNode BuildCompactTreeSlotNode(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool compactImproved)
+    {
+        if (compactPlan is null)
+            return CreateComputingPlaceholderNode(FirstCompactTreeStageName(feasiblePlan, defaultPlan));
+
+        string compactStageName = FormatCompactStageName(defaultPlan is null, compactPlan.MaxStep);
+        return compactImproved
+            ? CreatePlanTreeRoot(compactStageName, compactPlan, "compact", compactPlan.Elapsed)
+            : CreateNoSolutionTreeRoot(compactStageName, compactPlan.Elapsed);
+    }
+
+    private static string FirstCompactTreeStageName(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan)
+        => defaultPlan is null
+            ? NextProofTightenStageName(feasiblePlan, feasiblePlan.MaxStep)
+            : StageNames.FormatExactEdgeCompact(feasiblePlan.MaxStep);
+
+    private static string FormatCompactStageName(bool greedyMode, int maxStep)
+        => greedyMode
+            ? StageNames.FormatGreedyEdgeCompact(maxStep)
+            : StageNames.FormatExactEdgeCompact(maxStep);
 
     // Squeeze on the optimum for a plan: L is the proven analytic lower bound
     // (RootProvenLowerBound), U is the achieved upper bound (MaxStep). When L == U the strategy is
@@ -282,23 +296,30 @@ partial class MainForm
         _treeView.BeginUpdate();
 
         TreeNode root = _treeView.Nodes[0];
-        root.Text = BuildRootLabel(_feasiblePlan, defaultPlan, compactPlan);
-        root.Tag = new LazyNodeDetails(() => BuildTwoPhaseDetails(defaultPlan, compactPlan, compactImproved));
-
-        // Replace only the trailing compact slot (everything after the single step slot).
-        while (root.Nodes.Count > 1)
-            root.Nodes.RemoveAt(root.Nodes.Count - 1);
-        string compactStageName = _defaultPlan is null
-            ? StageNames.FormatGreedyEdgeCompact(compactPlan.MaxStep)
-            : StageNames.FormatExactEdgeCompact(compactPlan.MaxStep);
-        if (compactImproved)
-            root.Nodes.Add(CreatePlanTreeRoot(compactStageName, compactPlan, "compact", compactPlan.Elapsed));
-        else
-            root.Nodes.Add(CreateNoSolutionTreeRoot(compactStageName, compactPlan.Elapsed));
+        UpdateTreeRootForFinalCompact(root, defaultPlan, compactPlan, compactImproved);
+        ReplaceCompactTreeSlot(root, compactPlan, compactImproved);
 
         _treeView.EndUpdate();
 
         FinalizeCompactInOverview(compactPlan, compactImproved);
+    }
+
+    private void UpdateTreeRootForFinalCompact(TreeNode root, StrategyPlan defaultPlan, StrategyPlan compactPlan, bool compactImproved)
+    {
+        root.Text = BuildRootLabel(_feasiblePlan!, defaultPlan, compactPlan);
+        root.Tag = new LazyNodeDetails(() => BuildTwoPhaseDetails(defaultPlan, compactPlan, compactImproved));
+    }
+
+    private void ReplaceCompactTreeSlot(TreeNode root, StrategyPlan compactPlan, bool compactImproved)
+    {
+        // Replace only the trailing compact slot (everything after the single step slot).
+        while (root.Nodes.Count > 1)
+            root.Nodes.RemoveAt(root.Nodes.Count - 1);
+
+        string compactStageName = FormatCompactStageName(_defaultPlan is null, compactPlan.MaxStep);
+        root.Nodes.Add(compactImproved
+            ? CreatePlanTreeRoot(compactStageName, compactPlan, "compact", compactPlan.Elapsed)
+            : CreateNoSolutionTreeRoot(compactStageName, compactPlan.Elapsed));
     }
 
     private TreeNode BuildStageTreeNode(StageResult stage, string scope, bool improved)

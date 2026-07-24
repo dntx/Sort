@@ -221,24 +221,7 @@ partial class MainForm
         if (branch.EquivalentOrders is not null)
             branchHeader += $"  (×{branch.EquivalentOrders.Count} = {branch.EquivalentOrders.CountFormula})";
 
-        // Record which order-text tokens this outcome resolves so DrawNode can tint those "#n" tokens:
-        // doomed items (newly excluded) in the exclusion color and secured items (newly guaranteed into
-        // top-k) in the inclusion color. Restrict to labels that actually appear in the order text --
-        // items resolved outside this branch's shown order have nothing to highlight.
-        HashSet<int> orderLabels = ParseOrderLabels(branch.OrderText);
-        Dictionary<int, bool>? colored = null;
-        void MarkColored(IReadOnlyList<int> items, bool doomed)
-        {
-            foreach (int item in items)
-            {
-                int label = item + 1;
-                if (orderLabels.Contains(label))
-                    (colored ??= new Dictionary<int, bool>())[label] = doomed;
-            }
-        }
-
-        MarkColored(branch.Effect.NewlyGuaranteedTop, doomed: false);
-        MarkColored(branch.Effect.NewlyExcluded, doomed: true);
+        Dictionary<int, bool>? colored = BuildBranchColoredTokens(branch);
 
         var branchNode = new BranchTreeNode(branchHeader)
         {
@@ -247,56 +230,95 @@ partial class MainForm
             ColoredTokens = colored,
         };
 
-        if (branch.EquivalentOrders is not null)
-        {
-            // The count and its formula live in the branch header (×N = formula), so this child row
-            // only carries the pattern/legend. The hover Tag still exposes the full two-line detail.
-            branchNode.Nodes.Add(new TreeNode(DisplayEngine.FormatEquivalentPatternLine(branch.EquivalentOrders))
-            {
-                ForeColor = _palette.MutedForeColor,
-                Tag = DisplayEngine.FormatEquivalentDetails(branch.EquivalentOrders),
-            });
-        }
-
-        if (branch.Effect.NewlyGuaranteedTop.Count > 0)
-        {
-            branchNode.Nodes.Add(new TreeNode(DisplayEngine.FormatInEntry(branch.Effect.NewlyGuaranteedTop))
-            {
-                ForeColor = _palette.InColor,
-                Tag = $"Newly confirmed in top-k: {DisplayEngine.FormatOptionalSet(branch.Effect.NewlyGuaranteedTop)}",
-            });
-        }
-
-        if (branch.Effect.NewlyExcluded.Count > 0)
-        {
-            branchNode.Nodes.Add(new TreeNode(DisplayEngine.FormatOutEntry(branch.Effect.NewlyExcluded))
-            {
-                ForeColor = _palette.OutColor,
-                Tag = $"Newly excluded from top-k: {DisplayEngine.FormatOptionalSet(branch.Effect.NewlyExcluded)}",
-            });
-        }
-
-        if (branch.Effect.FixedCandidates.Count > 0)
-        {
-            branchNode.Nodes.Add(new TreeNode(DisplayEngine.FormatFixedEntry(branch.Effect.FixedCandidates))
-            {
-                ForeColor = _palette.FixedColor,
-                Tag = $"Current fixed top-k candidates: {DisplayEngine.FormatOptionalSet(branch.Effect.FixedCandidates)}",
-            });
-        }
-
-        if (branch.Effect.PossibleCandidates.Count > 0)
-        {
-            branchNode.Nodes.Add(new TreeNode(DisplayEngine.FormatPossibleEntry(branch.Effect.PossibleCandidates))
-            {
-                ForeColor = _palette.PossibleColor,
-                Tag = $"Current possible top-k candidates: {DisplayEngine.FormatOptionalSet(branch.Effect.PossibleCandidates)}",
-            });
-        }
+        AddBranchMetaNodes(branchNode, branch);
 
         // The next state node is always added LAST; the jump/copy path walks rely on that position.
         branchNode.Nodes.Add(CreateStateNode(branch.Next, k, scope, depthIndex));
         return branchNode;
+    }
+
+    private Dictionary<int, bool>? BuildBranchColoredTokens(StrategyBranch branch)
+    {
+        // Record which order-text tokens this outcome resolves so DrawNode can tint those "#n" tokens:
+        // doomed items (newly excluded) in the exclusion color and secured items (newly guaranteed into
+        // top-k) in the inclusion color. Restrict to labels that actually appear in the order text --
+        // items resolved outside this branch's shown order have nothing to highlight.
+        HashSet<int> orderLabels = ParseOrderLabels(branch.OrderText);
+        Dictionary<int, bool>? colored = null;
+
+        MarkBranchColoredItems(orderLabels, branch.Effect.NewlyGuaranteedTop, doomed: false, ref colored);
+        MarkBranchColoredItems(orderLabels, branch.Effect.NewlyExcluded, doomed: true, ref colored);
+        return colored;
+    }
+
+    private static void MarkBranchColoredItems(HashSet<int> orderLabels, IReadOnlyList<int> items, bool doomed, ref Dictionary<int, bool>? colored)
+    {
+        foreach (int item in items)
+        {
+            int label = item + 1;
+            if (orderLabels.Contains(label))
+                (colored ??= new Dictionary<int, bool>())[label] = doomed;
+        }
+    }
+
+    private void AddBranchMetaNodes(TreeNode branchNode, StrategyBranch branch)
+    {
+        AddEquivalentOrdersNode(branchNode, branch);
+        AddEffectNode(
+            branchNode,
+            branch.Effect.NewlyGuaranteedTop,
+            DisplayEngine.FormatInEntry,
+            _palette.InColor,
+            "Newly confirmed in top-k: ");
+        AddEffectNode(
+            branchNode,
+            branch.Effect.NewlyExcluded,
+            DisplayEngine.FormatOutEntry,
+            _palette.OutColor,
+            "Newly excluded from top-k: ");
+        AddEffectNode(
+            branchNode,
+            branch.Effect.FixedCandidates,
+            DisplayEngine.FormatFixedEntry,
+            _palette.FixedColor,
+            "Current fixed top-k candidates: ");
+        AddEffectNode(
+            branchNode,
+            branch.Effect.PossibleCandidates,
+            DisplayEngine.FormatPossibleEntry,
+            _palette.PossibleColor,
+            "Current possible top-k candidates: ");
+    }
+
+    private void AddEquivalentOrdersNode(TreeNode branchNode, StrategyBranch branch)
+    {
+        if (branch.EquivalentOrders is null)
+            return;
+
+        // The count and its formula live in the branch header (×N = formula), so this child row
+        // only carries the pattern/legend. The hover Tag still exposes the full two-line detail.
+        branchNode.Nodes.Add(new TreeNode(DisplayEngine.FormatEquivalentPatternLine(branch.EquivalentOrders))
+        {
+            ForeColor = _palette.MutedForeColor,
+            Tag = DisplayEngine.FormatEquivalentDetails(branch.EquivalentOrders),
+        });
+    }
+
+    private void AddEffectNode(
+        TreeNode branchNode,
+        IReadOnlyList<int> items,
+        Func<IReadOnlyList<int>, string> formatter,
+        Color color,
+        string tagPrefix)
+    {
+        if (items.Count == 0)
+            return;
+
+        branchNode.Nodes.Add(new TreeNode(formatter(items))
+        {
+            ForeColor = color,
+            Tag = tagPrefix + DisplayEngine.FormatOptionalSet(items),
+        });
     }
 
     // Parses the 1-based "#n" labels present in a branch's order text, which is always a " > "-joined
