@@ -112,24 +112,6 @@ internal static class ComparisonStateAlgorithms
         var assignment = new Dictionary<int, int>(items.Count);
         ulong used = 0;
 
-        bool Consistent(int from, int to)
-        {
-            throwIfCancellationRequested();
-            if (((fixedTopMask >> from) & 1UL) != ((fixedTopMask >> to) & 1UL))
-                return false;
-            foreach (KeyValuePair<int, int> pair in assignment)
-            {
-                throwIfCancellationRequested();
-                int of = pair.Key;
-                int ot = pair.Value;
-                if (((ancestors[of] >> from) & 1UL) != ((ancestors[ot] >> to) & 1UL))
-                    return false;
-                if (((descendants[of] >> from) & 1UL) != ((descendants[ot] >> to) & 1UL))
-                    return false;
-            }
-            return true;
-        }
-
         for (int i = 0; i < orderA.Count; i++)
         {
             throwIfCancellationRequested();
@@ -142,46 +124,25 @@ internal static class ComparisonStateAlgorithms
                 return false;
             }
 
-            if (assignment.ContainsKey(from) || !Consistent(from, to))
+            if (assignment.ContainsKey(from)
+                || !IsAutomorphismConsistent(from, to, fixedTopMask, ancestors, descendants, assignment, throwIfCancellationRequested))
                 return false;
 
             assignment[from] = to;
             used |= 1UL << to;
         }
 
-        var unassigned = new List<int>();
-        foreach (int item in items)
-        {
-            throwIfCancellationRequested();
-            if (!assignment.ContainsKey(item))
-                unassigned.Add(item);
-        }
-
-        bool Search(int idx)
-        {
-            throwIfCancellationRequested();
-            if (idx == unassigned.Count)
-                return true;
-
-            int from = unassigned[idx];
-            foreach (int to in items)
-            {
-                throwIfCancellationRequested();
-                if ((used & (1UL << to)) != 0 || !Consistent(from, to))
-                    continue;
-
-                assignment[from] = to;
-                used |= 1UL << to;
-                if (Search(idx + 1))
-                    return true;
-                assignment.Remove(from);
-                used &= ~(1UL << to);
-            }
-
-            return false;
-        }
-
-        if (!Search(0))
+        List<int> unassigned = CollectUnassignedItems(items, assignment, throwIfCancellationRequested);
+        if (!SearchAutomorphismAssignment(
+                0,
+                unassigned,
+                items,
+                fixedTopMask,
+                ancestors,
+                descendants,
+                assignment,
+                ref used,
+                throwIfCancellationRequested))
             return false;
 
         automorphism = assignment;
@@ -250,96 +211,19 @@ internal static class ComparisonStateAlgorithms
                 maxLabel = labels[i];
         }
 
-        if (maxLabel + 1 > a)
-        {
-            var present = new bool[maxLabel + 1];
-            for (int i = 0; i < a; i++)
-                present[labels[i]] = true;
-
-            var map = new int[maxLabel + 1];
-            int next = 0;
-            for (int v = 0; v <= maxLabel; v++)
-            {
-                if (present[v])
-                    map[v] = next++;
-            }
-
-            for (int i = 0; i < a; i++)
-                labels[i] = map[labels[i]];
-        }
+        NormalizeLabelsToDenseRange(labels, a, maxLabel);
 
         bool changed;
         do
         {
             throwIfCancellationRequested();
-            int classCount = 0;
-            for (int i = 0; i < a; i++)
-            {
-                throwIfCancellationRequested();
-                if (labels[i] > classCount)
-                    classCount = labels[i];
-            }
-            classCount++;
+            int classCount = ComputeClassCount(labels, a, throwIfCancellationRequested);
 
             int width = 1 + 2 * classCount;
-            Array.Clear(sig, 0, a * width);
-            for (int i = 0; i < a; i++)
-            {
-                throwIfCancellationRequested();
-                int baseIdx = i * width;
-                sig[baseIdx] = labels[i];
-
-                ulong up = desc[i];
-                while (up != 0)
-                {
-                    throwIfCancellationRequested();
-                    int b = BitOperations.TrailingZeroCount(up);
-                    up &= up - 1;
-                    sig[baseIdx + 1 + labels[b]]++;
-                }
-
-                ulong down = anc[i];
-                while (down != 0)
-                {
-                    throwIfCancellationRequested();
-                    int b = BitOperations.TrailingZeroCount(down);
-                    down &= down - 1;
-                    sig[baseIdx + 1 + classCount + labels[b]]++;
-                }
-
-                perm[i] = i;
-            }
-
-            for (int x = 1; x < a; x++)
-            {
-                int keyPos = perm[x];
-                int y = x - 1;
-                while (y >= 0 && CompareCanonicalSignatures(sig, perm[y], keyPos, width) > 0)
-                {
-                    perm[y + 1] = perm[y];
-                    y--;
-                }
-
-                perm[y + 1] = keyPos;
-            }
-
-            int color = 0;
-            for (int r = 0; r < a; r++)
-            {
-                if (r > 0 && CompareCanonicalSignatures(sig, perm[r - 1], perm[r], width) != 0)
-                    color++;
-                nextLabels[perm[r]] = color;
-            }
-
-            changed = false;
-            for (int i = 0; i < a; i++)
-            {
-                if (labels[i] != nextLabels[i])
-                {
-                    changed = true;
-                    break;
-                }
-            }
+            PopulateCanonicalSignatures(a, classCount, anc, desc, labels, perm, sig, throwIfCancellationRequested);
+            SortPermutationByCanonicalSignature(a, perm, sig, width);
+            AssignRefinedLabels(a, perm, sig, width, nextLabels);
+            changed = HasLabelChange(labels, nextLabels, a);
 
             if (changed)
             {
@@ -364,27 +248,7 @@ internal static class ComparisonStateAlgorithms
         ref int[]? best)
     {
         throwIfCancellationRequested();
-        int classCount = 0;
-        for (int i = 0; i < a; i++)
-        {
-            throwIfCancellationRequested();
-            if (colors[i] + 1 > classCount)
-                classCount = colors[i] + 1;
-        }
-
-        var cellSize = new int[classCount];
-        for (int i = 0; i < a; i++)
-            cellSize[colors[i]]++;
-
-        int targetColor = -1;
-        for (int c = 0; c < classCount; c++)
-        {
-            if (cellSize[c] > 1)
-            {
-                targetColor = c;
-                break;
-            }
-        }
+        int targetColor = FindFirstNonSingletonColor(a, colors, throwIfCancellationRequested);
 
         if (targetColor < 0)
         {
@@ -400,29 +264,267 @@ internal static class ComparisonStateAlgorithms
             if (colors[p] != targetColor)
                 continue;
 
-            bool redundant = false;
-            for (int q = 0; q < p; q++)
-            {
-                throwIfCancellationRequested();
-                if (colors[q] == targetColor && AreInterchangeable(p, q, anc, desc))
-                {
-                    redundant = true;
-                    break;
-                }
-            }
-
-            if (redundant)
+            if (IsRedundantTargetVertex(p, targetColor, colors, anc, desc, throwIfCancellationRequested))
                 continue;
 
             // Rebuild the individualized baseline for each branch so deeper recursion cannot
             // leak workspace mutations into sibling branches in this frame.
-            for (int i = 0; i < a; i++)
-                workspace.Individualized[i] = 2 * colors[i] + (colors[i] == targetColor ? 1 : 0);
+            BuildIndividualizedBaseline(a, colors, targetColor, workspace.Individualized);
 
             workspace.Individualized[p] = 2 * colors[p];
             int[] refined = RefineCanonicalColoring(a, anc, desc, workspace.Individualized, workspace, throwIfCancellationRequested);
             CanonicalizeRecursive(a, anc, desc, seed, refined, workspace, throwIfCancellationRequested, ref best);
         }
+    }
+
+    private static bool IsAutomorphismConsistent(
+        int from,
+        int to,
+        ulong fixedTopMask,
+        ulong[] ancestors,
+        ulong[] descendants,
+        Dictionary<int, int> assignment,
+        Action throwIfCancellationRequested)
+    {
+        throwIfCancellationRequested();
+        if (((fixedTopMask >> from) & 1UL) != ((fixedTopMask >> to) & 1UL))
+            return false;
+
+        foreach (KeyValuePair<int, int> pair in assignment)
+        {
+            throwIfCancellationRequested();
+            int of = pair.Key;
+            int ot = pair.Value;
+            if (((ancestors[of] >> from) & 1UL) != ((ancestors[ot] >> to) & 1UL))
+                return false;
+            if (((descendants[of] >> from) & 1UL) != ((descendants[ot] >> to) & 1UL))
+                return false;
+        }
+
+        return true;
+    }
+
+    private static List<int> CollectUnassignedItems(
+        List<int> items,
+        Dictionary<int, int> assignment,
+        Action throwIfCancellationRequested)
+    {
+        var unassigned = new List<int>();
+        foreach (int item in items)
+        {
+            throwIfCancellationRequested();
+            if (!assignment.ContainsKey(item))
+                unassigned.Add(item);
+        }
+
+        return unassigned;
+    }
+
+    private static bool SearchAutomorphismAssignment(
+        int idx,
+        List<int> unassigned,
+        List<int> items,
+        ulong fixedTopMask,
+        ulong[] ancestors,
+        ulong[] descendants,
+        Dictionary<int, int> assignment,
+        ref ulong used,
+        Action throwIfCancellationRequested)
+    {
+        throwIfCancellationRequested();
+        if (idx == unassigned.Count)
+            return true;
+
+        int from = unassigned[idx];
+        foreach (int to in items)
+        {
+            throwIfCancellationRequested();
+            if ((used & (1UL << to)) != 0
+                || !IsAutomorphismConsistent(from, to, fixedTopMask, ancestors, descendants, assignment, throwIfCancellationRequested))
+            {
+                continue;
+            }
+
+            assignment[from] = to;
+            used |= 1UL << to;
+            if (SearchAutomorphismAssignment(
+                    idx + 1,
+                    unassigned,
+                    items,
+                    fixedTopMask,
+                    ancestors,
+                    descendants,
+                    assignment,
+                    ref used,
+                    throwIfCancellationRequested))
+            {
+                return true;
+            }
+
+            assignment.Remove(from);
+            used &= ~(1UL << to);
+        }
+
+        return false;
+    }
+
+    private static void NormalizeLabelsToDenseRange(int[] labels, int a, int maxLabel)
+    {
+        if (maxLabel + 1 <= a)
+            return;
+
+        var present = new bool[maxLabel + 1];
+        for (int i = 0; i < a; i++)
+            present[labels[i]] = true;
+
+        var map = new int[maxLabel + 1];
+        int next = 0;
+        for (int v = 0; v <= maxLabel; v++)
+        {
+            if (present[v])
+                map[v] = next++;
+        }
+
+        for (int i = 0; i < a; i++)
+            labels[i] = map[labels[i]];
+    }
+
+    private static int ComputeClassCount(int[] labels, int a, Action throwIfCancellationRequested)
+    {
+        int classCount = 0;
+        for (int i = 0; i < a; i++)
+        {
+            throwIfCancellationRequested();
+            if (labels[i] > classCount)
+                classCount = labels[i];
+        }
+
+        return classCount + 1;
+    }
+
+    private static void PopulateCanonicalSignatures(
+        int a,
+        int classCount,
+        ulong[] anc,
+        ulong[] desc,
+        int[] labels,
+        int[] perm,
+        int[] sig,
+        Action throwIfCancellationRequested)
+    {
+        int width = 1 + 2 * classCount;
+        Array.Clear(sig, 0, a * width);
+        for (int i = 0; i < a; i++)
+        {
+            throwIfCancellationRequested();
+            int baseIdx = i * width;
+            sig[baseIdx] = labels[i];
+
+            ulong up = desc[i];
+            while (up != 0)
+            {
+                throwIfCancellationRequested();
+                int b = BitOperations.TrailingZeroCount(up);
+                up &= up - 1;
+                sig[baseIdx + 1 + labels[b]]++;
+            }
+
+            ulong down = anc[i];
+            while (down != 0)
+            {
+                throwIfCancellationRequested();
+                int b = BitOperations.TrailingZeroCount(down);
+                down &= down - 1;
+                sig[baseIdx + 1 + classCount + labels[b]]++;
+            }
+
+            perm[i] = i;
+        }
+    }
+
+    private static void SortPermutationByCanonicalSignature(int a, int[] perm, int[] sig, int width)
+    {
+        for (int x = 1; x < a; x++)
+        {
+            int keyPos = perm[x];
+            int y = x - 1;
+            while (y >= 0 && CompareCanonicalSignatures(sig, perm[y], keyPos, width) > 0)
+            {
+                perm[y + 1] = perm[y];
+                y--;
+            }
+
+            perm[y + 1] = keyPos;
+        }
+    }
+
+    private static void AssignRefinedLabels(int a, int[] perm, int[] sig, int width, int[] nextLabels)
+    {
+        int color = 0;
+        for (int r = 0; r < a; r++)
+        {
+            if (r > 0 && CompareCanonicalSignatures(sig, perm[r - 1], perm[r], width) != 0)
+                color++;
+            nextLabels[perm[r]] = color;
+        }
+    }
+
+    private static bool HasLabelChange(int[] labels, int[] nextLabels, int a)
+    {
+        for (int i = 0; i < a; i++)
+        {
+            if (labels[i] != nextLabels[i])
+                return true;
+        }
+
+        return false;
+    }
+
+    private static int FindFirstNonSingletonColor(int a, int[] colors, Action throwIfCancellationRequested)
+    {
+        int classCount = 0;
+        for (int i = 0; i < a; i++)
+        {
+            throwIfCancellationRequested();
+            if (colors[i] + 1 > classCount)
+                classCount = colors[i] + 1;
+        }
+
+        var cellSize = new int[classCount];
+        for (int i = 0; i < a; i++)
+            cellSize[colors[i]]++;
+
+        for (int c = 0; c < classCount; c++)
+        {
+            if (cellSize[c] > 1)
+                return c;
+        }
+
+        return -1;
+    }
+
+    private static bool IsRedundantTargetVertex(
+        int vertex,
+        int targetColor,
+        int[] colors,
+        ulong[] anc,
+        ulong[] desc,
+        Action throwIfCancellationRequested)
+    {
+        for (int q = 0; q < vertex; q++)
+        {
+            throwIfCancellationRequested();
+            if (colors[q] == targetColor && AreInterchangeable(vertex, q, anc, desc))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static void BuildIndividualizedBaseline(int a, int[] colors, int targetColor, int[] individualized)
+    {
+        for (int i = 0; i < a; i++)
+            individualized[i] = 2 * colors[i] + (colors[i] == targetColor ? 1 : 0);
     }
 
     private static bool AreInterchangeable(int p, int q, ulong[] anc, ulong[] desc)
