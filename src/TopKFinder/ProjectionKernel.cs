@@ -6,7 +6,11 @@ namespace TopKFinder;
 
 static class ProjectionKernel
 {
-    internal readonly record struct KernelBranchLine<T>(List<T> Members, bool ProjectionMerged);
+    internal readonly record struct KernelBranchLine<T>(
+        List<T> Members,
+        bool ProjectionMerged,
+        bool HasPlannedSummary = false,
+        EquivalentOrderSummary? PlannedSummary = null);
 
     internal readonly record struct ProjectionOutcomeData(IReadOnlyList<int> OrderItems, ulong EliminatedMask);
 
@@ -36,7 +40,7 @@ static class ProjectionKernel
 
         EquivalentOrderSummary? fullBucketSummary = buildSummary(families);
         if (IsSingleMergedOrbit(fullBucketSummary))
-            return new List<KernelBranchLine<T>> { new(families, false) };
+            return new List<KernelBranchLine<T>> { new(families, false, true, fullBucketSummary) };
 
         var lines = new List<KernelBranchLine<T>>();
         List<List<T>> parentOrbits = partitionFamiliesIntoOrbits(families);
@@ -61,7 +65,7 @@ static class ProjectionKernel
             bool isRelabelingOrbit = orbit.TrueForAll(member => GetFamilyCountOrThrow(getFamilyCount, member) == 1);
             bool isProjectionQuotient = projectionMerged && orbit.Exists(member => GetFamilyCountOrThrow(getFamilyCount, member) > 1);
             if (isCleanTemplate || isRelabelingOrbit || isProjectionQuotient)
-                lines.Add(new(orbit, projectionMerged));
+                lines.Add(new(orbit, projectionMerged, true, combinedSummary));
             else
             {
                 foreach (T outcome in orbit)

@@ -6,6 +6,34 @@ using TopKFinder;
 public sealed class ProjectionKernelTests
 {
     [Fact]
+    public void PlanBranchLines_CarriesCleanBucketSummaryForMaterializationReuse()
+    {
+        List<int> families =
+        [
+            1,
+            2,
+        ];
+        var summary = new EquivalentOrderSummary(2, "permute {#1,#2}", "2");
+        int summaryBuilds = 0;
+
+        List<ProjectionKernel.KernelBranchLine<int>> lines = ProjectionKernel.PlanBranchLines(
+            families,
+            _ =>
+            {
+                summaryBuilds++;
+                return summary;
+            },
+            _ => throw new InvalidOperationException("A clean bucket must not be partitioned."),
+            _ => throw new InvalidOperationException("A clean bucket must not merge projection orbits."),
+            _ => 1);
+
+        ProjectionKernel.KernelBranchLine<int> line = Assert.Single(lines);
+        Assert.Equal(1, summaryBuilds);
+        Assert.True(line.HasPlannedSummary);
+        Assert.Same(summary, line.PlannedSummary);
+    }
+
+    [Fact]
     public void PlanBranchLines_ThrowsWhenGetFamilyCountIsNull()
     {
         List<int> families =

@@ -83,7 +83,7 @@ internal sealed class SearchTransitionPlanner
             state,
             chosenGroup,
             tryBuildDoomedTailSpecs: group => _dependencies.TryBuildDoomedTailSpecs(state, remainingSlots, group),
-            line => BuildBranchSpecForLine(state, line.Members, line.ProjectionMerged),
+            line => BuildBranchSpecForLine(state, line),
             spec => spec.OrderText);
     }
 
@@ -344,9 +344,10 @@ internal sealed class SearchTransitionPlanner
 
     private StrategyBuilder.BranchSpec BuildBranchSpecForLine(
         ComparisonState state,
-        List<StrategyBuilder.MergedFamilyOutcome> line,
-        bool projectionMerged)
+        StrategyBuilder.PlannedBranchLine plannedLine)
     {
+        List<StrategyBuilder.MergedFamilyOutcome> line = plannedLine.Members;
+        bool projectionMerged = plannedLine.ProjectionMerged;
         List<StrategyBuilder.OrderFamilyDescriptor> families = _dependencies.CollectLineFamilies(line);
         bool allSingleton = HasOnlySingletonFamilies(families);
         if (TrySelectProjectionQuotientRepresentativeForLine(
@@ -369,7 +370,9 @@ internal sealed class SearchTransitionPlanner
             return BuildRelabelRepresentativeBranchSpec(state, line);
         }
 
-        EquivalentOrderSummary? summary = _dependencies.BuildEquivalentOrderSummary(families);
+        EquivalentOrderSummary? summary = plannedLine.HasPlannedSummary
+            ? plannedLine.PlannedSummary
+            : _dependencies.BuildEquivalentOrderSummary(families);
 
         if (allSingleton
             && ShouldFoldSingletonOrbitRepresentative(summary))

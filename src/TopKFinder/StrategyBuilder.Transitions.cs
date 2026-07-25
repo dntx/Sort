@@ -157,7 +157,11 @@ partial class StrategyBuilder
                         ? MergeOrbitsByProjection(state, parentOrbits)
                         : parentOrbits.Select(orbit => (orbit, false)).ToList(),
                 getFamilyCount: outcome => outcome.Family.Count)
-            .Select(line => new PlannedBranchLine(line.Members, line.ProjectionMerged))
+            .Select(line => new PlannedBranchLine(
+                line.Members,
+                line.ProjectionMerged,
+                line.HasPlannedSummary,
+                line.PlannedSummary))
             .ToList();
     }
 
@@ -466,14 +470,22 @@ partial class StrategyBuilder
 
     internal readonly struct PlannedBranchLine
     {
-        public PlannedBranchLine(List<MergedFamilyOutcome> members, bool projectionMerged)
+        public PlannedBranchLine(
+            List<MergedFamilyOutcome> members,
+            bool projectionMerged,
+            bool hasPlannedSummary,
+            EquivalentOrderSummary? plannedSummary)
         {
             Members = members;
             ProjectionMerged = projectionMerged;
+            HasPlannedSummary = hasPlannedSummary;
+            PlannedSummary = plannedSummary;
         }
 
         public List<MergedFamilyOutcome> Members { get; }
         public bool ProjectionMerged { get; }
+        public bool HasPlannedSummary { get; }
+        public EquivalentOrderSummary? PlannedSummary { get; }
     }
 
     internal readonly struct SearchBranchSpec
