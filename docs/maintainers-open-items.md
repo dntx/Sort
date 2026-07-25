@@ -85,6 +85,13 @@ What remains:
 - Latest run succeeded on `main` (`workflow_dispatch`): https://github.com/dntx/Sort/actions/runs/29642273138
 - Continue collecting consecutive-run evidence before changing status.
 
+2026-07-25 observation note:
+
+- Local D4.1 check (Release, `full-counter-suite` selector semantics) found matched-tests drift against repository baseline: current 124 vs baseline 111 (added 13, removed 0).
+- Added rows are concentrated in `Default_DuplicateOutcomeSkipsStaysWithinBaseline` and compact/default `*StaysWithinBaseline` expansions, so first classification is selector drift (baseline/selector set mismatch), not deterministic counter regression.
+- `StrategyRegressionTests` local run remains green (202 passed, 0 failed), which lowers likelihood of a real deterministic counter break in the same window.
+- Local scripted full-audit reproduction is currently noisy on Windows PowerShell 5.1 hosts due `pwsh`/`utf8NoBOM` script assumptions; treat this as infra/runtime reproduction friction and keep nightly CI runs as the authoritative unattended signal while triaging selector drift.
+
 Exit criterion:
 
 - Nightly lane demonstrates stable behavior over a meaningful run window, and handling guidance is validated by at least one real or simulated failure investigation.
