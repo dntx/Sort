@@ -43,19 +43,7 @@ partial class MainForm
     // if it is cancelled / fails before producing a plan.
     private void ClearResultsView()
     {
-        _overviewTree.Nodes.Clear();
-
-        _treeView.BeginUpdate();
-        _treeView.Nodes.Clear();
-        _treeView.EndUpdate();
-
-        _stateNodesByKey.Clear();
-        _referenceTargets.Clear();
-        _lazyDecisions.Clear();
-        _lazyOverviewSections.Clear();
-        _jumpTargets.Clear();
-        _navigationHistory.Clear();
-        _backButton.Enabled = false;
+        ResetExplorerState(clearTreeNodes: true, clearOverviewNodes: true);
     }
 
     // Renders the overview panel so it mirrors the tree one-to-one: a step section (named by mode --
@@ -89,7 +77,7 @@ partial class MainForm
     {
         StrategyPlan stepPlan = defaultPlan ?? feasiblePlan;
         string stepStageName = defaultPlan is null ? StageNames.GreedyFeasible : StageNames.StepProof;
-        return BuildOverviewSectionNode(stepPlan, "default", stepStageName, stepPlan.Elapsed);
+        return BuildOverviewSectionNode(stepPlan, DefaultExplorerScope, stepStageName, stepPlan.Elapsed);
     }
 
     private TreeNode BuildCompactOverviewSlotNode(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool compactImproved)
@@ -118,7 +106,7 @@ partial class MainForm
             : StageNames.FormatExactEdgeCompact(compactPlan.MaxStep);
 
         if (compactImproved)
-            return BuildOverviewSectionNode(compactPlan, "compact", compactStageName, compactPlan.Elapsed);
+            return BuildOverviewSectionNode(compactPlan, CompactExplorerScope, compactStageName, compactPlan.Elapsed);
 
         return BuildOverviewNoteNode(FormatStageRootLabel(compactStageName, compactPlan.Elapsed, plan: null));
     }
@@ -155,24 +143,34 @@ partial class MainForm
         _overviewTree.BeginUpdate();
         sectionNode.Nodes.Clear();
         foreach (OverviewRow row in DisplayEngine.BuildOverview(lazy.Plan).Rows)
+            sectionNode.Nodes.Add(BuildOverviewHeadlineNode(row, lazy.Scope));
+        _overviewTree.EndUpdate();
+    }
+
+    private TreeNode BuildOverviewHeadlineNode(OverviewRow row, string scope)
+    {
+        string? key = row.LinkStateId is int id ? $"{scope}:{id}" : null;
+        var headlineNode = new TreeNode(row.Headline)
         {
-            string? key = row.LinkStateId is int id ? $"{lazy.Scope}:{id}" : null;
-            var headlineNode = new TreeNode(row.Headline)
+            Tag = key,
+            ForeColor = _palette.ForeColor,
+        };
+        foreach (string detail in row.Details)
+        {
+            headlineNode.Nodes.Add(new TreeNode(detail)
             {
                 Tag = key,
-                ForeColor = _palette.ForeColor,
-            };
-            foreach (string detail in row.Details)
-            {
-                headlineNode.Nodes.Add(new TreeNode(detail)
-                {
-                    Tag = key,
-                    ForeColor = _palette.MutedForeColor,
-                });
-            }
-            sectionNode.Nodes.Add(headlineNode);
+                ForeColor = _palette.MutedForeColor,
+            });
         }
-        _overviewTree.EndUpdate();
+
+        return headlineNode;
+    }
+
+    private void OverviewTree_BeforeExpand(object? sender, TreeViewCancelEventArgs e)
+    {
+        if (e.Node is { } node)
+            MaterializeOverviewSection(node);
     }
 
     private TreeNode BuildOverviewNoteNode(string text)
@@ -188,11 +186,7 @@ partial class MainForm
         if (_overviewTree.SelectedNode?.Tag is not string targetStateKey)
             return;
 
-        if (ResolveStateNode(targetStateKey) is not TreeNode targetNode)
-            return;
-
-        targetNode.EnsureVisible();
-        _treeView.SelectedNode = targetNode;
+        TryNavigateToStateKey(targetStateKey, focusTree: false);
     }
 
     private ContextMenuStrip CreateOverviewContextMenu()

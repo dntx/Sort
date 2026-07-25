@@ -13,6 +13,9 @@ namespace TopKFinder;
 
 partial class MainForm
 {
+    private const string DefaultExplorerScope = "default";
+    private const string CompactExplorerScope = "compact";
+
     private readonly Dictionary<string, TreeNode> _stateNodesByKey = new();
     private readonly Dictionary<TreeNode, string> _referenceTargets = new();
     private readonly Stack<TreeNode> _navigationHistory = new();
@@ -125,6 +128,30 @@ partial class MainForm
         return planNode;
     }
 
+    private void ResetExplorerState(bool clearTreeNodes, bool clearOverviewNodes)
+    {
+        if (clearOverviewNodes)
+            _overviewTree.Nodes.Clear();
+
+        if (clearTreeNodes)
+        {
+            _treeView.BeginUpdate();
+            _treeView.Nodes.Clear();
+            _treeView.EndUpdate();
+        }
+
+        _stateNodesByKey.Clear();
+        _referenceTargets.Clear();
+        _lazyDecisions.Clear();
+        _lazyOverviewSections.Clear();
+        _jumpTargets.Clear();
+        _jumpScopeRoots.Clear();
+        _jumpScopeStrategyRoots.Clear();
+        _indexedJumpScopes.Clear();
+        _navigationHistory.Clear();
+        _backButton.Enabled = false;
+    }
+
     // A terminal stage that found no better strategy: a single bold leaf carrying the unified label with
     // the given marker ("no solution" when proven infeasible, "search incomplete (candidate cap reached)"
     // when the greedy cap truncated the enumeration) and no child strategy subtree.
@@ -213,6 +240,12 @@ partial class MainForm
         foreach (StrategyBranch branch in info.Node.Branches)
             treeNode.Nodes.Add(CreateBranchNode(branch, info.K, info.Scope, info.DepthIndex));
         _treeView.EndUpdate();
+    }
+
+    private void TreeView_BeforeExpand(object? sender, TreeViewCancelEventArgs e)
+    {
+        if (e.Node is { } node)
+            MaterializeDecision(node);
     }
 
     private TreeNode CreateBranchNode(StrategyBranch branch, int k, string scope, LazyDepthIndex depthIndex)
@@ -483,12 +516,31 @@ partial class MainForm
         if (ResolveStateNode(targetStateKey) is not TreeNode targetNode)
             return;
 
-        _navigationHistory.Push(node);
-        _backButton.Enabled = true;
+        RecordNavigationOrigin(node);
+        SelectTreeNode(targetNode, focusTree: true);
+    }
 
-        targetNode.EnsureVisible();
-        _treeView.SelectedNode = targetNode;
-        _treeView.Focus();
+    private void RecordNavigationOrigin(TreeNode origin)
+    {
+        _navigationHistory.Push(origin);
+        _backButton.Enabled = true;
+    }
+
+    private void SelectTreeNode(TreeNode node, bool focusTree)
+    {
+        node.EnsureVisible();
+        _treeView.SelectedNode = node;
+        if (focusTree)
+            _treeView.Focus();
+    }
+
+    private bool TryNavigateToStateKey(string targetStateKey, bool focusTree)
+    {
+        if (ResolveStateNode(targetStateKey) is not TreeNode targetNode)
+            return false;
+
+        SelectTreeNode(targetNode, focusTree);
+        return true;
     }
 
     // Resolves a "scope:stateId" key to its tree node, materializing the path to it if the target's
@@ -596,10 +648,7 @@ partial class MainForm
 
         TreeNode previous = _navigationHistory.Pop();
         _backButton.Enabled = _navigationHistory.Count > 0;
-
-        previous.EnsureVisible();
-        _treeView.SelectedNode = previous;
-        _treeView.Focus();
+        SelectTreeNode(previous, focusTree: true);
     }
 
     private ContextMenuStrip CreateTreeContextMenu()

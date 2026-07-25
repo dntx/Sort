@@ -156,50 +156,41 @@ partial class MainForm
     {
         PrepareTreeForFreshPopulation();
 
+        TreeNode root = CreatePopulatedRootTreeNode(feasiblePlan, defaultPlan, compactPlan, compactImproved);
+
+        RebuildOverview(feasiblePlan, defaultPlan, compactPlan, compactImproved);
+    }
+
+    private TreeNode CreatePopulatedRootTreeNode(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool compactImproved)
+    {
         _treeView.BeginUpdate();
 
-        string rootLabel = BuildRootLabel(feasiblePlan, defaultPlan, compactPlan);
-        var rootDetails = new LazyNodeDetails(() => BuildRootDetails(feasiblePlan, defaultPlan, compactPlan, compactImproved));
-
-        var root = new TreeNode(rootLabel)
+        var root = new TreeNode(BuildRootLabel(feasiblePlan, defaultPlan, compactPlan))
         {
-            Tag = rootDetails,
+            Tag = new LazyNodeDetails(() => BuildRootDetails(feasiblePlan, defaultPlan, compactPlan, compactImproved)),
             NodeFont = new Font(_treeView.Font, FontStyle.Bold),
             ForeColor = _palette.ForeColor,
         };
-
         root.Nodes.Add(BuildStepTreeSlotNode(feasiblePlan, defaultPlan));
         root.Nodes.Add(BuildCompactTreeSlotNode(feasiblePlan, defaultPlan, compactPlan, compactImproved));
-
         _treeView.Nodes.Add(root);
         root.Expand();
 
         _treeView.EndUpdate();
         _treeView.SelectedNode = root;
-
-        RebuildOverview(feasiblePlan, defaultPlan, compactPlan, compactImproved);
+        return root;
     }
 
     private void PrepareTreeForFreshPopulation()
     {
-        _treeView.Nodes.Clear();
-        _stateNodesByKey.Clear();
-        _referenceTargets.Clear();
-        _lazyDecisions.Clear();
-        _lazyOverviewSections.Clear();
-        _jumpTargets.Clear();
-        _jumpScopeRoots.Clear();
-        _jumpScopeStrategyRoots.Clear();
-        _indexedJumpScopes.Clear();
-        _navigationHistory.Clear();
-        _backButton.Enabled = false;
+        ResetExplorerState(clearTreeNodes: true, clearOverviewNodes: false);
     }
 
     private TreeNode BuildStepTreeSlotNode(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan)
     {
         StrategyPlan stepPlan = defaultPlan ?? feasiblePlan;
         string stepStageName = defaultPlan is null ? StageNames.GreedyFeasible : StageNames.StepProof;
-        return CreatePlanTreeRoot(stepStageName, stepPlan, "default", stepPlan.Elapsed);
+        return CreatePlanTreeRoot(stepStageName, stepPlan, DefaultExplorerScope, stepPlan.Elapsed);
     }
 
     private TreeNode BuildCompactTreeSlotNode(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool compactImproved)
@@ -209,7 +200,7 @@ partial class MainForm
 
         string compactStageName = FormatCompactStageName(defaultPlan is null, compactPlan.MaxStep);
         return compactImproved
-            ? CreatePlanTreeRoot(compactStageName, compactPlan, "compact", compactPlan.Elapsed)
+            ? CreatePlanTreeRoot(compactStageName, compactPlan, CompactExplorerScope, compactPlan.Elapsed)
             : CreateNoSolutionTreeRoot(compactStageName, compactPlan.Elapsed);
     }
 
@@ -318,7 +309,7 @@ partial class MainForm
 
         string compactStageName = FormatCompactStageName(_defaultPlan is null, compactPlan.MaxStep);
         root.Nodes.Add(compactImproved
-            ? CreatePlanTreeRoot(compactStageName, compactPlan, "compact", compactPlan.Elapsed)
+            ? CreatePlanTreeRoot(compactStageName, compactPlan, CompactExplorerScope, compactPlan.Elapsed)
             : CreateNoSolutionTreeRoot(compactStageName, compactPlan.Elapsed));
     }
 

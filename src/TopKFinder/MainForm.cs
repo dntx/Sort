@@ -186,24 +186,12 @@ partial class MainForm : Form
         var split = CreateOuterSplitContainer();
 
         _treeView = CreateStrategyTreeView();
-        _treeView.AfterSelect += (_, e) => ShowNodeDetails(e.Node);
-        _treeView.DrawNode += TreeView_DrawNode;
-        _treeView.BeforeExpand += (_, e) => { if (e.Node is { } n) MaterializeDecision(n); };
-        _treeView.NodeMouseDoubleClick += (_, e) => TryJumpToReferenceTarget(e.Node);
-        _treeView.MouseDown += TreeView_MouseDown;
-        _treeView.KeyDown += TreeView_KeyDown;
         _treeView.ContextMenuStrip = CreateTreeContextMenu();
-        _treeExpandButton.Click += (_, _) => ExpandEntireTree();
-        _treeCollapseButton.Click += (_, _) => _treeView.CollapseAll();
-        _backButton.Click += (_, _) => NavigateBack();
+        WireTreeExplorerInteractions();
 
         _overviewTree = CreateOverviewTreeView();
-        _overviewTree.AfterSelect += (_, _) => JumpFromOverviewSelection();
-        _overviewTree.BeforeExpand += (_, e) => { if (e.Node is { } n) MaterializeOverviewSection(n); };
         _overviewTree.ContextMenuStrip = CreateOverviewContextMenu();
-        _overviewTree.KeyDown += OverviewTree_KeyDown;
-        _overviewExpandButton.Click += (_, _) => _overviewTree.ExpandAll();
-        _overviewCollapseButton.Click += (_, _) => _overviewTree.CollapseAll();
+        WireOverviewExplorerInteractions();
 
         var innerSplit = CreateInnerSplitContainer();
         innerSplit.Panel1.Controls.Add(CreateTreeRegion(_treeView, _treeExpandButton, _treeCollapseButton, _backButton));
@@ -246,6 +234,28 @@ partial class MainForm : Form
         LoadSettings();
         ApplyTheme(ParseSelectedTheme());
         FormClosing += (_, _) => SaveSettings();
+    }
+
+    private void WireTreeExplorerInteractions()
+    {
+        _treeView.AfterSelect += (_, e) => ShowNodeDetails(e.Node);
+        _treeView.DrawNode += TreeView_DrawNode;
+        _treeView.BeforeExpand += TreeView_BeforeExpand;
+        _treeView.NodeMouseDoubleClick += (_, e) => TryJumpToReferenceTarget(e.Node);
+        _treeView.MouseDown += TreeView_MouseDown;
+        _treeView.KeyDown += TreeView_KeyDown;
+        _treeExpandButton.Click += (_, _) => ExpandEntireTree();
+        _treeCollapseButton.Click += (_, _) => _treeView.CollapseAll();
+        _backButton.Click += (_, _) => NavigateBack();
+    }
+
+    private void WireOverviewExplorerInteractions()
+    {
+        _overviewTree.AfterSelect += (_, _) => JumpFromOverviewSelection();
+        _overviewTree.BeforeExpand += OverviewTree_BeforeExpand;
+        _overviewTree.KeyDown += OverviewTree_KeyDown;
+        _overviewExpandButton.Click += (_, _) => _overviewTree.ExpandAll();
+        _overviewCollapseButton.Click += (_, _) => _overviewTree.CollapseAll();
     }
 
     private void ConfigureWindow()

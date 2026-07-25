@@ -55,6 +55,57 @@ partial class MainForm
             $"Choose {summary.RemainingSlots} of ({DisplayEngine.FormatSet(summary.CandidatePool)}) to complete top {k}";
     }
 
+    private bool TryShowImmediateNodeDetails(TreeNode node)
+    {
+        switch (node.Tag)
+        {
+            case string text:
+                _detailsTextBox.Text = text;
+                return true;
+            case LazyNodeDetails lazy when lazy.TryGetCached(out string cached):
+                _detailsTextBox.Text = cached;
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private bool ShouldSkipDetailsUpdate(TreeNode selectedNode, int requestVersion)
+        => requestVersion != Volatile.Read(ref _detailsRequestVersion)
+            || !ReferenceEquals(_treeView.SelectedNode, selectedNode);
+
+    private void ShowLazyNodeDetails(TreeNode node, LazyNodeDetails lazy, int requestVersion)
+    {
+        _detailsTextBox.Text = "Loading details...";
+        _ = Task.Run(lazy.GetOrCreate).ContinueWith(t =>
+        {
+            if (!IsHandleCreated || IsDisposed)
+                return;
+
+            if (t.IsFaulted)
+            {
+                string error = t.Exception?.GetBaseException().Message ?? "unknown error";
+                Debug.WriteLine($"Details load failed: {error}");
+                BeginInvoke(new Action(() =>
+                {
+                    if (ShouldSkipDetailsUpdate(node, requestVersion))
+                        return;
+
+                    _detailsTextBox.Text = $"Failed to load details: {error}";
+                }));
+                return;
+            }
+
+            BeginInvoke(new Action(() =>
+            {
+                if (ShouldSkipDetailsUpdate(node, requestVersion))
+                    return;
+
+                _detailsTextBox.Text = t.Result;
+            }));
+        }, TaskScheduler.Default);
+    }
+
     private void ShowNodeDetails(TreeNode? node)
     {
         _detailsTextBox.Clear();
@@ -62,50 +113,11 @@ partial class MainForm
             return;
 
         int requestVersion = Interlocked.Increment(ref _detailsRequestVersion);
-        switch (node.Tag)
-        {
-            case string text:
-                _detailsTextBox.Text = text;
-                return;
-            case LazyNodeDetails lazy when lazy.TryGetCached(out string cached):
-                _detailsTextBox.Text = cached;
-                return;
-            case LazyNodeDetails lazy:
-                _detailsTextBox.Text = "Loading details...";
-                _ = Task.Run(lazy.GetOrCreate).ContinueWith(t =>
-                {
-                    if (!IsHandleCreated || IsDisposed)
-                        return;
 
-                    if (t.IsFaulted)
-                    {
-                        string error = t.Exception?.GetBaseException().Message ?? "unknown error";
-                        Debug.WriteLine($"Details load failed: {error}");
-                        BeginInvoke(new Action(() =>
-                        {
-                            if (requestVersion != Volatile.Read(ref _detailsRequestVersion))
-                                return;
-                            if (!ReferenceEquals(_treeView.SelectedNode, node))
-                                return;
+        if (TryShowImmediateNodeDetails(node))
+            return;
 
-                            _detailsTextBox.Text = $"Failed to load details: {error}";
-                        }));
-                        return;
-                    }
-
-                    BeginInvoke(new Action(() =>
-                    {
-                        if (requestVersion != Volatile.Read(ref _detailsRequestVersion))
-                            return;
-                        if (!ReferenceEquals(_treeView.SelectedNode, node))
-                            return;
-
-                        _detailsTextBox.Text = t.Result;
-                    }));
-                }, TaskScheduler.Default);
-                return;
-            default:
-                return;
-        }
+        if (node.Tag is LazyNodeDetails lazy)
+            ShowLazyNodeDetails(node, lazy, requestVersion);
     }
 }
