@@ -105,14 +105,23 @@ partial class MainForm
 
     private static string FormatWorkStageLabel(string currentStageName)
     {
-        if (currentStageName.StartsWith(StageNames.ProofTightenPrefix, StringComparison.Ordinal))
-            return "proof-tighten";
+        if (string.IsNullOrWhiteSpace(currentStageName))
+            return "unknown";
 
-        if (currentStageName.StartsWith(StageNames.ExactEdgeCompactPrefix, StringComparison.Ordinal)
-            || currentStageName.StartsWith(StageNames.GreedyEdgeCompactPrefix, StringComparison.Ordinal))
-            return "edge-compact";
+        int length = 0;
+        while (length < currentStageName.Length)
+        {
+            char c = currentStageName[length];
+            if ((c >= 'a' && c <= 'z') || c == '-')
+            {
+                length++;
+                continue;
+            }
 
-        return "edge-compact";
+            break;
+        }
+
+        return length > 0 ? currentStageName[..length] : "unknown";
     }
 
     // Local 0..1 fraction of the edge phase's compact solve, mirroring the engine's own self-correcting
