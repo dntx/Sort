@@ -53,6 +53,11 @@ readonly struct IntSequenceKey : IEquatable<IntSequenceKey>, IComparable<IntSequ
         return _hashCode;
     }
 
+    public IntSequenceKey SnapshotCopy()
+    {
+        return new IntSequenceKey((int[])_parts.Clone());
+    }
+
     public static bool operator ==(IntSequenceKey left, IntSequenceKey right)
     {
         return left.Equals(right);
@@ -126,6 +131,11 @@ readonly struct SearchStateKey : IEquatable<SearchStateKey>
     public override int GetHashCode()
     {
         return HashCode.Combine(RemainingSlots, StateKey);
+    }
+
+    public SearchStateKey SnapshotCopy()
+    {
+        return new SearchStateKey(RemainingSlots, StateKey.SnapshotCopy());
     }
 }
 
