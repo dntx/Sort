@@ -98,6 +98,19 @@ What remains:
 - Aligned full-audit guardrail invocation to explicit `-SelectedGuardrail full-counter-suite` (and kept `-Profile` compatibility via alias in guardrail script) to prevent accidental default-profile execution during audits.
 - Drift gate recheck after reconciliation: currentCount=124, baselineCount=124, added=0, removed=0.
 
+2026-07-25 D4.3 nightly closeout decision note:
+
+- Continuous nightly observation window reviewed (2026-07-18 to 2026-07-24, scheduled runs only):
+  - Success: 3 consecutive (`29654884837`, `29697868303`, `29769707869`).
+  - Failure: 4 consecutive (`29856501888`, `29945384367`, `30032819548`, `30116426747`).
+- Failure classification from run artifacts:
+  - 2026-07-21 and 2026-07-22: selector drift vs baseline (`full-counter-suite` matched 124 vs baseline 111; added 13, removed 0).
+  - 2026-07-23 and 2026-07-24: selector/profile mismatch drift (`fast-default` matched 84 vs baseline 111; added 7, removed 34), treated as configuration/operational false-positive pattern rather than deterministic counter regression.
+- In the same window, available snapshot summaries show no positive-delta signal, and no direct deterministic counter regression evidence was found.
+- Decision for 3.1: keep Open.
+- Rationale: D4.2 reconciliation was applied, but no post-reconciliation nightly scheduled run window is available yet to validate restored unattended signal quality.
+- Next action (single): observe next 3 consecutive scheduled nightly runs on `main`; if they remain stable (no selector/profile mismatch drift and no unexplained positive-delta/regression signal), then transition 3.1 to Done.
+
 Exit criterion:
 
 - Nightly lane demonstrates stable behavior over a meaningful run window, and handling guidance is validated by at least one real or simulated failure investigation.
