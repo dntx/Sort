@@ -93,10 +93,7 @@ sealed class SolvedStrategy
         foreach ((SearchStateKey key, SolvedStrategyNode node) in nodes)
         {
             ArgumentNullException.ThrowIfNull(node);
-            frozen.Add(key.SnapshotCopy(), new SolvedStrategyNode(
-                node.SelectedGroup,
-                node.DistinctSuccessors,
-                node.RemainingDepth));
+            frozen.Add(key.SnapshotCopy(), new SolvedStrategyNode(node));
         }
 
         return new ReadOnlyDictionary<SearchStateKey, SolvedStrategyNode>(frozen);
@@ -137,6 +134,12 @@ sealed class SolvedStrategy
     }
 }
 
+enum SolvedStrategyNodeKind
+{
+    Decision,
+    FinalChoice,
+}
+
 sealed class SolvedStrategyNode
 {
     public SolvedStrategyNode(
@@ -146,6 +149,7 @@ sealed class SolvedStrategyNode
     {
         ArgumentNullException.ThrowIfNull(distinctSuccessors);
 
+        Kind = SolvedStrategyNodeKind.Decision;
         SelectedGroup = new SolvedGroupPattern(selectedGroup);
         DistinctSuccessors = Array.AsReadOnly(
             distinctSuccessors
@@ -157,25 +161,27 @@ sealed class SolvedStrategyNode
         RemainingDepth = remainingDepth;
     }
 
-    internal SolvedStrategyNode(
-        SolvedGroupPattern selectedGroup,
-        IEnumerable<SearchStateKey> distinctSuccessors,
-        int remainingDepth)
+    private SolvedStrategyNode()
     {
-        SelectedGroup = new SolvedGroupPattern(selectedGroup);
-        DistinctSuccessors = Array.AsReadOnly(
-            distinctSuccessors
-                .Distinct()
-                .OrderBy(key => key.RemainingSlots)
-                .ThenBy(key => key.StateKey)
-                .Select(key => key.SnapshotCopy())
-                .ToArray());
-        RemainingDepth = remainingDepth;
+        Kind = SolvedStrategyNodeKind.FinalChoice;
+        DistinctSuccessors = Array.Empty<SearchStateKey>();
+        RemainingDepth = 1;
     }
 
-    public SolvedGroupPattern SelectedGroup { get; }
+    internal SolvedStrategyNode(SolvedStrategyNode source)
+    {
+        Kind = source.Kind;
+        SelectedGroup = source.SelectedGroup is null ? null : new SolvedGroupPattern(source.SelectedGroup);
+        DistinctSuccessors = Array.AsReadOnly(source.DistinctSuccessors.Select(key => key.SnapshotCopy()).ToArray());
+        RemainingDepth = source.RemainingDepth;
+    }
+
+    public SolvedStrategyNodeKind Kind { get; }
+    public SolvedGroupPattern? SelectedGroup { get; }
     public IReadOnlyList<SearchStateKey> DistinctSuccessors { get; }
     public int RemainingDepth { get; }
+
+    public static SolvedStrategyNode FinalChoice() => new();
 }
 
 static class SolvedStrategyValidator
@@ -221,7 +227,17 @@ static class SolvedStrategyValidator
 
             SolvedStrategyNode node = solution.Nodes[key];
             if (node.RemainingDepth <= 0)
-                throw new ArgumentException("Decision-node remaining depth must be positive.", nameof(solution));
+                throw new ArgumentException("Solved-node remaining depth must be positive.", nameof(solution));
+
+            if (node.Kind == SolvedStrategyNodeKind.FinalChoice)
+            {
+                if (node.RemainingDepth != 1 || node.SelectedGroup is not null || node.DistinctSuccessors.Count != 0)
+                    throw new ArgumentException("A final-choice node must be a one-step leaf.", nameof(solution));
+                continue;
+            }
+
+            if (node.SelectedGroup is null)
+                throw new ArgumentException("A decision node must select a comparison group.", nameof(solution));
             if (node.DistinctSuccessors.Count == 0)
                 throw new ArgumentException("A decision node must have at least one successor.", nameof(solution));
 

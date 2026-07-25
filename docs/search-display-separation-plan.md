@@ -2,8 +2,8 @@
 
 ## Status
 
-- State: Architecture decisions resolved; Batches 0-1 complete; Batch 2 ready
-- Baseline: `main` after PR #441 (`d53ef7d`)
+- State: Architecture decisions resolved; Batches 0-2 complete; Batch 3 ready
+- Baseline: `main` after PR #443 (`a81e695`)
 - Related work: PR #442 is intentionally paused and is not a dependency of this plan
 - Execution rule: implement one batch at a time and complete its focused validation before starting the next
 - Source of truth: when this document and chat history differ, update and follow this document
@@ -118,7 +118,8 @@ A node should contain only search semantics:
 ```csharp
 sealed class SolvedStrategyNode
 {
-    public SolvedGroupPattern SelectedGroup { get; }
+    public SolvedStrategyNodeKind Kind { get; }
+    public SolvedGroupPattern? SelectedGroup { get; }
     public IReadOnlyList<SearchStateKey> DistinctSuccessors { get; }
     public int RemainingDepth { get; }
 }
@@ -127,6 +128,11 @@ sealed class SolvedStrategyNode
 `SolvedGroupPattern` is the immutable snapshot equivalent of the mutable-cache-oriented `BestGroupPattern`.
 It owns a copied canonical pattern and read-only color signature without changing allocations on the existing
 solver hot path.
+
+`SolvedStrategyNodeKind.FinalChoice` represents the search-semantic one-step leaf where the active item count
+is at most `M` and one final comparison resolves the requested top set. It has remaining depth 1, no selected
+group pattern, and no successors. This keeps solved depth exact without importing display-only
+`FinalChoiceSummary` payload.
 
 It must not contain:
 
@@ -385,18 +391,25 @@ Acceptance:
 
 ### Batch 2: Greedy-feasible dual output
 
-Status: Not started
+Status: Complete, 2026-07-25
 
-- Adapt `GreedyPolicySolution` to the common contract or provide a lossless adapter.
-- Return both solved strategy and current `StrategyPlan` internally.
-- Keep CLI/GUI behavior unchanged.
-- Preserve depth and successor-set invariants.
+- Added a lossless `GreedyPolicySolution` to `SolvedStrategy` adapter, including explicit one-step final-choice
+    states that were previously implicit in policy depth.
+- Added internal `GreedyFeasibleStageArtifacts(Solution, Plan)` dual output while preserving the public
+    `ExecuteGreedyFeasibleStage()` plan-only API.
+- Changed the same-run compact budget source from `plan.MaxStep` to
+    `solution.Score.WorstCaseSteps` after enforcing their equality invariant.
+- Kept CLI, GUI, and public pipeline behavior unchanged.
+- Expanded the existing eight-case regression matrix to compare problem shape, score, bounds, provenance,
+    canonical group patterns, successors, final-choice states, and materialized depth.
 
 Acceptance:
 
-- all current greedy-feasible tests pass,
-- solved depth equals materialized `MaxStep` across the regression matrix,
-- later greedy stages can obtain `U` from the solution.
+- all current greedy-feasible tests pass: focused class result `50/50` passed,
+- solved depth equals materialized `MaxStep` across the regression matrix: `8/8` passed,
+- later greedy stages can obtain `U` from the solution: complete via `_feasibleRootBudget`,
+- full functional suite: `587/587` passed in Release,
+- heavy greedy-feasible performance sentinel: `N28M3K6_GreedyFeasibleCompletesWithinBudget` passed in Release.
 
 ### Batch 3: Exact step-proof snapshot
 
@@ -868,10 +881,9 @@ Risks and follow-ups:
 
 ## 11. Immediate Next Step
 
-Implement Batch 2 as a narrow greedy-feasible slice:
+Implement Batch 3 as a narrow exact step-proof snapshot slice:
 
-1. adapt `GreedyPolicySolution` losslessly to `SolvedStrategy`,
-2. produce the solution and current `StrategyPlan` without changing public pipeline behavior,
-3. validate solved depth and canonical successor parity across the existing eight-case matrix,
-4. make the greedy pipeline's initial feasible upper bound available from the solution while retaining the
-    compatibility plan path.
+1. freeze the exact root-reachable selected pattern/depth assignment into `SolvedStrategy`,
+2. make exact search projection consume the frozen snapshot instead of mutable session caches,
+3. continue eager display materialization and preserve current exact pipeline behavior,
+4. validate exact solved depth, search projection, and materialized `MaxStep` equality.
