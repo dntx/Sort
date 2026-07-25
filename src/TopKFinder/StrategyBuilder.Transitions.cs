@@ -368,9 +368,11 @@ partial class StrategyBuilder
         ComparisonState state,
         int remainingSlots,
         IReadOnlyList<int> order,
-        OrderFamilyDescriptor? orderFamily)
+        OrderFamilyDescriptor? orderFamily,
+        bool countOutcome = true)
     {
-        _outcomesConstructed++;
+        if (countOutcome)
+            _outcomesConstructed++;
         ComparisonState next = state.Clone();
         next.ApplyOrder(order);
         next.Eliminate(remainingSlots);
@@ -448,6 +450,15 @@ partial class StrategyBuilder
     {
         foreach (IReadOnlyList<int> order in EnumerateSearchOrders(state, group, remainingSlots))
             yield return CreateComparisonOutcome(state, remainingSlots, order, null);
+    }
+
+    private IEnumerable<ComparisonOutcome> EnumerateSnapshotOutcomes(
+        ComparisonState state,
+        int remainingSlots,
+        IReadOnlyList<int> group)
+    {
+        foreach (IReadOnlyList<int> order in EnumerateSearchOrders(state, group, remainingSlots))
+            yield return CreateComparisonOutcome(state, remainingSlots, order, null, countOutcome: false);
     }
 
     internal readonly struct BranchSpec

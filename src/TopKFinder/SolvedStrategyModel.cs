@@ -51,6 +51,9 @@ sealed class SolvedGroupPattern
     public int GroupSize { get; }
     public IntSequenceKey Pattern { get; }
     public IReadOnlyList<int>? ColorSignature { get; }
+
+    internal BestGroupPattern ToBestGroupPattern()
+        => new(GroupSize, Pattern, ColorSignature?.ToArray());
 }
 
 sealed class SolvedStrategy

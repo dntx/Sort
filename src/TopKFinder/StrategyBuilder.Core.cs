@@ -189,11 +189,14 @@ partial class StrategyBuilder
     }
 
     public StrategyPlan ExecuteStepProofStage()
+        => ExecuteStepProofStageWithSolution().Plan;
+
+    internal ExactStepProofStageArtifacts ExecuteStepProofStageWithSolution()
     {
         _progressScope = _reportCombinedRunProgress
             ? ProgressScope.DefaultInCombinedRun
             : ProgressScope.DefaultStandalone;
-        return BuildPlan(useCompactSelection: false);
+        return RunWithComparisonStateCancellation(BuildExactStepProofStageArtifacts);
     }
 
     // Exact-stage entrypoint: materialize display/search artifacts in one solver session.
@@ -351,7 +354,8 @@ partial class StrategyBuilder
     }
 
     private readonly record struct MaterializationContext(
-        GreedyPolicySolution? GreedyPolicy = null);
+        GreedyPolicySolution? GreedyPolicy = null,
+        SolvedStrategy? Solution = null);
 
     private StrategyNode BuildState(
         ComparisonState state,
