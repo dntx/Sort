@@ -14,6 +14,96 @@ partial class StrategyBuilder
             _owner = owner;
         }
 
+        // Shared prelude for exact, bounded, and lower-bound queries:
+        // normalize once, record observability once, and short-circuit terminal shapes.
+        private bool TryPrepareAndResolveTerminal(ComparisonState state, ref int remainingSlots, out int steps)
+        {
+            _owner.ThrowIfCancellationRequested();
+            ulong ignoredFixedTopMask = 0;
+            _owner.NormalizeState(state, ref ignoredFixedTopMask, ref remainingSlots);
+            _owner.ObserveSearchState(state, remainingSlots);
+
+            if (remainingSlots == 0)
+            {
+                steps = 0;
+                return true;
+            }
+
+            if (_owner.TryGetDeterminedTopSet(state, remainingSlots, out _))
+            {
+                steps = 0;
+                return true;
+            }
+
+            if (state.ActiveCount <= remainingSlots)
+            {
+                steps = 0;
+                return true;
+            }
+
+            if (state.ActiveCount <= _owner._m)
+            {
+                steps = 1;
+                return true;
+            }
+
+            steps = -1;
+            return false;
+        }
+
+        private bool TryGetCachedExactSteps(SearchStateKey key, out int cached)
+        {
+            if (_owner._minWorstCaseStepsCache.TryGetValue(key, out cached))
+            {
+                _owner._exactCacheHits++;
+                return true;
+            }
+
+            return false;
+        }
+
+        // Canonical exact-resolution write path used by both exact and bounded searches.
+        private void CommitExactResolution(
+            SearchStateKey key,
+            ComparisonState state,
+            int remainingSlots,
+            int bestWorstCase,
+            List<int>? bestGroup,
+            bool dominanceProbed,
+            DominanceProbeResult dominanceProbe)
+        {
+            if (bestGroup is not null)
+                _owner._bestGroupPatternCache[key] = StrategyBuilder.MakeGroupPattern(state, bestGroup);
+
+            _owner._minWorstCaseStepsCache[key] = bestWorstCase;
+
+            if (_owner.EnableDominanceMetric && dominanceProbed)
+                _owner.RecordDominanceProbe(dominanceProbe, bestWorstCase, state, remainingSlots);
+            _owner.AddDominanceLibraryEntry(state, remainingSlots, bestWorstCase);
+        }
+
+        private bool TryGetKnownLowerBoundOverBudget(SearchStateKey key, int analyticLowerBound, int budget, out int knownLowerBound)
+        {
+            knownLowerBound = analyticLowerBound;
+            if (_owner._searchLowerBoundCache.TryGetValue(key, out int learned) && learned > knownLowerBound)
+                knownLowerBound = learned;
+
+            return knownLowerBound > budget;
+        }
+
+        // Bounded-search fail path: publish the strongest proven lower bound for future passes.
+        private int RegisterFailBound(SearchStateKey key, int budget, int bestWorstCase, int failSoftBound)
+        {
+            int failBound = failSoftBound == int.MaxValue ? bestWorstCase : failSoftBound;
+            if (failBound <= budget)
+                failBound = budget + 1;
+
+            if (!_owner._searchLowerBoundCache.TryGetValue(key, out int prior) || failBound > prior)
+                _owner._searchLowerBoundCache[key] = failBound;
+
+            return failBound;
+        }
+
         public int GetMinWorstCaseSteps(ComparisonState state, int remainingSlots)
         {
             bool useIterativeDeepening = _owner.ForceIterativeDeepeningForTesting ?? _owner._useIterativeDeepening;
@@ -45,29 +135,12 @@ partial class StrategyBuilder
 
         public int GetMinWorstCaseStepsExact(ComparisonState state, int remainingSlots)
         {
-            _owner.ThrowIfCancellationRequested();
-            ulong ignoredFixedTopMask = 0;
-            _owner.NormalizeState(state, ref ignoredFixedTopMask, ref remainingSlots);
-            _owner.ObserveSearchState(state, remainingSlots);
-
-            if (remainingSlots == 0)
-                return 0;
-
-            if (_owner.TryGetDeterminedTopSet(state, remainingSlots, out _))
-                return 0;
-
-            if (state.ActiveCount <= remainingSlots)
-                return 0;
-
-            if (state.ActiveCount <= _owner._m)
-                return 1;
+            if (TryPrepareAndResolveTerminal(state, ref remainingSlots, out int terminalSteps))
+                return terminalSteps;
 
             SearchStateKey key = _owner.GetSearchStateKey(state, remainingSlots);
-            if (_owner._minWorstCaseStepsCache.TryGetValue(key, out int cached))
-            {
-                _owner._exactCacheHits++;
+            if (TryGetCachedExactSteps(key, out int cached))
                 return cached;
-            }
 
             DominanceProbeResult dominanceProbe = default;
             bool dominanceProbed = false;
@@ -143,49 +216,22 @@ partial class StrategyBuilder
             if (bestWorstCase == int.MaxValue)
                 throw new InvalidOperationException("Expected at least one useful comparison group when unresolved candidates exceed comparison size.");
 
-            if (bestGroup is not null)
-                _owner._bestGroupPatternCache[key] = StrategyBuilder.MakeGroupPattern(state, bestGroup);
-
-            _owner._minWorstCaseStepsCache[key] = bestWorstCase;
-
-            if (_owner.EnableDominanceMetric && dominanceProbed)
-                _owner.RecordDominanceProbe(dominanceProbe, bestWorstCase, state, remainingSlots);
-            _owner.AddDominanceLibraryEntry(state, remainingSlots, bestWorstCase);
+            CommitExactResolution(key, state, remainingSlots, bestWorstCase, bestGroup, dominanceProbed, dominanceProbe);
 
             return bestWorstCase;
         }
 
         public int GetMinWorstCaseStepsBounded(ComparisonState state, int remainingSlots, int budget, int depth)
         {
-            _owner.ThrowIfCancellationRequested();
-            ulong ignoredFixedTopMask = 0;
-            _owner.NormalizeState(state, ref ignoredFixedTopMask, ref remainingSlots);
-            _owner.ObserveSearchState(state, remainingSlots);
-
-            if (remainingSlots == 0)
-                return 0;
-
-            if (_owner.TryGetDeterminedTopSet(state, remainingSlots, out _))
-                return 0;
-
-            if (state.ActiveCount <= remainingSlots)
-                return 0;
-
-            if (state.ActiveCount <= _owner._m)
-                return 1;
+            if (TryPrepareAndResolveTerminal(state, ref remainingSlots, out int terminalSteps))
+                return terminalSteps;
 
             SearchStateKey key = _owner.GetSearchStateKey(state, remainingSlots);
-            if (_owner._minWorstCaseStepsCache.TryGetValue(key, out int cached))
-            {
-                _owner._exactCacheHits++;
+            if (TryGetCachedExactSteps(key, out int cached))
                 return cached;
-            }
 
             int analyticLowerBound = GetMinWorstCaseLowerBound(state, remainingSlots);
-            int knownLowerBound = analyticLowerBound;
-            if (_owner._searchLowerBoundCache.TryGetValue(key, out int learned) && learned > knownLowerBound)
-                knownLowerBound = learned;
-            if (knownLowerBound > budget)
+            if (TryGetKnownLowerBoundOverBudget(key, analyticLowerBound, budget, out int knownLowerBound))
                 return knownLowerBound;
 
             DominanceProbeResult dominanceProbe = default;
@@ -270,45 +316,17 @@ partial class StrategyBuilder
 
             if (bestWorstCase <= budget)
             {
-                if (bestGroup is not null)
-                    _owner._bestGroupPatternCache[key] = StrategyBuilder.MakeGroupPattern(state, bestGroup);
-
-                _owner._minWorstCaseStepsCache[key] = bestWorstCase;
-
-                if (_owner.EnableDominanceMetric && dominanceProbed)
-                    _owner.RecordDominanceProbe(dominanceProbe, bestWorstCase, state, remainingSlots);
-                _owner.AddDominanceLibraryEntry(state, remainingSlots, bestWorstCase);
-
+                CommitExactResolution(key, state, remainingSlots, bestWorstCase, bestGroup, dominanceProbed, dominanceProbe);
                 return bestWorstCase;
             }
 
-            int failBound = failSoftBound == int.MaxValue ? bestWorstCase : failSoftBound;
-            if (failBound <= budget)
-                failBound = budget + 1;
-            if (!_owner._searchLowerBoundCache.TryGetValue(key, out int prior) || failBound > prior)
-                _owner._searchLowerBoundCache[key] = failBound;
-
-            return failBound;
+            return RegisterFailBound(key, budget, bestWorstCase, failSoftBound);
         }
 
         public int GetMinWorstCaseLowerBound(ComparisonState state, int remainingSlots)
         {
-            _owner.ThrowIfCancellationRequested();
-            ulong ignoredFixedTopMask = 0;
-            _owner.NormalizeState(state, ref ignoredFixedTopMask, ref remainingSlots);
-            _owner.ObserveSearchState(state, remainingSlots);
-
-            if (remainingSlots == 0)
-                return 0;
-
-            if (_owner.TryGetDeterminedTopSet(state, remainingSlots, out _))
-                return 0;
-
-            if (state.ActiveCount <= remainingSlots)
-                return 0;
-
-            if (state.ActiveCount <= _owner._m)
-                return 1;
+            if (TryPrepareAndResolveTerminal(state, ref remainingSlots, out int terminalSteps))
+                return terminalSteps;
 
             SearchStateKey key = _owner.GetSearchStateKey(state, remainingSlots);
             if (_owner._lowerBoundStepsCache.TryGetValue(key, out int cached))

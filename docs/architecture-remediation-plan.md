@@ -16,6 +16,7 @@ Refactor governance plan for architecture boundaries, naming consistency, and ma
 - Batch B1.2: Done. SearchTransitionPlanner is now an internal top-level seam with injected dependencies, with no public API or user-facing behavior change.
 - Batch B2.1: Done. State key types were extracted from ComparisonState into StateKeyTypes.cs with no behavioral change.
 - Batch B2.2: Done. Canonicalization and automorphism helpers were extracted to ComparisonState.Algorithms.cs; ComparisonState now primarily owns state, caches, mutation entrypoints, and delegating calls.
+- Batch D3.1: Done. Search-bound orchestration now shares state preparation, terminal resolution, exact-result commits, and bounded-failure lower-bound commits while preserving search behavior.
 
 ## Repo Layout Acceptance Closeout (2026-07-21)
 - Repo Layout: Code/Layout Done.
@@ -110,6 +111,40 @@ Unify mode and stage wording to exact/greedy; remove legacy A/B language.
 - Risks/notes:
 
 ## Batch Execution Record (latest)
+- Batch: D3.1 Search Bounds Slice
+- Status: Done
+- Changed files:
+  - StrategyBuilder.SearchBounds.cs
+  - StrategyBuilder.SearchBoundsOrchestrator.cs
+  - tests/TopKFinder.Tests/StrategyRegressionTests.cs
+- Behavior impact: Equivalent (the exact search, bounded search, lower-bound derivation, and feasible top-set counting algorithms are unchanged; duplicated orchestration responsibilities were consolidated)
+- Verification commands:
+  - dotnet build d:/Code/Sort2/src/TopKFinder/TopKFinder.csproj
+  - dotnet test .\tests\TopKFinder.Tests\TopKFinder.Tests.csproj --filter "FullyQualifiedName~Default_ExactAndBoundedPaths_AgreeOnSmallSearchBounds"
+- Verification result:
+  - build: succeeded
+  - source diagnostics: no errors in either changed source file
+  - test compilation: succeeded
+  - test execution: blocked in this environment at VSTest startup by the same application control policy that previously prevented loading TopKFinder.Tests.dll (`0x800711C7`)
+- Risks/notes:
+  - Scope stayed within the two Search Bounds files; UI, ComparisonState algorithms, repository layout, and naming governance were not changed.
+  - Exact and bounded searches now use the same terminal-state prelude and exact-resolution commit path.
+  - Bounded-search failure still writes only a learned lower bound; it does not populate exact-result or best-group caches.
+  - The new regression theory forces both exact and bounded paths over a one-step terminal shape and a small recursive shape, asserting the known optimum and final root proven lower bound for each path.
+
+### D3.1 Responsibility Chain Map
+
+| Responsibility chain | Public-to-private flow | Owned state/effects | Boundary guarantee |
+|---|---|---|---|
+| Exact search | `StrategyBuilder.GetMinWorstCaseStepsExact` -> `SearchBoundsOrchestrator.GetMinWorstCaseStepsExact` | Reads/writes `_minWorstCaseStepsCache`; commits the selected group pattern and dominance observations only after exact resolution | No global budget is threaded to children; incumbent and outcome-level lower-bound pruning remain unchanged |
+| Bounded search | `StrategyBuilder.GetMinWorstCaseStepsBounded` -> `SearchBoundsOrchestrator.GetMinWorstCaseStepsBounded` | Reads exact and learned-lower-bound caches; commits exact state only on success; calls `RegisterFailBound` on failure | A result within budget is exact; a result above budget is a proven lower bound and cannot pollute exact caches |
+| Search-path selection | `StrategyBuilder.GetMinWorstCaseSteps` -> `SearchBoundsOrchestrator.GetMinWorstCaseSteps` | Chooses single-pass exact search or iterative deepening; records root incumbents/proven lower bounds | Both paths return the same optimum; equally optimal materialized group representatives may differ |
+| Shared state prelude | `SearchBoundsOrchestrator.TryPrepareAndResolveTerminal` | Normalizes state, observes it once per query, and resolves 0/1-step terminal shapes | Exact, bounded, and lower-bound queries use the same normalization and terminal ordering |
+| Lower-bound derivation | `StrategyBuilder.GetMinWorstCaseLowerBound` -> `SearchBoundsOrchestrator.GetMinWorstCaseLowerBound` | Combines feasible-set information, antichain width, the non-terminal floor, and dominance; writes `_lowerBoundStepsCache` | Produces an analytic lower bound only; learned bounded-search failures remain in `_searchLowerBoundCache` |
+| Feasible top-set counting | `TryGetDeterminedTopSet` -> `GetFeasibleTopSetInfo` -> `CountFeasibleTopSets` | Uses the state-level feasible-set cache and a query-local subproblem memo; returns count plus a mask only when unique | Shared by terminal determinability and information lower bounds; it does not select comparison groups or mutate search-result caches |
+| Exact-result commit | `SearchBoundsOrchestrator.CommitExactResolution` | Writes best-group pattern, exact step count, and dominance records | Single commit path for exact search and successful bounded search |
+| Bounded-failure commit | `SearchBoundsOrchestrator.RegisterFailBound` | Monotonically strengthens `_searchLowerBoundCache` | Stores only a value strictly greater than the failed budget |
+
 - Batch: B2.3
 - Status: Done
 - Changed files:
