@@ -163,6 +163,7 @@ partial class StrategyBuilder
         return false;
     }
 
+    // Feasible top-set counting chain used by both terminal determinability checks and lower bounds.
     private FeasibleTopSetInfo GetFeasibleTopSetInfo(ComparisonState state, int remainingSlots)
     {
         ThrowIfCancellationRequested();
