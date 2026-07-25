@@ -21,6 +21,9 @@ minimax 搜索、对称性约减，以及三种剪枝下界（信息论下界、
 - `PublicPipelineOrchestrator`（公共编排层）负责 CLI/UI 共用的阶段顺序与 stage-emission 契约。
 - `DisplayRenderEngine` 与 UI/文本渲染器（显示层）负责折叠与展示语义，不改变搜索求解语义。
 
+`greedy-feasible` 也有明确的运行时边界：Phase A 先求解固定构造策略，产出以 `SearchStateKey` 为键的
+`GreedyPolicySolution`；Phase B 再消费该 solution 物化 display tree。Phase B 只重放已选分组，不重新做策略选择。
+
 当前 exact 入口已收口为单次 solver session：`ProjectDisplayAndSearchTrees()` 在同一会话里产出 display/search 两个视图，`ProjectSearchTree()` 则走独立的 search-only exact 入口并复用同一套 phase-1 缓存；两条路径都由 `StrategyBuilder` 基于 solver 状态递归直接构建 search tree。
 
 Search-first boundary status:
@@ -372,19 +375,26 @@ greedy 模式把这两件昂贵的事都砍掉：只承诺一个分组（不做 
 增量地拼出一个近似**反链**（两两互不可比、单次排序就能一次性解析最多对），既让新的 top 候选浮现，又把败者推向淘汰，
 同时跳过所有已知关系。`25,10,10` 的 step 阶段因此从约 86 s 降到约 3 s。
 
-```csharp
+当前实现把这条单策略闭包拆成两个明确阶段：
 
-// StrategyBuilder.GreedyFeasible.cs -> ChooseConstructiveGroup（无枚举、无预解闭包）
-// 增量反链：每次挑「与当前组内成员互不可比数最多」的活跃项，平局偏向前沿（祖先最少）。
-List<int> group = ChooseConstructiveGroup(state, remainingSlots);  // O(m·active^2)
+1. **Phase A：policy solve**。`SolveGreedyFeasiblePolicy` 递归规范化 search state、调用
+  `ChooseConstructiveGroupBase` 选定唯一分组，并把结果写入不可变的 `GreedyPolicySolution`。每个非终止
+  `SearchStateKey` 对应一个 `GreedyPolicyNode`，其中保存 `BestGroupPattern`、distinct successor keys 与 lean remaining depth。
+  这一阶段不生成 `OrderText`、`EquivalentOrderSummary`、doomed-tail pattern 或 UI payload。
+2. **Phase B：display materialization**。`MaterializeGreedyFeasiblePolicy` 复用既有 `BuildState` 路径，但
+  `ChooseGroup` 只能从 solution 读取 canonical `BestGroupPattern`，再在当前 concrete labels 下重放；缺 entry、pattern
+  无法匹配或物化得到的 successor set 与 Phase A 不同都会 fail-fast。该阶段不会再次调用构造式 chooser。
 
-```
+这里不能直接缓存 concrete `List<int>`：同一个 canonical search state 可能以不同 item labels 出现。
+`BestGroupPattern` 表达的是规范化分组轨道，现有 exact/compact 重放机制可在每个 concrete state 上找回对应分组。
 
-物化（materialize）阶段完全复用既有路径：`ChooseGroup` 在 `_useConstructiveSelection == true` 时**当场**调用
-`ChooseConstructiveGroup` 算出分组（无需 compact/精确那样的预算 pattern 缓存，因为选择器本身便宜且确定）。
 这样造出的策略树**结构合法**、可直接展示，其 `MaxStep` 就是**可行上界 `U`**（注意：`U` 不是已证明最优，只是一个
 **确实可达**的步数）。正确性（`U ≥ opt`）只需「严格进展」：每次排序都至少新增一条比较关系——只要所选分组含有一对
 互不可比项即可，而 `ChooseConstructiveGroup` 保证了这一点（总链兜底见 `ForceUnresolvedPair`）。
+
+阶段统计中，`Phase1Milliseconds` 表示 greedy policy solve，`Phase2Milliseconds` 表示 display materialization；
+根解析下界等准备工作仍计入 `Phase1bMilliseconds`。policy 的 lean depth 是不依赖 display reference 展开的可靠上界，
+可能比最终物化树按 Reference 解析得到的 `MaxStep` 更松，因此只要求 `policy.WorstCaseSteps >= plan.MaxStep`。
 
 > **`MaxStep` 必须计入 Reference 子树深度**：物化树里同一状态第二次到达会渲染成一个 **Reference 叶子**（不是回边），
 > 它代表「复用目标状态子树、还要再 +N 步」。`StrategyPlan.MaxStep`（`GetMaxStep`）因此**解析 Reference 到其目标子树**

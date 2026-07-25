@@ -351,7 +351,7 @@ partial class StrategyBuilder
     }
 
     private readonly record struct MaterializationContext(
-        bool ForceFixedConstructiveSelection = false);
+        GreedyPolicySolution? GreedyPolicy = null);
 
     private StrategyNode BuildState(
         ComparisonState state,

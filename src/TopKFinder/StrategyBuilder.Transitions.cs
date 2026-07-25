@@ -378,6 +378,7 @@ partial class StrategyBuilder
         ulong addedFixedTopMask = 0;
         int nextRemainingSlots = remainingSlots;
         NormalizeState(next, ref addedFixedTopMask, ref nextRemainingSlots);
+        ProbeCancellation(0);
 
         return new ComparisonOutcome(
             next,
