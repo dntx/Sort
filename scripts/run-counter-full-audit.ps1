@@ -112,7 +112,7 @@ $snapshotSummaryMdPath = Join-Path $ArtifactsDir "counter-snapshot-summary.md"
 
 $guardrailArgs = @(
     '.\\scripts\\run-counter-guardrails.ps1',
-    '-Profile', 'full-counter-suite',
+    '-SelectedGuardrail', 'full-counter-suite',
     '-Configuration', $Configuration,
     '-MatchedTestsPath', $matchedTestsPath,
     '-SummaryJsonPath', $guardrailSummaryPath

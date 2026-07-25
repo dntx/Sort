@@ -1,4 +1,5 @@
 ﻿param(
+    [Alias("Profile")]
     [ValidateSet("fast-default", "iterative-frontier", "compact", "full-counter-suite")]
     [string]$SelectedGuardrail = "fast-default",
     [ValidateSet("Debug", "Release")]
