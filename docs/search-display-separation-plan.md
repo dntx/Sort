@@ -2,7 +2,7 @@
 
 ## Status
 
-- State: Architecture decisions resolved; Batches 0-3 complete; Batch 4 ready
+- State: Architecture decisions resolved; Batches 0-4 complete; Batch 5 ready after Batch 4 merge
 - Baseline: `main` after PR #444 (`e15b014`)
 - Related work: PR #442 is intentionally paused and is not a dependency of this plan
 - Execution rule: implement one batch at a time and complete its focused validation before starting the next
@@ -432,17 +432,33 @@ Acceptance:
 
 ### Batch 4: Greedy-tighten complete snapshot
 
-Status: Not started
+Status: Complete, 2026-07-25
 
-- Resolve base policy plus overrides into a complete root-reachable solution.
-- Remove emitted-stage dependence on live override/anchor dictionaries.
-- Keep current root-probe gate and selection behavior.
+- Added `GreedyTightenStageArtifacts` while preserving the public `StrategyPlan` return contract.
+- Resolved the constructive base policy plus committed overrides into a complete root-reachable
+    `SolvedStrategy` before display materialization.
+- Preserved the historical display back-edge fallback in a pre-freeze policy-resolution traversal: unsafe overrides
+    are removed before the final immutable policy is declared complete, without producing a display tree.
+- Frozen canonical group patterns, distinct successor keys, exact remaining depths, feasible-bound evidence,
+    and greedy-tighten provenance without display payload.
+- Final materialization now consumes only the frozen solution; it no longer reads or mutates live override/anchor
+    dictionaries.
+- Kept the root-probe gate, candidate ordering, commit behavior, round cap, and public pipeline behavior unchanged.
+- Retained display back-edge protection during final materialization as a read-only fail-fast invariant for the
+    already-resolved greedy-tighten snapshot.
+- Added a cache-independence regression that clears live override/anchor dictionaries after freezing and
+    rematerializes the same depth and branch structure from the snapshot.
 
 Acceptance:
 
-- current greedy-tighten soundness tests pass,
-- larger-policy replay validation passes,
-- materialization consumes only the frozen solution.
+- current greedy-tighten soundness and back-edge tests pass: complete; focused snapshot/back-edge result `6/6`,
+- larger-policy replay validation passes: complete as part of the full functional suite,
+- materialization consumes only the frozen solution: complete; the focused regression clears live override/anchor
+    dictionaries before rematerialization,
+- full Release functional suite: `593/593` passed,
+- workspace build and Release test-project build pass with zero compiler errors; `git diff --check` passes,
+- local strategy-matrix smoke was attempted, but the terminal runner ended during a long silent interval without a
+    result artifact; PR CI remains the performance gate.
 
 ### Batch 5: Compact snapshot freezing
 
@@ -886,9 +902,9 @@ Risks and follow-ups:
 
 ## 11. Immediate Next Step
 
-Implement Batch 4 as a narrow greedy-tighten snapshot slice:
+After Batch 4 is reviewed and merged, implement Batch 5 as a compact-snapshot slice:
 
-1. resolve the base greedy policy plus committed overrides into one complete root-reachable `SolvedStrategy`,
-2. freeze that solution before stage emission or display materialization,
-3. remove emitted-stage dependence on live override and anchor dictionaries,
-4. preserve the current root-probe gate, candidate selection, and public pipeline behavior.
+1. freeze successful proof-tighten compact assignments before reset or the next probe,
+2. freeze exact and greedy edge-compact assignments,
+3. represent capped and infeasible outcomes with evidence and no fake solution,
+4. keep paused PR #442 untouched.

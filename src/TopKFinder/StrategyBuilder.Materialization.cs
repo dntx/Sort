@@ -63,7 +63,8 @@ partial class StrategyBuilder
                 return StrategyNode.Reference(stateId, relabeling);
             }
 
-            bool trackingDisplayPath = _owner._useGreedyTightenSelection;
+            bool trackingDisplayPath =
+                context.Solution?.Provenance.Kind == SolvedStrategyStageKind.GreedyTighten;
             TryTrackExpandedState(
                 expansionKey,
                 state,
@@ -150,29 +151,14 @@ partial class StrategyBuilder
                     remainingSlots,
                     solutionNode.SelectedGroup.ToBestGroupPattern(),
                     "Solved strategy group pattern did not match the materialized state.");
+                if (context.Solution.Provenance.Kind == SolvedStrategyStageKind.GreedyTighten
+                    && !GroupAvoidsDisplayBackEdge(state, fixedTopMask, remainingSlots, selectedGroup.Group))
+                {
+                    throw new InvalidOperationException(
+                        "Solved strategy selected a group that creates a display back-edge.");
+                }
                 ValidateSolvedSuccessors(solutionNode, selectedGroup.Branches);
                 return selectedGroup;
-            }
-
-            if (_owner._useGreedyTightenSelection)
-            {
-                SearchStateKey key = SearchStateKeyService.BuildSearchStateKey(state, remainingSlots, _owner._canonicalKeyMemo);
-                List<int> tightenGroup = _owner.CurrentGreedyTightenGroup(state, remainingSlots, key);
-                if (!GroupAvoidsDisplayBackEdge(state, fixedTopMask, remainingSlots, tightenGroup))
-                {
-                    _owner._greedyTightenOverrides.Remove(key);
-                    _owner._greedyTightenOverrideAnchors.Remove(key);
-                    tightenGroup = _owner.ChooseConstructiveGroup(state, remainingSlots);
-                    if (!GroupAvoidsDisplayBackEdge(state, fixedTopMask, remainingSlots, tightenGroup))
-                    {
-                        throw new InvalidOperationException(
-                            "GreedyTighten materialization found no display-progress group at the current state.");
-                    }
-                }
-
-                return new SelectedComparisonGroup(
-                    tightenGroup,
-                    BuildMergedComparisonOutcomes(state, fixedTopMask, remainingSlots, tightenGroup));
             }
 
             var candidates = state.GetActiveItemsOrdered();
