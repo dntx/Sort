@@ -52,8 +52,8 @@ partial class StrategyBuilder
         // Optional phase 1b: among equally-optimal groups, choose the ones that minimize the
         // materialized subtree size (a proxy for displayed output states). The root budget is the
         // proven optimum for exact mode, or the constructive feasible upper bound U for feasible mode:
-        // the materialized U threaded from the step phase when present (tightest, keeps the edge plan
-        // no worse than step), else the sound-but-looser lean ConstructiveRootUpperBound.
+        // the materialized U threaded from the step phase when present (keeps the edge plan no worse
+        // than step), else the search-side ConstructiveRootUpperBound for the same fixed policy.
         int rootBudget = _compactUsesFeasibleBudget
             ? (_feasibleRootBudgetActive >= 0
                 ? _feasibleRootBudgetActive

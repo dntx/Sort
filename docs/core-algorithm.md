@@ -393,8 +393,9 @@ greedy 模式把这两件昂贵的事都砍掉：只承诺一个分组（不做 
 互不可比项即可，而 `ChooseConstructiveGroup` 保证了这一点（总链兜底见 `ForceUnresolvedPair`）。
 
 阶段统计中，`Phase1Milliseconds` 表示 greedy policy solve，`Phase2Milliseconds` 表示 display materialization；
-根解析下界等准备工作仍计入 `Phase1bMilliseconds`。policy 的 lean depth 是不依赖 display reference 展开的可靠上界，
-可能比最终物化树按 Reference 解析得到的 `MaxStep` 更松，因此只要求 `policy.WorstCaseSteps >= plan.MaxStep`。
+根解析下界等准备工作仍计入 `Phase1bMilliseconds`。policy depth 与物化树按 Reference 解析得到的 `MaxStep`
+必须严格相等：Reference 只共享已展开的子树，不免除任何后续比较；display 的轨道、投影与代表分支折叠也必须保持
+策略深度。`ExecuteGreedyFeasibleStage` 会在物化后检查 `policy.WorstCaseSteps == plan.MaxStep`，不一致则 fail-fast。
 
 > **`MaxStep` 必须计入 Reference 子树深度**：物化树里同一状态第二次到达会渲染成一个 **Reference 叶子**（不是回边），
 > 它代表「复用目标状态子树、还要再 +N 步」。`StrategyPlan.MaxStep`（`GetMaxStep`）因此**解析 Reference 到其目标子树**
