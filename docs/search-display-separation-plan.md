@@ -2,8 +2,8 @@
 
 ## Status
 
-- State: Architecture decisions resolved; Batches 0-4 complete; Batch 5 ready after Batch 4 merge
-- Baseline: `main` after PR #444 (`e15b014`)
+- State: Architecture decisions resolved; Batches 0-5 complete; Batch 6 ready after Batch 5 merge
+- Baseline: `main` after PR #446 (`85259ed`)
 - Related work: PR #442 is intentionally paused and is not a dependency of this plan
 - Execution rule: implement one batch at a time and complete its focused validation before starting the next
 - Source of truth: when this document and chat history differ, update and follow this document
@@ -462,17 +462,29 @@ Acceptance:
 
 ### Batch 5: Compact snapshot freezing
 
-Status: Not started
+Status: Complete, 2026-07-25
 
-- Freeze successful proof-tighten compact assignments before reset/next probe.
-- Freeze exact and greedy edge-compact assignments.
-- Represent capped/infeasible outcomes with evidence and no fake solution.
+- Added a shared compact freezer that captures root-reachable group patterns, canonical successor keys,
+    exact remaining depths, score/evidence, provenance, and immutable statistics before display materialization.
+- Successful proof-tighten probes freeze their assignments before any later probe reset; the tightening loop now
+    chooses the next budget from `SolvedStrategy.Score.WorstCaseSteps` while preserving the existing `StageResult`
+    compatibility API.
+- Exact edge-compact and successful greedy edge-compact stages materialize only from their frozen solutions.
+- Proven-infeasible, incomplete, and capped Phase-B incumbent-fallback outcomes carry no compact solution; partial
+    assignments are never represented as solved strategies.
+- Removed the obsolete production compact path that materialized directly from live compact caches.
+- Kept overshoot as an invariant violation, now checked against the frozen solution score.
 
 Acceptance:
 
-- old stage snapshots remain stable after later probes,
-- proof-tighten next-budget decisions use solution depth,
-- overshoot remains an invariant violation.
+- old stage snapshots remain stable after later probes: complete; focused proof/exact-edge/greedy-edge replay tests
+    clear or overwrite compact caches and rematerialize the original depth and branch structure,
+- proof-tighten next-budget decisions use solution depth: complete,
+- overshoot remains an invariant violation: complete,
+- focused compact snapshot/no-fake-solution tests: `8/8` passed; capped Phase-B fallback test passed,
+- Release build: zero warnings and zero errors,
+- functional suite: `600/601` passed in the parallel VS Code runner; the sole failure was the existing 10-second
+    `14,2,4` performance canary under suite load, which passed `3/3` in isolated Release processes.
 
 ### Batch 6: Pipeline control moves to solutions
 
@@ -902,9 +914,9 @@ Risks and follow-ups:
 
 ## 11. Immediate Next Step
 
-After Batch 4 is reviewed and merged, implement Batch 5 as a compact-snapshot slice:
+After Batch 5 is reviewed and merged, implement Batch 6 as a pipeline-control slice:
 
-1. freeze successful proof-tighten compact assignments before reset or the next probe,
-2. freeze exact and greedy edge-compact assignments,
-3. represent capped and infeasible outcomes with evidence and no fake solution,
+1. extend `StageResult` compatibly with the solved strategy and split solve/freeze/materialization timings,
+2. move incumbent comparisons and squeeze updates from `StrategyPlan` to solved-strategy score/evidence,
+3. preserve eager compatibility materialization and existing callback ordering,
 4. keep paused PR #442 untouched.

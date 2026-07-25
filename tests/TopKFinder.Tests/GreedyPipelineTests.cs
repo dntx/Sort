@@ -541,6 +541,10 @@ public class GreedyPipelineTests
                 Assert.NotNull(incumbent.Plan);
                 Assert.Equal(5, incumbent.Plan!.MaxStep);
 
+                CompactPlanResult fallback = builder.BuildEdgeCompactPlanAtBudget(incumbent.Plan.MaxStep);
+                Assert.Null(fallback.Solution);
+                Assert.Same(incumbent.Plan, fallback.Plan);
+
                 builder.OverrideGreedyPipelineUpperBound(incumbent.Plan.MaxStep);
 
                 StrategyPlan plan = builder.RunGreedyPipeline();
