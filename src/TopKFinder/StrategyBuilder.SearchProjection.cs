@@ -16,12 +16,9 @@ partial class StrategyBuilder
                 ? ProgressScope.DefaultInCombinedRun
                 : ProgressScope.DefaultStandalone;
 
-            DisplayTree displayTree = BuildPlanWithinSession(
-                useCompactSelection: false,
-                useFeasibleBudget: false,
-                initializeSession: true);
-            SearchTree searchTree = ProjectSearchTreeFromCurrentExactSession();
-            return (searchTree, displayTree);
+            ExactStepProofStageArtifacts artifacts = BuildExactStepProofStageArtifacts();
+            SearchTree searchTree = ProjectSearchTreeFromSolution(artifacts.Solution);
+            return (searchTree, artifacts.Plan);
         });
     }
 
@@ -32,25 +29,24 @@ partial class StrategyBuilder
         return RunWithComparisonStateCancellation(() =>
         {
             InitializeExactSolverSession(useFeasibleBudget: false);
-            return ProjectSearchTreeFromCurrentExactSession();
+            SolvedStrategy solution = CreateExactSolvedStrategy();
+            return ProjectSearchTreeFromSolution(solution);
         });
     }
 
-    // Current-session search materialization path shared by layered exact projection
-    // and standalone search-only exact entry after session initialization.
-    private SearchTree ProjectSearchTreeFromCurrentExactSession()
+    internal SearchTree ProjectSearchTreeFromSolutionForTesting(SolvedStrategy solution)
     {
-        _useCompact = false;
-        return ProjectSearchTreeFromCurrentExactCaches();
+        _minWorstCaseStepsCache.Clear();
+        _bestGroupPatternCache.Clear();
+        return ProjectSearchTreeFromSolution(solution);
     }
 
-    // Solver-sourced search builder: phase-1 group selection comes from exact caches,
-    // and the search tree is materialized directly from solver state recursion.
-    private SearchTree ProjectSearchTreeFromCurrentExactCaches()
+    private SearchTree ProjectSearchTreeFromSolution(SolvedStrategy solution)
     {
         var context = new SearchMaterializationContext(
             new Dictionary<IntSequenceKey, ExpandedStateSnapshot>(),
-            new HashSet<IntSequenceKey>());
+            new HashSet<IntSequenceKey>(),
+            solution);
         SearchNode root = BuildSearchState(new ComparisonState(_n), 0, _k, 1, context);
         return new SearchStrategy(
             _n,
@@ -103,7 +99,11 @@ partial class StrategyBuilder
 
         try
         {
-            SelectedComparisonGroup chosenGroup = ChooseGroup(state, fixedTopMask, remainingSlots, default);
+            SelectedComparisonGroup chosenGroup = ChooseGroup(
+                state,
+                fixedTopMask,
+                remainingSlots,
+                new MaterializationContext(Solution: context.Solution));
             IReadOnlyList<SearchBranch> branches = BuildSearchBranches(
                 state,
                 fixedTopMask,
@@ -143,5 +143,6 @@ partial class StrategyBuilder
 
     private readonly record struct SearchMaterializationContext(
         Dictionary<IntSequenceKey, ExpandedStateSnapshot> ExpandedStates,
-        HashSet<IntSequenceKey> ExpansionPath);
+        HashSet<IntSequenceKey> ExpansionPath,
+        SolvedStrategy Solution);
 }

@@ -130,6 +130,30 @@ partial class StrategyBuilder
                 return selectedGroup;
             }
 
+            if (context.Solution is not null)
+            {
+                SearchStateKey solutionKey = SearchStateKeyService.BuildSearchStateKey(
+                    state,
+                    remainingSlots,
+                    _owner._canonicalKeyMemo);
+                if (!context.Solution.Nodes.TryGetValue(solutionKey, out SolvedStrategyNode? solutionNode)
+                    || solutionNode.Kind != SolvedStrategyNodeKind.Decision
+                    || solutionNode.SelectedGroup is null)
+                {
+                    throw new InvalidOperationException(
+                        "Solved strategy must contain every decision state reached during materialization.");
+                }
+
+                SelectedComparisonGroup selectedGroup = ReplayCachedPattern(
+                    state,
+                    fixedTopMask,
+                    remainingSlots,
+                    solutionNode.SelectedGroup.ToBestGroupPattern(),
+                    "Solved strategy group pattern did not match the materialized state.");
+                ValidateSolvedSuccessors(solutionNode, selectedGroup.Branches);
+                return selectedGroup;
+            }
+
             if (_owner._useGreedyTightenSelection)
             {
                 SearchStateKey key = SearchStateKeyService.BuildSearchStateKey(state, remainingSlots, _owner._canonicalKeyMemo);
@@ -234,6 +258,29 @@ partial class StrategyBuilder
             {
                 throw new InvalidOperationException(
                     "Greedy policy and materialization produced different search successor sets.");
+            }
+        }
+
+        private void ValidateSolvedSuccessors(
+            SolvedStrategyNode solutionNode,
+            IReadOnlyList<MergedBranch> materializedBranches)
+        {
+            var materializedSuccessors = new HashSet<SearchStateKey>();
+            foreach (MergedBranch branch in materializedBranches)
+            {
+                foreach (MergedFamilyOutcome outcome in branch.FamilyOutcomes)
+                {
+                    materializedSuccessors.Add(SearchStateKeyService.BuildSearchStateKey(
+                        outcome.NextState,
+                        outcome.NextRemainingSlots,
+                        _owner._canonicalKeyMemo));
+                }
+            }
+
+            if (!materializedSuccessors.SetEquals(solutionNode.DistinctSuccessors))
+            {
+                throw new InvalidOperationException(
+                    "Solved strategy and materialization produced different search successor sets.");
             }
         }
 

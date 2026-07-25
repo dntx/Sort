@@ -2,8 +2,8 @@
 
 ## Status
 
-- State: Architecture decisions resolved; Batches 0-2 complete; Batch 3 ready
-- Baseline: `main` after PR #443 (`a81e695`)
+- State: Architecture decisions resolved; Batches 0-3 complete; Batch 4 ready
+- Baseline: `main` after PR #444 (`e15b014`)
 - Related work: PR #442 is intentionally paused and is not a dependency of this plan
 - Execution rule: implement one batch at a time and complete its focused validation before starting the next
 - Source of truth: when this document and chat history differ, update and follow this document
@@ -413,17 +413,22 @@ Acceptance:
 
 ### Batch 3: Exact step-proof snapshot
 
-Status: Not started
+Status: Complete, 2026-07-25
 
-- Freeze root-reachable exact pattern/depth assignment.
-- Make exact search projection consume the immutable snapshot.
-- Continue eager display materialization for compatibility.
+- Added `ExactStepProofStageArtifacts(Solution, Plan)` while preserving the public plan-only step-proof API.
+- Frozen the root-reachable exact pattern, successor, and remaining-depth assignment immediately after phase 1.
+- Routed exact display and search projection through the immutable solution; standalone search projection no longer
+    selects groups from live exact caches.
+- Kept eager display materialization and all public CLI/UI pipeline behavior unchanged.
 
 Acceptance:
 
-- exact strategy values and display outputs remain unchanged,
-- standalone search projection no longer depends on mutable exact caches after snapshot creation,
-- snapshot depth equals plan `MaxStep`.
+- exact strategy values and display outputs remain unchanged: display/search parity and orchestration `50/50` passed,
+- standalone search projection no longer depends on mutable exact caches after snapshot creation: focused cache-clear
+    regression `3/3` passed,
+- snapshot depth equals plan `MaxStep`: enforced at runtime and covered by the focused regression,
+- full functional suite: `590/590` passed in Release,
+- exact `StrategyPerformanceTests` smoke gates passed in Release.
 
 ### Batch 4: Greedy-tighten complete snapshot
 
@@ -881,9 +886,9 @@ Risks and follow-ups:
 
 ## 11. Immediate Next Step
 
-Implement Batch 3 as a narrow exact step-proof snapshot slice:
+Implement Batch 4 as a narrow greedy-tighten snapshot slice:
 
-1. freeze the exact root-reachable selected pattern/depth assignment into `SolvedStrategy`,
-2. make exact search projection consume the frozen snapshot instead of mutable session caches,
-3. continue eager display materialization and preserve current exact pipeline behavior,
-4. validate exact solved depth, search projection, and materialized `MaxStep` equality.
+1. resolve the base greedy policy plus committed overrides into one complete root-reachable `SolvedStrategy`,
+2. freeze that solution before stage emission or display materialization,
+3. remove emitted-stage dependence on live override and anchor dictionaries,
+4. preserve the current root-probe gate, candidate selection, and public pipeline behavior.

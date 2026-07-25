@@ -70,6 +70,32 @@ public sealed class DisplaySearchParityTests
         Assert.Equal(baselinePlan.TotalBranchEdges, displayPlan.TotalBranchEdges);
     }
 
+    [Theory]
+    [InlineData(6, 3, 3)]
+    [InlineData(9, 3, 3)]
+    [InlineData(8, 2, 2)]
+    public void ExactSnapshot_ProjectsSearchTreeAfterExactCachesAreCleared(int n, int m, int k)
+    {
+        var builder = new StrategyBuilder(n, m, k);
+        ExactStepProofStageArtifacts artifacts = builder.ExecuteStepProofStageWithSolution();
+        SolvedStrategy solution = artifacts.Solution;
+
+        Assert.Equal(artifacts.Plan.MaxStep, solution.Score.WorstCaseSteps);
+        Assert.Equal(artifacts.Plan.MaxStep, solution.Bounds.ProvenLowerBound);
+        Assert.Equal(artifacts.Plan.MaxStep, solution.Bounds.FeasibleUpperBound);
+        Assert.True(solution.Bounds.IsProvenOptimal);
+        Assert.Equal(SolvedStrategyStageKind.StepProof, solution.Provenance.Kind);
+        Assert.Equal(StageNames.StepProof, solution.Provenance.StageName);
+
+        SearchStrategy searchTree = builder.ProjectSearchTreeFromSolutionForTesting(solution);
+
+        Assert.Equal(artifacts.Plan.N, searchTree.N);
+        Assert.Equal(artifacts.Plan.M, searchTree.M);
+        Assert.Equal(artifacts.Plan.RequestedK, searchTree.RequestedK);
+        Assert.Equal(artifacts.Plan.K, searchTree.K);
+        AssertDisplayAndSearchNodeEquivalent(artifacts.Plan.Root, searchTree.Root);
+    }
+
     private static void AssertParity(string phase, int n, int m, int k, Func<StrategyBuilder, StrategyPlan> build)
     {
         List<string> residual = TestTimeoutHelper.RunWithTimeout(
