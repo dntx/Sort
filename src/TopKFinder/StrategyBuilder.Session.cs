@@ -46,7 +46,6 @@ sealed class StrategyBuilderSession
     public Dictionary<SearchStateKey, List<int>> GreedyTightenOverrides { get; } = new();
     public Dictionary<SearchStateKey, ComparisonState> GreedyTightenOverrideAnchors { get; } = new();
     public Dictionary<SearchStateKey, int> GreedyTightenSharedHeightMemo { get; } = new();
-    public bool UseGreedyTightenSelection;
 
     public int GreedyTightenRounds;
     public int GreedyTightenCommits;

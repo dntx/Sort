@@ -4,6 +4,8 @@ using System.Diagnostics;
 
 namespace TopKFinder;
 
+sealed record GreedyTightenStageArtifacts(SolvedStrategy Solution, StrategyPlan Plan);
+
 partial class StrategyBuilder
 {
     private const int DefaultGreedyTightenCandidateCap = 128;
@@ -33,10 +35,10 @@ partial class StrategyBuilder
     // run more rounds, or int.MaxValue for an effectively-unbounded full run.
     internal int? GreedyTightenMaxRoundsForTesting { get; set; }
 
-    // Accumulated local edits: canonical stateKey -> chosen comparison group. Where present, both the
-    // lean-depth DP and the materializing ChooseGroup route use the override instead of the
-    // constructive selector; absent keys fall back to the same ChooseConstructiveGroup that the
-    // greedy-feasible baseline uses (so an empty override map reproduces greedy-feasible exactly).
+    // Accumulated local edits: canonical stateKey -> chosen comparison group. During solving, the
+    // lean-depth DP uses the override instead of the constructive selector; absent keys fall back to
+    // the same ChooseConstructiveGroup that the greedy-feasible baseline uses. The completed policy is
+    // frozen into SolvedStrategy before display materialization.
     //
     // The group is stored in the label space of the concrete ANCHOR state it was committed on (kept in
     // _greedyTightenOverrideAnchors under the same key). Because the key is the canonical isomorphism
@@ -98,6 +100,9 @@ partial class StrategyBuilder
     // Builds the GreedyTighten stage plan: runs the local restructuring to tighten the upper bound,
     // then materializes the tightened tree once. Returns a feasible-upper-bound plan (never proven).
     public StrategyPlan ExecuteGreedyTightenStage()
+        => ExecuteGreedyTightenStageWithSolution().Plan;
+
+    internal GreedyTightenStageArtifacts ExecuteGreedyTightenStageWithSolution()
     {
         return RunWithComparisonStateCancellation(() =>
         {
@@ -113,20 +118,281 @@ partial class StrategyBuilder
             RecordRootProvenLowerBound(GetMinWorstCaseLowerBound(new ComparisonState(_n), _k));
 
             RunGreedyTighten();
+            ResolveGreedyTightenDisplaySafePolicy();
+            SolvedStrategy solution = CreateGreedyTightenSolvedStrategy();
 
             // Materialize the tightened tree once (Option B: search on the lean-depth DP, materialize only
             // at the end). Absent overrides fall back to ChooseConstructiveGroup, so this yields the
             // greedy-feasible tree plus the committed local edits.
-            _useGreedyTightenSelection = true;
-            StrategyNode root = BuildState(new ComparisonState(_n), 0, _k, 1);
-            _useGreedyTightenSelection = false;
+            StrategyNode root = BuildState(
+                new ComparisonState(_n),
+                0,
+                _k,
+                1,
+                new MaterializationContext(Solution: solution));
 
             stopwatch.Stop();
 
             StrategyPlan plan = CreatePlan(root, stopwatch.Elapsed, isFeasibleUpperBound: true);
+            if (solution.Score.WorstCaseSteps != plan.MaxStep)
+            {
+                throw new InvalidOperationException(
+                    "GreedyTighten solved-strategy depth must equal the materialized plan MaxStep.");
+            }
+
             _latestGreedyIncumbentPlan = plan;
-            return plan;
+            return new GreedyTightenStageArtifacts(solution, plan);
         });
+    }
+
+    internal void ClearGreedyTightenPolicyForTesting()
+    {
+        _greedyTightenOverrides.Clear();
+        _greedyTightenOverrideAnchors.Clear();
+    }
+
+    internal StrategyPlan MaterializeGreedyTightenSolutionForTesting(SolvedStrategy solution)
+    {
+        _stateIds.Clear();
+        _expandedStates.Clear();
+        _materializationDisplayPath.Clear();
+        _nextStateId = 1;
+
+        StrategyNode root = BuildState(
+            new ComparisonState(_n),
+            0,
+            _k,
+            1,
+            new MaterializationContext(Solution: solution));
+        return CreatePlan(root, TimeSpan.Zero, isFeasibleUpperBound: true);
+    }
+
+    private void ResolveGreedyTightenDisplaySafePolicy()
+    {
+        var expanded = new HashSet<IntSequenceKey>();
+        var onPath = new HashSet<IntSequenceKey>();
+        ResolveGreedyTightenDisplayState(
+            new ComparisonState(_n),
+            fixedTopMask: 0,
+            _k,
+            expanded,
+            onPath);
+    }
+
+    private void ResolveGreedyTightenDisplayState(
+        ComparisonState state,
+        ulong fixedTopMask,
+        int remainingSlots,
+        HashSet<IntSequenceKey> expanded,
+        HashSet<IntSequenceKey> onPath)
+    {
+        ThrowIfCancellationRequested();
+        NormalizeState(state, ref fixedTopMask, ref remainingSlots);
+
+        if (remainingSlots == 0
+            || TryGetDeterminedTopSet(state, remainingSlots, out _)
+            || state.ActiveCount <= remainingSlots
+            || state.ActiveCount <= _m)
+        {
+            return;
+        }
+
+        IntSequenceKey displayKey = GetDisplayStateKey(state, fixedTopMask);
+        if (!expanded.Add(displayKey))
+            return;
+        if (!onPath.Add(displayKey))
+        {
+            throw new InvalidOperationException(
+                "GreedyTighten policy resolution detected a recursive display-state expansion path.");
+        }
+
+        try
+        {
+            SearchStateKey searchKey = GetSearchStateKey(state, remainingSlots);
+            List<int> group = CurrentGreedyTightenGroup(state, remainingSlots, searchKey);
+            if (!GreedyTightenGroupAvoidsDisplayBackEdge(
+                    state,
+                    fixedTopMask,
+                    remainingSlots,
+                    group,
+                    onPath))
+            {
+                _greedyTightenOverrides.Remove(searchKey);
+                _greedyTightenOverrideAnchors.Remove(searchKey);
+                group = ChooseConstructiveGroup(state, remainingSlots);
+                if (!GreedyTightenGroupAvoidsDisplayBackEdge(
+                        state,
+                        fixedTopMask,
+                        remainingSlots,
+                        group,
+                        onPath))
+                {
+                    throw new InvalidOperationException(
+                        "GreedyTighten policy resolution found no display-progress group at the current state.");
+                }
+            }
+
+            var selectedGroup = new SelectedComparisonGroup(
+                group,
+                BuildGreedyTightenResolutionOutcomes(state, fixedTopMask, remainingSlots, group));
+            foreach (TransitionSpec transition in BuildDisplayTransitionSpecs(
+                         state,
+                         fixedTopMask,
+                         remainingSlots,
+                         selectedGroup))
+            {
+                ResolveGreedyTightenDisplayState(
+                    transition.NextState,
+                    transition.NextFixedTopMask,
+                    transition.NextRemainingSlots,
+                    expanded,
+                    onPath);
+            }
+        }
+        finally
+        {
+            onPath.Remove(displayKey);
+        }
+    }
+
+    private IReadOnlyList<MergedBranch> BuildGreedyTightenResolutionOutcomes(
+        ComparisonState state,
+        ulong fixedTopMask,
+        int remainingSlots,
+        IReadOnlyList<int> group)
+    {
+        var groupedBranches = new Dictionary<IntSequenceKey, MergedBranch>();
+        foreach (ComparisonOutcome outcome in EnumerateGreedyTightenDisplayOutcomes(state, remainingSlots, group))
+        {
+            ulong nextFixedTopMask = fixedTopMask | outcome.AddedFixedTopMask;
+            IntSequenceKey nextKey = outcome.NextState.GetDisplayCanonicalKey(nextFixedTopMask);
+            var familyOutcome = new MergedFamilyOutcome(
+                outcome.OrderFamily!,
+                outcome.NextState,
+                nextFixedTopMask,
+                outcome.NextRemainingSlots);
+
+            if (groupedBranches.TryGetValue(nextKey, out MergedBranch? branch))
+                branch.AddFamilyOutcome(familyOutcome);
+            else
+                groupedBranches.Add(nextKey, new MergedBranch(familyOutcome));
+        }
+
+        return new List<MergedBranch>(groupedBranches.Values);
+    }
+
+    private IEnumerable<ComparisonOutcome> EnumerateGreedyTightenDisplayOutcomes(
+        ComparisonState state,
+        int remainingSlots,
+        IReadOnlyList<int> group)
+    {
+        foreach (OrderFamilyDescriptor orderFamily in EnumerateFeasibleOrderFamilies(state, group))
+        {
+            yield return CreateComparisonOutcome(
+                state,
+                remainingSlots,
+                orderFamily.RepresentativeOrderItems,
+                orderFamily,
+                countOutcome: false);
+        }
+    }
+
+    private bool GreedyTightenGroupAvoidsDisplayBackEdge(
+        ComparisonState state,
+        ulong fixedTopMask,
+        int remainingSlots,
+        IReadOnlyList<int> group,
+        HashSet<IntSequenceKey> onPath)
+    {
+        bool anyOutcome = false;
+        foreach (ComparisonOutcome outcome in EnumerateGreedyTightenDisplayOutcomes(state, remainingSlots, group))
+        {
+            anyOutcome = true;
+            IntSequenceKey nextDisplayKey = GetDisplayStateKey(
+                outcome.NextState,
+                fixedTopMask | outcome.AddedFixedTopMask);
+            if (onPath.Contains(nextDisplayKey))
+                return false;
+        }
+
+        return anyOutcome;
+    }
+
+    private SolvedStrategy CreateGreedyTightenSolvedStrategy()
+    {
+        var rootState = new ComparisonState(_n);
+        ulong ignoredFixedTopMask = 0;
+        int remainingSlots = _k;
+        NormalizeState(rootState, ref ignoredFixedTopMask, ref remainingSlots);
+        SearchStateKey rootKey = GetSearchStateKey(rootState, remainingSlots);
+
+        var nodes = new Dictionary<SearchStateKey, SolvedStrategyNode>();
+        int worstCaseSteps = FreezeGreedyTightenState(rootState, remainingSlots, nodes);
+
+        return new SolvedStrategy(
+            new ProblemShape(_n, _m, _requestedK, _k),
+            rootKey,
+            nodes,
+            new StrategyScore(worstCaseSteps),
+            new BoundEvidence(
+                _rootProvenLowerBound,
+                worstCaseSteps,
+                IsProvenOptimal: false,
+                WasCandidateEnumerationCapped: false),
+            new StageProvenance(SolvedStrategyStageKind.GreedyTighten, StageNames.GreedyTighten),
+            CreateSearchStatistics());
+    }
+
+    private int FreezeGreedyTightenState(
+        ComparisonState state,
+        int remainingSlots,
+        Dictionary<SearchStateKey, SolvedStrategyNode> nodes)
+    {
+        ThrowIfCancellationRequested();
+        ulong ignoredFixedTopMask = 0;
+        NormalizeState(state, ref ignoredFixedTopMask, ref remainingSlots);
+
+        if (remainingSlots == 0
+            || TryGetDeterminedTopSet(state, remainingSlots, out _)
+            || state.ActiveCount <= remainingSlots)
+        {
+            return 0;
+        }
+
+        SearchStateKey key = GetSearchStateKey(state, remainingSlots);
+        if (nodes.TryGetValue(key, out SolvedStrategyNode? existing))
+            return existing.RemainingDepth;
+
+        if (state.ActiveCount <= _m)
+        {
+            nodes.Add(key, SolvedStrategyNode.FinalChoice());
+            return 1;
+        }
+
+        List<int> group = CurrentGreedyTightenGroup(state, remainingSlots, key);
+        BestGroupPattern pattern = MakeGroupPattern(state, group);
+        var successorKeys = new HashSet<SearchStateKey>();
+        var successors = new List<ComparisonOutcome>();
+        foreach (ComparisonOutcome outcome in EnumerateSnapshotOutcomes(state, remainingSlots, group))
+        {
+            if (outcome.NextSearchKey.Equals(key) || !successorKeys.Add(outcome.NextSearchKey))
+                continue;
+            successors.Add(outcome);
+        }
+
+        int maxChildDepth = 0;
+        foreach (ComparisonOutcome successor in successors)
+        {
+            int childDepth = FreezeGreedyTightenState(
+                successor.NextState,
+                successor.NextRemainingSlots,
+                nodes);
+            maxChildDepth = Math.Max(maxChildDepth, childDepth);
+        }
+
+        int remainingDepth = maxChildDepth + 1;
+        nodes.Add(key, new SolvedStrategyNode(pattern, successorKeys, remainingDepth));
+        return remainingDepth;
     }
 
     // Multi-round driver. Each round runs one critical-path post-order pass from the root; a pass that

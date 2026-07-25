@@ -57,11 +57,6 @@ partial class StrategyBuilder
     private Dictionary<SearchStateKey, List<int>> _greedyTightenOverrides => _session.GreedyTightenOverrides;
     private Dictionary<SearchStateKey, ComparisonState> _greedyTightenOverrideAnchors => _session.GreedyTightenOverrideAnchors;
     private Dictionary<SearchStateKey, int> _greedyTightenSharedHeightMemo => _session.GreedyTightenSharedHeightMemo;
-    private bool _useGreedyTightenSelection
-    {
-        get => _session.UseGreedyTightenSelection;
-        set => _session.UseGreedyTightenSelection = value;
-    }
 
     // GreedyTighten diagnostics (per ExecuteGreedyTightenStage run).
     private int _greedyTightenRounds { get => _session.GreedyTightenRounds; set => _session.GreedyTightenRounds = value; }

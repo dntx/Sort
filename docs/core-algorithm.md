@@ -654,10 +654,10 @@ greedy-feasible(U) → (optional) greedy-tighten → proof-tighten≤N → greed
 
 **子树高度重算（点 1 决策）**：
 
-- **后代策略**：GreedyTighten 一次只**覆写被编辑状态自身的分组**，`S` 以下的后代仍走 greedy-feasible 的构造式选择器。用**全局覆写表** `override: stateKey → group` 统一表达；任意状态分组 = 有 override 用 override、否则贪心。
+- **后代策略**：GreedyTighten 一次只**覆写被编辑状态自身的分组**，`S` 以下的后代仍走 greedy-feasible 的构造式选择器。搜索期用**全局覆写表** `override: stateKey → group` 统一表达；任意状态分组 = 有 override 用 override、否则贪心。
 - **度量一致性**：阶段内部搜索/比较统一用**精简构造深度**（lean depth，`height(state)=1+max(height(child))`，预算无关、按状态 key memo，与后代策略一致）；仅在本轮结束、把 `U'` 交给 `ProofTighten` 前，对已提交的树**物化一次**算真实 `MaxStep`。
-- **落地形态（选 B）**：搜索期不物化，只跑 memo 化高度 DP + override 字典；最终才物化一次用于展示/交接。memo 失效只沿含 override 的祖先链发生。
-- **物化安全护栏（已落地）**：在 `GreedyTighten` 物化路径上维护当前 display-key 递归栈；若某个 override 分组的 outcome 会回指到栈上祖先 display state（形成 back-edge），该 override 会被丢弃并回退到 greedy-feasible 的构造式分组。若回退后仍无法保持 display 进展，则 fail-fast 抛异常，避免产出 malformed reference graph。
+- **落地形态（选 B）**：搜索期不物化，只跑 memo 化高度 DP + override 字典；搜索结束后先按正式 display transition planner 的顺序做一次不生成 `StrategyNode` 的 policy resolution，沿 display-key 路径识别会形成 back-edge 的 override，并按历史语义全局删除该 override、回退到构造式分组。解析完成后再从根遍历稳定的“base policy + committed overrides”，把所有可达 canonical state 的选组 pattern、去重 successor key 与精确剩余深度冻结为不可变 `SolvedStrategy`。最终 display materialization 只重放该 snapshot，不再读取或修改 live override/anchor 字典。snapshot depth 与物化 `MaxStep` 不一致会 fail-fast。
+- **物化安全护栏（已落地）**：`GreedyTighten` snapshot 的物化路径维护当前 display-key 递归栈；若冻结选组的 outcome 会回指到栈上祖先 display state（形成 back-edge），则把它视为 solver snapshot invariant 破坏并 fail-fast。物化层不再删除 override 或自行改选构造式分组，因此同一个 immutable solution 在清空 solver session 后仍可确定性重放。
 
 **实现分期**：阶段 A 先落**主体框架**（多轮 / 遍历 / 单状态改造 / 接受语义 / override 表 + 高度 DP / 与 ProofTighten 衔接），候选来源第一版只用现成的 antichain/构造式候选枚举 + 占位排序；阶段 B 再做**候选来源多样化（seed 变体 / 1-swap 扰动 / 桥接）+ 评分器调优**（效率与收效的主要调优点）；除 `cap=128` 外 v1 不加额外预算控制，按实测再定。
 

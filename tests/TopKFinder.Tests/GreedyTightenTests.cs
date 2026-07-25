@@ -105,6 +105,29 @@ public class GreedyTightenTests
         Assert.Equal(maxStep, validatedDepth);
     }
 
+    [Theory]
+    [InlineData(8, 3, 3)]
+    [InlineData(10, 2, 5)]
+    [InlineData(12, 4, 4)]
+    public void GreedyTightenSnapshot_MaterializesAfterLivePolicyIsCleared(int n, int m, int k)
+    {
+        var builder = new StrategyBuilder(n, m, k);
+        GreedyTightenStageArtifacts artifacts = builder.ExecuteGreedyTightenStageWithSolution();
+
+        Assert.Equal(artifacts.Plan.MaxStep, artifacts.Solution.Score.WorstCaseSteps);
+        Assert.Equal(artifacts.Plan.MaxStep, artifacts.Solution.Bounds.FeasibleUpperBound);
+        Assert.False(artifacts.Solution.Bounds.IsProvenOptimal);
+        Assert.Equal(SolvedStrategyStageKind.GreedyTighten, artifacts.Solution.Provenance.Kind);
+        Assert.Equal(StageNames.GreedyTighten, artifacts.Solution.Provenance.StageName);
+
+        builder.ClearGreedyTightenPolicyForTesting();
+        StrategyPlan replayed = builder.MaterializeGreedyTightenSolutionForTesting(artifacts.Solution);
+
+        Assert.Equal(artifacts.Plan.MaxStep, replayed.MaxStep);
+        Assert.Equal(artifacts.Plan.TotalBranchEdges, replayed.TotalBranchEdges);
+        Assert.False(HasReferenceCycle(replayed.Root));
+    }
+
     // Regression lock for the previously observed back-edge-prone region: materialization must not
     // create reference cycles in the rendered strategy graph.
     [Theory]
