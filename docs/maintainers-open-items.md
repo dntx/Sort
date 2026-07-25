@@ -92,6 +92,12 @@ What remains:
 - `StrategyRegressionTests` local run remains green (202 passed, 0 failed), which lowers likelihood of a real deterministic counter break in the same window.
 - Local scripted full-audit reproduction is currently noisy on Windows PowerShell 5.1 hosts due `pwsh`/`utf8NoBOM` script assumptions; treat this as infra/runtime reproduction friction and keep nightly CI runs as the authoritative unattended signal while triaging selector drift.
 
+2026-07-25 D4.2 reconciliation note:
+
+- Applied minimal selector-drift reconciliation by updating `docs/counter-guardrails-full-counter-suite-baseline.txt` with the 13 newly matched `full-counter-suite` rows.
+- Aligned full-audit guardrail invocation to explicit `-SelectedGuardrail full-counter-suite` (and kept `-Profile` compatibility via alias in guardrail script) to prevent accidental default-profile execution during audits.
+- Drift gate recheck after reconciliation: currentCount=124, baselineCount=124, added=0, removed=0.
+
 Exit criterion:
 
 - Nightly lane demonstrates stable behavior over a meaningful run window, and handling guidance is validated by at least one real or simulated failure investigation.
