@@ -201,6 +201,22 @@ public sealed class StrategyRegressionTests
             $"iterative deepening did not cut searched states: ID={idPlan.SearchStatistics.SearchedStates}, exact={exactPlan.SearchStatistics.SearchedStates}");
     }
 
+    [Theory]
+    [InlineData(3, 3, 2, 1)]
+    [InlineData(4, 3, 2, 2)]
+    public void Default_ExactAndBoundedPaths_AgreeOnSmallSearchBounds(int n, int m, int k, int expectedMaxStep)
+    {
+        StrategyPlan exactPlan = new StrategyBuilder(n, m, k)
+        { ForceIterativeDeepeningForTesting = false }.ExecuteStepProofStage();
+        StrategyPlan boundedPlan = new StrategyBuilder(n, m, k)
+        { ForceIterativeDeepeningForTesting = true }.ExecuteStepProofStage();
+
+        Assert.Equal(expectedMaxStep, exactPlan.MaxStep);
+        Assert.Equal(expectedMaxStep, boundedPlan.MaxStep);
+        Assert.Equal(expectedMaxStep, exactPlan.SearchStatistics.RootProvenLowerBound);
+        Assert.Equal(expectedMaxStep, boundedPlan.SearchStatistics.RootProvenLowerBound);
+    }
+
     [Fact]
     public void Builder_ProducesDeterministicOutputAcrossRuns()
     {

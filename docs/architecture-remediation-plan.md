@@ -116,18 +116,21 @@ Unify mode and stage wording to exact/greedy; remove legacy A/B language.
 - Changed files:
   - StrategyBuilder.SearchBounds.cs
   - StrategyBuilder.SearchBoundsOrchestrator.cs
+  - tests/TopKFinder.Tests/StrategyRegressionTests.cs
 - Behavior impact: Equivalent (the exact search, bounded search, lower-bound derivation, and feasible top-set counting algorithms are unchanged; duplicated orchestration responsibilities were consolidated)
 - Verification commands:
   - dotnet build d:/Code/Sort2/src/TopKFinder/TopKFinder.csproj
-  - dotnet test .\tests\TopKFinder.Tests\TopKFinder.Tests.csproj --filter "FullyQualifiedName~ComparisonStateTests" --no-build
+  - dotnet test .\tests\TopKFinder.Tests\TopKFinder.Tests.csproj --filter "FullyQualifiedName~Default_ExactAndBoundedPaths_AgreeOnSmallSearchBounds"
 - Verification result:
   - build: succeeded
   - source diagnostics: no errors in either changed source file
-  - tests: blocked in this environment by application control policy when loading TopKFinder.Tests.dll (`0x800711C7`), including after `Unblock-File`
+  - test compilation: succeeded
+  - test execution: blocked in this environment at VSTest startup by the same application control policy that previously prevented loading TopKFinder.Tests.dll (`0x800711C7`)
 - Risks/notes:
   - Scope stayed within the two Search Bounds files; UI, ComparisonState algorithms, repository layout, and naming governance were not changed.
   - Exact and bounded searches now use the same terminal-state prelude and exact-resolution commit path.
   - Bounded-search failure still writes only a learned lower bound; it does not populate exact-result or best-group caches.
+  - The new regression theory forces both exact and bounded paths over a one-step terminal shape and a small recursive shape, asserting the known optimum and final root proven lower bound for each path.
 
 ### D3.1 Responsibility Chain Map
 
