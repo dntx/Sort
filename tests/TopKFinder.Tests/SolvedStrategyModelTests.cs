@@ -42,7 +42,7 @@ public sealed class SolvedStrategyModelTests
         Assert.Equal(2, solution.Nodes.Count);
         SolvedStrategyNode root = solution.Nodes[Key(2, [1, 2])];
         Assert.Equal(2, root.DistinctSuccessors.Count);
-        Assert.Equal(new IntSequenceKey([7, 8]), root.SelectedGroup.Pattern);
+        Assert.Equal(new IntSequenceKey([7, 8]), root.SelectedGroup!.Pattern);
         Assert.Equal([0, 1], root.SelectedGroup.ColorSignature);
         Assert.Single(solution.SearchStatistics.Diagnostics.RootIncumbents);
         Assert.Throws<NotSupportedException>(() =>
@@ -90,6 +90,24 @@ public sealed class SolvedStrategyModelTests
         };
 
         Assert.Throws<ArgumentException>(() => CreateSolution(rootKey, nodes, worstCaseSteps: 1));
+    }
+
+    [Fact]
+    public void Constructor_AcceptsFinalChoiceAsOneStepLeaf()
+    {
+        SearchStateKey rootKey = Key(1, [1]);
+        var nodes = new Dictionary<SearchStateKey, SolvedStrategyNode>
+        {
+            [rootKey] = SolvedStrategyNode.FinalChoice(),
+        };
+
+        SolvedStrategy solution = CreateSolution(rootKey, nodes, worstCaseSteps: 1);
+
+        SolvedStrategyNode root = solution.Nodes[rootKey];
+        Assert.Equal(SolvedStrategyNodeKind.FinalChoice, root.Kind);
+        Assert.Equal(1, root.RemainingDepth);
+        Assert.Null(root.SelectedGroup);
+        Assert.Empty(root.DistinctSuccessors);
     }
 
     private static SolvedStrategy CreateSolution(

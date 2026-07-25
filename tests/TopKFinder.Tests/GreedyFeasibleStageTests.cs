@@ -130,21 +130,51 @@ public class GreedyFeasibleStageTests
     [InlineData(12, 4, 4)]
     [InlineData(12, 6, 6)]
     [InlineData(14, 4, 5)]
-    public void GreedyFeasiblePolicy_IsSolvedBeforeEquivalentPlanIsMaterialized(int n, int m, int k)
+    public void GreedyFeasibleStage_ReturnsEquivalentSolutionAndPlan(int n, int m, int k)
     {
         var builder = new StrategyBuilder(n, m, k);
 
         GreedyPolicySolution policy = builder.SolveGreedyFeasiblePolicy();
-        StrategyPlan plan = builder.ExecuteGreedyFeasibleStage();
+        GreedyFeasibleStageArtifacts artifacts = builder.ExecuteGreedyFeasibleStageWithSolution();
+        SolvedStrategy solution = artifacts.Solution;
+        StrategyPlan plan = artifacts.Plan;
 
         Assert.NotEmpty(policy.Nodes);
         Assert.Equal(policy.WorstCaseSteps, plan.MaxStep);
+        Assert.Equal(policy.WorstCaseSteps, solution.Score.WorstCaseSteps);
+        Assert.Equal(policy.WorstCaseSteps, solution.Bounds.FeasibleUpperBound);
+        Assert.False(solution.Bounds.IsProvenOptimal);
+        Assert.Equal(SolvedStrategyStageKind.GreedyFeasible, solution.Provenance.Kind);
+        Assert.Equal(StageNames.GreedyFeasible, solution.Provenance.StageName);
+        Assert.Equal(n, solution.Problem.N);
+        Assert.Equal(m, solution.Problem.M);
+        Assert.Equal(k, solution.Problem.RequestedK);
+        Assert.Equal(Math.Min(k, n - k), solution.Problem.K);
+        Assert.Equal(policy.Nodes.Count + policy.FinalChoiceKeys.Count, solution.Nodes.Count);
         Assert.All(policy.Nodes.Values, node =>
         {
             Assert.Equal(m, node.SelectedGroup.GroupSize);
             Assert.True(node.RemainingDepth > 0);
             Assert.NotEmpty(node.Successors);
         });
+        foreach ((SearchStateKey key, GreedyPolicyNode policyNode) in policy.Nodes)
+        {
+            SolvedStrategyNode solvedNode = solution.Nodes[key];
+            Assert.Equal(SolvedStrategyNodeKind.Decision, solvedNode.Kind);
+            Assert.Equal(policyNode.SelectedGroup.GroupSize, solvedNode.SelectedGroup!.GroupSize);
+            Assert.Equal(policyNode.SelectedGroup.Pattern, solvedNode.SelectedGroup.Pattern);
+            Assert.Equal(policyNode.SelectedGroup.ColorSignature, solvedNode.SelectedGroup.ColorSignature);
+            Assert.Equal(policyNode.RemainingDepth, solvedNode.RemainingDepth);
+            Assert.True(new HashSet<SearchStateKey>(solvedNode.DistinctSuccessors).SetEquals(policyNode.Successors));
+        }
+        foreach (SearchStateKey finalChoiceKey in policy.FinalChoiceKeys)
+        {
+            SolvedStrategyNode finalChoice = solution.Nodes[finalChoiceKey];
+            Assert.Equal(SolvedStrategyNodeKind.FinalChoice, finalChoice.Kind);
+            Assert.Equal(1, finalChoice.RemainingDepth);
+            Assert.Null(finalChoice.SelectedGroup);
+            Assert.Empty(finalChoice.DistinctSuccessors);
+        }
     }
 
     // m=2 is intentionally routed around the generic 1-ply group lookahead. In the pairwise regime

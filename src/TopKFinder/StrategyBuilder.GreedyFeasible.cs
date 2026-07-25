@@ -57,6 +57,9 @@ partial class StrategyBuilder
     // The comparison group at each state is built constructively from the current partial order
     // (ChooseConstructiveGroup, O(m*active^2)) during policy solving, then replayed during materialization.
     public StrategyPlan ExecuteGreedyFeasibleStage()
+        => ExecuteGreedyFeasibleStageWithSolution().Plan;
+
+    internal GreedyFeasibleStageArtifacts ExecuteGreedyFeasibleStageWithSolution()
     {
         return RunWithComparisonStateCancellation(() =>
         {
@@ -80,6 +83,7 @@ partial class StrategyBuilder
 
             GreedyPolicySolution policy = SolveGreedyFeasiblePolicy();
             _phase1Milliseconds = (long)policy.SolveElapsed.TotalMilliseconds;
+            SolvedStrategy solution = CreateGreedyFeasibleSolvedStrategy(policy);
 
             _useCompact = false;
             _feasiblePhase2StartMs = _progressStopwatch.ElapsedMilliseconds;  // Mark the start of the costly BuildState phase
@@ -100,23 +104,57 @@ partial class StrategyBuilder
             // Surface the exact U this materialized tree achieves so the edge (compact) phase in the same
             // combined run uses it as its step ceiling -- the tightest sound budget, guaranteeing the edge
             // plan is never worse than this step plan.
-            _feasibleRootBudget = plan.MaxStep;
+            _feasibleRootBudget = solution.Score.WorstCaseSteps;
             _latestGreedyIncumbentPlan = plan;
 
             // Denominator estimate for the edge phase's live progress (see field doc): the distinct
             // canonical states this step pass touched approximate the compact solve's total work.
             _feasibleCompactStateEstimate = _visitedSearchStates.Count;
-            return plan;
+            return new GreedyFeasibleStageArtifacts(solution, plan);
         });
+    }
+
+    private SolvedStrategy CreateGreedyFeasibleSolvedStrategy(GreedyPolicySolution policy)
+    {
+        var rootState = new ComparisonState(_n);
+        ulong ignoredFixedTopMask = 0;
+        int remainingSlots = _k;
+        NormalizeState(rootState, ref ignoredFixedTopMask, ref remainingSlots);
+        SearchStateKey rootKey = GetSearchStateKey(rootState, remainingSlots);
+
+        var nodes = new Dictionary<SearchStateKey, SolvedStrategyNode>(policy.Nodes.Count);
+        foreach ((SearchStateKey key, GreedyPolicyNode node) in policy.Nodes)
+        {
+            nodes.Add(key, new SolvedStrategyNode(
+                node.SelectedGroup,
+                node.Successors,
+                node.RemainingDepth));
+        }
+        foreach (SearchStateKey finalChoiceKey in policy.FinalChoiceKeys)
+            nodes.Add(finalChoiceKey, SolvedStrategyNode.FinalChoice());
+
+        return new SolvedStrategy(
+            new ProblemShape(_n, _m, _requestedK, _k),
+            rootKey,
+            nodes,
+            new StrategyScore(policy.WorstCaseSteps),
+            new BoundEvidence(
+                _rootProvenLowerBound,
+                policy.WorstCaseSteps,
+                IsProvenOptimal: false,
+                WasCandidateEnumerationCapped: false),
+            new StageProvenance(SolvedStrategyStageKind.GreedyFeasible, StageNames.GreedyFeasible),
+            CreateSearchStatistics());
     }
 
     internal GreedyPolicySolution SolveGreedyFeasiblePolicy()
     {
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         var nodes = new Dictionary<SearchStateKey, GreedyPolicyNode>();
-        int worstCaseSteps = SolveGreedyPolicyState(new ComparisonState(_n), _k, nodes);
+        var finalChoiceKeys = new HashSet<SearchStateKey>();
+        int worstCaseSteps = SolveGreedyPolicyState(new ComparisonState(_n), _k, nodes, finalChoiceKeys);
         stopwatch.Stop();
-        return new GreedyPolicySolution(worstCaseSteps, nodes, stopwatch.Elapsed);
+        return new GreedyPolicySolution(worstCaseSteps, nodes, finalChoiceKeys, stopwatch.Elapsed);
     }
 
     private StrategyNode MaterializeGreedyFeasiblePolicy(GreedyPolicySolution policy)
@@ -132,7 +170,8 @@ partial class StrategyBuilder
     private int SolveGreedyPolicyState(
         ComparisonState state,
         int remainingSlots,
-        Dictionary<SearchStateKey, GreedyPolicyNode> nodes)
+        Dictionary<SearchStateKey, GreedyPolicyNode> nodes,
+        HashSet<SearchStateKey> finalChoiceKeys)
     {
         ThrowIfCancellationRequested();
         ulong ignoredFixedTopMask = 0;
@@ -146,7 +185,10 @@ partial class StrategyBuilder
         }
 
         if (state.ActiveCount <= _m)
+        {
+            finalChoiceKeys.Add(GetSearchStateKey(state, remainingSlots));
             return 1;
+        }
 
         SearchStateKey key = GetSearchStateKey(state, remainingSlots);
         if (nodes.TryGetValue(key, out GreedyPolicyNode? cached))
@@ -170,7 +212,8 @@ partial class StrategyBuilder
                 int childSteps = SolveGreedyPolicyState(
                     outcome.NextState,
                     outcome.NextRemainingSlots,
-                    nodes);
+                    nodes,
+                    finalChoiceKeys);
                 if (childSteps > maxChildSteps)
                     maxChildSteps = childSteps;
                 return true;
