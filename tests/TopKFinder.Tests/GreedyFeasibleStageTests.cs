@@ -122,9 +122,14 @@ public class GreedyFeasibleStageTests
     }
 
     [Theory]
+    [InlineData(6, 2, 2)]
     [InlineData(6, 3, 3)]
+    [InlineData(7, 4, 4)]
     [InlineData(9, 3, 3)]
+    [InlineData(9, 5, 4)]
     [InlineData(12, 4, 4)]
+    [InlineData(12, 6, 6)]
+    [InlineData(14, 4, 5)]
     public void GreedyFeasiblePolicy_IsSolvedBeforeEquivalentPlanIsMaterialized(int n, int m, int k)
     {
         var builder = new StrategyBuilder(n, m, k);
@@ -133,7 +138,7 @@ public class GreedyFeasibleStageTests
         StrategyPlan plan = builder.ExecuteGreedyFeasibleStage();
 
         Assert.NotEmpty(policy.Nodes);
-        Assert.True(policy.WorstCaseSteps >= plan.MaxStep);
+        Assert.Equal(policy.WorstCaseSteps, plan.MaxStep);
         Assert.All(policy.Nodes.Values, node =>
         {
             Assert.Equal(m, node.SelectedGroup.GroupSize);

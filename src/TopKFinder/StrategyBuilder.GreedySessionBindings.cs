@@ -31,8 +31,8 @@ partial class StrategyBuilder
     // ceiling can never need more than U). The edge phase (RunGreedyPipeline) reads it so it
     // never produces a plan worse than the step phase. -1 until a step plan is built; deliberately NOT
     // cleared by ResetPerBuildTransientState so it survives the step->edge build boundary on the same
-    // builder. When the edge phase runs standalone (no prior step build) it falls back to the lean
-    // ConstructiveRootUpperBound, which is sound but looser.
+    // builder. When the edge phase runs standalone (no prior step build) it falls back to the
+    // search-side ConstructiveRootUpperBound for the same fixed constructive policy.
     private int _feasibleRootBudget
     {
         get => _session.FeasibleRootBudget;

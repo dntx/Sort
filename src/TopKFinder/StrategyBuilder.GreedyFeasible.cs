@@ -90,6 +90,12 @@ partial class StrategyBuilder
             ReportProgress(force: true);
 
             StrategyPlan plan = CreatePlan(root, stopwatch.Elapsed, isFeasibleUpperBound: true);
+            if (policy.WorstCaseSteps != plan.MaxStep)
+            {
+                throw new InvalidOperationException(
+                    $"Greedy policy depth {policy.WorstCaseSteps} does not match materialized MaxStep " +
+                    $"{plan.MaxStep}; display materialization must preserve policy depth.");
+            }
 
             // Surface the exact U this materialized tree achieves so the edge (compact) phase in the same
             // combined run uses it as its step ceiling -- the tightest sound budget, guaranteeing the edge
@@ -175,10 +181,10 @@ partial class StrategyBuilder
         return remainingDepth;
     }
 
-    // Lean worst-case step count of the constructive strategy from the root: a sound but looser
-    // feasible step budget for the edge phase when the materialized U is unavailable (the edge phase
-    // run standalone, with no prior step build on this builder). Without the materializer's display-key
-    // Reference de-duplication this counts the full longest path, so it is >= the materialized MaxStep.
+    // Search-side worst-case step count of the constructive strategy from the root. This supplies the
+    // feasible step budget for the edge phase when no prior step plan was materialized. Display
+    // materialization may share repeated states through References, but resolving those References must
+    // preserve this depth exactly; ExecuteGreedyFeasibleStage enforces that invariant.
     private int ConstructiveRootUpperBound()
     {
         _constructiveDepthMemo = new Dictionary<SearchStateKey, int>();
