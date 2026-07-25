@@ -54,7 +54,7 @@ partial class MainForm
 
         bool edgePhase = Volatile.Read(ref _activePhase) == 2;
         SetStatText(_statesTextBox, BuildStatesPanelText(snapshot, edgePhase));
-        SetStatText(_workTextBox, BuildWorkPanelText(snapshot));
+        SetStatText(_workTextBox, BuildWorkPanelText(snapshot, _currentStageName));
     }
 
     private static string BuildStatesPanelText(SearchProgressSnapshot snapshot, bool edgePhase)
@@ -87,11 +87,12 @@ partial class MainForm
             $"(step) top-set: {snapshot.FeasibleTopSetStates}";
     }
 
-    private static string BuildWorkPanelText(SearchProgressSnapshot snapshot)
+    private static string BuildWorkPanelText(SearchProgressSnapshot snapshot, string currentStageName)
     {
+        string stageLabel = FormatWorkStageLabel(currentStageName);
         string edgeText = snapshot.CompactStatesSolved > 0
-            ? $"[compact] {snapshot.CompactStatesSolved} solved, {snapshot.CompactGroupsEnumerated} groups ({snapshot.CompactStepOptimalGroups} opt)"
-            : "[compact] -";
+            ? $"[{stageLabel}] {snapshot.CompactStatesSolved} solved, {snapshot.CompactGroupsEnumerated} groups ({snapshot.CompactStepOptimalGroups} opt)"
+            : $"[{stageLabel}] -";
 
         return
             $"outcomes: {snapshot.OutcomesConstructed} (cand groups {snapshot.CandidateGroupsEnumerated})\n" +
@@ -100,6 +101,27 @@ partial class MainForm
             $"prunes: {snapshot.LowerBoundPrunes}\n" +
             $"cache: {snapshot.ExactCacheHits}/{snapshot.LowerBoundCacheHits}/{snapshot.FeasibleTopSetCacheHits}/{snapshot.BestGroupPatternCacheHits}\n" +
             edgeText;
+    }
+
+    private static string FormatWorkStageLabel(string currentStageName)
+    {
+        if (string.IsNullOrWhiteSpace(currentStageName))
+            return "unknown";
+
+        int length = 0;
+        while (length < currentStageName.Length)
+        {
+            char c = currentStageName[length];
+            if ((c >= 'a' && c <= 'z') || c == '-')
+            {
+                length++;
+                continue;
+            }
+
+            break;
+        }
+
+        return length > 0 ? currentStageName[..length] : "unknown";
     }
 
     // Local 0..1 fraction of the edge phase's compact solve, mirroring the engine's own self-correcting
