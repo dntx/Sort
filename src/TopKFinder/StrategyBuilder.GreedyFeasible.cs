@@ -27,9 +27,9 @@ partial class StrategyBuilder
     // this chooser runs the top-k set is not yet determined, so such a pair always exists among the
     // active items, and ChooseConstructiveGroup guarantees one is included.
     //
-    // This builder reuses the existing BuildState materialization: the greedy-feasible stage enables
-    // constructive selection through MaterializationContext (see StrategyBuilder.Core.cs), so no precomputed
-    // pattern cache / closure pre-solve is needed (the chooser is cheap and deterministic).
+    // Greedy-feasible runs in two explicit phases. Phase A solves the constructive policy into canonical
+    // group patterns. Phase B replays those patterns while building the display tree; it never chooses a
+    // comparison group itself.
     // Test-only switch: when true, candidate lookahead scoring always runs to completion (no
     // incumbent-based early prune). Used by regression tests to A/B lock the pruning win via
     // deterministic work counters.
@@ -55,8 +55,7 @@ partial class StrategyBuilder
     // gives a squeeze "L <= opt <= U" displayable even for shapes the exact search never resolves.
     //
     // The comparison group at each state is built constructively from the current partial order
-    // (ChooseConstructiveGroup, O(m*active^2)), so unlike the old enumeration-based greedy there is no
-    // phase-1 closure / pattern cache: the policy is computed on the fly during materialization.
+    // (ChooseConstructiveGroup, O(m*active^2)) during policy solving, then replayed during materialization.
     public StrategyPlan ExecuteGreedyFeasibleStage()
     {
         return RunWithComparisonStateCancellation(() =>
@@ -71,24 +70,20 @@ partial class StrategyBuilder
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
             ReportProgress(force: true);
 
-            // No phase-1 closure: the constructive policy is computed on the fly during materialization.
-            _phase1Milliseconds = stopwatch.ElapsedMilliseconds;
+            _phase1Milliseconds = 0;
 
             // L side of the squeeze: a proven analytic lower bound on the root optimum, computed
             // independently of the (never-finishing) exact search. Surfaced via
             // SearchStatistics.RootProvenLowerBound, identical to the default path.
             RecordRootProvenLowerBound(GetMinWorstCaseLowerBound(new ComparisonState(_n), _k));
-            _phase1bMilliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds;
+            _phase1bMilliseconds = stopwatch.ElapsedMilliseconds;
+
+            GreedyPolicySolution policy = SolveGreedyFeasiblePolicy();
+            _phase1Milliseconds = (long)policy.SolveElapsed.TotalMilliseconds;
 
             _useCompact = false;
             _feasiblePhase2StartMs = _progressStopwatch.ElapsedMilliseconds;  // Mark the start of the costly BuildState phase
-            StrategyNode root = BuildState(
-                new ComparisonState(_n),
-                0,
-                _k,
-                1,
-                new MaterializationContext(
-                    ForceFixedConstructiveSelection: true));
+            StrategyNode root = MaterializeGreedyFeasiblePolicy(policy);
             _feasiblePhaseSolved = true;  // Mark feasible stage complete so progress jumps to 100%
             _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds - _phase1bMilliseconds;
             stopwatch.Stop();
@@ -107,6 +102,77 @@ partial class StrategyBuilder
             _feasibleCompactStateEstimate = _visitedSearchStates.Count;
             return plan;
         });
+    }
+
+    internal GreedyPolicySolution SolveGreedyFeasiblePolicy()
+    {
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var nodes = new Dictionary<SearchStateKey, GreedyPolicyNode>();
+        int worstCaseSteps = SolveGreedyPolicyState(new ComparisonState(_n), _k, nodes);
+        stopwatch.Stop();
+        return new GreedyPolicySolution(worstCaseSteps, nodes, stopwatch.Elapsed);
+    }
+
+    private StrategyNode MaterializeGreedyFeasiblePolicy(GreedyPolicySolution policy)
+    {
+        return BuildState(
+            new ComparisonState(_n),
+            0,
+            _k,
+            1,
+            new MaterializationContext(GreedyPolicy: policy));
+    }
+
+    private int SolveGreedyPolicyState(
+        ComparisonState state,
+        int remainingSlots,
+        Dictionary<SearchStateKey, GreedyPolicyNode> nodes)
+    {
+        ThrowIfCancellationRequested();
+        ulong ignoredFixedTopMask = 0;
+        NormalizeState(state, ref ignoredFixedTopMask, ref remainingSlots);
+
+        if (remainingSlots == 0
+            || TryGetDeterminedTopSet(state, remainingSlots, out _)
+            || state.ActiveCount <= remainingSlots)
+        {
+            return 0;
+        }
+
+        if (state.ActiveCount <= _m)
+            return 1;
+
+        SearchStateKey key = GetSearchStateKey(state, remainingSlots);
+        if (nodes.TryGetValue(key, out GreedyPolicyNode? cached))
+            return cached.RemainingDepth;
+
+        List<int> group = ChooseConstructiveGroupBase(state, remainingSlots);
+        BestGroupPattern selectedGroup = MakeGroupPattern(state, group);
+        var successors = new HashSet<SearchStateKey>();
+        int maxChildSteps = 0;
+
+        VisitComparisonOutcomes(
+            state,
+            fixedTopMask: 0,
+            remainingSlots,
+            group,
+            currentKey: key,
+            collectMergedBranches: false,
+            onUsefulOutcome: outcome =>
+            {
+                successors.Add(outcome.NextSearchKey);
+                int childSteps = SolveGreedyPolicyState(
+                    outcome.NextState,
+                    outcome.NextRemainingSlots,
+                    nodes);
+                if (childSteps > maxChildSteps)
+                    maxChildSteps = childSteps;
+                return true;
+            });
+
+        int remainingDepth = 1 + maxChildSteps;
+        nodes[key] = new GreedyPolicyNode(selectedGroup, successors, remainingDepth);
+        return remainingDepth;
     }
 
     // Lean worst-case step count of the constructive strategy from the root: a sound but looser

@@ -108,15 +108,26 @@ partial class StrategyBuilder
         {
             _owner.ThrowIfCancellationRequested();
 
-            if (context.ForceFixedConstructiveSelection)
+            if (context.GreedyPolicy is not null)
             {
-                List<int> constructiveGroup = _owner.ChooseConstructiveGroup(
+                SearchStateKey policyKey = SearchStateKeyService.BuildSearchStateKey(
                     state,
                     remainingSlots,
-                    forceFixedCandidateSelection: true);
-                return new SelectedComparisonGroup(
-                    constructiveGroup,
-                    BuildMergedComparisonOutcomes(state, fixedTopMask, remainingSlots, constructiveGroup));
+                    _owner._canonicalKeyMemo);
+                if (!context.GreedyPolicy.Nodes.TryGetValue(policyKey, out GreedyPolicyNode? policyNode))
+                {
+                    throw new InvalidOperationException(
+                        "Greedy policy solve must populate every state reached during materialization.");
+                }
+
+                SelectedComparisonGroup selectedGroup = ReplayCachedPattern(
+                    state,
+                    fixedTopMask,
+                    remainingSlots,
+                    policyNode.SelectedGroup,
+                    "Greedy policy group pattern did not match the materialized state.");
+                ValidatePolicySuccessors(policyNode, selectedGroup.Branches);
+                return selectedGroup;
             }
 
             if (_owner._useGreedyTightenSelection)
@@ -166,6 +177,22 @@ partial class StrategyBuilder
                     "Phase 1 must populate the best-group pattern cache for every state materialized in phase 2.");
             }
 
+            return ReplayCachedPattern(
+                state,
+                fixedTopMask,
+                remainingSlots,
+                cachedPattern,
+                "Cached best-group pattern did not match any candidate combination in the current state.");
+        }
+
+        private SelectedComparisonGroup ReplayCachedPattern(
+            ComparisonState state,
+            ulong fixedTopMask,
+            int remainingSlots,
+            BestGroupPattern cachedPattern,
+            string mismatchMessage)
+        {
+            List<int> candidates = state.GetActiveItemsOrdered();
             int[]? colorSignature = cachedPattern.ColorSignature;
             int[]? activeColors = colorSignature is null ? null : state.GetActiveItemColors();
 
@@ -184,8 +211,30 @@ partial class StrategyBuilder
                 }
             }
 
-            throw new InvalidOperationException(
-                "Cached best-group pattern did not match any candidate combination in the current state.");
+            throw new InvalidOperationException(mismatchMessage);
+        }
+
+        private void ValidatePolicySuccessors(
+            GreedyPolicyNode policyNode,
+            IReadOnlyList<MergedBranch> materializedBranches)
+        {
+            var materializedSuccessors = new HashSet<SearchStateKey>();
+            foreach (MergedBranch branch in materializedBranches)
+            {
+                foreach (MergedFamilyOutcome outcome in branch.FamilyOutcomes)
+                {
+                    materializedSuccessors.Add(SearchStateKeyService.BuildSearchStateKey(
+                        outcome.NextState,
+                        outcome.NextRemainingSlots,
+                        _owner._canonicalKeyMemo));
+                }
+            }
+
+            if (!materializedSuccessors.SetEquals(policyNode.Successors))
+            {
+                throw new InvalidOperationException(
+                    "Greedy policy and materialization produced different search successor sets.");
+            }
         }
 
         private IReadOnlyList<MergedBranch> BuildMergedComparisonOutcomes(

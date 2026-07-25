@@ -121,6 +121,27 @@ public class GreedyFeasibleStageTests
         Assert.Equal(expectedRawU, feasible);
     }
 
+    [Theory]
+    [InlineData(6, 3, 3)]
+    [InlineData(9, 3, 3)]
+    [InlineData(12, 4, 4)]
+    public void GreedyFeasiblePolicy_IsSolvedBeforeEquivalentPlanIsMaterialized(int n, int m, int k)
+    {
+        var builder = new StrategyBuilder(n, m, k);
+
+        GreedyPolicySolution policy = builder.SolveGreedyFeasiblePolicy();
+        StrategyPlan plan = builder.ExecuteGreedyFeasibleStage();
+
+        Assert.NotEmpty(policy.Nodes);
+        Assert.True(policy.WorstCaseSteps >= plan.MaxStep);
+        Assert.All(policy.Nodes.Values, node =>
+        {
+            Assert.Equal(m, node.SelectedGroup.GroupSize);
+            Assert.True(node.RemainingDepth > 0);
+            Assert.NotEmpty(node.Successors);
+        });
+    }
+
     // m=2 is intentionally routed around the generic 1-ply group lookahead. In the pairwise regime
     // each step has only two outcomes and the current immediate-outcome scorer is too low-signal for
     // its lower-bound cost, so greedy-feasible falls back to the base antichain heuristic. These raw
