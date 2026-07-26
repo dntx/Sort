@@ -316,6 +316,41 @@ public sealed class MainFormRenderingTests
     }
 
     [Fact]
+    public void OnProofTightenStage_NonMaterializingStage_InvalidatesOlderPresentationRequest()
+    {
+        StageResult deferredStage = CreateDeferredExactStepStage();
+        StrategyPlan feasiblePlan = new StrategyBuilder(8, 3, 3).ExecuteStepProofStage();
+
+        using var form = new MainForm();
+        _ = form.Handle;
+        SetPrivateField(form, "_feasiblePlan", feasiblePlan);
+        SetPrivateField(form, "_incumbentStage", deferredStage);
+        SetPrivateField(form, "_initialGreedyStage", deferredStage);
+        InvokePrivateInstanceVoid(form, "ShowInitialStagePlaceholder", 8, 3, 3, true);
+
+        InvokePrivateInstanceVoid(
+            form,
+            "QueueStageMaterialization",
+            deferredStage,
+            (Action<StageResult>)(_ => { }));
+        CancellationTokenSource pendingRequest = GetPrivateField<CancellationTokenSource>(form, "_activePresentationRequestSource");
+        int requestVersionBefore = GetPrivateField<int>(form, "_presentationRequestVersion");
+
+        var terminalNoPlanStage = new StageResult(
+            StageNames.FormatProofTighten(feasiblePlan.MaxStep - 1),
+            plan: null,
+            elapsed: TimeSpan.FromMilliseconds(1),
+            outcome: StageOutcome.Incomplete,
+            solution: null);
+
+        InvokePrivateInstanceVoid(form, "OnProofTightenStage", terminalNoPlanStage);
+
+        int requestVersionAfter = GetPrivateField<int>(form, "_presentationRequestVersion");
+        Assert.True(pendingRequest.IsCancellationRequested);
+        Assert.True(requestVersionAfter > requestVersionBefore);
+    }
+
+    [Fact]
     public void PresentationStageCache_EvictsOldestEntryWhenCapacityExceeded()
     {
         using var form = new MainForm();

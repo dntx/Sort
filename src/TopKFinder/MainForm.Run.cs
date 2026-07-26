@@ -307,6 +307,17 @@ partial class MainForm
             requestToken);
     }
 
+    private void InvalidateActivePresentationRequest()
+    {
+        _activePresentationRequestSource?.Cancel();
+        _activePresentationRequestSource?.Dispose();
+        _activePresentationRequestSource = null;
+
+        // Bump request version so any queued UI-apply checks reject older completions
+        // even if cancellation is observed after materialization completes.
+        _presentationRequestVersion++;
+    }
+
     private async Task DrainPresentationTasksAsync()
     {
         while (true)
@@ -589,7 +600,11 @@ partial class MainForm
         bool improved = _incumbentStage.HasValue
             && PipelineStageProtocol.IsImprovement(stage, _incumbentStage.Value);
 
-        if (improved && !stage.HasPlan && stage.Solution is not null)
+        bool needsDeferredMaterialization = improved && !stage.HasPlan && stage.Solution is not null;
+        if (!needsDeferredMaterialization)
+            InvalidateActivePresentationRequest();
+
+        if (needsDeferredMaterialization)
         {
             QueueStageMaterialization(stage, OnProofTightenStage);
             return;
