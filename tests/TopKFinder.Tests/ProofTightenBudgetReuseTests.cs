@@ -90,6 +90,43 @@ public class ProofTightenBudgetReuseTests
         Assert.Equal(first.Plan?.MaxStep, second.Plan?.MaxStep);
     }
 
+    [Theory]
+    [InlineData(5, 2, 2)]
+    [InlineData(8, 3, 4)]
+    [InlineData(10, 4, 4)]
+    public void ProofTightenSnapshot_ReplaysAfterLaterProbeResetsCompactCaches(int n, int m, int k)
+    {
+        var builder = new StrategyBuilder(n, m, k);
+        int budget = builder.ExecuteGreedyFeasibleStage().MaxStep - 1;
+        ProofTightenStageArtifacts first = builder.ExecuteProofTightenStageWithSolution(budget);
+
+        Assert.Equal(StageOutcome.Tightened, first.Result.Outcome);
+        Assert.NotNull(first.Solution);
+        Assert.NotNull(first.Result.Plan);
+        Assert.Equal(SolvedStrategyStageKind.ProofTighten, first.Solution!.Provenance.Kind);
+        Assert.Equal(first.Result.Name, first.Solution.Provenance.StageName);
+        Assert.Equal(first.Result.Plan!.MaxStep, first.Solution.Score.WorstCaseSteps);
+        Assert.Null(first.Solution.Score.SearchEdgeCost);
+
+        builder.ExecuteProofTightenStage(first.Result.Plan.MaxStep - 1);
+        StrategyPlan replayed = builder.MaterializeCompactSolutionForTesting(first.Solution);
+
+        Assert.Equal(first.Result.Plan.MaxStep, replayed.MaxStep);
+        Assert.Equal(first.Result.Plan.TotalBranchEdges, replayed.TotalBranchEdges);
+    }
+
+    [Fact]
+    public void ProofTightenInfeasibleOutcome_DoesNotCreateSolution()
+    {
+        var builder = new StrategyBuilder(5, 2, 2);
+
+        ProofTightenStageArtifacts artifacts = builder.ExecuteProofTightenStageWithSolution(budget: 1);
+
+        Assert.Equal(StageOutcome.ProvenInfeasible, artifacts.Result.Outcome);
+        Assert.Null(artifacts.Result.Plan);
+        Assert.Null(artifacts.Solution);
+    }
+
     // No-overshoot invariant (the point of the tightest-budget-keep fix): at EVERY budget b in
     // [1, U-1], a probe that materializes a plan must honor the ceiling (MaxStep <= b). Since PR #223,
     // an over-budget materialized plan is an internal invariant violation that throws in

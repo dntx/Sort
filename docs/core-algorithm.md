@@ -46,6 +46,7 @@ display/search 两条物化路径当前通过独立 planner 入口（`BuildDispl
 - 本轮补充在构造型贪心路径执行同样规则：移除仅承载 `2/3` 固定阈值语义的别名常量，直接以内联谓词表达条件，保持搜索与展示行为不变。
 - 本轮补充在 projection quotient 路径统一阈值表达：将分散的 `3/4` 守卫字面量替换为已有具名常量（`ProjectionQuotientMinHeadCount` / `ProjectionQuotientMaxHeadCount`），仅做一致性收敛，不改变行为。
 - Compact 目标口径更新：二级 DP 不再最小化显示层分支线计数（原 `CountDisplayBranches` 路径），改为最小化搜索树分支计数（每节点 `children.Count` 递归求和）。`MaxStep` 主目标不变，但显示边数基线需按新口径重标。
+- Compact snapshot 边界已收口：成功的 `proof-tighten`、`exact-edge-compact` 与 `greedy-edge-compact` 在任何后续 probe reset 或 display materialization 之前，先把根可达选组、canonical successor、精确剩余深度与证据冻结为不可变 `SolvedStrategy`；显示层只重放 snapshot。`ProvenInfeasible`、`Incomplete` 以及 capped Phase-B 回退 incumbent 均不伪造 solution。proof-tighten 的下一预算由 snapshot 的 `WorstCaseSteps` 决定，overshoot 继续作为内部不变量破坏直接抛错。
 
 ---
 

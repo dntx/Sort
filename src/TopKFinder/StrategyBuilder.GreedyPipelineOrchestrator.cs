@@ -51,12 +51,19 @@ partial class StrategyBuilder
                     _owner._proofTightenCurrentBudget = budget;
                     string stageName = StageNames.FormatProofTighten(budget);
                     callbacks.Start(stageName);
-                    StageResult stage = ExecuteProofTightenStage(budget);
+                    ProofTightenStageArtifacts artifacts = ExecuteProofTightenStageWithSolution(budget);
+                    StageResult stage = artifacts.Result;
                     PipelineStageProtocol.EmitStage(stage, callbacks);
 
                     if (stage.Outcome == StageOutcome.Tightened)
                     {
-                        bestStep = stage.Plan!.MaxStep;
+                        if (artifacts.Solution is null)
+                        {
+                            throw new InvalidOperationException(
+                                "A tightened proof stage must carry its frozen compact solution.");
+                        }
+
+                        bestStep = artifacts.Solution.Score.WorstCaseSteps;
                         budget = bestStep - 1; // realized max-step may already be below the attempted ceiling
                         continue;
                     }
@@ -82,7 +89,8 @@ partial class StrategyBuilder
             string edgeCompactStageName = StageNames.FormatGreedyEdgeCompact(bestStep);
             callbacks.Start(edgeCompactStageName);
             var edgeStopwatch = Stopwatch.StartNew();
-            StrategyPlan finalPlan = BuildEdgeCompactPlanAtBudget(bestStep)
+            CompactPlanResult edgeResult = _owner.BuildEdgeCompactPlanAtBudget(bestStep);
+            StrategyPlan finalPlan = edgeResult.Plan
                 .WithRootProvenLowerBound(_owner._rootProvenLowerBound);
             edgeStopwatch.Stop();
             PipelineStageProtocol.EmitCompletedPlanStage(
@@ -94,6 +102,9 @@ partial class StrategyBuilder
         }
 
         public StageResult ExecuteProofTightenStage(int budget)
+            => ExecuteProofTightenStageWithSolution(budget).Result;
+
+        public ProofTightenStageArtifacts ExecuteProofTightenStageWithSolution(int budget)
         {
             _owner._progressScope = _owner._reportCombinedRunProgress
                 ? ProgressScope.CompactFeasibleInCombinedRun
@@ -104,11 +115,12 @@ partial class StrategyBuilder
             {
                 string stageName = StageNames.FormatProofTighten(budget);
                 var stopwatch = Stopwatch.StartNew();
-                (StageOutcome outcome, StrategyPlan? candidate) = ProbeAndClassify(budget);
+                CompactProbeArtifacts probe = ProbeAndClassify(budget);
                 stopwatch.Stop();
-                if (candidate is not null)
-                    _owner._latestGreedyIncumbentPlan = candidate;
-                return new StageResult(stageName, candidate, stopwatch.Elapsed, outcome);
+                if (probe.Plan is not null)
+                    _owner._latestGreedyIncumbentPlan = probe.Plan;
+                var result = new StageResult(stageName, probe.Plan, stopwatch.Elapsed, probe.Outcome);
+                return new ProofTightenStageArtifacts(result, probe.Solution);
             }
             finally
             {
@@ -126,7 +138,7 @@ partial class StrategyBuilder
         // (a strict improvement over the incumbent). A returned plan whose MaxStep exceeds the budget would be
         // an overshoot; since the tighter-budget-keep fix (PR #223) the compact proxy and the materialized
         // tree agree, so that case is an internal invariant violation and throws rather than being reported.
-        public (StageOutcome Outcome, StrategyPlan? Plan) ProbeAndClassify(int budget)
+        public CompactProbeArtifacts ProbeAndClassify(int budget)
         {
             int configuredCap = _owner.CompactGreedyCandidateCap;
             int attemptCap = NormalizeGreedyCandidateCap(configuredCap);
@@ -139,14 +151,23 @@ partial class StrategyBuilder
                     // resolve conclusively or reach full enumeration.
                     _owner.CompactGreedyCandidateCap = attemptCap;
 
-                    StrategyPlan? candidate = ProbeFeasibleCompact(budget);
+                    CompactStageArtifacts? candidate = ProbeFeasibleCompact(
+                        budget,
+                        SolvedStrategyStageKind.ProofTighten,
+                        StageNames.FormatProofTighten(budget));
                     if (candidate is null)
                     {
                         if (!_owner._lastProbeEnumerationCapped)
-                            return (StageOutcome.ProvenInfeasible, null);
+                            return new CompactProbeArtifacts(
+                                StageOutcome.ProvenInfeasible,
+                                Solution: null,
+                                Plan: null);
 
                         if (attemptCap == int.MaxValue)
-                            return (StageOutcome.Incomplete, null);
+                            return new CompactProbeArtifacts(
+                                StageOutcome.Incomplete,
+                                Solution: null,
+                                Plan: null);
 
                         attemptCap = NextGreedyCandidateCap(attemptCap);
                         continue;
@@ -156,13 +177,16 @@ partial class StrategyBuilder
                     // a within-budget strategy exists and, with the tightest-budget pattern kept, materialization
                     // renders exactly that strategy. An overshoot means the proxy diverged from materialization -- a
                     // broken invariant we surface loudly instead of silently reporting an over-budget plan.
-                    if (candidate.MaxStep > budget)
+                    if (candidate.Solution.Score.WorstCaseSteps > budget)
                         throw new InvalidOperationException(
                             $"Compact feasibility probe at budget {budget} materialized a plan whose realized MaxStep " +
-                            $"{candidate.MaxStep} overshoots the ceiling. The tighter-budget-keep invariant should make " +
+                            $"{candidate.Solution.Score.WorstCaseSteps} overshoots the ceiling. The tighter-budget-keep invariant should make " +
                             $"this unreachable; an overshoot indicates the feasibility proxy diverged from materialization.");
 
-                    return (StageOutcome.Tightened, candidate);
+                    return new CompactProbeArtifacts(
+                        StageOutcome.Tightened,
+                        candidate.Solution,
+                        candidate.Plan);
                 }
             }
             finally
@@ -171,7 +195,10 @@ partial class StrategyBuilder
             }
         }
 
-        public StrategyPlan? ProbeFeasibleCompact(int rootBudget)
+        public CompactStageArtifacts? ProbeFeasibleCompact(
+            int rootBudget,
+            SolvedStrategyStageKind stageKind,
+            string stageName)
         {
             return _owner.RunWithComparisonStateCancellation(() =>
             {
@@ -194,11 +221,19 @@ partial class StrategyBuilder
                         return null;
                     }
 
-                    _owner._useCompact = true;
-                    var root = _owner.BuildState(new ComparisonState(_owner._n), 0, _owner._k, 1);
+                    SolvedStrategy solution = _owner.CreateCompactSolvedStrategy(
+                        stageKind,
+                        stageName,
+                        isProvenOptimal: false,
+                        wasCandidateEnumerationCapped: _owner._compactEnumerationCapped,
+                        includeSearchEdgeCost: stageKind == SolvedStrategyStageKind.GreedyEdgeCompact);
+                    StrategyPlan plan = _owner.MaterializeCompactSolution(
+                        solution,
+                        stopwatch,
+                        _owner._compactRootCost,
+                        isFeasibleUpperBound: true);
                     _owner._phase2Milliseconds = stopwatch.ElapsedMilliseconds - _owner._phase1bMilliseconds;
-                    stopwatch.Stop();
-                    return _owner.CreatePlan(root, stopwatch.Elapsed, _owner._compactRootCost, isFeasibleUpperBound: true);
+                    return new CompactStageArtifacts(solution, plan);
                 }
                 finally
                 {
@@ -207,17 +242,22 @@ partial class StrategyBuilder
             });
         }
 
-        public StrategyPlan BuildEdgeCompactPlanAtBudget(int rootBudget)
+        public CompactPlanResult BuildEdgeCompactPlanAtBudget(int rootBudget)
         {
-            StrategyPlan? plan = ProbeFeasibleCompact(rootBudget);
-            if (plan is not null)
-                return plan;
+            CompactStageArtifacts? artifacts = ProbeFeasibleCompact(
+                rootBudget,
+                SolvedStrategyStageKind.GreedyEdgeCompact,
+                StageNames.FormatGreedyEdgeCompact(rootBudget));
+            if (artifacts is not null)
+                return new CompactPlanResult(artifacts.Solution, artifacts.Plan);
 
             if (_owner._lastProbeEnumerationCapped
                 && _owner._latestGreedyIncumbentPlan is not null
                 && _owner._latestGreedyIncumbentPlan.MaxStep <= rootBudget)
             {
-                return _owner._latestGreedyIncumbentPlan;
+                return new CompactPlanResult(
+                    Solution: null,
+                    _owner._latestGreedyIncumbentPlan);
             }
 
             throw new InvalidOperationException(

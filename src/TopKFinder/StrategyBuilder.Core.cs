@@ -214,6 +214,9 @@ partial class StrategyBuilder
         => PublicPipelineOrchestrator.RunExactPipeline(this, onStageCompleted, onStageStart);
 
     public StrategyPlan ExecuteEdgeCompactStage()
+        => ExecuteEdgeCompactStageWithSolution().Plan;
+
+    internal CompactStageArtifacts ExecuteEdgeCompactStageWithSolution()
     {
         // Returns the raw compact candidate: the compact DP keeps the optimal worst-case step count
         // (so MaxStep always matches default) and, among equally-optimal groups, minimizes a per-state
@@ -226,7 +229,33 @@ partial class StrategyBuilder
         _progressScope = _reportCombinedRunProgress
             ? ProgressScope.CompactPrimaryInCombinedRun
             : ProgressScope.DefaultStandalone;
-        return BuildPlan(useCompactSelection: true, useFeasibleBudget: false);
+        return RunWithComparisonStateCancellation(() =>
+        {
+            var stopwatch = Stopwatch.StartNew();
+            InitializeExactSolverSession(useFeasibleBudget: false);
+            _phase1Milliseconds = stopwatch.ElapsedMilliseconds;
+
+            EnsureCompactSolved();
+            _phase1bMilliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds;
+
+            int worstCaseSteps = GetMinWorstCaseSteps(new ComparisonState(_n), _k);
+            SolvedStrategy solution = CreateCompactSolvedStrategy(
+                SolvedStrategyStageKind.ExactEdgeCompact,
+                StageNames.FormatExactEdgeCompact(worstCaseSteps),
+                isProvenOptimal: true,
+                wasCandidateEnumerationCapped: false,
+                includeSearchEdgeCost: true);
+            _useCompact = true;
+            StrategyPlan plan = MaterializeCompactSolution(
+                solution,
+                stopwatch,
+                _compactRootCost,
+                isFeasibleUpperBound: false);
+
+            _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds - _phase1bMilliseconds;
+            ReportProgress(force: true);
+            return new CompactStageArtifacts(solution, plan);
+        });
     }
 
     // Greedy mode: proof tightening followed by a single edge-compaction pass.
@@ -261,6 +290,9 @@ partial class StrategyBuilder
     public StageResult ExecuteProofTightenStage(int budget)
         => GreedyPipeline.ExecuteProofTightenStage(budget);
 
+    internal ProofTightenStageArtifacts ExecuteProofTightenStageWithSolution(int budget)
+        => GreedyPipeline.ExecuteProofTightenStageWithSolution(budget);
+
     // Runs one feasibility probe at the given step ceiling and classifies it into the single typed
     // outcome the tightening driver consumes. Keeping this classification here (separate from the
     // driver's control flow) guarantees every probe yields exactly one {outcome, plan} result, so the
@@ -271,7 +303,7 @@ partial class StrategyBuilder
     // (a strict improvement over the incumbent). A returned plan whose MaxStep exceeds the budget would be
     // an overshoot; since the tighter-budget-keep fix (PR #223) the compact proxy and the materialized
     // tree agree, so that case is an internal invariant violation and throws rather than being reported.
-    private (StageOutcome Outcome, StrategyPlan? Plan) ProbeAndClassify(int budget)
+    private CompactProbeArtifacts ProbeAndClassify(int budget)
         => GreedyPipeline.ProbeAndClassify(budget);
 
     private static int NormalizeGreedyCandidateCap(int cap)
@@ -289,42 +321,14 @@ partial class StrategyBuilder
     // Runs a single compact pass at a fixed root ceiling, returning the materialized plan or null if the
     // ceiling is infeasible (root solve yields the unsolvable sentinel). Resets the per-budget compact
     // caches first. Progress snapshots flow normally so the bar/ETA track the current tightening probe.
-    private StrategyPlan? ProbeFeasibleCompact(int rootBudget)
-        => GreedyPipeline.ProbeFeasibleCompact(rootBudget);
+    private CompactStageArtifacts? ProbeFeasibleCompact(int rootBudget)
+        => GreedyPipeline.ProbeFeasibleCompact(
+            rootBudget,
+            SolvedStrategyStageKind.ProofTighten,
+            StageNames.FormatProofTighten(rootBudget));
 
-    private StrategyPlan BuildEdgeCompactPlanAtBudget(int rootBudget)
+    internal CompactPlanResult BuildEdgeCompactPlanAtBudget(int rootBudget)
         => GreedyPipeline.BuildEdgeCompactPlanAtBudget(rootBudget);
-
-    private StrategyPlan BuildPlan(bool useCompactSelection, bool useFeasibleBudget = false)
-    {
-        return RunWithComparisonStateCancellation(
-            () => BuildPlanWithinSession(useCompactSelection, useFeasibleBudget, initializeSession: true));
-    }
-
-    private StrategyPlan BuildPlanWithinSession(
-        bool useCompactSelection,
-        bool useFeasibleBudget,
-        bool initializeSession)
-    {
-        var stopwatch = Stopwatch.StartNew();
-        if (initializeSession)
-            InitializeExactSolverSession(useFeasibleBudget);
-        _phase1Milliseconds = stopwatch.ElapsedMilliseconds;
-
-        if (useCompactSelection)
-            EnsureCompactSolved();
-        _phase1bMilliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds;
-
-        // Phase 2: materialize the strategy tree, reusing the cached group patterns.
-        _useCompact = useCompactSelection;
-        var root = BuildState(new ComparisonState(_n), 0, _k, 1);
-        _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds - _phase1bMilliseconds;
-        stopwatch.Stop();
-        ReportProgress(force: true);
-        bool feasible = useFeasibleBudget;
-        int? searchTreeEdges = useCompactSelection ? _compactRootCost : null;
-        return CreatePlan(root, stopwatch.Elapsed, searchTreeEdges, feasible);
-    }
 
     private StrategyPlan CreatePlan(
         StrategyNode root,
