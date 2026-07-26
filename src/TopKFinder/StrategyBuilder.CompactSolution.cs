@@ -88,7 +88,7 @@ partial class StrategyBuilder
             display.OutputStates,
             display.ExpandedOutputStates,
             solver.LowerBoundStates,
-            solver.FeasibleTopSetStates,
+            checked(solver.FeasibleTopSetStates + display.FeasibleTopSetStates),
             MergeMaterializedDiagnostics(solver.Diagnostics, display.Diagnostics),
             solver.Phase1Milliseconds,
             solver.Phase1bMilliseconds,

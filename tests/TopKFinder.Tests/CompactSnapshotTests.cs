@@ -21,6 +21,9 @@ public sealed class CompactSnapshotTests
         Assert.Equal(eagerPlan.SearchStatistics.SearchedStates, replayed.SearchStatistics.SearchedStates);
         Assert.Equal(eagerPlan.SearchStatistics.CandidateGroupsEnumerated, replayed.SearchStatistics.CandidateGroupsEnumerated);
         Assert.Equal(eagerPlan.SearchStatistics.OutputStates, replayed.SearchStatistics.OutputStates);
+        Assert.Equal(eagerPlan.SearchStatistics.ExpandedOutputStates, replayed.SearchStatistics.ExpandedOutputStates);
+        Assert.Equal(eagerPlan.SearchStatistics.LowerBoundStates, replayed.SearchStatistics.LowerBoundStates);
+        Assert.Equal(eagerPlan.SearchStatistics.FeasibleTopSetStates, replayed.SearchStatistics.FeasibleTopSetStates);
         Assert.Equal(eagerPlan.SearchStatistics.OutcomesConstructed, replayed.SearchStatistics.OutcomesConstructed);
         Assert.Equal(
             eagerPlan.SearchStatistics.Diagnostics.DuplicateOutcomeSkips,
