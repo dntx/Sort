@@ -32,7 +32,7 @@ static class PipelineStageProtocol
 
         return stage.HasPlan
             && incumbent.HasPlan
-            && stage.Plan!.IsStrictRefinementOver(incumbent.Plan!);
+            && stage.MaterializedPlan!.IsStrictRefinementOver(incumbent.MaterializedPlan!);
     }
 
     public static string NoSolutionMarker(StageResult stage)

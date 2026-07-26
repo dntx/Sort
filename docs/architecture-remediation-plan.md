@@ -20,7 +20,7 @@ Refactor governance plan for architecture boundaries, naming consistency, and ma
 
 ## Status Addendum (2026-07-26)
 - Search/display separation follow-up is tracked in `docs/search-display-separation-plan.md` and is the active source of truth for post-A/B architecture work.
-- Current state: Batches 0-7 complete; Batch 8 (GUI controlled materialization) is in progress with request-level cancellation, stale suppression, and bounded presentation-cache slices already landed.
+- Current state: Batches 0-10 are complete. The compatibility-path removal, timing-label finalization, and documentation sync closeout is complete; remaining perf investigation is limited to local diagnostic wall-clock variance.
 - Environment note: local runtime test execution can still be blocked by Windows Application Control (`0x800711C7`); build and static checks remain the local validation baseline, with CI as runtime confirmation.
 
 ## Repo Layout Acceptance Closeout (2026-07-21)

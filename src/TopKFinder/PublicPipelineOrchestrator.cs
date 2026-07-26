@@ -26,12 +26,11 @@ static class PublicPipelineOrchestrator
         var callbacks = new PipelineCallbacks(onStageCompleted, onStageStart);
 
         callbacks.Start(StageNames.StepProof);
-        ExactStepProofStageArtifacts stepArtifacts =
-            builder.ExecuteStepProofStageWithoutMaterialization();
+        ExactStepProofStageArtifacts stepArtifacts = builder.BuildExactStepProofStageArtifacts(materialize: false);
         PipelineStageProtocol.EmitStage(
             new StageResult(
                 StageNames.StepProof,
-                plan: null,
+                materializedPlan: null,
                 stepArtifacts.Timings.Total,
                 StageOutcome.Completed,
                 stepArtifacts.Solution,
@@ -45,7 +44,7 @@ static class PublicPipelineOrchestrator
         PipelineStageProtocol.EmitStage(
             new StageResult(
                 compactStageName,
-                plan: null,
+                materializedPlan: null,
                 compactArtifacts.Timings.Total,
                 StageOutcome.Completed,
                 compactArtifacts.Solution,
@@ -61,17 +60,16 @@ static class PublicPipelineOrchestrator
         var callbacks = new PipelineCallbacks(onStageCompleted, onStageStart);
 
         callbacks.Start(StageNames.StepProof);
-        StrategyBuilder.ExactProjectionArtifacts stepArtifacts =
-            builder.BuildExactProjectionArtifactsFromCurrentSession();
+        ExactStepProofStageArtifacts stepArtifacts = builder.ExecuteStepProofStageWithSolution();
         var stepStage = new StageResult(
             StageNames.StepProof,
-            stepArtifacts.DisplayTree,
+            stepArtifacts.Plan,
             stepArtifacts.Timings.Total,
             StageOutcome.Completed,
             stepArtifacts.Solution,
             stepArtifacts.Timings);
         PipelineStageProtocol.EmitStage(stepStage, callbacks);
-        StrategyPlan stepPlan = stepArtifacts.DisplayTree;
+        StrategyPlan stepPlan = stepArtifacts.Plan!;
 
         string compactStageName = StageNames.FormatExactEdgeCompact(
             stepArtifacts.Solution.Score.WorstCaseSteps);

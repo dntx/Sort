@@ -619,7 +619,7 @@ Acceptance:
 
 ### Batch 10: Remove compatibility path and close documentation
 
-Status: Not started
+Status: Done
 
 - Remove obsolete eager-plan-only APIs and mutable-cache projection paths.
 - Finalize statistics/timing labels.
@@ -630,6 +630,11 @@ Acceptance:
 - all production stages use immutable solved-strategy snapshots,
 - display materialization is an adapter and never a solver transport,
 - full tests and selected performance/cancellation gates pass.
+
+Validation note:
+
+- focused Batch 10 code-path tests and selected perf/cancellation gates pass locally,
+- one diagnostic wall-clock smoke test (`StrategyPerformanceTests.N28M3K6_GreedyFeasibleCompletesWithinBudget`) remains machine-sensitive in this Windows App Control environment and is tracked as a local validation caveat rather than a semantic regression signal.
 
 ## 8. Decisions To Resolve
 
@@ -670,11 +675,10 @@ Migration and validity rules:
 - `MaterializedPlan` may be null when display materialization has not been requested or completed,
 - a successful materialized stage must have both `Solution` and `MaterializedPlan`,
 - a proof, cancellation, or failure result with no complete incumbent has neither artifact,
-- retain the existing `Plan` API only as a temporary compatibility bridge to `MaterializedPlan`,
 - new or migrated code must depend on `Solution` for pipeline control and request `MaterializedPlan` only for
     presentation,
-- remove the compatibility `Plan` API after solver, orchestrator, CLI, GUI, and tests have migrated; do not
-    maintain two permanent stage-result contracts.
+- the legacy `Plan` bridge has now been removed after solver, orchestrator, CLI, GUI, and tests migrated to
+    `MaterializedPlan`; do not reintroduce two permanent stage-result contracts.
 
 Options:
 

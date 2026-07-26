@@ -45,11 +45,11 @@ public class ProofTightenBudgetReuseTests
         if (probe.Outcome != StageOutcome.Tightened)
             return;
 
-        Assert.NotNull(probe.Plan);
-        Assert.True(probe.Plan!.MaxStep <= budget,
-            $"({n},{m},{k}): Tightened probe realized step {probe.Plan.MaxStep} above budget {budget}");
-        Assert.True(probe.Plan.IsFeasibleUpperBound);
-        AssertEveryDecisionHasGroup(probe.Plan.Root);
+        Assert.NotNull(probe.MaterializedPlan);
+        Assert.True(probe.MaterializedPlan!.MaxStep <= budget,
+            $"({n},{m},{k}): Tightened probe realized step {probe.MaterializedPlan.MaxStep} above budget {budget}");
+        Assert.True(probe.MaterializedPlan.IsFeasibleUpperBound);
+        AssertEveryDecisionHasGroup(probe.MaterializedPlan.Root);
     }
 
     // Feasibility is monotone in the budget: a strategy proven feasible at budget b is also feasible at
@@ -87,7 +87,7 @@ public class ProofTightenBudgetReuseTests
         StageResult second = new StrategyBuilder(n, m, k).ExecuteProofTightenStage(budget);
 
         Assert.Equal(first.Outcome, second.Outcome);
-        Assert.Equal(first.Plan?.MaxStep, second.Plan?.MaxStep);
+        Assert.Equal(first.MaterializedPlan?.MaxStep, second.MaterializedPlan?.MaxStep);
     }
 
     [Theory]
@@ -102,18 +102,18 @@ public class ProofTightenBudgetReuseTests
 
         Assert.Equal(StageOutcome.Tightened, first.Result.Outcome);
         Assert.NotNull(first.Solution);
-        Assert.NotNull(first.Result.Plan);
+        Assert.NotNull(first.Result.MaterializedPlan);
         Assert.Equal(SolvedStrategyStageKind.ProofTighten, first.Solution!.Provenance.Kind);
         Assert.Equal(first.Result.Name, first.Solution.Provenance.StageName);
-        Assert.Equal(first.Result.Plan!.MaxStep, first.Solution.Score.WorstCaseSteps);
+        Assert.Equal(first.Result.MaterializedPlan!.MaxStep, first.Solution.Score.WorstCaseSteps);
         int searchEdgeCost = Assert.IsType<int>(first.Solution.Score.SearchEdgeCost);
         Assert.True(searchEdgeCost > 0);
 
-        builder.ExecuteProofTightenStage(first.Result.Plan.MaxStep - 1);
+        builder.ExecuteProofTightenStage(first.Result.MaterializedPlan.MaxStep - 1);
         StrategyPlan replayed = builder.MaterializeCompactSolutionForTesting(first.Solution);
 
-        Assert.Equal(first.Result.Plan.MaxStep, replayed.MaxStep);
-        Assert.Equal(first.Result.Plan.TotalBranchEdges, replayed.TotalBranchEdges);
+        Assert.Equal(first.Result.MaterializedPlan.MaxStep, replayed.MaxStep);
+        Assert.Equal(first.Result.MaterializedPlan.TotalBranchEdges, replayed.TotalBranchEdges);
         Assert.Equal(searchEdgeCost, first.Solution.Score.SearchEdgeCost);
     }
 
@@ -125,7 +125,7 @@ public class ProofTightenBudgetReuseTests
         ProofTightenStageArtifacts artifacts = builder.ExecuteProofTightenStageWithSolution(budget: 1);
 
         Assert.Equal(StageOutcome.ProvenInfeasible, artifacts.Result.Outcome);
-        Assert.Null(artifacts.Result.Plan);
+        Assert.Null(artifacts.Result.MaterializedPlan);
         Assert.Null(artifacts.Result.Solution);
         Assert.Null(artifacts.Solution);
         Assert.Equal(artifacts.Result.Elapsed, artifacts.Result.Timings.Total);
@@ -151,8 +151,8 @@ public class ProofTightenBudgetReuseTests
                 continue;
 
             Assert.Equal(StageOutcome.Tightened, probe.Outcome);
-            Assert.True(probe.Plan!.MaxStep <= b,
-                $"({n},{m},{k}): probe at budget {b} realized step {probe.Plan.MaxStep} above the ceiling");
+            Assert.True(probe.MaterializedPlan!.MaxStep <= b,
+                $"({n},{m},{k}): probe at budget {b} realized step {probe.MaterializedPlan.MaxStep} above the ceiling");
         }
     }
 

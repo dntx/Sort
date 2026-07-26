@@ -131,7 +131,7 @@ public class GreedyPipelineTests
         StrategyPlan plan = new StrategyBuilder(n, m, k).RunGreedyPipeline(onStageCompleted: stages.Add);
 
         StageResult edgeStage = Assert.Single(stages, s => s.Outcome == StageOutcome.Completed);
-        Assert.Same(plan, edgeStage.Plan);
+        Assert.Same(plan, edgeStage.MaterializedPlan);
         Assert.NotNull(edgeStage.Solution);
         Assert.Equal(SolvedStrategyStageKind.GreedyEdgeCompact, edgeStage.Solution!.Provenance.Kind);
         Assert.Equal(edgeStage.Elapsed, edgeStage.Timings.Total);
@@ -181,9 +181,9 @@ public class GreedyPipelineTests
         Assert.NotEmpty(completed);
         Assert.All(completed, stage =>
         {
-            Assert.NotNull(stage.Plan);
+            Assert.NotNull(stage.MaterializedPlan);
             Assert.NotNull(stage.Solution);
-            Assert.Equal(stage.Plan!.MaxStep, stage.Solution!.Score.WorstCaseSteps);
+            Assert.Equal(stage.MaterializedPlan!.MaxStep, stage.Solution!.Score.WorstCaseSteps);
             Assert.True(stage.Solution.Score.SearchEdgeCost.HasValue);
             Assert.Equal(stage.Elapsed, stage.Timings.Total);
             Assert.True(stage.Timings.Freeze > TimeSpan.Zero);
@@ -263,8 +263,8 @@ public class GreedyPipelineTests
         if (stage.Outcome == StageOutcome.Tightened)
         {
             Assert.True(stage.HasPlan);
-            Assert.True(stage.Plan!.MaxStep <= budget,
-                $"tightened probe must realize a step within budget {budget}, got {stage.Plan.MaxStep}");
+            Assert.True(stage.MaterializedPlan!.MaxStep <= budget,
+                $"tightened probe must realize a step within budget {budget}, got {stage.MaterializedPlan.MaxStep}");
         }
         else
         {
@@ -448,11 +448,11 @@ public class GreedyPipelineTests
 
         Assert.Equal($"proof-tighten\u2264{budget}", probe.Name);
         Assert.Equal(StageOutcome.Tightened, probe.Outcome);
-        Assert.NotNull(probe.Plan);
-        Assert.True(probe.Plan!.MaxStep <= budget,
-            $"tightened probe must realize a step within budget {budget}, got {probe.Plan.MaxStep}");
-        Assert.True(probe.Plan.MaxStep <= 14,
-            $"expected <=14 at the tightened probe, got {probe.Plan.MaxStep}");
+        Assert.NotNull(probe.MaterializedPlan);
+        Assert.True(probe.MaterializedPlan!.MaxStep <= budget,
+            $"tightened probe must realize a step within budget {budget}, got {probe.MaterializedPlan.MaxStep}");
+        Assert.True(probe.MaterializedPlan.MaxStep <= 14,
+            $"expected <=14 at the tightened probe, got {probe.MaterializedPlan.MaxStep}");
         Assert.False(probe.ProvesOptimal);
     }
 
@@ -471,7 +471,7 @@ public class GreedyPipelineTests
 
         Assert.Equal($"proof-tighten\u2264{budget}", probe.Name);
         Assert.Equal(StageOutcome.Tightened, probe.Outcome);
-        Assert.NotNull(probe.Plan);
+        Assert.NotNull(probe.MaterializedPlan);
 
         // Capture only the pipeline's FIRST proof-tighten stage, then cancel to avoid the deeper rounds.
         using var cts = new CancellationTokenSource();
@@ -495,8 +495,8 @@ public class GreedyPipelineTests
         Assert.NotNull(firstTighten);
         Assert.Equal(probe.Name, firstTighten!.Value.Name);
         Assert.Equal(probe.Outcome, firstTighten.Value.Outcome);
-        Assert.NotNull(firstTighten.Value.Plan);
-        Assert.Equal(probe.Plan!.MaxStep, firstTighten.Value.Plan!.MaxStep);
+        Assert.NotNull(firstTighten.Value.MaterializedPlan);
+        Assert.Equal(probe.MaterializedPlan!.MaxStep, firstTighten.Value.MaterializedPlan!.MaxStep);
     }
 
     // Item-3 strong-output lock for Phase B: the final min-edge pass ALWAYS emits exactly one
@@ -517,7 +517,7 @@ public class GreedyPipelineTests
         Assert.Equal(StageOutcome.Completed, stages[^1].Outcome);  // and it is the last stage
         Assert.True(edgeStages[0].HasPlan);                                        // carries a plan
         Assert.False(edgeStages[0].IsTightened);                                   // not a step tightening
-        Assert.Same(plan, edgeStages[0].Plan);                                     // it IS the returned plan
+        Assert.Same(plan, edgeStages[0].MaterializedPlan);                                     // it IS the returned plan
     }
 
     // End-to-end value lock for the GT pre-step integration: on this case GT tightens the feasible
@@ -602,8 +602,8 @@ public class GreedyPipelineTests
                 if (stage.Outcome == StageOutcome.Tightened)
                 {
                     Assert.True(stage.HasPlan);
-                    Assert.True(stage.Plan!.MaxStep <= budget,
-                        $"tightened probe must realize a step within budget {budget}, got {stage.Plan.MaxStep}");
+                    Assert.True(stage.MaterializedPlan!.MaxStep <= budget,
+                        $"tightened probe must realize a step within budget {budget}, got {stage.MaterializedPlan.MaxStep}");
                 }
 
                 return 0;
@@ -629,19 +629,19 @@ public class GreedyPipelineTests
 
                 StageResult incumbent = builder.ExecuteProofTightenStage(5);
                 Assert.Equal(StageOutcome.Tightened, incumbent.Outcome);
-                Assert.NotNull(incumbent.Plan);
-                Assert.Equal(5, incumbent.Plan!.MaxStep);
+                Assert.NotNull(incumbent.MaterializedPlan);
+                Assert.Equal(5, incumbent.MaterializedPlan!.MaxStep);
 
-                CompactPlanResult fallback = builder.BuildEdgeCompactPlanAtBudget(incumbent.Plan.MaxStep);
+                CompactPlanResult fallback = builder.BuildEdgeCompactPlanAtBudget(incumbent.MaterializedPlan.MaxStep);
                 Assert.Null(fallback.Solution);
-                Assert.Same(incumbent.Plan, fallback.Plan);
+                Assert.Same(incumbent.MaterializedPlan, fallback.Plan);
 
-                builder.OverrideGreedyPipelineUpperBound(incumbent.Plan.MaxStep);
+                builder.OverrideGreedyPipelineUpperBound(incumbent.MaterializedPlan.MaxStep);
 
                 StrategyPlan plan = builder.RunGreedyPipeline();
 
                 Assert.True(plan.IsFeasibleUpperBound);
-                Assert.Equal(incumbent.Plan.MaxStep, plan.MaxStep);
+                Assert.Equal(incumbent.MaterializedPlan.MaxStep, plan.MaxStep);
                 AssertEveryDecisionHasGroup(plan.Root);
                 return 0;
             });

@@ -214,13 +214,13 @@ readonly record struct StageTimings(
 // time, not a cumulative total. Outcome and Solution form the solver result.
 readonly struct StageResult
 {
-    public StageResult(string name, StrategyPlan? plan, TimeSpan elapsed,
+    public StageResult(string name, StrategyPlan? materializedPlan, TimeSpan elapsed,
         StageOutcome outcome = StageOutcome.Tightened,
         SolvedStrategy? solution = null,
         StageTimings? timings = null)
     {
         Name = name;
-        Plan = plan;
+        MaterializedPlan = materializedPlan;
         Elapsed = elapsed;
         Outcome = outcome;
         Solution = solution;
@@ -228,7 +228,7 @@ readonly struct StageResult
     }
 
     public string Name { get; }
-    public StrategyPlan? Plan { get; }
+    public StrategyPlan? MaterializedPlan { get; }
     public TimeSpan Elapsed { get; }
     public StageOutcome Outcome { get; }
     public SolvedStrategy? Solution { get; }
@@ -237,7 +237,7 @@ readonly struct StageResult
     public StageResult WithProvenLowerBound(int provenLowerBound)
         => new(
             Name,
-            Plan?.WithRootProvenLowerBound(provenLowerBound),
+            MaterializedPlan?.WithRootProvenLowerBound(provenLowerBound),
             Elapsed,
             Outcome,
             Solution?.WithProvenLowerBound(provenLowerBound),
@@ -245,7 +245,7 @@ readonly struct StageResult
 
     // A materialized strategy tree is attached. This is a display predicate only and does not imply
     // improvement; solution-first consumers may receive successful stages with no plan.
-    public bool HasPlan => Plan is not null;
+    public bool HasPlan => MaterializedPlan is not null;
 
     // The probe realized a strategy that meets the requested ceiling (strictly improves the incumbent).
     // The ONLY outcome under which tightening continues to a deeper ceiling.

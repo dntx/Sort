@@ -218,12 +218,12 @@ public sealed class StrategyMatrixTests
         return new MatrixObservation(
             Outcome: probe.Outcome.ToString(),
             HasPlan: probe.HasPlan,
-            MaxStep: probe.Plan?.MaxStep ?? feasible.MaxStep,
-            TotalBranchEdges: probe.Plan?.TotalBranchEdges ?? feasible.TotalBranchEdges,
-            SearchedStates: probe.Plan?.SearchStatistics.SearchedStates ?? feasible.SearchStatistics.SearchedStates,
-            OutcomesConstructed: probe.Plan?.SearchStatistics.OutcomesConstructed ?? feasible.SearchStatistics.OutcomesConstructed,
-            CandidateGroupsEnumerated: probe.Plan?.SearchStatistics.CandidateGroupsEnumerated ?? feasible.SearchStatistics.CandidateGroupsEnumerated,
-            RootProvenLowerBound: probe.Plan?.SearchStatistics.RootProvenLowerBound ?? feasible.SearchStatistics.RootProvenLowerBound,
+            MaxStep: probe.MaterializedPlan?.MaxStep ?? feasible.MaxStep,
+            TotalBranchEdges: probe.MaterializedPlan?.TotalBranchEdges ?? feasible.TotalBranchEdges,
+            SearchedStates: probe.MaterializedPlan?.SearchStatistics.SearchedStates ?? feasible.SearchStatistics.SearchedStates,
+            OutcomesConstructed: probe.MaterializedPlan?.SearchStatistics.OutcomesConstructed ?? feasible.SearchStatistics.OutcomesConstructed,
+            CandidateGroupsEnumerated: probe.MaterializedPlan?.SearchStatistics.CandidateGroupsEnumerated ?? feasible.SearchStatistics.CandidateGroupsEnumerated,
+            RootProvenLowerBound: probe.MaterializedPlan?.SearchStatistics.RootProvenLowerBound ?? feasible.SearchStatistics.RootProvenLowerBound,
             ElapsedMilliseconds: probe.Elapsed.TotalMilliseconds);
     }
 

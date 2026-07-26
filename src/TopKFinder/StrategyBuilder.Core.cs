@@ -199,18 +199,6 @@ partial class StrategyBuilder
         return RunWithComparisonStateCancellation(() => BuildExactStepProofStageArtifacts());
     }
 
-    internal ExactStepProofStageArtifacts ExecuteStepProofStageWithoutMaterialization()
-    {
-        _progressScope = _reportCombinedRunProgress
-            ? ProgressScope.DefaultInCombinedRun
-            : ProgressScope.DefaultStandalone;
-        return RunWithComparisonStateCancellation(() => BuildExactStepProofStageArtifacts(materialize: false));
-    }
-
-    // Exact-stage entrypoint: materialize display/search artifacts in one solver session.
-    public (SearchTree SearchTree, DisplayTree DisplayTree) ProjectDisplayAndSearchTrees()
-        => BuildExactProjectionFromCurrentSession();
-
     // Search-model entrypoint used by public callers. It shares the same exact solver caches
     // as the display entrypoint while staying independent from display materialization.
     public SearchStrategy ProjectSearchTree()

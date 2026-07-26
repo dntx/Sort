@@ -35,9 +35,12 @@ UI 使用与 CLI 相同的阶段名展示进度：
 - `searched / pending / output` 状态计数
 - 当前最优 root 上界（incumbent）
 - 下界剪枝、缓存命中等诊断计数
-- 分阶段耗时（step / compact）
+- 累计 elapsed、当前 stage 自身 elapsed，以及 stage 相关的 timing / compact 进度信息
 
 详情面板还会显示 root incumbent 时间线，用于观察最坏步数何时被首次找到、何时继续收紧。
+
+补充说明：CLI summary 已统一使用 `solve / freeze / materialize` timing 口径；UI 运行中面板仍以
+当前 stage elapsed 与 compact solve 进度为主，因为它们用于 live 反馈而不是最终结果摘要。
 
 ### 大规模策略树下的惰性加载
 

@@ -11,7 +11,7 @@ sealed record ExactStepProofStageArtifacts(
 
 partial class StrategyBuilder
 {
-    private ExactStepProofStageArtifacts BuildExactStepProofStageArtifacts(bool materialize = true)
+    internal ExactStepProofStageArtifacts BuildExactStepProofStageArtifacts(bool materialize = true)
     {
         var stopwatch = Stopwatch.StartNew();
         InitializeExactSolverSession(useFeasibleBudget: false);

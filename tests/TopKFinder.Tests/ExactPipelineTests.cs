@@ -58,14 +58,14 @@ public sealed class ExactPipelineTests
         Assert.True(step.Timings.Materialize > TimeSpan.Zero);
         Assert.True(compact.Timings.Materialize > TimeSpan.Zero);
 
-        string expectedCompactName = StageNames.FormatExactEdgeCompact(step.Plan!.MaxStep);
+        string expectedCompactName = StageNames.FormatExactEdgeCompact(step.MaterializedPlan!.MaxStep);
         Assert.Equal(expectedCompactName, started[1]);
 
         Assert.Equal(started, completed.Select(stage => stage.Name).ToList());
-        Assert.Same(plan, compact.Plan);
-        Assert.Equal(step.Plan!.MaxStep, plan.MaxStep);
-        Assert.Equal(step.Plan.MaxStep, step.Solution.Score.WorstCaseSteps);
-        Assert.Equal(compact.Plan!.MaxStep, compact.Solution.Score.WorstCaseSteps);
+        Assert.Same(plan, compact.MaterializedPlan);
+        Assert.Equal(step.MaterializedPlan!.MaxStep, plan.MaxStep);
+        Assert.Equal(step.MaterializedPlan.MaxStep, step.Solution.Score.WorstCaseSteps);
+        Assert.Equal(compact.MaterializedPlan!.MaxStep, compact.Solution.Score.WorstCaseSteps);
     }
 
     [Fact]
@@ -79,7 +79,7 @@ public sealed class ExactPipelineTests
         StageResult step = stages[0];
         StageResult compact = stages[1];
         Assert.True(compact.Solution!.Score.SearchEdgeCost < step.Solution!.Score.SearchEdgeCost);
-        Assert.True(compact.Plan!.TotalBranchEdges > step.Plan!.TotalBranchEdges);
+        Assert.True(compact.MaterializedPlan!.TotalBranchEdges > step.MaterializedPlan!.TotalBranchEdges);
         Assert.True(PipelineStageProtocol.IsImprovement(compact, step));
     }
 }

@@ -43,7 +43,8 @@ public sealed class DisplaySearchParityTests
     public void ProjectDisplayAndSearchTrees_ReturnsSearchModelEquivalentTo_ProjectSearchTree(int n, int m, int k)
     {
         var layeredBuilder = new StrategyBuilder(n, m, k);
-        (SearchStrategy layeredSearch, StrategyPlan _) = layeredBuilder.ProjectDisplayAndSearchTrees();
+        ExactStepProofStageArtifacts exactArtifacts = layeredBuilder.ExecuteStepProofStageWithSolution();
+        SearchStrategy layeredSearch = layeredBuilder.ProjectSearchTreeFromSolutionForTesting(exactArtifacts.Solution);
 
         var directBuilder = new StrategyBuilder(n, m, k);
         SearchStrategy directSearch = directBuilder.ProjectSearchTree();
@@ -56,7 +57,9 @@ public sealed class DisplaySearchParityTests
     public void ProjectDisplayAndSearchTrees_ReturnsDisplayAndSearchTreesWithMatchingBackbone(int n, int m, int k)
     {
         var builder = new StrategyBuilder(n, m, k);
-        (SearchStrategy searchTree, StrategyPlan displayPlan) = builder.ProjectDisplayAndSearchTrees();
+        ExactStepProofStageArtifacts exactArtifacts = builder.ExecuteStepProofStageWithSolution();
+        SearchStrategy searchTree = builder.ProjectSearchTreeFromSolutionForTesting(exactArtifacts.Solution);
+        StrategyPlan displayPlan = Assert.IsType<StrategyPlan>(exactArtifacts.Plan);
 
         Assert.Equal(displayPlan.N, searchTree.N);
         Assert.Equal(displayPlan.M, searchTree.M);
