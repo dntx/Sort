@@ -89,7 +89,10 @@ partial class StrategyBuilder
             display.ExpandedOutputStates,
             solver.LowerBoundStates,
             solver.FeasibleTopSetStates,
-            MergeMaterializedDiagnostics(solver.Diagnostics, display.Diagnostics),
+            MergeMaterializedDiagnostics(
+                solver.Diagnostics,
+                display.Diagnostics,
+                display.FeasibleTopSetStates),
             solver.Phase1Milliseconds,
             solver.Phase1bMilliseconds,
             (long)materializeElapsed.TotalMilliseconds,
@@ -103,7 +106,8 @@ partial class StrategyBuilder
 
     private static SearchDiagnostics MergeMaterializedDiagnostics(
         SearchDiagnostics solver,
-        SearchDiagnostics display)
+        SearchDiagnostics display,
+        int displayFeasibleTopSetStates)
         => new(
             solver.RootIncumbents,
             checked(solver.LowerBoundPrunes + display.LowerBoundPrunes),
@@ -114,7 +118,7 @@ partial class StrategyBuilder
             checked(
                 solver.FeasibleTopSetCacheHits
                 + display.FeasibleTopSetCacheHits
-                + display.FeasibleTopSetStates),
+                + displayFeasibleTopSetStates),
             checked(solver.BestGroupPatternCacheHits + display.BestGroupPatternCacheHits));
 
     private SolvedStrategy CreateCompactSolvedStrategy(
