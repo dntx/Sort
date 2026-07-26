@@ -212,6 +212,25 @@ public sealed class MainFormRenderingTests
         Assert.False(secondRequest.IsCancellationRequested);
     }
 
+    [Fact]
+    public void PresentationStageCache_EvictsOldestEntryWhenCapacityExceeded()
+    {
+        using var form = new MainForm();
+        InvokePrivateInstanceVoid(form, "ResetPresentationInfrastructure");
+
+        StageResult first = CreateDeferredExactStepStage();
+        InvokePrivateInstanceVoid(form, "CachePresentationStageResult", first, first);
+
+        for (int i = 0; i < 8; i++)
+        {
+            StageResult stage = CreateDeferredExactStepStage();
+            InvokePrivateInstanceVoid(form, "CachePresentationStageResult", stage, stage);
+        }
+
+        bool firstStillCached = InvokePrivateInstance<bool>(form, "IsPresentationStageCached", first);
+        Assert.False(firstStillCached);
+    }
+
     private static StageResult CreateDeferredExactStepStage()
     {
         StrategyBuilder builder = new(8, 3, 3);

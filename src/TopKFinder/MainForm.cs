@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Drawing;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -35,6 +36,39 @@ partial class MainForm : Form
         public required Color PossibleColor { get; init; }
         public required Color ResultColor { get; init; }
         public required Color ReferenceColor { get; init; }
+    }
+
+    private const int PresentationStageCacheCapacity = 8;
+
+    private readonly record struct PresentationStageCacheKey(
+        SolvedStrategy Solution,
+        string StageName,
+        TimeSpan Solve,
+        TimeSpan Freeze,
+        StageOutcome Outcome,
+        bool Incomplete);
+
+    private sealed class PresentationStageCacheKeyComparer : IEqualityComparer<PresentationStageCacheKey>
+    {
+        public bool Equals(PresentationStageCacheKey x, PresentationStageCacheKey y)
+            => ReferenceEquals(x.Solution, y.Solution)
+                && string.Equals(x.StageName, y.StageName, StringComparison.Ordinal)
+                && x.Solve == y.Solve
+                && x.Freeze == y.Freeze
+                && x.Outcome == y.Outcome
+                && x.Incomplete == y.Incomplete;
+
+        public int GetHashCode(PresentationStageCacheKey obj)
+        {
+            var hash = new HashCode();
+            hash.Add(RuntimeHelpers.GetHashCode(obj.Solution));
+            hash.Add(obj.StageName, StringComparer.Ordinal);
+            hash.Add(obj.Solve);
+            hash.Add(obj.Freeze);
+            hash.Add(obj.Outcome);
+            hash.Add(obj.Incomplete);
+            return hash.ToHashCode();
+        }
     }
 
     private static readonly ThemePalette DarkPalette = new()
@@ -117,6 +151,9 @@ partial class MainForm : Form
     private Task? _activePresentationTask;
     private int _presentationGeneration;
     private int _presentationRequestVersion;
+    private readonly Dictionary<PresentationStageCacheKey, StageResult> _presentationStageCache = new(new PresentationStageCacheKeyComparer());
+    private readonly LinkedList<PresentationStageCacheKey> _presentationStageCacheLru = new();
+    private readonly Dictionary<PresentationStageCacheKey, LinkedListNode<PresentationStageCacheKey>> _presentationStageCacheNodes = new(new PresentationStageCacheKeyComparer());
     private bool _exactStepStageMaterialized;
     private StageResult? _pendingExactCompactStage;
     private StrategyBuilder? _activeBuilder;

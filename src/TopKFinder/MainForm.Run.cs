@@ -212,6 +212,77 @@ partial class MainForm
         _activePresentationTask = null;
         _exactStepStageMaterialized = false;
         _pendingExactCompactStage = null;
+        ClearPresentationStageCache();
+    }
+
+    private static PresentationStageCacheKey BuildPresentationStageCacheKey(StageResult stage)
+        => new(
+            stage.Solution ?? throw new InvalidOperationException("Stage solution is required for presentation cache key."),
+            stage.Name,
+            stage.Timings.Solve,
+            stage.Timings.Freeze,
+            stage.Outcome,
+            stage.Incomplete);
+
+    private void ClearPresentationStageCache()
+    {
+        _presentationStageCache.Clear();
+        _presentationStageCacheLru.Clear();
+        _presentationStageCacheNodes.Clear();
+    }
+
+    private StageResult? GetCachedPresentationStageResult(StageResult stage)
+    {
+        if (stage.Solution is null)
+            return null;
+
+        PresentationStageCacheKey key = BuildPresentationStageCacheKey(stage);
+        if (!_presentationStageCache.TryGetValue(key, out StageResult cached))
+            return null;
+
+        if (_presentationStageCacheNodes.TryGetValue(key, out LinkedListNode<PresentationStageCacheKey>? node))
+        {
+            _presentationStageCacheLru.Remove(node);
+            _presentationStageCacheLru.AddLast(node);
+        }
+
+        return cached;
+    }
+
+    private bool IsPresentationStageCached(StageResult stage)
+        => GetCachedPresentationStageResult(stage).HasValue;
+
+    private void CachePresentationStageResult(StageResult stage, StageResult materialized)
+    {
+        if (stage.Solution is null)
+            return;
+
+        PresentationStageCacheKey key = BuildPresentationStageCacheKey(stage);
+        if (_presentationStageCache.ContainsKey(key))
+        {
+            _presentationStageCache[key] = materialized;
+            if (_presentationStageCacheNodes.TryGetValue(key, out LinkedListNode<PresentationStageCacheKey>? existingNode))
+            {
+                _presentationStageCacheLru.Remove(existingNode);
+                _presentationStageCacheLru.AddLast(existingNode);
+            }
+            return;
+        }
+
+        if (_presentationStageCache.Count >= PresentationStageCacheCapacity)
+        {
+            LinkedListNode<PresentationStageCacheKey>? oldest = _presentationStageCacheLru.First;
+            if (oldest is not null)
+            {
+                _presentationStageCacheLru.RemoveFirst();
+                _presentationStageCache.Remove(oldest.Value);
+                _presentationStageCacheNodes.Remove(oldest.Value);
+            }
+        }
+
+        _presentationStageCache[key] = materialized;
+        LinkedListNode<PresentationStageCacheKey> node = _presentationStageCacheLru.AddLast(key);
+        _presentationStageCacheNodes[key] = node;
     }
 
     private void QueueStageMaterialization(
@@ -294,6 +365,7 @@ partial class MainForm
         _activePresentationRequestSource = null;
 
         _activePresentationTask = null;
+        ClearPresentationStageCache();
 
         _activeBuilder = null;
     }
@@ -379,22 +451,32 @@ partial class MainForm
     {
         try
         {
-            TimeSpan priorElapsed = stage.Timings.Solve + stage.Timings.Freeze;
-            StrategyPlan plan = await Task.Run(
-                () => StrategyBuilder.MaterializeSolvedStrategy(stage.Solution!, priorElapsed, cancellationToken),
-                cancellationToken);
+            StageResult materialized;
+            if (GetCachedPresentationStageResult(stage) is { } cached)
+            {
+                materialized = cached;
+            }
+            else
+            {
+                TimeSpan priorElapsed = stage.Timings.Solve + stage.Timings.Freeze;
+                StrategyPlan plan = await Task.Run(
+                    () => StrategyBuilder.MaterializeSolvedStrategy(stage.Solution!, priorElapsed, cancellationToken),
+                    cancellationToken);
 
-            TimeSpan materialize = plan.Elapsed - priorElapsed;
-            if (materialize < TimeSpan.Zero)
-                materialize = TimeSpan.Zero;
+                TimeSpan materialize = plan.Elapsed - priorElapsed;
+                if (materialize < TimeSpan.Zero)
+                    materialize = TimeSpan.Zero;
 
-            var materialized = new StageResult(
-                stage.Name,
-                plan,
-                stage.Timings.Solve + stage.Timings.Freeze + materialize,
-                stage.Outcome,
-                stage.Solution,
-                new StageTimings(stage.Timings.Solve, stage.Timings.Freeze, materialize));
+                materialized = new StageResult(
+                    stage.Name,
+                    plan,
+                    stage.Timings.Solve + stage.Timings.Freeze + materialize,
+                    stage.Outcome,
+                    stage.Solution,
+                    new StageTimings(stage.Timings.Solve, stage.Timings.Freeze, materialize));
+
+                CachePresentationStageResult(stage, materialized);
+            }
 
             if (!CanAcceptStageCallback()
                 || generation != _presentationGeneration
