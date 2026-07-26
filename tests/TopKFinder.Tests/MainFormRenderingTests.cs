@@ -188,6 +188,7 @@ public sealed class MainFormRenderingTests
         _ = form.Handle;
         SetPrivateField(form, "_presentationGeneration", 8);
         SetPrivateField(form, "_presentationRequestVersion", 6);
+        InvokePrivateInstanceVoid(form, "CachePresentationStageResult", stage, stage);
 
         bool applied = false;
         Task task = InvokePrivateInstance<Task>(
@@ -214,6 +215,7 @@ public sealed class MainFormRenderingTests
         _ = form.Handle;
         SetPrivateField(form, "_presentationGeneration", 11);
         SetPrivateField(form, "_presentationRequestVersion", 9);
+        InvokePrivateInstanceVoid(form, "CachePresentationStageResult", stage, stage);
 
         bool staleApplied = false;
         bool currentApplied = false;
