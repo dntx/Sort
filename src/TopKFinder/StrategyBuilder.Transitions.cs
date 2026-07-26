@@ -252,7 +252,7 @@ partial class StrategyBuilder
         if (projectionMerged)
             return SelectOrbitRepresentative(line);
 
-        if (FormsSingleMergedOrbit(families))
+        if (!FormsSingleMergedOrbit(families))
             return SelectOrbitRepresentative(line);
 
         return line[0];
@@ -283,7 +283,7 @@ partial class StrategyBuilder
             return BuildRelabelRepresentativeBranchSpecForPlanner(state, line);
 
         EquivalentOrderSummary? summary = BuildEquivalentOrderSummary(families);
-        if (allSingleton && FormsSingleMergedOrbit(families))
+        if (allSingleton && !FormsSingleMergedOrbit(families))
             return BuildRelabelRepresentativeBranchSpecForPlanner(state, line);
 
         MergedFamilyOutcome fallbackRepresentative = line[0];
