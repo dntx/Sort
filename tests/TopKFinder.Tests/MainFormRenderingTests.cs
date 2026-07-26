@@ -180,6 +180,69 @@ public sealed class MainFormRenderingTests
     }
 
     [Fact]
+    public void MaterializeExactStageAsync_CurrentRequestVersion_Applies()
+    {
+        StageResult stage = CreateDeferredExactStepStage();
+
+        using var form = new MainForm();
+        _ = form.Handle;
+        SetPrivateField(form, "_presentationGeneration", 8);
+        SetPrivateField(form, "_presentationRequestVersion", 6);
+
+        bool applied = false;
+        Task task = InvokePrivateInstance<Task>(
+            form,
+            "MaterializeExactStageAsync",
+            stage,
+            (Action<StageResult>)(_ => applied = true),
+            8,
+            6,
+            CancellationToken.None);
+
+        task.GetAwaiter().GetResult();
+        Application.DoEvents();
+
+        Assert.True(applied);
+    }
+
+    [Fact]
+    public void MaterializeExactStageAsync_OnlyCurrentRequestApplies()
+    {
+        StageResult stage = CreateDeferredExactStepStage();
+
+        using var form = new MainForm();
+        _ = form.Handle;
+        SetPrivateField(form, "_presentationGeneration", 11);
+        SetPrivateField(form, "_presentationRequestVersion", 9);
+
+        bool staleApplied = false;
+        bool currentApplied = false;
+
+        Task stale = InvokePrivateInstance<Task>(
+            form,
+            "MaterializeExactStageAsync",
+            stage,
+            (Action<StageResult>)(_ => staleApplied = true),
+            11,
+            8,
+            CancellationToken.None);
+        Task current = InvokePrivateInstance<Task>(
+            form,
+            "MaterializeExactStageAsync",
+            stage,
+            (Action<StageResult>)(_ => currentApplied = true),
+            11,
+            9,
+            CancellationToken.None);
+
+        Task.WhenAll(stale, current).GetAwaiter().GetResult();
+        Application.DoEvents();
+
+        Assert.False(staleApplied);
+        Assert.True(currentApplied);
+    }
+
+    [Fact]
     public void QueueStageMaterialization_NewRequestCancelsPriorRequest()
     {
         StageResult stage = CreateDeferredExactStepStage();
