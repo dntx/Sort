@@ -89,17 +89,30 @@ partial class StrategyBuilder
             display.ExpandedOutputStates,
             solver.LowerBoundStates,
             solver.FeasibleTopSetStates,
-            solver.Diagnostics,
+            MergeMaterializedDiagnostics(solver.Diagnostics, display.Diagnostics),
             solver.Phase1Milliseconds,
             solver.Phase1bMilliseconds,
             (long)materializeElapsed.TotalMilliseconds,
-            solver.OutcomesConstructed,
-            solver.CandidateGroupsEnumerated,
+            checked(solver.OutcomesConstructed + display.OutcomesConstructed),
+            checked(solver.CandidateGroupsEnumerated + display.CandidateGroupsEnumerated),
             searchTreeEdges,
             solver.CompactStatesSolved,
             solver.CompactGroupsEnumerated,
             solver.CompactStepOptimalGroups,
             solver.RootProvenLowerBound);
+
+    private static SearchDiagnostics MergeMaterializedDiagnostics(
+        SearchDiagnostics solver,
+        SearchDiagnostics display)
+        => new(
+            solver.RootIncumbents,
+            checked(solver.LowerBoundPrunes + display.LowerBoundPrunes),
+            checked(solver.DuplicateOutcomeSkips + display.DuplicateOutcomeSkips),
+            checked(solver.MergedOutcomeCollisions + display.MergedOutcomeCollisions),
+            checked(solver.ExactCacheHits + display.ExactCacheHits),
+            checked(solver.LowerBoundCacheHits + display.LowerBoundCacheHits),
+            checked(solver.FeasibleTopSetCacheHits + display.FeasibleTopSetCacheHits),
+            checked(solver.BestGroupPatternCacheHits + display.BestGroupPatternCacheHits));
 
     private SolvedStrategy CreateCompactSolvedStrategy(
         SolvedStrategyStageKind stageKind,

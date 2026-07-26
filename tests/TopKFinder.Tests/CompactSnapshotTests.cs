@@ -21,6 +21,13 @@ public sealed class CompactSnapshotTests
         Assert.Equal(eagerPlan.SearchStatistics.SearchedStates, replayed.SearchStatistics.SearchedStates);
         Assert.Equal(eagerPlan.SearchStatistics.CandidateGroupsEnumerated, replayed.SearchStatistics.CandidateGroupsEnumerated);
         Assert.Equal(eagerPlan.SearchStatistics.OutputStates, replayed.SearchStatistics.OutputStates);
+        Assert.Equal(eagerPlan.SearchStatistics.OutcomesConstructed, replayed.SearchStatistics.OutcomesConstructed);
+        Assert.Equal(
+            eagerPlan.SearchStatistics.Diagnostics.DuplicateOutcomeSkips,
+            replayed.SearchStatistics.Diagnostics.DuplicateOutcomeSkips);
+        Assert.Equal(
+            eagerPlan.SearchStatistics.Diagnostics.MergedOutcomeCollisions,
+            replayed.SearchStatistics.Diagnostics.MergedOutcomeCollisions);
     }
 
     [Fact]
