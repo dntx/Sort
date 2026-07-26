@@ -16,7 +16,8 @@ partial class StrategyBuilder
 
         public StrategyPlan RunGreedyPipelineCore(
             Action<StageResult>? onStageCompleted = null,
-            Action<string>? onStageStart = null)
+            Action<string>? onStageStart = null,
+            bool materializeStages = true)
         {
             var callbacks = new PipelineCallbacks(onStageCompleted, onStageStart);
             _owner._progressScope = _owner._reportCombinedRunProgress
@@ -51,7 +52,7 @@ partial class StrategyBuilder
                     _owner._proofTightenCurrentBudget = budget;
                     string stageName = StageNames.FormatProofTighten(budget);
                     callbacks.Start(stageName);
-                    ProofTightenStageArtifacts artifacts = ExecuteProofTightenStageWithSolution(budget);
+                    ProofTightenStageArtifacts artifacts = ExecuteProofTightenStageWithSolution(budget, materializeStages);
                     StageResult stage = artifacts.Result;
                     PipelineStageProtocol.EmitStage(stage, callbacks);
 
@@ -89,9 +90,10 @@ partial class StrategyBuilder
             string edgeCompactStageName = StageNames.FormatGreedyEdgeCompact(bestStep);
             callbacks.Start(edgeCompactStageName);
             var edgeStopwatch = Stopwatch.StartNew();
-            CompactPlanResult edgeResult = _owner.BuildEdgeCompactPlanAtBudget(bestStep);
-            StrategyPlan finalPlan = edgeResult.Plan
-                .WithRootProvenLowerBound(_owner._rootProvenLowerBound);
+            CompactPlanResult edgeResult = BuildEdgeCompactPlanAtBudget(bestStep, materializeStages);
+            StrategyPlan? finalPlan = materializeStages
+                ? edgeResult.Plan!.WithRootProvenLowerBound(_owner._rootProvenLowerBound)
+                : null;
             edgeStopwatch.Stop();
             StageTimings edgeTimings = StageTimings.FromTotal(
                 edgeStopwatch.Elapsed,
@@ -102,17 +104,19 @@ partial class StrategyBuilder
                     edgeCompactStageName,
                     finalPlan,
                     edgeStopwatch.Elapsed,
-                    StageOutcome.Completed,
+                    edgeResult.Solution is null ? StageOutcome.Incomplete : StageOutcome.Completed,
                     edgeResult.Solution,
                     edgeTimings),
                 callbacks);
-            return finalPlan;
+            return finalPlan!;
         }
 
         public StageResult ExecuteProofTightenStage(int budget)
             => ExecuteProofTightenStageWithSolution(budget).Result;
 
-        public ProofTightenStageArtifacts ExecuteProofTightenStageWithSolution(int budget)
+        public ProofTightenStageArtifacts ExecuteProofTightenStageWithSolution(
+            int budget,
+            bool materialize = true)
         {
             _owner._progressScope = _owner._reportCombinedRunProgress
                 ? ProgressScope.CompactFeasibleInCombinedRun
@@ -123,7 +127,7 @@ partial class StrategyBuilder
             {
                 string stageName = StageNames.FormatProofTighten(budget);
                 var stopwatch = Stopwatch.StartNew();
-                CompactProbeArtifacts probe = ProbeAndClassify(budget);
+                CompactProbeArtifacts probe = ProbeAndClassify(budget, materialize);
                 stopwatch.Stop();
                 if (probe.Plan is not null)
                     _owner._latestGreedyIncumbentPlan = probe.Plan;
@@ -134,7 +138,7 @@ partial class StrategyBuilder
                 var result = new StageResult(
                     stageName,
                     probe.Plan,
-                    stopwatch.Elapsed,
+                    timings.Total,
                     probe.Outcome,
                     probe.Solution,
                     timings);
@@ -156,7 +160,7 @@ partial class StrategyBuilder
         // (a strict improvement over the incumbent). A returned plan whose MaxStep exceeds the budget would be
         // an overshoot; since the tighter-budget-keep fix (PR #223) the compact proxy and the materialized
         // tree agree, so that case is an internal invariant violation and throws rather than being reported.
-        public CompactProbeArtifacts ProbeAndClassify(int budget)
+        public CompactProbeArtifacts ProbeAndClassify(int budget, bool materialize = true)
         {
             int configuredCap = _owner.CompactGreedyCandidateCap;
             int attemptCap = NormalizeGreedyCandidateCap(configuredCap);
@@ -172,7 +176,8 @@ partial class StrategyBuilder
                     CompactStageArtifacts? candidate = ProbeFeasibleCompact(
                         budget,
                         SolvedStrategyStageKind.ProofTighten,
-                        StageNames.FormatProofTighten(budget));
+                        StageNames.FormatProofTighten(budget),
+                        materialize);
                     if (candidate is null)
                     {
                         if (!_owner._lastProbeEnumerationCapped)
@@ -217,7 +222,8 @@ partial class StrategyBuilder
         public CompactStageArtifacts? ProbeFeasibleCompact(
             int rootBudget,
             SolvedStrategyStageKind stageKind,
-            string stageName)
+            string stageName,
+            bool materialize = true)
         {
             return _owner.RunWithComparisonStateCancellation(() =>
             {
@@ -248,19 +254,23 @@ partial class StrategyBuilder
                         wasCandidateEnumerationCapped: _owner._compactEnumerationCapped,
                         includeSearchEdgeCost: stageKind == SolvedStrategyStageKind.GreedyEdgeCompact);
                     TimeSpan freezeElapsed = stopwatch.Elapsed - solveElapsed;
-                    StrategyPlan plan = _owner.MaterializeCompactSolution(
-                        solution,
-                        stopwatch,
-                        _owner._compactRootCost,
-                        isFeasibleUpperBound: true);
+                    StrategyPlan? plan = materialize
+                        ? _owner.MaterializeCompactSolution(
+                            solution,
+                            stopwatch,
+                            _owner._compactRootCost,
+                            isFeasibleUpperBound: true)
+                        : null;
                     _owner._phase2Milliseconds = stopwatch.ElapsedMilliseconds - _owner._phase1bMilliseconds;
                     return new CompactStageArtifacts(
                         solution,
-                        plan,
+                        plan!,
                         new StageTimings(
                             solveElapsed,
                             freezeElapsed,
-                            stopwatch.Elapsed - solveElapsed - freezeElapsed));
+                            materialize
+                                ? stopwatch.Elapsed - solveElapsed - freezeElapsed
+                                : TimeSpan.Zero));
                 }
                 finally
                 {
@@ -269,25 +279,29 @@ partial class StrategyBuilder
             });
         }
 
-        public CompactPlanResult BuildEdgeCompactPlanAtBudget(int rootBudget)
+        public CompactPlanResult BuildEdgeCompactPlanAtBudget(
+            int rootBudget,
+            bool materialize = true)
         {
             CompactStageArtifacts? artifacts = ProbeFeasibleCompact(
                 rootBudget,
                 SolvedStrategyStageKind.GreedyEdgeCompact,
-                StageNames.FormatGreedyEdgeCompact(rootBudget));
+                StageNames.FormatGreedyEdgeCompact(rootBudget),
+                materialize);
             if (artifacts is not null)
                 return new CompactPlanResult(
                     artifacts.Solution,
-                    artifacts.Plan,
+                    artifacts.Plan!,
                     artifacts.Timings);
 
             if (_owner._lastProbeEnumerationCapped
-                && _owner._latestGreedyIncumbentPlan is not null
-                && _owner._latestGreedyIncumbentPlan.MaxStep <= rootBudget)
+                && (!materialize
+                    || (_owner._latestGreedyIncumbentPlan is not null
+                        && _owner._latestGreedyIncumbentPlan.MaxStep <= rootBudget)))
             {
                 return new CompactPlanResult(
                     Solution: null,
-                    _owner._latestGreedyIncumbentPlan);
+                    materialize ? _owner._latestGreedyIncumbentPlan : null);
             }
 
             throw new InvalidOperationException(

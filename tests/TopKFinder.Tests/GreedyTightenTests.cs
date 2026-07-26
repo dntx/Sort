@@ -113,9 +113,10 @@ public class GreedyTightenTests
     {
         var builder = new StrategyBuilder(n, m, k);
         GreedyTightenStageArtifacts artifacts = builder.ExecuteGreedyTightenStageWithSolution();
+        StrategyPlan plan = Assert.IsType<StrategyPlan>(artifacts.Plan);
 
-        Assert.Equal(artifacts.Plan.MaxStep, artifacts.Solution.Score.WorstCaseSteps);
-        Assert.Equal(artifacts.Plan.MaxStep, artifacts.Solution.Bounds.FeasibleUpperBound);
+        Assert.Equal(plan.MaxStep, artifacts.Solution.Score.WorstCaseSteps);
+        Assert.Equal(plan.MaxStep, artifacts.Solution.Bounds.FeasibleUpperBound);
         Assert.False(artifacts.Solution.Bounds.IsProvenOptimal);
         Assert.Equal(SolvedStrategyStageKind.GreedyTighten, artifacts.Solution.Provenance.Kind);
         Assert.Equal(StageNames.GreedyTighten, artifacts.Solution.Provenance.StageName);

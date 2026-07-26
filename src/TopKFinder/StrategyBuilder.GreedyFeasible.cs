@@ -57,9 +57,9 @@ partial class StrategyBuilder
     // The comparison group at each state is built constructively from the current partial order
     // (ChooseConstructiveGroup, O(m*active^2)) during policy solving, then replayed during materialization.
     public StrategyPlan ExecuteGreedyFeasibleStage()
-        => ExecuteGreedyFeasibleStageWithSolution().Plan;
+        => ExecuteGreedyFeasibleStageWithSolution().Plan!;
 
-    internal GreedyFeasibleStageArtifacts ExecuteGreedyFeasibleStageWithSolution()
+    internal GreedyFeasibleStageArtifacts ExecuteGreedyFeasibleStageWithSolution(bool materialize = true)
     {
         return RunWithComparisonStateCancellation(() =>
         {
@@ -87,27 +87,31 @@ partial class StrategyBuilder
             SolvedStrategy solution = CreateGreedyFeasibleSolvedStrategy(policy);
             TimeSpan freezeElapsed = stopwatch.Elapsed - solveElapsed;
 
+            StrategyPlan? plan = null;
             _useCompact = false;
-            _feasiblePhase2StartMs = _progressStopwatch.ElapsedMilliseconds;  // Mark the start of the costly BuildState phase
-            StrategyNode root = MaterializeGreedyFeasiblePolicy(policy);
+            _feasiblePhase2StartMs = _progressStopwatch.ElapsedMilliseconds;
+            if (materialize)
+            {
+                StrategyNode root = MaterializeGreedyFeasiblePolicy(policy);
+                plan = CreatePlan(root, stopwatch.Elapsed, isFeasibleUpperBound: true);
+                if (policy.WorstCaseSteps != plan.MaxStep)
+                {
+                    throw new InvalidOperationException(
+                        $"Greedy policy depth {policy.WorstCaseSteps} does not match materialized MaxStep " +
+                        $"{plan.MaxStep}; display materialization must preserve policy depth.");
+                }
+
+                _latestGreedyIncumbentPlan = plan;
+            }
             _feasiblePhaseSolved = true;  // Mark feasible stage complete so progress jumps to 100%
             _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds - _phase1bMilliseconds;
             stopwatch.Stop();
             ReportProgress(force: true);
 
-            StrategyPlan plan = CreatePlan(root, stopwatch.Elapsed, isFeasibleUpperBound: true);
-            if (policy.WorstCaseSteps != plan.MaxStep)
-            {
-                throw new InvalidOperationException(
-                    $"Greedy policy depth {policy.WorstCaseSteps} does not match materialized MaxStep " +
-                    $"{plan.MaxStep}; display materialization must preserve policy depth.");
-            }
-
             // Surface the exact U this materialized tree achieves so the edge (compact) phase in the same
             // combined run uses it as its step ceiling -- the tightest sound budget, guaranteeing the edge
             // plan is never worse than this step plan.
             _feasibleRootBudget = solution.Score.WorstCaseSteps;
-            _latestGreedyIncumbentPlan = plan;
 
             // Denominator estimate for the edge phase's live progress (see field doc): the distinct
             // canonical states this step pass touched approximate the compact solve's total work.
@@ -118,7 +122,9 @@ partial class StrategyBuilder
                 Timings: new StageTimings(
                     solveElapsed,
                     freezeElapsed,
-                    stopwatch.Elapsed - solveElapsed - freezeElapsed));
+                    materialize
+                        ? stopwatch.Elapsed - solveElapsed - freezeElapsed
+                        : TimeSpan.Zero));
         });
     }
 

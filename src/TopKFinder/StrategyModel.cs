@@ -163,14 +163,14 @@ sealed class StrategyPlan
 
 // How a proof-tighten progression stage ended -- a total, mutually exclusive classification. Every
 // probe produces exactly one of these (the driver never stops without reporting one):
-//   Tightened        - a strategy meeting the requested step ceiling was materialized (Plan set); it
+//   Tightened        - a complete strategy meets the requested step ceiling (Solution set); it
 //                      strictly improves the incumbent, so tightening continues.
 //   ProvenInfeasible - a probe ran to completion over the COMPLETE candidate enumeration and found no
 //                      strategy at that ceiling, so the previous best is optimal (closes the squeeze).
 //   Incomplete       - a probe found no strategy but the greedy candidate cap truncated the enumeration,
 //                      so "no group fit" is NOT a proof; the squeeze stays open.
-//   Completed        - a non-tightening terminal stage completed with a plan attached.
-//                      it always materializes and carries the returned plan. Nothing follows it.
+//   Completed        - a non-tightening terminal stage completed with a solution attached.
+//                      Plan may remain null until a presentation consumer requests materialization.
 // A probe that materializes a plan whose realized MaxStep OVERSHOOTS the ceiling is deliberately NOT an
 // outcome: since the tighter-budget-keep fix (PR #223) the compact feasibility proxy and the materialized
 // tree agree, so a complete (non-cap-truncated) probe that returns a plan always meets the ceiling. An
@@ -209,9 +209,9 @@ readonly record struct StageTimings(
 
 // One stage of the proof-tighten progression as it is produced by RunGreedyPipeline: the final
 // edge-compaction pass, each successful downward tightening, or a terminal ceiling. Name is the stage
-// label (e.g. "exact-edge-compact@6", "proof-tighten<=4"); Plan is the materialized strategy for Tightened
-// and Completed, or null for ProvenInfeasible/Incomplete. Elapsed is the stage's own wall time, not a
-// cumulative total. {Outcome, Plan} together are the stage's complete output.
+// label (e.g. "exact-edge-compact@6", "proof-tighten<=4"); Solution is the immutable strategy for
+// Tightened and Completed, while Plan is an optional display artifact. Elapsed is the stage's own wall
+// time, not a cumulative total. Outcome and Solution form the solver result.
 readonly struct StageResult
 {
     public StageResult(string name, StrategyPlan? plan, TimeSpan elapsed,
@@ -243,9 +243,8 @@ readonly struct StageResult
             Solution?.WithProvenLowerBound(provenLowerBound),
             Timings);
 
-    // A materialized strategy tree is attached (true for Tightened and Completed). This is a
-    // DISPLAY/progress predicate only -- it does NOT imply improvement: a Completed plan is the terminal
-    // min-edge pass and is no better than the incumbent. Use IsTightened for the "usable improvement" decision.
+    // A materialized strategy tree is attached. This is a display predicate only and does not imply
+    // improvement; solution-first consumers may receive successful stages with no plan.
     public bool HasPlan => Plan is not null;
 
     // The probe realized a strategy that meets the requested ceiling (strictly improves the incumbent).
@@ -257,8 +256,7 @@ readonly struct StageResult
     // proven optimum.
     public bool Incomplete => Outcome == StageOutcome.Incomplete;
 
-    // The terminal min-edge pass at the determined step S (not a tightening probe). Always carries the
-    // returned plan; nothing follows it.
+    // The terminal min-edge pass at the determined step S (not a tightening probe); nothing follows it.
     public bool IsCompleted => Outcome == StageOutcome.Completed;
 
     // True only for a completed, complete-enumeration probe that proved the ceiling infeasible: the one

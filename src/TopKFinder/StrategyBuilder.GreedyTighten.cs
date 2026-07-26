@@ -6,7 +6,7 @@ namespace TopKFinder;
 
 sealed record GreedyTightenStageArtifacts(
     SolvedStrategy Solution,
-    StrategyPlan Plan,
+    StrategyPlan? Plan,
     StageTimings Timings);
 
 partial class StrategyBuilder
@@ -103,9 +103,9 @@ partial class StrategyBuilder
     // Builds the GreedyTighten stage plan: runs the local restructuring to tighten the upper bound,
     // then materializes the tightened tree once. Returns a feasible-upper-bound plan (never proven).
     public StrategyPlan ExecuteGreedyTightenStage()
-        => ExecuteGreedyTightenStageWithSolution().Plan;
+        => ExecuteGreedyTightenStageWithSolution().Plan!;
 
-    internal GreedyTightenStageArtifacts ExecuteGreedyTightenStageWithSolution()
+    internal GreedyTightenStageArtifacts ExecuteGreedyTightenStageWithSolution(bool materialize = true)
     {
         return RunWithComparisonStateCancellation(() =>
         {
@@ -126,33 +126,35 @@ partial class StrategyBuilder
             SolvedStrategy solution = CreateGreedyTightenSolvedStrategy();
             TimeSpan freezeElapsed = stopwatch.Elapsed - solveElapsed;
 
-            // Materialize the tightened tree once (Option B: search on the lean-depth DP, materialize only
-            // at the end). Absent overrides fall back to ChooseConstructiveGroup, so this yields the
-            // greedy-feasible tree plus the committed local edits.
-            StrategyNode root = BuildState(
-                new ComparisonState(_n),
-                0,
-                _k,
-                1,
-                new MaterializationContext(Solution: solution));
-
-            stopwatch.Stop();
-
-            StrategyPlan plan = CreatePlan(root, stopwatch.Elapsed, isFeasibleUpperBound: true);
-            if (solution.Score.WorstCaseSteps != plan.MaxStep)
+            StrategyPlan? plan = null;
+            if (materialize)
             {
-                throw new InvalidOperationException(
-                    "GreedyTighten solved-strategy depth must equal the materialized plan MaxStep.");
+                StrategyNode root = BuildState(
+                    new ComparisonState(_n),
+                    0,
+                    _k,
+                    1,
+                    new MaterializationContext(Solution: solution));
+                plan = CreatePlan(root, stopwatch.Elapsed, isFeasibleUpperBound: true);
+                if (solution.Score.WorstCaseSteps != plan.MaxStep)
+                {
+                    throw new InvalidOperationException(
+                        "GreedyTighten solved-strategy depth must equal the materialized plan MaxStep.");
+                }
+
+                _latestGreedyIncumbentPlan = plan;
             }
 
-            _latestGreedyIncumbentPlan = plan;
+            stopwatch.Stop();
             return new GreedyTightenStageArtifacts(
                 solution,
                 plan,
                 new StageTimings(
                     solveElapsed,
                     freezeElapsed,
-                    stopwatch.Elapsed - solveElapsed - freezeElapsed));
+                    materialize
+                        ? stopwatch.Elapsed - solveElapsed - freezeElapsed
+                        : TimeSpan.Zero));
         });
     }
 

@@ -28,7 +28,7 @@ sealed class GreedyPolicySolution
 
 sealed record GreedyFeasibleStageArtifacts(
     SolvedStrategy Solution,
-    StrategyPlan Plan,
+    StrategyPlan? Plan,
     StageTimings Timings = default);
 
 sealed class GreedyPolicyNode

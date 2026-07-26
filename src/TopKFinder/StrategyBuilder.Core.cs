@@ -189,14 +189,22 @@ partial class StrategyBuilder
     }
 
     public StrategyPlan ExecuteStepProofStage()
-        => ExecuteStepProofStageWithSolution().Plan;
+        => ExecuteStepProofStageWithSolution().Plan!;
 
     internal ExactStepProofStageArtifacts ExecuteStepProofStageWithSolution()
     {
         _progressScope = _reportCombinedRunProgress
             ? ProgressScope.DefaultInCombinedRun
             : ProgressScope.DefaultStandalone;
-        return RunWithComparisonStateCancellation(BuildExactStepProofStageArtifacts);
+        return RunWithComparisonStateCancellation(() => BuildExactStepProofStageArtifacts());
+    }
+
+    internal ExactStepProofStageArtifacts ExecuteStepProofStageWithoutMaterialization()
+    {
+        _progressScope = _reportCombinedRunProgress
+            ? ProgressScope.DefaultInCombinedRun
+            : ProgressScope.DefaultStandalone;
+        return RunWithComparisonStateCancellation(() => BuildExactStepProofStageArtifacts(materialize: false));
     }
 
     // Exact-stage entrypoint: materialize display/search artifacts in one solver session.
@@ -214,9 +222,9 @@ partial class StrategyBuilder
         => PublicPipelineOrchestrator.RunExactPipeline(this, onStageCompleted, onStageStart);
 
     public StrategyPlan ExecuteEdgeCompactStage()
-        => ExecuteEdgeCompactStageWithSolution().Plan;
+        => ExecuteEdgeCompactStageWithSolution().Plan!;
 
-    internal CompactStageArtifacts ExecuteEdgeCompactStageWithSolution()
+    internal CompactStageArtifacts ExecuteEdgeCompactStageWithSolution(bool materialize = true)
     {
         // Returns the raw compact candidate: the compact DP keeps the optimal worst-case step count
         // (so MaxStep always matches default) and, among equally-optimal groups, minimizes a per-state
@@ -248,21 +256,25 @@ partial class StrategyBuilder
                 includeSearchEdgeCost: true);
             TimeSpan freezeElapsed = stopwatch.Elapsed - solveElapsed;
             _useCompact = true;
-            StrategyPlan plan = MaterializeCompactSolution(
-                solution,
-                stopwatch,
-                _compactRootCost,
-                isFeasibleUpperBound: false);
+            StrategyPlan? plan = materialize
+                ? MaterializeCompactSolution(
+                    solution,
+                    stopwatch,
+                    _compactRootCost,
+                    isFeasibleUpperBound: false)
+                : null;
 
             _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds - _phase1bMilliseconds;
             ReportProgress(force: true);
             return new CompactStageArtifacts(
                 solution,
-                plan,
+                plan!,
                 new StageTimings(
                     solveElapsed,
                     freezeElapsed,
-                    stopwatch.Elapsed - solveElapsed - freezeElapsed));
+                    materialize
+                        ? stopwatch.Elapsed - solveElapsed - freezeElapsed
+                        : TimeSpan.Zero));
         });
     }
 
@@ -292,8 +304,9 @@ partial class StrategyBuilder
 
     internal StrategyPlan RunGreedyPipelineCore(
         Action<StageResult>? onStageCompleted = null,
-        Action<string>? onStageStart = null)
-        => GreedyPipeline.RunGreedyPipelineCore(onStageCompleted, onStageStart);
+        Action<string>? onStageStart = null,
+        bool materializeStages = true)
+        => GreedyPipeline.RunGreedyPipelineCore(onStageCompleted, onStageStart, materializeStages);
 
     public StageResult ExecuteProofTightenStage(int budget)
         => GreedyPipeline.ExecuteProofTightenStage(budget);

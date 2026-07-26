@@ -1,12 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Threading;
 
 namespace TopKFinder;
 
 sealed record CompactStageArtifacts(
     SolvedStrategy Solution,
-    StrategyPlan Plan,
+    StrategyPlan? Plan,
     StageTimings Timings);
 sealed record CompactProbeArtifacts(
     StageOutcome Outcome,
@@ -19,11 +20,87 @@ sealed record ProofTightenStageArtifacts(StageResult Result)
 }
 sealed record CompactPlanResult(
     SolvedStrategy? Solution,
-    StrategyPlan Plan,
+    StrategyPlan? Plan,
     StageTimings Timings = default);
 
 partial class StrategyBuilder
 {
+    internal static StrategyPlan MaterializeSolvedStrategy(
+        SolvedStrategy solution,
+        TimeSpan priorElapsed,
+        CancellationToken cancellationToken = default)
+    {
+        var materializer = new StrategyBuilder(
+            solution.Problem.N,
+            solution.Problem.M,
+            solution.Problem.RequestedK,
+            cancellationToken);
+        return materializer.MaterializeSolvedStrategyCore(solution, priorElapsed);
+    }
+
+    private StrategyPlan MaterializeSolvedStrategyCore(
+        SolvedStrategy solution,
+        TimeSpan priorElapsed)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        StrategyNode root = BuildState(
+            new ComparisonState(_n),
+            0,
+            _k,
+            1,
+            new MaterializationContext(Solution: solution));
+        stopwatch.Stop();
+
+        SearchStatistics displayStatistics = CreateSearchStatistics(solution.Score.SearchEdgeCost);
+        SearchStatistics statistics = MergeMaterializedStatistics(
+            solution.SearchStatistics,
+            displayStatistics,
+            solution.Score.SearchEdgeCost,
+            stopwatch.Elapsed);
+        var plan = new StrategyPlan(
+            _n,
+            _m,
+            _requestedK,
+            _k,
+            root,
+            priorElapsed + stopwatch.Elapsed,
+            statistics,
+            isFeasibleUpperBound: !solution.Bounds.IsProvenOptimal);
+
+        if (solution.Score.WorstCaseSteps != plan.MaxStep)
+        {
+            throw new InvalidOperationException(
+                "Solved-strategy depth must equal the independently materialized plan MaxStep.");
+        }
+
+        return plan;
+    }
+
+    private static SearchStatistics MergeMaterializedStatistics(
+        SearchStatistics solver,
+        SearchStatistics display,
+        int? searchTreeEdges,
+        TimeSpan materializeElapsed)
+        => new(
+            solver.SearchedStates,
+            solver.PendingStates,
+            solver.PeakPendingStates,
+            display.OutputStates,
+            display.ExpandedOutputStates,
+            solver.LowerBoundStates,
+            solver.FeasibleTopSetStates,
+            solver.Diagnostics,
+            solver.Phase1Milliseconds,
+            solver.Phase1bMilliseconds,
+            (long)materializeElapsed.TotalMilliseconds,
+            solver.OutcomesConstructed,
+            solver.CandidateGroupsEnumerated,
+            searchTreeEdges,
+            solver.CompactStatesSolved,
+            solver.CompactGroupsEnumerated,
+            solver.CompactStepOptimalGroups,
+            solver.RootProvenLowerBound);
+
     private SolvedStrategy CreateCompactSolvedStrategy(
         SolvedStrategyStageKind stageKind,
         string stageName,

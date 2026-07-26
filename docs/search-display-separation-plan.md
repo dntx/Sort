@@ -2,8 +2,8 @@
 
 ## Status
 
-- State: Architecture decisions resolved; Batches 0-6 complete; Batch 7 ready after Batch 6 merge
-- Baseline: `main` after PR #447 (`09a17f8`)
+- State: Architecture decisions resolved; Batches 0-7 complete; Batch 8 blocked on Batch 7 review and merge
+- Baseline: `main` after PR #450 (`df1c33e`)
 - Related work: PR #442 is intentionally paused and is not a dependency of this plan
 - Execution rule: implement one batch at a time and complete its focused validation before starting the next
 - Source of truth: when this document and chat history differ, update and follow this document
@@ -520,7 +520,7 @@ Acceptance:
 
 ### Batch 7: CLI deferred materialization
 
-Status: Not started
+Status: Complete, 2026-07-26
 
 - Stop materializing intermediate stages not printed by default.
 - Materialize the final or interrupted incumbent.
@@ -532,6 +532,20 @@ Acceptance:
 - search cancellation materializes and prints the best complete strategy unless presentation is cancelled,
 - a subsequent Ctrl+C during materialization suppresses strategy-result output,
 - materialization count is reduced on multi-stage greedy runs.
+
+Implementation notes:
+
+- Added CLI-only exact and greedy orchestration paths that emit immutable solutions with null display plans;
+    existing public and GUI paths remain eager.
+- CLI progression and live stage status now use `WorstCaseSteps` and explicitly named search-edge cost, so
+    intermediate display trees are not required merely to report a stage.
+- Normal completion, stage limits, and interrupted search independently materialize only the selected complete
+    incumbent. Solver statistics are retained while output-state statistics come from the presentation pass.
+- Presentation uses a separate cancellation source. Ctrl+C during final materialization, including the second
+    Ctrl+C after search cancellation, suppresses result publication; partial plans are never rendered.
+- Focused deferred/eager/cancellation regression tests compile. Release application and functional-test builds
+    complete with zero warnings and zero errors. Runtime test and CLI execution were blocked locally by Windows
+    Application Control (`0x800711C7`); the VS Code test runner also returned `0/0` discovery.
 
 ### Batch 8: GUI controlled materialization
 

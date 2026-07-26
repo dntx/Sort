@@ -38,7 +38,7 @@ partial class StrategyBuilder
                 projectionStopwatch.Elapsed - artifacts.Timings.Solve - artifacts.Timings.Freeze);
             return new ExactProjectionArtifacts(
                 searchTree,
-                artifacts.Plan,
+                artifacts.Plan!,
                 artifacts.Solution,
                 timings);
         });

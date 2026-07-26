@@ -3,8 +3,8 @@ using System;
 namespace TopKFinder;
 
 readonly record struct GreedyPreparationResult(
-    StrategyPlan BaseFeasiblePlan,
-    StrategyPlan EffectiveFeasiblePlan,
+    StrategyPlan? BaseFeasiblePlan,
+    StrategyPlan? EffectiveFeasiblePlan,
     StrategyPlan? GreedyTightenPlan,
     SolvedStrategy BaseFeasibleSolution,
     SolvedStrategy EffectiveFeasibleSolution,
@@ -18,6 +18,41 @@ readonly record struct GreedyPreparationResult(
 
 static class PublicPipelineOrchestrator
 {
+    internal static void RunExactPipelineDeferred(
+        StrategyBuilder builder,
+        Action<StageResult> onStageCompleted,
+        Action<string>? onStageStart = null)
+    {
+        var callbacks = new PipelineCallbacks(onStageCompleted, onStageStart);
+
+        callbacks.Start(StageNames.StepProof);
+        ExactStepProofStageArtifacts stepArtifacts =
+            builder.ExecuteStepProofStageWithoutMaterialization();
+        PipelineStageProtocol.EmitStage(
+            new StageResult(
+                StageNames.StepProof,
+                plan: null,
+                stepArtifacts.Timings.Total,
+                StageOutcome.Completed,
+                stepArtifacts.Solution,
+                stepArtifacts.Timings),
+            callbacks);
+
+        string compactStageName = StageNames.FormatExactEdgeCompact(
+            stepArtifacts.Solution.Score.WorstCaseSteps);
+        callbacks.Start(compactStageName);
+        CompactStageArtifacts compactArtifacts = builder.ExecuteEdgeCompactStageWithSolution(materialize: false);
+        PipelineStageProtocol.EmitStage(
+            new StageResult(
+                compactStageName,
+                plan: null,
+                compactArtifacts.Timings.Total,
+                StageOutcome.Completed,
+                compactArtifacts.Solution,
+                compactArtifacts.Timings),
+            callbacks);
+    }
+
     public static StrategyPlan RunExactPipeline(
         StrategyBuilder builder,
         Action<StageResult>? onStageCompleted = null,
@@ -45,12 +80,12 @@ static class PublicPipelineOrchestrator
         var compactStage = new StageResult(
             compactStageName,
             compactArtifacts.Plan,
-            compactArtifacts.Plan.Elapsed,
+            compactArtifacts.Plan!.Elapsed,
             StageOutcome.Completed,
             compactArtifacts.Solution,
             compactArtifacts.Timings);
         PipelineStageProtocol.EmitStage(compactStage, callbacks);
-        return compactArtifacts.Plan;
+        return compactArtifacts.Plan!;
     }
 
     public static StrategyPlan RunGreedyPipeline(
@@ -68,14 +103,30 @@ static class PublicPipelineOrchestrator
         return builder.RunGreedyPipelineCore(onStageCompleted, onStageStart);
     }
 
+    internal static void RunGreedyPipelineDeferred(
+        StrategyBuilder builder,
+        Action<StageResult> onStageCompleted,
+        Action<string>? onStageStart = null,
+        bool preparationAlreadyApplied = false)
+    {
+        if (!preparationAlreadyApplied)
+            RunGreedyPreparation(builder, emitStages: false, materialize: false);
+
+        builder.RunGreedyPipelineCore(
+            onStageCompleted,
+            onStageStart,
+            materializeStages: false);
+    }
+
     public static GreedyPreparationResult RunGreedyPreparation(
         StrategyBuilder builder,
         Action<StageResult>? onStageCompleted = null,
         Action<string>? onStageStart = null,
-        bool emitStages = true)
+        bool emitStages = true,
+        bool materialize = true)
     {
         var callbacks = new PipelineCallbacks(onStageCompleted, onStageStart);
-        GreedyPreparationResult prep = PrepareGreedyUpperBound(builder);
+        GreedyPreparationResult prep = PrepareGreedyUpperBound(builder, materialize);
 
         if (!emitStages)
             return prep;
@@ -91,7 +142,7 @@ static class PublicPipelineOrchestrator
                 prep.GreedyFeasibleTimings),
             callbacks);
 
-        if (prep.GreedyTightenProbeRun && prep.GreedyTightenPlan is not null)
+        if (prep.GreedyTightenProbeRun && prep.GreedyTightenSolution is not null)
         {
             callbacks.Start(StageNames.GreedyTighten);
             PipelineStageProtocol.EmitStage(
@@ -111,12 +162,14 @@ static class PublicPipelineOrchestrator
     // Shared greedy pre-stage orchestration used by public callers (CLI/UI): build a feasible upper
     // bound, optionally run one greedy-tighten round, and apply the improved bound override when
     // tightening wins. Search semantics are unchanged; this only centralizes pipeline routing.
-    public static GreedyPreparationResult PrepareGreedyUpperBound(StrategyBuilder builder)
+    public static GreedyPreparationResult PrepareGreedyUpperBound(
+        StrategyBuilder builder,
+        bool materialize = true)
     {
-        GreedyFeasibleStageArtifacts feasibleArtifacts = builder.ExecuteGreedyFeasibleStageWithSolution();
-        StrategyPlan baseFeasiblePlan = feasibleArtifacts.Plan;
+        GreedyFeasibleStageArtifacts feasibleArtifacts = builder.ExecuteGreedyFeasibleStageWithSolution(materialize);
+        StrategyPlan? baseFeasiblePlan = materialize ? feasibleArtifacts.Plan : null;
         SolvedStrategy baseFeasibleSolution = feasibleArtifacts.Solution;
-        StrategyPlan effectiveFeasiblePlan = baseFeasiblePlan;
+        StrategyPlan? effectiveFeasiblePlan = baseFeasiblePlan;
         SolvedStrategy effectiveFeasibleSolution = baseFeasibleSolution;
 
         bool gtProbeRun = builder.ShouldRunGreedyTightenByRootProbe();
@@ -127,10 +180,10 @@ static class PublicPipelineOrchestrator
         StageTimings gtTimings = default;
         if (gtProbeRun)
         {
-            GreedyTightenStageArtifacts gtArtifacts = builder.ExecuteGreedyTightenStageWithSolution();
-            gtPlan = gtArtifacts.Plan;
+            GreedyTightenStageArtifacts gtArtifacts = builder.ExecuteGreedyTightenStageWithSolution(materialize);
+            gtPlan = materialize ? gtArtifacts.Plan : null;
             gtSolution = gtArtifacts.Solution;
-            gtElapsed = gtPlan.Elapsed;
+            gtElapsed = gtArtifacts.Timings.Total;
             gtTimings = gtArtifacts.Timings;
             gtImproved = gtSolution.Score.IsStrictRefinementOver(baseFeasibleSolution.Score);
             if (gtImproved)
@@ -150,7 +203,7 @@ static class PublicPipelineOrchestrator
             gtSolution,
             gtProbeRun,
             gtImproved,
-            baseFeasiblePlan.Elapsed,
+            feasibleArtifacts.Timings.Total,
             gtElapsed,
             feasibleArtifacts.Timings,
             gtTimings);

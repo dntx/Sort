@@ -13,6 +13,52 @@ using TopKFinder;
 // plan that violates the U/opt bounds.
 public class GreedyPipelineTests
 {
+    [Fact]
+    public void GreedyPipelineDeferred_EmitsSolutionsWithoutMaterializedPlans()
+    {
+        var builder = new StrategyBuilder(9, 3, 3);
+        GreedyPreparationResult preparation = PublicPipelineOrchestrator.RunGreedyPreparation(
+            builder,
+            emitStages: false,
+            materialize: false);
+        var stages = new List<StageResult>();
+
+        PublicPipelineOrchestrator.RunGreedyPipelineDeferred(
+            builder,
+            stages.Add,
+            preparationAlreadyApplied: true);
+
+        Assert.NotNull(preparation.BaseFeasibleSolution);
+        Assert.Equal(TimeSpan.Zero, preparation.GreedyFeasibleTimings.Materialize);
+        Assert.NotEmpty(stages);
+        Assert.All(stages.Where(stage => stage.Solution is not null), stage =>
+        {
+            Assert.False(stage.HasPlan);
+            Assert.Equal(TimeSpan.Zero, stage.Timings.Materialize);
+        });
+    }
+
+    [Fact]
+    public void GreedyPreparationDeferred_EmitsEverySolvedStageWithoutPlans()
+    {
+        var stages = new List<StageResult>();
+
+        GreedyPreparationResult preparation = PublicPipelineOrchestrator.RunGreedyPreparation(
+            new StrategyBuilder(9, 3, 3),
+            onStageCompleted: stages.Add,
+            emitStages: true,
+            materialize: false);
+
+        int expectedCount = 1 + (preparation.GreedyTightenSolution is null ? 0 : 1);
+        Assert.Equal(expectedCount, stages.Count);
+        Assert.All(stages, stage =>
+        {
+            Assert.False(stage.HasPlan);
+            Assert.NotNull(stage.Solution);
+            Assert.Equal(TimeSpan.Zero, stage.Timings.Materialize);
+        });
+    }
+
     // The edge pass must always produce a valid, fully-grouped strategy under the constructive U
     // budget -- never throw "no group fits the budget" -- and stay a feasible plan.
     //
