@@ -1,5 +1,7 @@
 using System;
+using System.Diagnostics;
 using System.Reflection;
+using System.Threading;
 using System.Windows.Forms;
 using Xunit;
 using TopKFinder;
@@ -59,6 +61,112 @@ public sealed class MainFormRenderingTests
         }
     }
 
+    [Fact]
+    public void DeferredSolutionOnlyStage_RendersNoImprovementMarkerInTree()
+    {
+        StageResult stage = CreateDeferredExactStepStage();
+        Assert.False(stage.HasPlan);
+        Assert.NotNull(stage.Solution);
+
+        using var form = new MainForm();
+        TreeNode node = InvokePrivateInstance<TreeNode>(
+            form,
+            "BuildStageTreeNode",
+            stage,
+            "edge0",
+            false);
+
+        Assert.Contains("no improvement", node.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("no solution", node.Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DeferredSolutionOnlyStage_RendersNoImprovementMarkerInOverview()
+    {
+        StageResult stage = CreateDeferredExactStepStage();
+        Assert.False(stage.HasPlan);
+        Assert.NotNull(stage.Solution);
+
+        using var form = new MainForm();
+        TreeNode node = InvokePrivateInstance<TreeNode>(
+            form,
+            "BuildStageOverviewNode",
+            stage,
+            "edge0",
+            false);
+
+        Assert.Contains("no improvement", node.Text, StringComparison.Ordinal);
+        Assert.DoesNotContain("no solution", node.Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void MarshalStageToUiThread_PauseDisabled_DoesNotBlockWorkerCallback()
+    {
+        using var form = new MainForm();
+        _ = form.Handle;
+        SetPrivateField(form, "_pauseEachStageForRun", false);
+
+        bool callbackRan = false;
+        var stage = new StageResult("proof-tighten<=3", plan: null, TimeSpan.Zero, StageOutcome.Tightened, CreateDeferredExactStepStage().Solution);
+        var stopwatch = Stopwatch.StartNew();
+        InvokePrivateInstanceVoid(
+            form,
+            "MarshalStageToUiThread",
+            stage,
+            (Action<StageResult>)(_ =>
+            {
+                Thread.Sleep(120);
+                callbackRan = true;
+            }));
+        stopwatch.Stop();
+
+        Assert.True(stopwatch.ElapsedMilliseconds < 100);
+        Assert.False(callbackRan);
+
+        Application.DoEvents();
+        Assert.True(callbackRan);
+    }
+
+    [Fact]
+    public void MarshalStageToUiThread_PauseEnabled_BlocksWorkerCallback()
+    {
+        using var form = new MainForm();
+        _ = form.Handle;
+        SetPrivateField(form, "_pauseEachStageForRun", true);
+
+        bool callbackRan = false;
+        var stage = new StageResult("proof-tighten<=3", plan: null, TimeSpan.Zero, StageOutcome.Tightened, CreateDeferredExactStepStage().Solution);
+        var stopwatch = Stopwatch.StartNew();
+        InvokePrivateInstanceVoid(
+            form,
+            "MarshalStageToUiThread",
+            stage,
+            (Action<StageResult>)(_ =>
+            {
+                Thread.Sleep(120);
+                callbackRan = true;
+            }));
+        stopwatch.Stop();
+
+        Assert.True(stopwatch.ElapsedMilliseconds >= 100);
+        Assert.True(callbackRan);
+    }
+
+    private static StageResult CreateDeferredExactStepStage()
+    {
+        StrategyBuilder builder = new(8, 3, 3);
+        StageResult? first = null;
+        PublicPipelineOrchestrator.RunExactPipelineDeferred(
+            builder,
+            stage =>
+            {
+                if (first is null)
+                    first = stage;
+            });
+
+        return first ?? throw new InvalidOperationException("Deferred exact pipeline did not emit a stage.");
+    }
+
     private static T InvokePrivateStatic<T>(Type type, string methodName, params object?[] args)
     {
         MethodInfo method = type.GetMethod(methodName, BindingFlags.NonPublic | BindingFlags.Static)
@@ -77,6 +185,17 @@ public sealed class MainFormRenderingTests
         method.Invoke(instance, args);
     }
 
+    private static T InvokePrivateInstance<T>(object instance, string methodName, params object?[] args)
+    {
+        Type type = instance.GetType();
+        MethodInfo method = type.GetMethod(methodName, BindingFlags.NonPublic | BindingFlags.Instance)
+            ?? throw new InvalidOperationException($"Missing private instance method {type.Name}.{methodName}");
+        object? value = method.Invoke(instance, args);
+        return value is T typed
+            ? typed
+            : throw new InvalidOperationException($"{type.Name}.{methodName} returned unexpected value");
+    }
+
     private static T GetPrivateField<T>(object instance, string fieldName)
     {
         Type type = instance.GetType();
@@ -86,5 +205,13 @@ public sealed class MainFormRenderingTests
         return value is T typed
             ? typed
             : throw new InvalidOperationException($"{type.Name}.{fieldName} returned unexpected value");
+    }
+
+    private static void SetPrivateField(object instance, string fieldName, object? value)
+    {
+        Type type = instance.GetType();
+        FieldInfo field = type.GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Instance)
+            ?? throw new InvalidOperationException($"Missing private field {type.Name}.{fieldName}");
+        field.SetValue(instance, value);
     }
 }

@@ -111,7 +111,12 @@ partial class MainForm : Form
     private bool _feasibleMode;
     private Stopwatch? _runStopwatch;
     private CancellationTokenSource? _runCancellationSource;
+    private CancellationTokenSource? _presentationCancellationSource;
     private CancellationTokenSource? _stopEscalationSource;
+    private Task? _activePresentationTask;
+    private int _presentationGeneration;
+    private bool _exactStepStageMaterialized;
+    private StageResult? _pendingExactCompactStage;
     private StrategyBuilder? _activeBuilder;
     private static readonly DisplayRenderEngine DisplayEngine = new();
     private int _detailsRequestVersion;
@@ -120,6 +125,7 @@ partial class MainForm : Form
     private SearchStatistics? _completedCompactStats;
     private SearchStatistics? _completedFeasibleStats;
     private int _activePhase;
+    private bool _pauseEachStageForRun;
     // Anytime greedy edge state (UI thread only): every edge stage as it arrives (baseline compact,
     // each tightening, plus a terminal no-solution stage). The current-stage name and the run-clock ms
     // at which the current stage began drive the per-stage timing/labels in the progress panel.
