@@ -47,7 +47,7 @@ display/search 两条物化路径当前通过独立 planner 入口（`BuildDispl
 - 本轮补充在 projection quotient 路径统一阈值表达：将分散的 `3/4` 守卫字面量替换为已有具名常量（`ProjectionQuotientMinHeadCount` / `ProjectionQuotientMaxHeadCount`），仅做一致性收敛，不改变行为。
 - Compact 目标口径更新：二级 DP 不再最小化显示层分支线计数（原 `CountDisplayBranches` 路径），改为最小化搜索树分支计数（每节点 `children.Count` 递归求和）。`MaxStep` 主目标不变，但显示边数基线需按新口径重标。
 - Compact snapshot 边界已收口：成功的 `proof-tighten`、`exact-edge-compact` 与 `greedy-edge-compact` 在任何后续 probe reset 或 display materialization 之前，先把根可达选组、canonical successor、精确剩余深度与证据冻结为不可变 `SolvedStrategy`；显示层只重放 snapshot。`ProvenInfeasible`、`Incomplete` 以及 capped Phase-B 回退 incumbent 均不伪造 solution。proof-tighten 的下一预算由 snapshot 的 `WorstCaseSteps` 决定，overshoot 继续作为内部不变量破坏直接抛错。
-- Pipeline 控制也已切到 solution：`StageResult` 兼容地携带可空 `SolvedStrategy`、物化 plan 与 solve/freeze/materialize 分段计时；incumbent 替换、GT 采纳、下一预算标签及挤压证据更新均读取 `StrategyScore` / `BoundEvidence`。search-tree edge cost 与 display branch edges 是两个独立指标；edge-compact 是否替换 incumbent 由前者决定，即使后者没有下降。CLI 默认只保留中间 stage snapshot，并在搜索结束、stage limit 或中断后用独立 cancellation token 物化最终 incumbent；GUI 与现有 public pipeline 在 Batch 8 前仍保持 eager materialize。
+- Pipeline 控制也已切到 solution：`StageResult` 兼容地携带可空 `SolvedStrategy`、物化 plan 与 solve/freeze/materialize 分段计时；incumbent 替换、GT 采纳、下一预算标签及挤压证据更新均读取 `StrategyScore` / `BoundEvidence`。search-tree edge cost 与 display branch edges 是两个独立指标；edge-compact 是否替换 incumbent 由前者决定，即使后者没有下降。CLI 默认只保留中间 stage snapshot，并在搜索结束、stage limit 或中断后用独立 cancellation token 物化最终 incumbent；GUI 已进入 Batch 8 的受控异步物化路径（请求级替换/取消、陈旧结果抑制、有界 LRU 缓存），并保留占位与可取消语义；本地运行时验证仍受 Windows Application Control (`0x800711C7`) 阻断，最终验收以 CI 与可运行环境回归为准。
 
 ---
 
