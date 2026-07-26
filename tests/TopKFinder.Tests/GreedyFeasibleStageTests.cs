@@ -137,7 +137,7 @@ public class GreedyFeasibleStageTests
         GreedyPolicySolution policy = builder.SolveGreedyFeasiblePolicy();
         GreedyFeasibleStageArtifacts artifacts = builder.ExecuteGreedyFeasibleStageWithSolution();
         SolvedStrategy solution = artifacts.Solution;
-        StrategyPlan plan = artifacts.Plan;
+        StrategyPlan plan = Assert.IsType<StrategyPlan>(artifacts.Plan);
 
         Assert.NotEmpty(policy.Nodes);
         Assert.Equal(policy.WorstCaseSteps, plan.MaxStep);

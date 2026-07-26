@@ -7,6 +7,25 @@ using TopKFinder;
 public sealed class ExactPipelineTests
 {
     [Fact]
+    public void RunExactPipelineDeferred_EmitsSolutionsWithoutMaterializedPlans()
+    {
+        var stages = new List<StageResult>();
+
+        PublicPipelineOrchestrator.RunExactPipelineDeferred(
+            new StrategyBuilder(9, 3, 3),
+            stages.Add);
+
+        Assert.Equal(2, stages.Count);
+        Assert.All(stages, stage =>
+        {
+            Assert.False(stage.HasPlan);
+            Assert.NotNull(stage.Solution);
+            Assert.Equal(TimeSpan.Zero, stage.Timings.Materialize);
+            Assert.Equal(stage.Elapsed, stage.Timings.Solve + stage.Timings.Freeze);
+        });
+    }
+
+    [Fact]
     public void RunExactPipeline_EmitsCanonicalStages_AndReturnsLastStagePlan()
     {
         var started = new List<string>();

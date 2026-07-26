@@ -47,7 +47,7 @@ display/search 两条物化路径当前通过独立 planner 入口（`BuildDispl
 - 本轮补充在 projection quotient 路径统一阈值表达：将分散的 `3/4` 守卫字面量替换为已有具名常量（`ProjectionQuotientMinHeadCount` / `ProjectionQuotientMaxHeadCount`），仅做一致性收敛，不改变行为。
 - Compact 目标口径更新：二级 DP 不再最小化显示层分支线计数（原 `CountDisplayBranches` 路径），改为最小化搜索树分支计数（每节点 `children.Count` 递归求和）。`MaxStep` 主目标不变，但显示边数基线需按新口径重标。
 - Compact snapshot 边界已收口：成功的 `proof-tighten`、`exact-edge-compact` 与 `greedy-edge-compact` 在任何后续 probe reset 或 display materialization 之前，先把根可达选组、canonical successor、精确剩余深度与证据冻结为不可变 `SolvedStrategy`；显示层只重放 snapshot。`ProvenInfeasible`、`Incomplete` 以及 capped Phase-B 回退 incumbent 均不伪造 solution。proof-tighten 的下一预算由 snapshot 的 `WorstCaseSteps` 决定，overshoot 继续作为内部不变量破坏直接抛错。
-- Pipeline 控制也已切到 solution：`StageResult` 兼容地携带可空 `SolvedStrategy`、物化 plan 与 solve/freeze/materialize 分段计时；incumbent 替换、GT 采纳、下一预算标签及挤压证据更新均读取 `StrategyScore` / `BoundEvidence`。search-tree edge cost 与 display branch edges 是两个独立指标；edge-compact 是否替换 incumbent 由前者决定，即使后者没有下降。CLI/GUI 目前仍 eager materialize，延迟物化留给后续批次。
+- Pipeline 控制也已切到 solution：`StageResult` 兼容地携带可空 `SolvedStrategy`、物化 plan 与 solve/freeze/materialize 分段计时；incumbent 替换、GT 采纳、下一预算标签及挤压证据更新均读取 `StrategyScore` / `BoundEvidence`。search-tree edge cost 与 display branch edges 是两个独立指标；edge-compact 是否替换 incumbent 由前者决定，即使后者没有下降。CLI 默认只保留中间 stage snapshot，并在搜索结束、stage limit 或中断后用独立 cancellation token 物化最终 incumbent；GUI 与现有 public pipeline 在 Batch 8 前仍保持 eager materialize。
 
 ---
 
@@ -547,25 +547,25 @@ greedy 模式把这两件昂贵的事都砍掉：只承诺一个分组（不做 
     只要 realize 出计划就必然满足天花板，因此 overshoot 已降级为**内部不变量被破坏**：`ProbeAndClassify` 在遇到越界计划时
     直接抛 `InvalidOperationException`，而非作为结局上报（`(20,4,6)` 曾是它的实测样例，现已收紧至步数 14）。便捷属性：
     `IsTightened`＝是否可继续收紧（仅 `Tightened`）；
-    `HasPlan`＝是否附带物化树（`Tightened` 与 `Completed` 均为真，仅供显示，**不**代表改进）；`ProvesOptimal`＝`ProvenInfeasible`；
-    `IsCompleted`＝`Completed`。`Tightened`/`Completed` 携带计划，`ProvenInfeasible`/`Incomplete` 计划为 `null`。先是若干 `proof-tighten≤N` 收紧阶段（每次成功各一个），
+    `HasPlan`＝是否附带物化树（仅供显示，**不**代表改进；CLI deferred stage 可为假）；`ProvesOptimal`＝`ProvenInfeasible`；
+    `IsCompleted`＝`Completed`。`Tightened`/`Completed` 必须携带 solution，但 plan 可延迟到 presentation phase；`ProvenInfeasible`/`Incomplete` 不伪造 solution。先是若干 `proof-tighten≤N` 收紧阶段（每次成功各一个），
     随后是在最小可行步数 `S` 上的**唯一一遍 min-edge** `greedy-edge-compact@S` 阶段，中途可能穿插一个 `no solution` 或 `search incomplete` 终止阶段。
     **呈现以「是否
     严格优于当前 incumbent」为准**（incumbent 初值为 `greedy-feasible` 可行解，按 `IsStrictRefinementOver`＝先比步数再比边数）：
     只有严格更优的阶段才被画成完整的可浏览树并更新 incumbent；**有解但不更优**的阶段（例如最终 `greedy-edge-compact@S` 步数与边数都与
     上一 `proof-tighten≤S` 阶段相同、无法再降边，见 `20,5,5`）记录下来、标 **`no improvement`**，但只渲染成一行注记、不画那棵重复的树；
     收紧**仍照常继续**（下一个天花板由步数决定）。收到 **`no solution`（证明不可行）** 终止时，编排层把当前
-    incumbent 计划用 `WithRootProvenLowerBound(incumbent.MaxStep)` 闭合挤压（CLI 改写 `finalPlan`；GUI 走
+    incumbent solution 用 `WithProvenLowerBound(incumbent.WorstCaseSteps)` 闭合挤压（CLI 在最终物化前更新证据；GUI 走
     `MarkGreedyIncumbentProvenOptimal`，同时改写 `_compactPlan`/`_feasiblePlan` 与 `_proofTightenStages` 里对应那一项），
     于是详情面板显示 `max steps = S (proven optimal)`；**`search incomplete (candidate cap reached)`**
     （即 `Incomplete`）终止则只标注、不闭合（文案强调是帽子截断导致的「没算完」，属「未证明」）。**CLI 与 GUI 在此分道**：CLI 是批处理工具，逐棵打印中间树
     太啰嗦，故只收集各阶段、打印一行
-    `progression: greedy-feasible(steps=, edges=) -> proof-tighten≤N(...) -> … -> greedy-edge-compact@S(...)[: no improvement][ -> proof-tighten≤M: no solution|search incomplete (candidate cap reached)]`
-    总结，随后**只打印最终（最优=incumbent）那一棵树**（若没有任何阶段更优，最终树就是 `greedy-feasible` 本身）。**CLI 的 Ctrl+C**：
+    `progression: greedy-feasible(steps=, search edges=) -> proof-tighten≤N(...) -> … -> greedy-edge-compact@S(...)[: no improvement][ -> proof-tighten≤M: no solution|search incomplete (candidate cap reached)]`
+    总结，随后用独立 presentation builder **只物化并打印最终（最优=incumbent）那一棵树**（若没有任何阶段更优，最终树就是 `greedy-feasible` 本身）。**CLI 的 Ctrl+C**：
     `RunHeadless` 挂一个 `Console.CancelKeyPress` 处理器（`e.Cancel = true` 阻止进程被硬杀、转而取消一个
     `CancellationTokenSource`，其 token 传入 builder），greedy 构建外包一层 `try/catch OperationCanceledException`——
-    收到取消时在 progression 末尾追加 `-> interrupted`、标题加 `[interrupted]`，照常打印**已找到的最优树**（挤压保持开区间、
-    不声称最优），而非丢掉全部输出；exact 模式无部分树可展示，取消时只打印一行 `interrupted`。GUI 才用 anytime
+    收到取消时在 progression 末尾追加 `-> interrupted`、标题加 `[interrupted]`，再用新的 presentation token 物化**已找到的最优 snapshot**（挤压保持开区间、
+    不声称最优）；物化期间再次 Ctrl+C 会取消 presentation 并抑制结果输出。exact 在 step-proof 完成后同样可于 compact 中断时物化已证明的 incumbent；GUI 才用 anytime
     增量呈现：用**同步 `Control.Invoke`**（而非
     `Progress<T>`）把回调从工作线程 marshal 回 UI 线程——Invoke 会阻塞工作线程直到处理
     完成，这正是「每阶段弹窗暂停」（默认关闭的 `pause each stage` 开关）得以真正暂停搜索的机制。**弹窗期间一律停止计时**：

@@ -131,7 +131,7 @@ partial class MainForm
         GreedyPreparationResult prep = await Task.Run(
             () => PublicPipelineOrchestrator.RunGreedyPreparation(request.Builder, emitStages: false),
             request.CancellationToken);
-        StrategyPlan feasiblePlan = prep.EffectiveFeasiblePlan;
+        StrategyPlan feasiblePlan = prep.EffectiveFeasiblePlan!;
 
         _feasiblePlan = feasiblePlan;
         _incumbentStage = new StageResult(

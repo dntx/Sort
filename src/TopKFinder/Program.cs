@@ -287,22 +287,28 @@ class Program
             // Greedy mode: GreedyFeasible gives a valid upper bound, then ProofTighten lowers the
             // step ceiling when it can, and EdgeCompact minimizes edges at the final step.
             WriteStageStatus("stage greedy-feasible: started");
-            GreedyPreparationResult prep = PublicPipelineOrchestrator.RunGreedyPreparation(builder, emitStages: false);
-            StrategyPlan feasiblePlan = prep.EffectiveFeasiblePlan;
-            StrategyPlan baseFeasiblePlan = prep.BaseFeasiblePlan;
-            WriteStageStatus($"stage greedy-feasible: steps={feasiblePlan.MaxStep}, " +
-                $"edges={feasiblePlan.TotalBranchEdges} ({prep.GreedyFeasibleElapsed.TotalSeconds:F2}s)");
+            GreedyPreparationResult prep = PublicPipelineOrchestrator.RunGreedyPreparation(
+                builder,
+                emitStages: false,
+                materialize: false);
+            SolvedStrategy baseFeasibleSolution = prep.BaseFeasibleSolution;
+            WriteStageStatus(FormatStageStatus(
+                StageNames.GreedyFeasible,
+                baseFeasibleSolution,
+                prep.GreedyFeasibleElapsed));
 
             // Optional GT pre-step (root-probe gated): only run single-round GreedyTighten when the
             // root micro-probe sees a possible root-height drop.
             bool gtProbeRun = prep.GreedyTightenProbeRun;
-            StrategyPlan? gtPlan = prep.GreedyTightenPlan;
+            SolvedStrategy? gtSolution = prep.GreedyTightenSolution;
             bool gtImproved = prep.GreedyTightenImproved;
-            if (gtProbeRun && gtPlan is not null)
+            if (gtProbeRun && gtSolution is not null)
             {
                 WriteStageStatus("stage greedy-tighten: started (root probe passed)");
-                WriteStageStatus($"stage greedy-tighten: steps={gtPlan.MaxStep}, " +
-                    $"edges={gtPlan.TotalBranchEdges} ({prep.GreedyTightenElapsed.TotalSeconds:F2}s)");
+                WriteStageStatus(FormatStageStatus(
+                    StageNames.GreedyTighten,
+                    gtSolution,
+                    prep.GreedyTightenElapsed));
             }
 
             // The anytime stages (each "proof-tighten≤N" tightening, a terminal no-solution ceiling,
@@ -313,14 +319,14 @@ class Program
             // becomes the final tree.
             var stageSummaries = new System.Collections.Generic.List<string>
             {
-                FormatStageSummary(StageNames.GreedyFeasible, baseFeasiblePlan),
+                FormatStageSummary(StageNames.GreedyFeasible, baseFeasibleSolution),
             };
             if (gtProbeRun)
             {
-                if (gtPlan is not null && gtImproved)
-                    stageSummaries.Add(FormatStageSummary(StageNames.GreedyTighten, gtPlan));
-                else if (gtPlan is not null)
-                    stageSummaries.Add($"{FormatStageSummary(StageNames.GreedyTighten, gtPlan)}: no improvement");
+                if (gtSolution is not null && gtImproved)
+                    stageSummaries.Add(FormatStageSummary(StageNames.GreedyTighten, gtSolution));
+                else if (gtSolution is not null)
+                    stageSummaries.Add($"{FormatStageSummary(StageNames.GreedyTighten, gtSolution)}: no improvement");
             }
             else
             {
@@ -329,37 +335,32 @@ class Program
             int emittedStages = 1 + (gtProbeRun ? 1 : 0);
             var incumbentStage = new StageResult(
                 StageNames.GreedyFeasible,
-                baseFeasiblePlan,
+                plan: null,
                 prep.GreedyFeasibleElapsed,
                 StageOutcome.Completed,
                 prep.BaseFeasibleSolution,
                 prep.GreedyFeasibleTimings);
             string finalName = StageNames.GreedyFeasible;
-            StrategyPlan finalPlan = baseFeasiblePlan;
 
-            if (gtPlan is not null && gtImproved)
+            if (gtSolution is not null && gtImproved)
             {
                 incumbentStage = new StageResult(
                     StageNames.GreedyTighten,
-                    gtPlan,
+                    plan: null,
                     prep.GreedyTightenElapsed,
                     StageOutcome.Completed,
                     prep.GreedyTightenSolution,
                     prep.GreedyTightenTimings);
                 finalName = StageNames.GreedyTighten;
-                finalPlan = gtPlan;
             }
 
             if (PipelineStageProtocol.ReachedStageLimit(emittedStages, stageLimit))
             {
                 ClearProgressLine();
                 Console.WriteLine($"progression: {string.Join(" -> ", stageSummaries)}");
-                Console.WriteLine();
-                Console.WriteLine($"==================== {finalName} ({FormatSqueeze(finalPlan)}) ====================");
-                Console.WriteLine("(a valid strategy that achieves the upper bound; not proven optimal)");
-                Console.Write(DisplayEngine.RenderOverviewText(finalPlan));
-                Console.WriteLine();
-                Console.Write(DisplayEngine.RenderStrategyText(finalPlan));
+                StrategyPlan? stageLimitPlan = MaterializeCliIncumbent(incumbentStage, ClearProgressLine);
+                if (stageLimitPlan is not null)
+                    PrintGreedyResult(finalName, stageLimitPlan, interrupted: false);
                 return;
             }
 
@@ -367,7 +368,7 @@ class Program
             {
                 emittedStages++;
 
-                if (!stage.HasPlan)
+                if (stage.Solution is null)
                 {
                     string noSolutionMarker = PipelineStageProtocol.NoSolutionMarker(stage);
                     if (stage.Outcome == StageOutcome.ProvenInfeasible)
@@ -380,7 +381,6 @@ class Program
                                 $"({stage.Elapsed.TotalSeconds:F2}s)");
                             incumbentStage = incumbentStage.WithProvenLowerBound(
                                 incumbentStage.Solution!.Score.WorstCaseSteps);
-                            finalPlan = incumbentStage.Plan!;
                         }
                         else
                         {
@@ -398,21 +398,17 @@ class Program
                         return;
                 }
 
-                StrategyPlan stagePlan = stage.Plan!;
                 if (PipelineStageProtocol.IsImprovement(stage, incumbentStage))
                 {
-                    stageSummaries.Add(FormatStageSummary(stage.Name, stagePlan));
-                    WriteStageStatus($"stage {stage.Name}: steps={stagePlan.MaxStep}, " +
-                        $"edges={stagePlan.TotalBranchEdges} ({stage.Elapsed.TotalSeconds:F2}s)");
+                    stageSummaries.Add(FormatStageSummary(stage.Name, stage.Solution!));
+                    WriteStageStatus(FormatStageStatus(stage.Name, stage.Solution!, stage.Elapsed));
                     incumbentStage = stage;
                     finalName = stage.Name;
-                    finalPlan = stagePlan;
                 }
                 else
                 {
-                    stageSummaries.Add($"{FormatStageSummary(stage.Name, stagePlan)}: no improvement");
-                    WriteStageStatus($"stage {stage.Name}: steps={stagePlan.MaxStep}, " +
-                        $"edges={stagePlan.TotalBranchEdges} ({stage.Elapsed.TotalSeconds:F2}s), no improvement");
+                    stageSummaries.Add($"{FormatStageSummary(stage.Name, stage.Solution!)}: no improvement");
+                    WriteStageStatus($"{FormatStageStatus(stage.Name, stage.Solution!, stage.Elapsed)}, no improvement");
                 }
 
                 if (PipelineStageProtocol.ReachedStageLimit(emittedStages, stageLimit))
@@ -425,11 +421,10 @@ class Program
             bool stageLimited = false;
             try
             {
-                PublicPipelineOrchestrator.RunGreedyPipeline(
+                PublicPipelineOrchestrator.RunGreedyPipelineDeferred(
                     builder,
                     CollectEdgeStage,
                     StartEdgeStage,
-                    emitPreparationStages: false,
                     preparationAlreadyApplied: true);
             }
             catch (StageLimitReachedException)
@@ -451,42 +446,27 @@ class Program
                 stageSummaries.Add("stage limit reached");
 
             Console.WriteLine($"progression: {string.Join(" -> ", stageSummaries)}");
-            Console.WriteLine();
-            string header = interrupted ? $"{finalName} ({FormatSqueeze(finalPlan)}) [interrupted]" : $"{finalName} ({FormatSqueeze(finalPlan)})";
-            Console.WriteLine($"==================== {header} ====================");
-            Console.WriteLine(interrupted
-                ? "(best strategy found before interruption; not proven optimal)"
-                : "(a valid strategy that achieves the upper bound; not proven optimal)");
-            Console.Write(DisplayEngine.RenderOverviewText(finalPlan));
-            Console.WriteLine();
-            Console.Write(DisplayEngine.RenderStrategyText(finalPlan));
+            StrategyPlan? finalPlan = MaterializeCliIncumbent(incumbentStage, ClearProgressLine);
+            if (finalPlan is not null)
+                PrintGreedyResult(finalName, finalPlan, interrupted);
             return;
         }
 
         // Exact mode: no feasible phase. StepProof proves the optimum step, then EdgeCompact trims
         // displayed edges among equally optimal groups.
-        StrategyPlan? defaultPlan = null;
-        StrategyPlan? compactPlan = null;
         StageResult? exactIncumbent = null;
-        bool compactImproved = false;
         bool exactStageLimited = false;
+        bool exactInterrupted = false;
         try
         {
-            PublicPipelineOrchestrator.RunExactPipeline(
+            PublicPipelineOrchestrator.RunExactPipelineDeferred(
                 builder,
                 stage =>
                 {
                     if (string.Equals(stage.Name, StageNames.StepProof, StringComparison.Ordinal))
                     {
-                        StrategyPlan stepPlan = stage.Plan!;
                         exactIncumbent = stage;
-                        defaultPlan = stepPlan;
-                        WriteStageStatus($"stage step-proof: steps={stepPlan.MaxStep}, " +
-                            $"edges={stepPlan.TotalBranchEdges} ({stage.Elapsed.TotalSeconds:F2}s)");
-                        Console.WriteLine($"==================== step-proof ({FormatSqueeze(stepPlan)}) ====================");
-                        Console.Write(DisplayEngine.RenderOverviewText(stepPlan));
-                        Console.WriteLine();
-                        Console.Write(DisplayEngine.RenderStrategyText(stepPlan));
+                        WriteStageStatus(FormatStageStatus(stage.Name, stage.Solution!, stage.Elapsed));
 
                         if (PipelineStageProtocol.ReachedStageLimit(1, stageLimit))
                             throw new StageLimitReachedException();
@@ -494,22 +474,12 @@ class Program
                         return;
                     }
 
-                    StrategyPlan exactCompact = stage.Plan!;
-                    compactPlan = exactCompact;
-                    compactImproved = exactIncumbent.HasValue
+                    bool compactImproved = exactIncumbent.HasValue
                         && PipelineStageProtocol.IsImprovement(stage, exactIncumbent.Value);
                     if (compactImproved)
                         exactIncumbent = stage;
-                    if (!compactImproved)
-                    {
-                        WriteStageStatus($"stage {stage.Name}: steps={exactCompact.MaxStep}, " +
-                            $"edges={exactCompact.TotalBranchEdges} ({stage.Elapsed.TotalSeconds:F2}s), no improvement");
-                    }
-                    else
-                    {
-                        WriteStageStatus($"stage {stage.Name}: steps={exactCompact.MaxStep}, " +
-                            $"edges={exactCompact.TotalBranchEdges} ({stage.Elapsed.TotalSeconds:F2}s)");
-                    }
+                    string status = FormatStageStatus(stage.Name, stage.Solution!, stage.Elapsed);
+                    WriteStageStatus(compactImproved ? status : $"{status}, no improvement");
                 },
                 name => WriteStageStatus($"stage {name}: started"));
         }
@@ -519,33 +489,97 @@ class Program
         }
         catch (OperationCanceledException)
         {
-            if (defaultPlan is null)
+            if (!exactIncumbent.HasValue)
             {
                 ClearProgressLine();
                 Console.WriteLine("interrupted before the exact search proved an optimum (no result).");
+                return;
             }
-
-            // Interrupted while trimming edges; the proven-optimal exact tree above already printed.
-            return;
+            exactInterrupted = true;
         }
 
-        if (exactStageLimited)
-            return;
-        if (defaultPlan is null || compactPlan is null || !compactImproved)
+        if (!exactIncumbent.HasValue)
             return;
 
-        string edgeCompactStageName = StageNames.FormatExactEdgeCompact(defaultPlan.MaxStep);
+        ClearProgressLine();
+        StrategyPlan? exactPlan = MaterializeCliIncumbent(exactIncumbent.Value, ClearProgressLine);
+        if (exactPlan is null)
+            return;
+
+        string exactHeader = exactInterrupted
+            ? $"{exactIncumbent.Value.Name} [interrupted]"
+            : exactIncumbent.Value.Name;
+        if (exactStageLimited || string.Equals(exactIncumbent.Value.Name, StageNames.StepProof, StringComparison.Ordinal))
+            exactHeader += $" ({FormatSqueeze(exactPlan)})";
+        Console.WriteLine($"==================== {exactHeader} ====================");
+        Console.Write(DisplayEngine.RenderOverviewText(exactPlan));
         Console.WriteLine();
-        Console.WriteLine($"==================== {edgeCompactStageName} ====================");
-        Console.Write(DisplayEngine.RenderOverviewText(compactPlan));
-        Console.WriteLine();
-        Console.Write(DisplayEngine.RenderStrategyText(compactPlan));
+        Console.Write(DisplayEngine.RenderStrategyText(exactPlan));
     }
 
-    // One-line descriptor for a single greedy stage in the progression summary: stage name plus its
-    // worst-case steps and displayed edge count, e.g. "compact≤5(steps=5, edges=44)".
-    private static string FormatStageSummary(string name, StrategyPlan plan)
-        => $"{name}(steps={plan.MaxStep}, edges={plan.TotalBranchEdges})";
+    private static string FormatStageSummary(string name, SolvedStrategy solution)
+        => $"{name}(steps={solution.Score.WorstCaseSteps}, " +
+            $"search edges={FormatSearchEdges(solution.Score.SearchEdgeCost)})";
+
+    private static string FormatStageStatus(
+        string name,
+        SolvedStrategy solution,
+        TimeSpan elapsed)
+        => $"stage {name}: steps={solution.Score.WorstCaseSteps}, " +
+            $"search edges={FormatSearchEdges(solution.Score.SearchEdgeCost)} " +
+            $"({elapsed.TotalSeconds:F2}s)";
+
+    private static string FormatSearchEdges(int? searchEdgeCost)
+        => searchEdgeCost?.ToString() ?? "n/a";
+
+    private static StrategyPlan? MaterializeCliIncumbent(
+        StageResult incumbent,
+        Action clearProgressLine)
+    {
+        using var materializationCancellation = new System.Threading.CancellationTokenSource();
+        ConsoleCancelEventHandler cancelHandler = (_, e) =>
+        {
+            e.Cancel = true;
+            materializationCancellation.Cancel();
+        };
+        Console.CancelKeyPress += cancelHandler;
+        try
+        {
+            TimeSpan priorElapsed = incumbent.Timings.Solve + incumbent.Timings.Freeze;
+            return StrategyBuilder.MaterializeSolvedStrategy(
+                incumbent.Solution!,
+                priorElapsed,
+                materializationCancellation.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            clearProgressLine();
+            Console.WriteLine("materialization cancelled (result suppressed).");
+            return null;
+        }
+        finally
+        {
+            Console.CancelKeyPress -= cancelHandler;
+        }
+    }
+
+    private static void PrintGreedyResult(
+        string finalName,
+        StrategyPlan finalPlan,
+        bool interrupted)
+    {
+        Console.WriteLine();
+        string header = interrupted
+            ? $"{finalName} ({FormatSqueeze(finalPlan)}) [interrupted]"
+            : $"{finalName} ({FormatSqueeze(finalPlan)})";
+        Console.WriteLine($"==================== {header} ====================");
+        Console.WriteLine(interrupted
+            ? "(best strategy found before interruption; not proven optimal)"
+            : "(a valid strategy that achieves the upper bound; not proven optimal)");
+        Console.Write(DisplayEngine.RenderOverviewText(finalPlan));
+        Console.WriteLine();
+        Console.Write(DisplayEngine.RenderStrategyText(finalPlan));
+    }
 
     // Squeeze on the optimum for a feasible plan: L is the proven analytic lower bound
     // (RootProvenLowerBound), U is the achieved feasible upper bound (MaxStep). When L == U the

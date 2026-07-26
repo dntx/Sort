@@ -79,10 +79,11 @@ public sealed class DisplaySearchParityTests
         var builder = new StrategyBuilder(n, m, k);
         ExactStepProofStageArtifacts artifacts = builder.ExecuteStepProofStageWithSolution();
         SolvedStrategy solution = artifacts.Solution;
+        StrategyPlan plan = Assert.IsType<StrategyPlan>(artifacts.Plan);
 
-        Assert.Equal(artifacts.Plan.MaxStep, solution.Score.WorstCaseSteps);
-        Assert.Equal(artifacts.Plan.MaxStep, solution.Bounds.ProvenLowerBound);
-        Assert.Equal(artifacts.Plan.MaxStep, solution.Bounds.FeasibleUpperBound);
+        Assert.Equal(plan.MaxStep, solution.Score.WorstCaseSteps);
+        Assert.Equal(plan.MaxStep, solution.Bounds.ProvenLowerBound);
+        Assert.Equal(plan.MaxStep, solution.Bounds.FeasibleUpperBound);
         Assert.True(solution.Bounds.IsProvenOptimal);
         Assert.Equal(SolvedStrategyStageKind.StepProof, solution.Provenance.Kind);
         Assert.Equal(StageNames.StepProof, solution.Provenance.StageName);

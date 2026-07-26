@@ -6,12 +6,12 @@ namespace TopKFinder;
 
 sealed record ExactStepProofStageArtifacts(
     SolvedStrategy Solution,
-    StrategyPlan Plan,
+    StrategyPlan? Plan,
     StageTimings Timings);
 
 partial class StrategyBuilder
 {
-    private ExactStepProofStageArtifacts BuildExactStepProofStageArtifacts()
+    private ExactStepProofStageArtifacts BuildExactStepProofStageArtifacts(bool materialize = true)
     {
         var stopwatch = Stopwatch.StartNew();
         InitializeExactSolverSession(useFeasibleBudget: false);
@@ -22,23 +22,26 @@ partial class StrategyBuilder
         _phase1bMilliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds;
         TimeSpan freezeElapsed = stopwatch.Elapsed - solveElapsed;
 
+        StrategyPlan? plan = null;
         _useCompact = false;
-        StrategyNode root = BuildState(
-            new ComparisonState(_n),
-            0,
-            _k,
-            1,
-            new MaterializationContext(Solution: solution));
+        if (materialize)
+        {
+            StrategyNode root = BuildState(
+                new ComparisonState(_n),
+                0,
+                _k,
+                1,
+                new MaterializationContext(Solution: solution));
+            plan = CreatePlan(root, stopwatch.Elapsed);
+            if (solution.Score.WorstCaseSteps != plan.MaxStep)
+            {
+                throw new InvalidOperationException(
+                    "Exact solved-strategy depth must equal the materialized plan MaxStep.");
+            }
+        }
         _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds - _phase1bMilliseconds;
         stopwatch.Stop();
         ReportProgress(force: true);
-
-        StrategyPlan plan = CreatePlan(root, stopwatch.Elapsed);
-        if (solution.Score.WorstCaseSteps != plan.MaxStep)
-        {
-            throw new InvalidOperationException(
-                "Exact solved-strategy depth must equal the materialized plan MaxStep.");
-        }
 
         return new ExactStepProofStageArtifacts(
             solution,
@@ -46,7 +49,9 @@ partial class StrategyBuilder
             new StageTimings(
                 solveElapsed,
                 freezeElapsed,
-                stopwatch.Elapsed - solveElapsed - freezeElapsed));
+                materialize
+                    ? stopwatch.Elapsed - solveElapsed - freezeElapsed
+                    : TimeSpan.Zero));
     }
 
     private SolvedStrategy CreateExactSolvedStrategy()
