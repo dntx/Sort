@@ -3,6 +3,7 @@
 ## Status
 
 - State: Architecture decisions resolved; Batches 0-7 complete; Batch 8 blocked on Batch 7 review and merge
+- State: Architecture decisions resolved; Batches 0-7 complete; Batch 8 in progress
 - Baseline: `main` after PR #450 (`df1c33e`)
 - Related work: PR #442 is intentionally paused and is not a dependency of this plan
 - Execution rule: implement one batch at a time and complete its focused validation before starting the next
@@ -549,19 +550,37 @@ Implementation notes:
 
 ### Batch 8: GUI controlled materialization
 
-Status: Not started
+Status: In progress, 2026-07-26
 
-- Introduce explicit solve-complete and display-materializing states.
-- Materialize the selected snapshot in an independent cancellable presentation task.
-- Suppress stale completions and cache a bounded number of validated plans.
-- Preserve browse-during-compact and pause-each-stage semantics.
+- Implemented request-level presentation replacement on top of run generation guards:
+    - new presentation requests cancel superseded requests,
+    - stale completions in the same run are suppressed by request version checks,
+    - step-proof, exact compact, and greedy improved deferred stages now share one queued request path.
+- Added bounded presentation materialization cache (LRU, capacity 8) keyed by immutable stage solution identity and
+    stage timing/outcome metadata; cache is cleared on run reset/teardown.
+- Added focused rendering regressions for:
+    - stale request suppression,
+    - current-request apply semantics,
+    - prior-request cancellation on replacement,
+    - bounded cache eviction and recency promotion,
+    - cache clear on reset,
+    - stale lazy detail completion suppression after tree selection changes.
+
+Remaining Batch 8 work:
+
+- finish final UI-state coherence sweep for selection replacement (tree/overview/details label consistency under rapid stage
+    replacements),
+- confirm full focused Batch 8 test run on an environment without local Windows Application Control assembly-load blocking
+    (`0x800711C7`),
+- publish one consolidated Batch 8 completion summary and close acceptance checklist.
 
 Acceptance:
 
-- no blank primary experience,
-- no incoherent stage/tree labels,
-- Stop remains prompt,
-- historical stages cannot observe mutated solver state.
+- no blank primary experience: in progress (initial placeholders and staged materialization path are active),
+- no incoherent stage/tree labels: in progress (new stale/selection guards covered; final coherence sweep pending),
+- Stop remains prompt: in progress (request cancellation and presentation CTS wiring landed),
+- historical stages cannot observe mutated solver state: in progress (deferred materialization is solution-driven; final full
+    run validation pending in CI-capable environment).
 
 ### Batch 9: Raw transition semantic split
 

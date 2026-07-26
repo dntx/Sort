@@ -109,6 +109,8 @@ partial class MainForm
         _compactImproved = false;
         _activePhase = 0;
         _proofTightenStages.Clear();
+        ResetPresentationInfrastructure();
+        _pauseEachStageForRun = _pauseEachStageCheckBox.Checked;
         _currentStageName = request.FeasibleMode ? StageNames.GreedyFeasible : StageNames.StepProof;
         _stageStartMs = 0;
 
@@ -159,17 +161,21 @@ partial class MainForm
         // Each edge stage is surfaced live. The callback runs on the worker thread; a synchronous
         // Invoke marshals it onto the UI thread AND blocks the worker until the handler returns,
         // which is what lets the optional per-stage modal pause the search until the user clicks OK.
-        StrategyPlan feasibleCompactPlan = await Task.Run(
-            () => PublicPipelineOrchestrator.RunGreedyPipeline(
-                request.Builder,
-                MarshalProofTightenStage,
-                emitPreparationStages: false,
-                preparationAlreadyApplied: true),
+        _ = await Task.Run(
+            () =>
+            {
+                PublicPipelineOrchestrator.RunGreedyPipelineDeferred(
+                    request.Builder,
+                    MarshalProofTightenStage,
+                    preparationAlreadyApplied: true);
+                return 0;
+            },
             request.CancellationToken);
+        await DrainPresentationTasksAsync();
         _runStopwatch?.Stop();
 
         RemoveTrailingComputingPlaceholder();
-        StrategyPlan selectedPlan = _incumbentStage?.Plan ?? feasibleCompactPlan;
+        StrategyPlan selectedPlan = _incumbentStage?.Plan ?? feasiblePlan;
         _compactPlan = selectedPlan;
         _compactImproved = _greedyIncumbentImproved;
         _latestProgress = CreateSnapshotFromPlan(selectedPlan);
@@ -184,14 +190,146 @@ partial class MainForm
         // the incumbent and the displayed strategy; phase 2 is EdgeCompact. The exact plan is
         // MaxStep-optimal, so EdgeCompact only trims edges among equally optimal groups.
         Interlocked.Exchange(ref _activePhase, 1);
-        StrategyPlan compactPlan = await Task.Run(
-            () => PublicPipelineOrchestrator.RunExactPipeline(request.Builder, MarshalExactStage),
+        await Task.Run(
+            () => PublicPipelineOrchestrator.RunExactPipelineDeferred(request.Builder, MarshalExactStage),
             request.CancellationToken);
+        await DrainPresentationTasksAsync();
         _runStopwatch?.Stop();
+    }
 
-        // Keep final references aligned with the exact facade return value even when the compact
-        // stage produced no strict refinement and the displayed tree stayed on the default plan.
-        _compactPlan = compactPlan;
+    private void ResetPresentationInfrastructure()
+    {
+        _presentationGeneration++;
+        _presentationRequestVersion = 0;
+        _presentationCancellationSource?.Cancel();
+        _presentationCancellationSource?.Dispose();
+        _presentationCancellationSource = new CancellationTokenSource();
+
+        _activePresentationRequestSource?.Cancel();
+        _activePresentationRequestSource?.Dispose();
+        _activePresentationRequestSource = null;
+
+        _activePresentationTask = null;
+        _exactStepStageMaterialized = false;
+        _pendingExactCompactStage = null;
+        ClearPresentationStageCache();
+    }
+
+    private static PresentationStageCacheKey BuildPresentationStageCacheKey(StageResult stage)
+        => new(
+            stage.Solution ?? throw new InvalidOperationException("Stage solution is required for presentation cache key."),
+            stage.Name,
+            stage.Timings.Solve,
+            stage.Timings.Freeze,
+            stage.Outcome,
+            stage.Incomplete);
+
+    private void ClearPresentationStageCache()
+    {
+        _presentationStageCache.Clear();
+        _presentationStageCacheLru.Clear();
+        _presentationStageCacheNodes.Clear();
+    }
+
+    private StageResult? GetCachedPresentationStageResult(StageResult stage)
+    {
+        if (stage.Solution is null)
+            return null;
+
+        PresentationStageCacheKey key = BuildPresentationStageCacheKey(stage);
+        if (!_presentationStageCache.TryGetValue(key, out StageResult cached))
+            return null;
+
+        if (_presentationStageCacheNodes.TryGetValue(key, out LinkedListNode<PresentationStageCacheKey>? node))
+        {
+            _presentationStageCacheLru.Remove(node);
+            _presentationStageCacheLru.AddLast(node);
+        }
+
+        return cached;
+    }
+
+    private bool IsPresentationStageCached(StageResult stage)
+        => GetCachedPresentationStageResult(stage).HasValue;
+
+    private void CachePresentationStageResult(StageResult stage, StageResult materialized)
+    {
+        if (stage.Solution is null)
+            return;
+
+        PresentationStageCacheKey key = BuildPresentationStageCacheKey(stage);
+        if (_presentationStageCache.ContainsKey(key))
+        {
+            _presentationStageCache[key] = materialized;
+            if (_presentationStageCacheNodes.TryGetValue(key, out LinkedListNode<PresentationStageCacheKey>? existingNode))
+            {
+                _presentationStageCacheLru.Remove(existingNode);
+                _presentationStageCacheLru.AddLast(existingNode);
+            }
+            return;
+        }
+
+        if (_presentationStageCache.Count >= PresentationStageCacheCapacity)
+        {
+            LinkedListNode<PresentationStageCacheKey>? oldest = _presentationStageCacheLru.First;
+            if (oldest is not null)
+            {
+                _presentationStageCacheLru.RemoveFirst();
+                _presentationStageCache.Remove(oldest.Value);
+                _presentationStageCacheNodes.Remove(oldest.Value);
+            }
+        }
+
+        _presentationStageCache[key] = materialized;
+        LinkedListNode<PresentationStageCacheKey> node = _presentationStageCacheLru.AddLast(key);
+        _presentationStageCacheNodes[key] = node;
+    }
+
+    private void QueueStageMaterialization(
+        StageResult stage,
+        Action<StageResult> apply)
+    {
+        _activePresentationRequestSource?.Cancel();
+        _activePresentationRequestSource?.Dispose();
+
+        CancellationToken parentToken = _presentationCancellationSource?.Token ?? CancellationToken.None;
+        _activePresentationRequestSource = CancellationTokenSource.CreateLinkedTokenSource(parentToken);
+
+        int requestVersion = ++_presentationRequestVersion;
+        int generation = _presentationGeneration;
+        CancellationToken requestToken = _activePresentationRequestSource.Token;
+
+        _activePresentationTask = MaterializeExactStageAsync(
+            stage,
+            apply,
+            generation,
+            requestVersion,
+            requestToken);
+    }
+
+    private void InvalidateActivePresentationRequest()
+    {
+        _activePresentationRequestSource?.Cancel();
+        _activePresentationRequestSource?.Dispose();
+        _activePresentationRequestSource = null;
+
+        // Bump request version so any queued UI-apply checks reject older completions
+        // even if cancellation is observed after materialization completes.
+        _presentationRequestVersion++;
+    }
+
+    private async Task DrainPresentationTasksAsync()
+    {
+        while (true)
+        {
+            Task? task = _activePresentationTask;
+            if (task is null)
+                break;
+
+            await task;
+            if (ReferenceEquals(_activePresentationTask, task))
+                _activePresentationTask = null;
+        }
     }
 
     private void HandleRunCanceled()
@@ -228,6 +366,18 @@ partial class MainForm
 
         _runCancellationSource?.Dispose();
         _runCancellationSource = null;
+
+        _presentationCancellationSource?.Cancel();
+        _presentationCancellationSource?.Dispose();
+        _presentationCancellationSource = null;
+
+        _activePresentationRequestSource?.Cancel();
+        _activePresentationRequestSource?.Dispose();
+        _activePresentationRequestSource = null;
+
+        _activePresentationTask = null;
+        ClearPresentationStageCache();
+
         _activeBuilder = null;
     }
 
@@ -248,7 +398,16 @@ partial class MainForm
 
         try
         {
-            Invoke(() => onStage(stage));
+            if (_pauseEachStageForRun)
+            {
+                // In pause mode we preserve strict stage-by-stage blocking semantics.
+                Invoke(() => onStage(stage));
+            }
+            else
+            {
+                // In normal mode do not block the solver thread on UI work.
+                BeginInvoke(() => onStage(stage));
+            }
         }
         catch (ObjectDisposedException)
         {
@@ -265,33 +424,127 @@ partial class MainForm
 
     private void OnExactStage(StageResult stage)
     {
-        if (!stage.HasPlan)
+        if (stage.Solution is null)
             return;
 
         if (string.Equals(stage.Name, StageNames.StepProof, StringComparison.Ordinal))
         {
-            StrategyPlan defaultPlan = stage.Plan!;
             _incumbentStage = stage;
-            _defaultPlan = defaultPlan;
-            _feasiblePlan = defaultPlan;
-            _latestProgress = CreateSnapshotFromPlan(defaultPlan);
-            PopulateTree(defaultPlan, defaultPlan, compactPlan: null, compactImproved: false);
-            _completedDefaultStats = defaultPlan.SearchStatistics;
-            UpdateSummaryText(defaultPlan, defaultPlan, compactPlan: null, compactImproved: false);
-            UpdateStatsPanels();
+            _defaultPlan = null;
+            _feasiblePlan = null;
+            _compactPlan = null;
 
-            // The exact plan is on screen; the compact pass runs on a background thread, so the UI
-            // thread is free: drop the wait cursor and keep tree navigation enabled for the rest of
-            // the run (the user can browse the strategy while compact search continues).
-            SetRunUiState(RunUiState.CompactComputingInteractive);
-
-            // Phase 2: compact refinement.
+            string compactStageName = StageNames.FormatExactEdgeCompact(
+                stage.Solution.Score.WorstCaseSteps);
             Interlocked.Exchange(ref _activePhase, 2);
-            _currentStageName = StageNames.FormatExactEdgeCompact(defaultPlan.MaxStep);
+            _currentStageName = compactStageName;
             _stageStartMs = _runStopwatch?.ElapsedMilliseconds ?? 0;
+
+            QueueStageMaterialization(stage, ApplyMaterializedStepProofStage);
             return;
         }
 
+        if (!_exactStepStageMaterialized)
+        {
+            _pendingExactCompactStage = stage;
+            return;
+        }
+
+        QueueStageMaterialization(stage, ApplyMaterializedExactCompactStage);
+    }
+
+    private async Task MaterializeExactStageAsync(
+        StageResult stage,
+        Action<StageResult> apply,
+        int generation,
+        int requestVersion,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            StageResult materialized;
+            if (GetCachedPresentationStageResult(stage) is { } cached)
+            {
+                materialized = cached;
+            }
+            else
+            {
+                TimeSpan priorElapsed = stage.Timings.Solve + stage.Timings.Freeze;
+                StrategyPlan plan = await Task.Run(
+                    () => StrategyBuilder.MaterializeSolvedStrategy(stage.Solution!, priorElapsed, cancellationToken),
+                    cancellationToken);
+
+                TimeSpan materialize = plan.Elapsed - priorElapsed;
+                if (materialize < TimeSpan.Zero)
+                    materialize = TimeSpan.Zero;
+
+                materialized = new StageResult(
+                    stage.Name,
+                    plan,
+                    stage.Timings.Solve + stage.Timings.Freeze + materialize,
+                    stage.Outcome,
+                    stage.Solution,
+                    new StageTimings(stage.Timings.Solve, stage.Timings.Freeze, materialize));
+
+                CachePresentationStageResult(stage, materialized);
+            }
+
+            if (!CanAcceptStageCallback()
+                || generation != _presentationGeneration
+                || requestVersion != _presentationRequestVersion)
+                return;
+
+            var applyCompleted = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            BeginInvoke(() =>
+            {
+                try
+                {
+                    if (cancellationToken.IsCancellationRequested
+                        || !CanAcceptStageCallback()
+                        || generation != _presentationGeneration
+                        || requestVersion != _presentationRequestVersion)
+                        return;
+
+                    apply(materialized);
+                }
+                finally
+                {
+                    applyCompleted.TrySetResult(null);
+                }
+            });
+            await applyCompleted.Task;
+        }
+        catch (OperationCanceledException)
+        {
+            // Stop/teardown cancelled presentation; no UI update should land.
+        }
+    }
+
+    private void ApplyMaterializedStepProofStage(StageResult stage)
+    {
+        StrategyPlan defaultPlan = stage.Plan!;
+        _incumbentStage = stage;
+        _defaultPlan = defaultPlan;
+        _feasiblePlan = defaultPlan;
+        _latestProgress = CreateSnapshotFromPlan(defaultPlan);
+        PopulateTree(defaultPlan, defaultPlan, compactPlan: null, compactImproved: false);
+        _completedDefaultStats = defaultPlan.SearchStatistics;
+        UpdateSummaryText(defaultPlan, defaultPlan, compactPlan: null, compactImproved: false);
+        UpdateStatsPanels();
+
+        // The exact plan is now browsable while compact search may still be running.
+        SetRunUiState(RunUiState.CompactComputingInteractive);
+
+        _exactStepStageMaterialized = true;
+        if (_pendingExactCompactStage is { } pendingCompact)
+        {
+            _pendingExactCompactStage = null;
+            QueueStageMaterialization(pendingCompact, ApplyMaterializedExactCompactStage);
+        }
+    }
+
+    private void ApplyMaterializedExactCompactStage(StageResult stage)
+    {
         if (_defaultPlan is null)
             return;
 
@@ -344,6 +597,19 @@ partial class MainForm
         if (_feasiblePlan is null || _treeView.Nodes.Count == 0)
             return;
 
+        bool improved = _incumbentStage.HasValue
+            && PipelineStageProtocol.IsImprovement(stage, _incumbentStage.Value);
+
+        bool needsDeferredMaterialization = improved && !stage.HasPlan && stage.Solution is not null;
+        if (!needsDeferredMaterialization)
+            InvalidateActivePresentationRequest();
+
+        if (needsDeferredMaterialization)
+        {
+            QueueStageMaterialization(stage, OnProofTightenStage);
+            return;
+        }
+
         _proofTightenStages.Add(stage);
         int index = _proofTightenStages.Count - 1;
         string scope = $"edge{index}";
@@ -353,9 +619,6 @@ partial class MainForm
         // that has a solution but is no better is recorded and marked "no improvement" but rendered
         // only as a leaf note. Tightening
         // continues regardless, since the next ceiling is driven by max-steps, not edges.
-        bool improved = _incumbentStage.HasValue
-            && PipelineStageProtocol.IsImprovement(stage, _incumbentStage.Value);
-
         // A follow-up stage always lands after every emitted stage except the terminal edge-compact
         // pass: after a proof-tighten stage -- whether it found a solution or proved/failed the
         // ceiling -- the worker next probes a deeper feasible ceiling or runs the final edge-compaction

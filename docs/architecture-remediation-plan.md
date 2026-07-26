@@ -18,6 +18,11 @@ Refactor governance plan for architecture boundaries, naming consistency, and ma
 - Batch B2.2: Done. Canonicalization and automorphism helpers were extracted to ComparisonState.Algorithms.cs; ComparisonState now primarily owns state, caches, mutation entrypoints, and delegating calls.
 - Batch D3.1: Done. Search-bound orchestration now shares state preparation, terminal resolution, exact-result commits, and bounded-failure lower-bound commits while preserving search behavior.
 
+## Status Addendum (2026-07-26)
+- Search/display separation follow-up is tracked in `docs/search-display-separation-plan.md` and is the active source of truth for post-A/B architecture work.
+- Current state: Batches 0-7 complete; Batch 8 (GUI controlled materialization) is in progress with request-level cancellation, stale suppression, and bounded presentation-cache slices already landed.
+- Environment note: local runtime test execution can still be blocked by Windows Application Control (`0x800711C7`); build and static checks remain the local validation baseline, with CI as runtime confirmation.
+
 ## Repo Layout Acceptance Closeout (2026-07-21)
 - Repo Layout: Code/Layout Done.
 - Runtime Verification: Blocked in this environment by runtime policy constraints (test execution hangs at VSTest startup in this environment), while code/layout migration and build validation are complete.

@@ -115,6 +115,7 @@ partial class MainForm
             return;
 
         _runCancellationSource.Cancel();
+        _presentationCancellationSource?.Cancel();
 
         _stopEscalationSource?.Cancel();
         _stopEscalationSource?.Dispose();

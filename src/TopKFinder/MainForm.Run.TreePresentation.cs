@@ -316,6 +316,8 @@ partial class MainForm
     private TreeNode BuildStageTreeNode(StageResult stage, string scope, bool improved)
         => improved
             ? CreatePlanTreeRoot(stage.Name, stage.Plan!, scope, stage.Elapsed)
+            : stage.Solution is not null && !stage.HasPlan
+                ? CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, "no improvement")
             : stage.HasPlan
                 ? CreateNoImprovementTreeRoot(stage.Name, stage.Plan!, stage.Elapsed)
                 : CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, NoSolutionMarker(stage));
@@ -323,6 +325,8 @@ partial class MainForm
     private TreeNode BuildStageOverviewNode(StageResult stage, string scope, bool improved)
         => improved
             ? BuildOverviewSectionNode(stage.Plan!, scope, stage.Name, stage.Elapsed)
+            : stage.Solution is not null && !stage.HasPlan
+                ? BuildOverviewNoteNode(FormatStageRootLabel(stage.Name, stage.Elapsed, plan: null, marker: "no improvement"))
             : BuildOverviewNoteNode(FormatStageRootLabel(
                 stage.Name,
                 stage.Elapsed,
