@@ -154,7 +154,7 @@ public sealed class MainFormRenderingTests
     }
 
     [Fact]
-    public void MaterializeExactStageAsync_StaleRequestVersion_DoesNotApply()
+    public async Task MaterializeExactStageAsync_StaleRequestVersion_DoesNotApply()
     {
         StageResult stage = CreateDeferredExactStepStage();
 
@@ -173,14 +173,14 @@ public sealed class MainFormRenderingTests
             4,
             CancellationToken.None);
 
-        task.GetAwaiter().GetResult();
+        await task;
         Application.DoEvents();
 
         Assert.False(applied);
     }
 
     [Fact]
-    public void MaterializeExactStageAsync_CurrentRequestVersion_Applies()
+    public async Task MaterializeExactStageAsync_CurrentRequestVersion_Applies()
     {
         StageResult stage = CreateDeferredExactStepStage();
 
@@ -199,14 +199,14 @@ public sealed class MainFormRenderingTests
             6,
             CancellationToken.None);
 
-        task.GetAwaiter().GetResult();
-        Application.DoEvents();
+        await PumpUiUntilTaskCompletesAsync(task, timeoutMs: 1000);
+        await task;
 
         Assert.True(applied);
     }
 
     [Fact]
-    public void MaterializeExactStageAsync_OnlyCurrentRequestApplies()
+    public async Task MaterializeExactStageAsync_OnlyCurrentRequestApplies()
     {
         StageResult stage = CreateDeferredExactStepStage();
 
@@ -235,8 +235,9 @@ public sealed class MainFormRenderingTests
             9,
             CancellationToken.None);
 
-        Task.WhenAll(stale, current).GetAwaiter().GetResult();
-        Application.DoEvents();
+        Task combined = Task.WhenAll(stale, current);
+        await PumpUiUntilTaskCompletesAsync(combined, timeoutMs: 1000);
+        await combined;
 
         Assert.False(staleApplied);
         Assert.True(currentApplied);
@@ -283,7 +284,7 @@ public sealed class MainFormRenderingTests
     }
 
     [Fact]
-    public void QueueStageMaterialization_NewRequestCancelsPriorRequest()
+    public async Task QueueStageMaterialization_NewRequestCancelsPriorRequest()
     {
         StageResult stage = CreateDeferredExactStepStage();
 
@@ -308,7 +309,7 @@ public sealed class MainFormRenderingTests
         // Force any in-flight materialization to short-circuit before UI apply so drain is deterministic in tests.
         SetPrivateField(form, "_presentationRequestVersion", int.MaxValue);
         Task drain = InvokePrivateInstance<Task>(form, "DrainPresentationTasksAsync");
-        drain.GetAwaiter().GetResult();
+        await drain;
 
         Assert.NotSame(firstRequest, secondRequest);
         Assert.True(firstRequest.IsCancellationRequested);
@@ -464,6 +465,19 @@ public sealed class MainFormRenderingTests
         }
 
         Application.DoEvents();
+    }
+
+    private static async Task PumpUiUntilTaskCompletesAsync(Task task, int timeoutMs)
+    {
+        Stopwatch stopwatch = Stopwatch.StartNew();
+        while (!task.IsCompleted && stopwatch.ElapsedMilliseconds < timeoutMs)
+        {
+            Application.DoEvents();
+            await Task.Delay(10);
+        }
+
+        Application.DoEvents();
+        Assert.True(task.IsCompleted, $"Task did not complete after pumping UI messages for {timeoutMs} ms.");
     }
 
     private static void InvokePrivateInstanceVoid(object instance, string methodName, params object?[] args)
