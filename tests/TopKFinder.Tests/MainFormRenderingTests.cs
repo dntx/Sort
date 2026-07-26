@@ -199,7 +199,7 @@ public sealed class MainFormRenderingTests
             6,
             CancellationToken.None);
 
-        await PumpUiUntilTaskCompletesAsync(task, timeoutMs: 1000);
+        PumpUiUntilTaskCompletes(task, timeoutMs: 1000);
         await task;
 
         Assert.True(applied);
@@ -236,7 +236,7 @@ public sealed class MainFormRenderingTests
             CancellationToken.None);
 
         Task combined = Task.WhenAll(stale, current);
-        await PumpUiUntilTaskCompletesAsync(combined, timeoutMs: 1000);
+        PumpUiUntilTaskCompletes(combined, timeoutMs: 1000);
         await combined;
 
         Assert.False(staleApplied);
@@ -467,13 +467,13 @@ public sealed class MainFormRenderingTests
         Application.DoEvents();
     }
 
-    private static async Task PumpUiUntilTaskCompletesAsync(Task task, int timeoutMs)
+    private static void PumpUiUntilTaskCompletes(Task task, int timeoutMs)
     {
         Stopwatch stopwatch = Stopwatch.StartNew();
         while (!task.IsCompleted && stopwatch.ElapsedMilliseconds < timeoutMs)
         {
             Application.DoEvents();
-            await Task.Delay(10);
+            Thread.Sleep(10);
         }
 
         Application.DoEvents();
