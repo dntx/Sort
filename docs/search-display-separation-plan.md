@@ -2,8 +2,7 @@
 
 ## Status
 
-- State: Architecture decisions resolved; Batches 0-7 complete; Batch 8 blocked on Batch 7 review and merge
-- State: Architecture decisions resolved; Batches 0-7 complete; Batch 8 in progress
+- State: Architecture decisions resolved; Batches 0-9 complete; Batch 10 next
 - Baseline: `main` after PR #450 (`df1c33e`)
 - Related work: PR #442 is intentionally paused and is not a dependency of this plan
 - Execution rule: implement one batch at a time and complete its focused validation before starting the next
@@ -550,7 +549,7 @@ Implementation notes:
 
 ### Batch 8: GUI controlled materialization
 
-Status: In progress, 2026-07-26
+Status: Complete, 2026-07-26
 
 - Implemented request-level presentation replacement on top of run generation guards:
     - new presentation requests cancel superseded requests,
@@ -566,29 +565,51 @@ Status: In progress, 2026-07-26
     - cache clear on reset,
     - stale lazy detail completion suppression after tree selection changes.
 
-Remaining Batch 8 work:
-
-- finish final UI-state coherence sweep for selection replacement (tree/overview/details label consistency under rapid stage
-    replacements),
-- confirm full focused Batch 8 test run on an environment without local Windows Application Control assembly-load blocking
-    (`0x800711C7`),
-- publish one consolidated Batch 8 completion summary and close acceptance checklist.
-
 Acceptance:
 
-- no blank primary experience: in progress (initial placeholders and staged materialization path are active),
-- no incoherent stage/tree labels: in progress (new stale/selection guards covered; final coherence sweep pending),
-- Stop remains prompt: in progress (request cancellation and presentation CTS wiring landed),
-- historical stages cannot observe mutated solver state: in progress (deferred materialization is solution-driven; final full
-    run validation pending in CI-capable environment).
+- no blank primary experience: complete (initial placeholders and staged materialization path are active),
+- no incoherent stage/tree labels: complete (selection replacement and stale presentation invalidation are covered by focused
+    UI regressions),
+- Stop remains prompt: complete (request cancellation and presentation CTS wiring landed),
+- historical stages cannot observe mutated solver state: complete (deferred materialization is solution-driven and the post-fix
+    CI run passed before merge).
 
 ### Batch 9: Raw transition semantic split
 
-Status: Not started
+Status: Complete, 2026-07-26
 
 - Extract raw outcome/successor semantics shared by search and display.
 - Remove search projection's dependency on display branch-line planning.
 - Keep display orbit/folding/summary logic in the display adapter.
+
+Progress:
+
+- Replaced the search-only `SearchBranchSpec` carrier with shared raw `TransitionTargetFields`, so search transition
+    assembly now flows through one target-field abstraction instead of a search-specific display-shaped wrapper.
+- Split transition-planner wiring into distinct display/search line-planning entrypoints, so subsequent Batch 9 work can
+    narrow search-side planning without perturbing the display path.
+- Narrowed line-planner inputs from full `EquivalentOrderSummary` payloads to a boolean "single merged orbit" predicate,
+    reducing summary-shape coupling in both the shared kernel and the display planner seam.
+- Removed the unused search line-to-target helper after the raw-target path became the direct search assembly route.
+- Replaced the search-side singleton-orbit fold check with a family-level boolean predicate, so the search planner no
+    longer has to carry `EquivalentOrderSummary` just to decide whether a merged orbit stays folded.
+- Moved the search-side representative selector into `StrategyBuilder.Transitions.cs`, leaving `SearchTransitionPlanner`
+    responsible for target assembly instead of search-specific orbit-choice logic.
+- Moved display-side branch-spec representative/summary selection out of `SearchTransitionPlanner` and back into
+    `StrategyBuilder.Transitions.cs`, so the planner now stays focused on orchestration while display-only branch shaping
+    lives beside the underlying orbit and summary helpers.
+- Moved both display and search `TransitionSpec` projection back out of `SearchTransitionPlanner`, so the planner surface
+    now ends at raw `BranchSpec` and `TransitionTargetFields` results while effect-bearing transition payloads are rebuilt
+    in `StrategyBuilder.Transitions.cs`.
+- Moved chosen-group branch traversal out of `SearchTransitionPlanner` as well, so the planner now consumes group-level
+    display/search planning seams instead of iterating merged branches on behalf of the builder.
+- Removed the last single-use branch-spec expansion helper from `SearchTransitionPlanner`, leaving its display path as a
+    direct doomed-tail-or-lines fallback instead of a layered generic/planned-spec wrapper chain.
+- Split the shared orbit/projection grouping kernel into neutral projection buckets, then routed display back through
+    `DisplayBranchLinePlanner` while search now consumes raw buckets directly without depending on branch-line-named
+    planning APIs.
+- Removed the last explicit search-side `EquivalentOrderSummary` references from transition-target planning, leaving the
+    search path dependent only on boolean orbit-fold predicates instead of display summary payloads.
 
 Acceptance:
 

@@ -32,4 +32,18 @@ public sealed class SearchTransitionPlannerStructureTests
         FieldInfo[] instanceFields = plannerType.GetFields(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
         Assert.DoesNotContain(instanceFields, field => field.FieldType == typeof(StrategyBuilder));
     }
+
+    [Fact]
+    public void SearchTransitionPlanner_ExposesRawPlanningSeamsInsteadOfTransitionSpecProjection()
+    {
+        Type plannerType = typeof(SearchTransitionPlanner);
+
+        Assert.NotNull(plannerType.GetMethod(nameof(SearchTransitionPlanner.BuildBranchSpecs)));
+        Assert.NotNull(plannerType.GetMethod(nameof(SearchTransitionPlanner.BuildSearchTransitionTargets)));
+        Assert.Null(plannerType.GetMethod("BuildDisplayTransitionSpecs"));
+        Assert.Null(plannerType.GetMethod("BuildSearchTransitionSpecs"));
+        Assert.Null(plannerType.GetMethod("PlanDisplayBranchLinesForChosenGroup", BindingFlags.Instance | BindingFlags.NonPublic));
+        Assert.Null(plannerType.GetMethod("PlanSearchTransitionTargetsForChosenGroup", BindingFlags.Instance | BindingFlags.NonPublic));
+        Assert.Null(plannerType.GetMethod("BuildPlannedBranchSpecsForChosenGroup", BindingFlags.Instance | BindingFlags.NonPublic));
+    }
 }
