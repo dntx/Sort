@@ -243,6 +243,46 @@ public sealed class MainFormRenderingTests
     }
 
     [Fact]
+    public void ShowNodeDetails_StaleLazyCompletion_DoesNotOverrideLatestSelection()
+    {
+        using var form = new MainForm();
+        _ = form.Handle;
+
+        TreeView treeView = GetPrivateField<TreeView>(form, "_treeView");
+        RichTextBox details = GetPrivateField<RichTextBox>(form, "_detailsTextBox");
+        using var gate = new ManualResetEventSlim(false);
+
+        var staleNode = new TreeNode("stale")
+        {
+            Tag = CreateLazyNodeDetails(() =>
+            {
+                gate.Wait();
+                return "stale-details";
+            }),
+        };
+        var latestNode = new TreeNode("latest")
+        {
+            Tag = "latest-details",
+        };
+
+        treeView.Nodes.Add(staleNode);
+        treeView.Nodes.Add(latestNode);
+
+        treeView.SelectedNode = staleNode;
+        InvokePrivateInstanceVoid(form, "ShowNodeDetails", staleNode);
+        Assert.Equal("Loading details...", details.Text);
+
+        treeView.SelectedNode = latestNode;
+        InvokePrivateInstanceVoid(form, "ShowNodeDetails", latestNode);
+        Assert.Equal("latest-details", details.Text);
+
+        gate.Set();
+        PumpUiUntil(() => details.Text == "latest-details", timeoutMs: 1000);
+
+        Assert.Equal("latest-details", details.Text);
+    }
+
+    [Fact]
     public void QueueStageMaterialization_NewRequestCancelsPriorRequest()
     {
         StageResult stage = CreateDeferredExactStepStage();
@@ -362,6 +402,33 @@ public sealed class MainFormRenderingTests
         return value is T typed
             ? typed
             : throw new InvalidOperationException($"{type.Name}.{methodName} returned unexpected value");
+    }
+
+    private static object CreateLazyNodeDetails(Func<string> factory)
+    {
+        Type lazyType = typeof(MainForm).GetNestedType("LazyNodeDetails", BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Missing nested type MainForm.LazyNodeDetails");
+        ConstructorInfo constructor = lazyType.GetConstructor(
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic,
+            binder: null,
+            new[] { typeof(Func<string>) },
+            modifiers: null)
+            ?? throw new InvalidOperationException("Missing LazyNodeDetails(Func<string>) constructor");
+        return constructor.Invoke(new object[] { factory });
+    }
+
+    private static void PumpUiUntil(Func<bool> condition, int timeoutMs)
+    {
+        Stopwatch stopwatch = Stopwatch.StartNew();
+        while (stopwatch.ElapsedMilliseconds < timeoutMs)
+        {
+            Application.DoEvents();
+            if (condition())
+                return;
+            Thread.Sleep(10);
+        }
+
+        Application.DoEvents();
     }
 
     private static void InvokePrivateInstanceVoid(object instance, string methodName, params object?[] args)
