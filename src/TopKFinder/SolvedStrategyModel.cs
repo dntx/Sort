@@ -7,7 +7,18 @@ namespace TopKFinder;
 
 readonly record struct ProblemShape(int N, int M, int RequestedK, int K);
 
-readonly record struct StrategyScore(int WorstCaseSteps, int? SearchEdgeCost = null);
+readonly record struct StrategyScore(int WorstCaseSteps, int? SearchEdgeCost = null)
+{
+    public bool IsStrictRefinementOver(StrategyScore incumbent)
+    {
+        if (WorstCaseSteps != incumbent.WorstCaseSteps)
+            return WorstCaseSteps < incumbent.WorstCaseSteps;
+
+        return SearchEdgeCost.HasValue
+            && incumbent.SearchEdgeCost.HasValue
+            && SearchEdgeCost.Value < incumbent.SearchEdgeCost.Value;
+    }
+}
 
 readonly record struct BoundEvidence(
     int ProvenLowerBound,
@@ -89,6 +100,23 @@ sealed class SolvedStrategy
     public StageProvenance Provenance { get; }
     public SearchStatistics SearchStatistics { get; }
 
+    public SolvedStrategy WithProvenLowerBound(int provenLowerBound)
+    {
+        BoundEvidence bounds = Bounds with
+        {
+            ProvenLowerBound = provenLowerBound,
+            IsProvenOptimal = provenLowerBound == Score.WorstCaseSteps,
+        };
+        return new SolvedStrategy(
+            Problem,
+            RootKey,
+            Nodes,
+            Score,
+            bounds,
+            Provenance,
+            SearchStatistics.WithRootProvenLowerBound(provenLowerBound));
+    }
+
     private static IReadOnlyDictionary<SearchStateKey, SolvedStrategyNode> FreezeNodes(
         IReadOnlyDictionary<SearchStateKey, SolvedStrategyNode> nodes)
     {
@@ -134,6 +162,39 @@ sealed class SolvedStrategy
             statistics.CompactGroupsEnumerated,
             statistics.CompactStepOptimalGroups,
             statistics.RootProvenLowerBound);
+    }
+}
+
+static class SolvedStrategyScoreService
+{
+    public static int ComputeSearchEdgeCost(
+        SearchStateKey rootKey,
+        IReadOnlyDictionary<SearchStateKey, SolvedStrategyNode> nodes)
+    {
+        var memo = new Dictionary<SearchStateKey, int>();
+        return Compute(rootKey, nodes, memo);
+    }
+
+    private static int Compute(
+        SearchStateKey key,
+        IReadOnlyDictionary<SearchStateKey, SolvedStrategyNode> nodes,
+        Dictionary<SearchStateKey, int> memo)
+    {
+        if (!nodes.TryGetValue(key, out SolvedStrategyNode? node)
+            || node.Kind == SolvedStrategyNodeKind.FinalChoice)
+        {
+            return 0;
+        }
+
+        if (memo.TryGetValue(key, out int cached))
+            return cached;
+
+        int cost = node.DistinctSuccessors.Count;
+        foreach (SearchStateKey successor in node.DistinctSuccessors)
+            cost = checked(cost + Compute(successor, nodes, memo));
+
+        memo.Add(key, cost);
+        return cost;
     }
 }
 

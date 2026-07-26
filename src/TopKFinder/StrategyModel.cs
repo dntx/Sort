@@ -184,6 +184,29 @@ enum StageOutcome
     Completed,
 }
 
+readonly record struct StageTimings(
+    TimeSpan Solve,
+    TimeSpan Freeze,
+    TimeSpan Materialize)
+{
+    public TimeSpan Total => Solve + Freeze + Materialize;
+
+    public static StageTimings Legacy(TimeSpan elapsed)
+        => new(elapsed, TimeSpan.Zero, TimeSpan.Zero);
+
+    public static StageTimings FromTotal(
+        TimeSpan elapsed,
+        TimeSpan freeze,
+        TimeSpan materialize)
+    {
+        TimeSpan solve = elapsed - freeze - materialize;
+        return new StageTimings(
+            solve < TimeSpan.Zero ? TimeSpan.Zero : solve,
+            freeze,
+            materialize);
+    }
+}
+
 // One stage of the proof-tighten progression as it is produced by RunGreedyPipeline: the final
 // edge-compaction pass, each successful downward tightening, or a terminal ceiling. Name is the stage
 // label (e.g. "exact-edge-compact@6", "proof-tighten<=4"); Plan is the materialized strategy for Tightened
@@ -192,18 +215,33 @@ enum StageOutcome
 readonly struct StageResult
 {
     public StageResult(string name, StrategyPlan? plan, TimeSpan elapsed,
-        StageOutcome outcome = StageOutcome.Tightened)
+        StageOutcome outcome = StageOutcome.Tightened,
+        SolvedStrategy? solution = null,
+        StageTimings? timings = null)
     {
         Name = name;
         Plan = plan;
         Elapsed = elapsed;
         Outcome = outcome;
+        Solution = solution;
+        Timings = timings ?? StageTimings.Legacy(elapsed);
     }
 
     public string Name { get; }
     public StrategyPlan? Plan { get; }
     public TimeSpan Elapsed { get; }
     public StageOutcome Outcome { get; }
+    public SolvedStrategy? Solution { get; }
+    public StageTimings Timings { get; }
+
+    public StageResult WithProvenLowerBound(int provenLowerBound)
+        => new(
+            Name,
+            Plan?.WithRootProvenLowerBound(provenLowerBound),
+            Elapsed,
+            Outcome,
+            Solution?.WithProvenLowerBound(provenLowerBound),
+            Timings);
 
     // A materialized strategy tree is attached (true for Tightened and Completed). This is a
     // DISPLAY/progress predicate only -- it does NOT imply improvement: a Completed plan is the terminal

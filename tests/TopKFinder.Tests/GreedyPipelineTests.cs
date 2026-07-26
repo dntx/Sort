@@ -86,6 +86,11 @@ public class GreedyPipelineTests
 
         StageResult edgeStage = Assert.Single(stages, s => s.Outcome == StageOutcome.Completed);
         Assert.Same(plan, edgeStage.Plan);
+        Assert.NotNull(edgeStage.Solution);
+        Assert.Equal(SolvedStrategyStageKind.GreedyEdgeCompact, edgeStage.Solution!.Provenance.Kind);
+        Assert.Equal(edgeStage.Elapsed, edgeStage.Timings.Total);
+        Assert.True(edgeStage.Timings.Freeze > TimeSpan.Zero);
+        Assert.True(edgeStage.Timings.Materialize > TimeSpan.Zero);
         Assert.True(plan.SearchStatistics.SearchTreeEdges.HasValue && plan.SearchStatistics.SearchTreeEdges.Value > 0,
             "expected edge-compact stage to report positive search-tree edge objective");
         Assert.True(plan.SearchStatistics.CompactStatesSolved > 0,
@@ -113,6 +118,46 @@ public class GreedyPipelineTests
 
         Assert.Equal(baselinePath.MaxStep, preparedPath.MaxStep);
         Assert.Equal(baselinePath.TotalBranchEdges, preparedPath.TotalBranchEdges);
+    }
+
+    [Fact]
+    public void GreedyPreparation_EmitsSolutionsAndSplitTimings()
+    {
+        var started = new List<string>();
+        var completed = new List<StageResult>();
+
+        PublicPipelineOrchestrator.RunGreedyPreparation(
+            new StrategyBuilder(9, 3, 3),
+            onStageCompleted: completed.Add,
+            onStageStart: started.Add);
+
+        Assert.Equal(started, completed.Select(stage => stage.Name));
+        Assert.NotEmpty(completed);
+        Assert.All(completed, stage =>
+        {
+            Assert.NotNull(stage.Plan);
+            Assert.NotNull(stage.Solution);
+            Assert.Equal(stage.Plan!.MaxStep, stage.Solution!.Score.WorstCaseSteps);
+            Assert.True(stage.Solution.Score.SearchEdgeCost.HasValue);
+            Assert.Equal(stage.Elapsed, stage.Timings.Total);
+            Assert.True(stage.Timings.Freeze > TimeSpan.Zero);
+            Assert.True(stage.Timings.Materialize > TimeSpan.Zero);
+        });
+        Assert.Equal(SolvedStrategyStageKind.GreedyFeasible, completed[0].Solution!.Provenance.Kind);
+    }
+
+    [Theory]
+    [InlineData(6, 2, 2)]
+    [InlineData(9, 3, 3)]
+    public void GreedyFeasible_InlineSearchCostMatchesFrozenSnapshot(int n, int m, int k)
+    {
+        GreedyFeasibleStageArtifacts artifacts =
+            new StrategyBuilder(n, m, k).ExecuteGreedyFeasibleStageWithSolution();
+
+        int recomputed = SolvedStrategyScoreService.ComputeSearchEdgeCost(
+            artifacts.Solution.RootKey,
+            artifacts.Solution.Nodes);
+        Assert.Equal(recomputed, artifacts.Solution.Score.SearchEdgeCost);
     }
 
     // Proof-tighten now auto-expands capped probes on the SAME budget (starting from

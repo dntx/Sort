@@ -239,12 +239,14 @@ partial class StrategyBuilder
             _phase1bMilliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds;
 
             int worstCaseSteps = GetMinWorstCaseSteps(new ComparisonState(_n), _k);
+            TimeSpan solveElapsed = stopwatch.Elapsed;
             SolvedStrategy solution = CreateCompactSolvedStrategy(
                 SolvedStrategyStageKind.ExactEdgeCompact,
                 StageNames.FormatExactEdgeCompact(worstCaseSteps),
                 isProvenOptimal: true,
                 wasCandidateEnumerationCapped: false,
                 includeSearchEdgeCost: true);
+            TimeSpan freezeElapsed = stopwatch.Elapsed - solveElapsed;
             _useCompact = true;
             StrategyPlan plan = MaterializeCompactSolution(
                 solution,
@@ -254,7 +256,13 @@ partial class StrategyBuilder
 
             _phase2Milliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds - _phase1bMilliseconds;
             ReportProgress(force: true);
-            return new CompactStageArtifacts(solution, plan);
+            return new CompactStageArtifacts(
+                solution,
+                plan,
+                new StageTimings(
+                    solveElapsed,
+                    freezeElapsed,
+                    stopwatch.Elapsed - solveElapsed - freezeElapsed));
         });
     }
 

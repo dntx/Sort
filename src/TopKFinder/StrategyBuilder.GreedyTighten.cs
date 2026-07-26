@@ -4,7 +4,10 @@ using System.Diagnostics;
 
 namespace TopKFinder;
 
-sealed record GreedyTightenStageArtifacts(SolvedStrategy Solution, StrategyPlan Plan);
+sealed record GreedyTightenStageArtifacts(
+    SolvedStrategy Solution,
+    StrategyPlan Plan,
+    StageTimings Timings);
 
 partial class StrategyBuilder
 {
@@ -119,7 +122,9 @@ partial class StrategyBuilder
 
             RunGreedyTighten();
             ResolveGreedyTightenDisplaySafePolicy();
+            TimeSpan solveElapsed = stopwatch.Elapsed;
             SolvedStrategy solution = CreateGreedyTightenSolvedStrategy();
+            TimeSpan freezeElapsed = stopwatch.Elapsed - solveElapsed;
 
             // Materialize the tightened tree once (Option B: search on the lean-depth DP, materialize only
             // at the end). Absent overrides fall back to ChooseConstructiveGroup, so this yields the
@@ -141,7 +146,13 @@ partial class StrategyBuilder
             }
 
             _latestGreedyIncumbentPlan = plan;
-            return new GreedyTightenStageArtifacts(solution, plan);
+            return new GreedyTightenStageArtifacts(
+                solution,
+                plan,
+                new StageTimings(
+                    solveElapsed,
+                    freezeElapsed,
+                    stopwatch.Elapsed - solveElapsed - freezeElapsed));
         });
     }
 
@@ -328,12 +339,13 @@ partial class StrategyBuilder
 
         var nodes = new Dictionary<SearchStateKey, SolvedStrategyNode>();
         int worstCaseSteps = FreezeGreedyTightenState(rootState, remainingSlots, nodes);
+        int searchEdgeCost = SolvedStrategyScoreService.ComputeSearchEdgeCost(rootKey, nodes);
 
         return new SolvedStrategy(
             new ProblemShape(_n, _m, _requestedK, _k),
             rootKey,
             nodes,
-            new StrategyScore(worstCaseSteps),
+            new StrategyScore(worstCaseSteps, searchEdgeCost),
             new BoundEvidence(
                 _rootProvenLowerBound,
                 worstCaseSteps,

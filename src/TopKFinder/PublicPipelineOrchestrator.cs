@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 
 namespace TopKFinder;
 
@@ -7,10 +6,15 @@ readonly record struct GreedyPreparationResult(
     StrategyPlan BaseFeasiblePlan,
     StrategyPlan EffectiveFeasiblePlan,
     StrategyPlan? GreedyTightenPlan,
+    SolvedStrategy BaseFeasibleSolution,
+    SolvedStrategy EffectiveFeasibleSolution,
+    SolvedStrategy? GreedyTightenSolution,
     bool GreedyTightenProbeRun,
     bool GreedyTightenImproved,
     TimeSpan GreedyFeasibleElapsed,
-    TimeSpan GreedyTightenElapsed);
+    TimeSpan GreedyTightenElapsed,
+    StageTimings GreedyFeasibleTimings,
+    StageTimings GreedyTightenTimings);
 
 static class PublicPipelineOrchestrator
 {
@@ -21,16 +25,32 @@ static class PublicPipelineOrchestrator
     {
         var callbacks = new PipelineCallbacks(onStageCompleted, onStageStart);
 
-        StrategyPlan stepPlan = PipelineStageProtocol.ExecuteCompletedPlanStage(
+        callbacks.Start(StageNames.StepProof);
+        StrategyBuilder.ExactProjectionArtifacts stepArtifacts =
+            builder.BuildExactProjectionArtifactsFromCurrentSession();
+        var stepStage = new StageResult(
             StageNames.StepProof,
-            () => ExecuteExactStepStage(builder),
-            callbacks);
+            stepArtifacts.DisplayTree,
+            stepArtifacts.Timings.Total,
+            StageOutcome.Completed,
+            stepArtifacts.Solution,
+            stepArtifacts.Timings);
+        PipelineStageProtocol.EmitStage(stepStage, callbacks);
+        StrategyPlan stepPlan = stepArtifacts.DisplayTree;
 
-        StrategyPlan compactPlan = PipelineStageProtocol.ExecuteCompletedPlanStage(
-            StageNames.FormatExactEdgeCompact(stepPlan.MaxStep),
-            () => ExecuteExactCompactStage(builder),
-            callbacks);
-        return compactPlan;
+        string compactStageName = StageNames.FormatExactEdgeCompact(
+            stepArtifacts.Solution.Score.WorstCaseSteps);
+        callbacks.Start(compactStageName);
+        CompactStageArtifacts compactArtifacts = builder.ExecuteEdgeCompactStageWithSolution();
+        var compactStage = new StageResult(
+            compactStageName,
+            compactArtifacts.Plan,
+            compactArtifacts.Plan.Elapsed,
+            StageOutcome.Completed,
+            compactArtifacts.Solution,
+            compactArtifacts.Timings);
+        PipelineStageProtocol.EmitStage(compactStage, callbacks);
+        return compactArtifacts.Plan;
     }
 
     public static StrategyPlan RunGreedyPipeline(
@@ -60,42 +80,32 @@ static class PublicPipelineOrchestrator
         if (!emitStages)
             return prep;
 
-        PipelineStageProtocol.EmitCompletedPlanStage(
-            StageNames.GreedyFeasible,
-            prep.BaseFeasiblePlan,
-            prep.GreedyFeasibleElapsed,
-            callbacks,
-            emitStart: true);
+        callbacks.Start(StageNames.GreedyFeasible);
+        PipelineStageProtocol.EmitStage(
+            new StageResult(
+                StageNames.GreedyFeasible,
+                prep.BaseFeasiblePlan,
+                prep.GreedyFeasibleElapsed,
+                StageOutcome.Completed,
+                prep.BaseFeasibleSolution,
+                prep.GreedyFeasibleTimings),
+            callbacks);
 
         if (prep.GreedyTightenProbeRun && prep.GreedyTightenPlan is not null)
         {
-            PipelineStageProtocol.EmitCompletedPlanStage(
-                StageNames.GreedyTighten,
-                prep.GreedyTightenPlan,
-                prep.GreedyTightenElapsed,
-                callbacks,
-                emitStart: true);
+            callbacks.Start(StageNames.GreedyTighten);
+            PipelineStageProtocol.EmitStage(
+                new StageResult(
+                    StageNames.GreedyTighten,
+                    prep.GreedyTightenPlan,
+                    prep.GreedyTightenElapsed,
+                    StageOutcome.Completed,
+                    prep.GreedyTightenSolution,
+                    prep.GreedyTightenTimings),
+                callbacks);
         }
 
         return prep;
-    }
-
-    // Executes exact stage-1 inside the shared orchestrator via the shared search projection helper.
-    private static (StrategyPlan StepPlan, TimeSpan Elapsed) ExecuteExactStepStage(StrategyBuilder builder)
-    {
-        var stopwatch = Stopwatch.StartNew();
-        (SearchTree _, DisplayTree stepPlan) = builder.ProjectDisplayAndSearchTrees();
-        stopwatch.Stop();
-        return (stepPlan, stopwatch.Elapsed);
-    }
-
-    // Executes exact stage-2 inside the shared orchestrator.
-    private static (StrategyPlan CompactPlan, TimeSpan Elapsed) ExecuteExactCompactStage(StrategyBuilder builder)
-    {
-        var stopwatch = Stopwatch.StartNew();
-        StrategyPlan compactPlan = builder.ExecuteEdgeCompactStage();
-        stopwatch.Stop();
-        return (compactPlan, stopwatch.Elapsed);
     }
 
     // Shared greedy pre-stage orchestration used by public callers (CLI/UI): build a feasible upper
@@ -103,26 +113,31 @@ static class PublicPipelineOrchestrator
     // tightening wins. Search semantics are unchanged; this only centralizes pipeline routing.
     public static GreedyPreparationResult PrepareGreedyUpperBound(StrategyBuilder builder)
     {
-        var feasibleStopwatch = System.Diagnostics.Stopwatch.StartNew();
-        StrategyPlan baseFeasiblePlan = builder.ExecuteGreedyFeasibleStage();
-        feasibleStopwatch.Stop();
+        GreedyFeasibleStageArtifacts feasibleArtifacts = builder.ExecuteGreedyFeasibleStageWithSolution();
+        StrategyPlan baseFeasiblePlan = feasibleArtifacts.Plan;
+        SolvedStrategy baseFeasibleSolution = feasibleArtifacts.Solution;
         StrategyPlan effectiveFeasiblePlan = baseFeasiblePlan;
+        SolvedStrategy effectiveFeasibleSolution = baseFeasibleSolution;
 
         bool gtProbeRun = builder.ShouldRunGreedyTightenByRootProbe();
         StrategyPlan? gtPlan = null;
+        SolvedStrategy? gtSolution = null;
         bool gtImproved = false;
         TimeSpan gtElapsed = TimeSpan.Zero;
+        StageTimings gtTimings = default;
         if (gtProbeRun)
         {
-            var gtStopwatch = System.Diagnostics.Stopwatch.StartNew();
-            gtPlan = builder.ExecuteGreedyTightenStage();
-            gtStopwatch.Stop();
-            gtElapsed = gtStopwatch.Elapsed;
-            gtImproved = gtPlan.IsStrictRefinementOver(baseFeasiblePlan);
+            GreedyTightenStageArtifacts gtArtifacts = builder.ExecuteGreedyTightenStageWithSolution();
+            gtPlan = gtArtifacts.Plan;
+            gtSolution = gtArtifacts.Solution;
+            gtElapsed = gtPlan.Elapsed;
+            gtTimings = gtArtifacts.Timings;
+            gtImproved = gtSolution.Score.IsStrictRefinementOver(baseFeasibleSolution.Score);
             if (gtImproved)
             {
                 effectiveFeasiblePlan = gtPlan;
-                builder.OverrideGreedyPipelineUpperBound(effectiveFeasiblePlan.MaxStep);
+                effectiveFeasibleSolution = gtSolution;
+                builder.OverrideGreedyPipelineUpperBound(effectiveFeasibleSolution.Score.WorstCaseSteps);
             }
         }
 
@@ -130,9 +145,14 @@ static class PublicPipelineOrchestrator
             baseFeasiblePlan,
             effectiveFeasiblePlan,
             gtPlan,
+            baseFeasibleSolution,
+            effectiveFeasibleSolution,
+            gtSolution,
             gtProbeRun,
             gtImproved,
-            feasibleStopwatch.Elapsed,
-            gtElapsed);
+            baseFeasiblePlan.Elapsed,
+            gtElapsed,
+            feasibleArtifacts.Timings,
+            gtTimings);
     }
 }

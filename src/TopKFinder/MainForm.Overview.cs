@@ -91,7 +91,7 @@ partial class MainForm
     private TreeNode BuildCompactOverviewPlaceholderNode(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan)
     {
         string firstStageName = defaultPlan is null
-            ? NextProofTightenStageName(feasiblePlan, feasiblePlan.MaxStep)
+            ? NextProofTightenStageNameForPresentation(feasiblePlan, feasiblePlan.MaxStep)
             : StageNames.FormatExactEdgeCompact(feasiblePlan.MaxStep);
         return BuildOverviewNoteNode(FormatComputingPlaceholderText(firstStageName));
     }

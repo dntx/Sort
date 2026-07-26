@@ -106,13 +106,15 @@ public class ProofTightenBudgetReuseTests
         Assert.Equal(SolvedStrategyStageKind.ProofTighten, first.Solution!.Provenance.Kind);
         Assert.Equal(first.Result.Name, first.Solution.Provenance.StageName);
         Assert.Equal(first.Result.Plan!.MaxStep, first.Solution.Score.WorstCaseSteps);
-        Assert.Null(first.Solution.Score.SearchEdgeCost);
+        int searchEdgeCost = Assert.IsType<int>(first.Solution.Score.SearchEdgeCost);
+        Assert.True(searchEdgeCost > 0);
 
         builder.ExecuteProofTightenStage(first.Result.Plan.MaxStep - 1);
         StrategyPlan replayed = builder.MaterializeCompactSolutionForTesting(first.Solution);
 
         Assert.Equal(first.Result.Plan.MaxStep, replayed.MaxStep);
         Assert.Equal(first.Result.Plan.TotalBranchEdges, replayed.TotalBranchEdges);
+        Assert.Equal(searchEdgeCost, first.Solution.Score.SearchEdgeCost);
     }
 
     [Fact]
@@ -124,7 +126,11 @@ public class ProofTightenBudgetReuseTests
 
         Assert.Equal(StageOutcome.ProvenInfeasible, artifacts.Result.Outcome);
         Assert.Null(artifacts.Result.Plan);
+        Assert.Null(artifacts.Result.Solution);
         Assert.Null(artifacts.Solution);
+        Assert.Equal(artifacts.Result.Elapsed, artifacts.Result.Timings.Total);
+        Assert.Equal(TimeSpan.Zero, artifacts.Result.Timings.Freeze);
+        Assert.Equal(TimeSpan.Zero, artifacts.Result.Timings.Materialize);
     }
 
     // No-overshoot invariant (the point of the tightest-budget-keep fix): at EVERY budget b in

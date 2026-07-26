@@ -327,13 +327,25 @@ class Program
                 stageSummaries.Add($"{StageNames.GreedyTighten}: skipped (root probe)");
             }
             int emittedStages = 1 + (gtProbeRun ? 1 : 0);
-            StrategyPlan incumbentPlan = baseFeasiblePlan;
+            var incumbentStage = new StageResult(
+                StageNames.GreedyFeasible,
+                baseFeasiblePlan,
+                prep.GreedyFeasibleElapsed,
+                StageOutcome.Completed,
+                prep.BaseFeasibleSolution,
+                prep.GreedyFeasibleTimings);
             string finalName = StageNames.GreedyFeasible;
             StrategyPlan finalPlan = baseFeasiblePlan;
 
             if (gtPlan is not null && gtImproved)
             {
-                incumbentPlan = gtPlan;
+                incumbentStage = new StageResult(
+                    StageNames.GreedyTighten,
+                    gtPlan,
+                    prep.GreedyTightenElapsed,
+                    StageOutcome.Completed,
+                    prep.GreedyTightenSolution,
+                    prep.GreedyTightenTimings);
                 finalName = StageNames.GreedyTighten;
                 finalPlan = gtPlan;
             }
@@ -366,8 +378,9 @@ class Program
                             stageSummaries.Add($"{stage.Name}: {noSolutionMarker}");
                             WriteStageStatus($"stage {stage.Name}: {noSolutionMarker} " +
                                 $"({stage.Elapsed.TotalSeconds:F2}s)");
-                            finalPlan = finalPlan.WithRootProvenLowerBound(finalPlan.MaxStep);
-                            incumbentPlan = finalPlan;
+                            incumbentStage = incumbentStage.WithProvenLowerBound(
+                                incumbentStage.Solution!.Score.WorstCaseSteps);
+                            finalPlan = incumbentStage.Plan!;
                         }
                         else
                         {
@@ -385,20 +398,21 @@ class Program
                         return;
                 }
 
-                if (stage.Plan!.IsStrictRefinementOver(incumbentPlan))
+                StrategyPlan stagePlan = stage.Plan!;
+                if (PipelineStageProtocol.IsImprovement(stage, incumbentStage))
                 {
-                    stageSummaries.Add(FormatStageSummary(stage.Name, stage.Plan));
-                    WriteStageStatus($"stage {stage.Name}: steps={stage.Plan.MaxStep}, " +
-                        $"edges={stage.Plan.TotalBranchEdges} ({stage.Elapsed.TotalSeconds:F2}s)");
-                    incumbentPlan = stage.Plan;
+                    stageSummaries.Add(FormatStageSummary(stage.Name, stagePlan));
+                    WriteStageStatus($"stage {stage.Name}: steps={stagePlan.MaxStep}, " +
+                        $"edges={stagePlan.TotalBranchEdges} ({stage.Elapsed.TotalSeconds:F2}s)");
+                    incumbentStage = stage;
                     finalName = stage.Name;
-                    finalPlan = stage.Plan;
+                    finalPlan = stagePlan;
                 }
                 else
                 {
-                    stageSummaries.Add($"{FormatStageSummary(stage.Name, stage.Plan)}: no improvement");
-                    WriteStageStatus($"stage {stage.Name}: steps={stage.Plan.MaxStep}, " +
-                        $"edges={stage.Plan.TotalBranchEdges} ({stage.Elapsed.TotalSeconds:F2}s), no improvement");
+                    stageSummaries.Add($"{FormatStageSummary(stage.Name, stagePlan)}: no improvement");
+                    WriteStageStatus($"stage {stage.Name}: steps={stagePlan.MaxStep}, " +
+                        $"edges={stagePlan.TotalBranchEdges} ({stage.Elapsed.TotalSeconds:F2}s), no improvement");
                 }
 
                 if (PipelineStageProtocol.ReachedStageLimit(emittedStages, stageLimit))
@@ -453,6 +467,7 @@ class Program
         // displayed edges among equally optimal groups.
         StrategyPlan? defaultPlan = null;
         StrategyPlan? compactPlan = null;
+        StageResult? exactIncumbent = null;
         bool compactImproved = false;
         bool exactStageLimited = false;
         try
@@ -464,6 +479,7 @@ class Program
                     if (string.Equals(stage.Name, StageNames.StepProof, StringComparison.Ordinal))
                     {
                         StrategyPlan stepPlan = stage.Plan!;
+                        exactIncumbent = stage;
                         defaultPlan = stepPlan;
                         WriteStageStatus($"stage step-proof: steps={stepPlan.MaxStep}, " +
                             $"edges={stepPlan.TotalBranchEdges} ({stage.Elapsed.TotalSeconds:F2}s)");
@@ -480,7 +496,10 @@ class Program
 
                     StrategyPlan exactCompact = stage.Plan!;
                     compactPlan = exactCompact;
-                    compactImproved = defaultPlan is not null && exactCompact.IsStrictRefinementOver(defaultPlan);
+                    compactImproved = exactIncumbent.HasValue
+                        && PipelineStageProtocol.IsImprovement(stage, exactIncumbent.Value);
+                    if (compactImproved)
+                        exactIncumbent = stage;
                     if (!compactImproved)
                     {
                         WriteStageStatus($"stage {stage.Name}: steps={exactCompact.MaxStep}, " +
