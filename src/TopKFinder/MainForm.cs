@@ -112,9 +112,11 @@ partial class MainForm : Form
     private Stopwatch? _runStopwatch;
     private CancellationTokenSource? _runCancellationSource;
     private CancellationTokenSource? _presentationCancellationSource;
+    private CancellationTokenSource? _activePresentationRequestSource;
     private CancellationTokenSource? _stopEscalationSource;
     private Task? _activePresentationTask;
     private int _presentationGeneration;
+    private int _presentationRequestVersion;
     private bool _exactStepStageMaterialized;
     private StageResult? _pendingExactCompactStage;
     private StrategyBuilder? _activeBuilder;

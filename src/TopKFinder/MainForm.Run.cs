@@ -200,12 +200,40 @@ partial class MainForm
     private void ResetPresentationInfrastructure()
     {
         _presentationGeneration++;
+        _presentationRequestVersion = 0;
         _presentationCancellationSource?.Cancel();
         _presentationCancellationSource?.Dispose();
         _presentationCancellationSource = new CancellationTokenSource();
+
+        _activePresentationRequestSource?.Cancel();
+        _activePresentationRequestSource?.Dispose();
+        _activePresentationRequestSource = null;
+
         _activePresentationTask = null;
         _exactStepStageMaterialized = false;
         _pendingExactCompactStage = null;
+    }
+
+    private void QueueStageMaterialization(
+        StageResult stage,
+        Action<StageResult> apply)
+    {
+        _activePresentationRequestSource?.Cancel();
+        _activePresentationRequestSource?.Dispose();
+
+        CancellationToken parentToken = _presentationCancellationSource?.Token ?? CancellationToken.None;
+        _activePresentationRequestSource = CancellationTokenSource.CreateLinkedTokenSource(parentToken);
+
+        int requestVersion = ++_presentationRequestVersion;
+        int generation = _presentationGeneration;
+        CancellationToken requestToken = _activePresentationRequestSource.Token;
+
+        _activePresentationTask = MaterializeExactStageAsync(
+            stage,
+            apply,
+            generation,
+            requestVersion,
+            requestToken);
     }
 
     private async Task DrainPresentationTasksAsync()
@@ -260,6 +288,11 @@ partial class MainForm
         _presentationCancellationSource?.Cancel();
         _presentationCancellationSource?.Dispose();
         _presentationCancellationSource = null;
+
+        _activePresentationRequestSource?.Cancel();
+        _activePresentationRequestSource?.Dispose();
+        _activePresentationRequestSource = null;
+
         _activePresentationTask = null;
 
         _activeBuilder = null;
@@ -324,9 +357,7 @@ partial class MainForm
             _currentStageName = compactStageName;
             _stageStartMs = _runStopwatch?.ElapsedMilliseconds ?? 0;
 
-            _activePresentationTask = MaterializeExactStageAsync(
-                stage,
-                ApplyMaterializedStepProofStage);
+            QueueStageMaterialization(stage, ApplyMaterializedStepProofStage);
             return;
         }
 
@@ -336,17 +367,16 @@ partial class MainForm
             return;
         }
 
-        _activePresentationTask = MaterializeExactStageAsync(
-            stage,
-            ApplyMaterializedExactCompactStage);
+        QueueStageMaterialization(stage, ApplyMaterializedExactCompactStage);
     }
 
     private async Task MaterializeExactStageAsync(
         StageResult stage,
-        Action<StageResult> apply)
+        Action<StageResult> apply,
+        int generation,
+        int requestVersion,
+        CancellationToken cancellationToken)
     {
-        CancellationToken cancellationToken = _presentationCancellationSource?.Token ?? CancellationToken.None;
-        int generation = _presentationGeneration;
         try
         {
             TimeSpan priorElapsed = stage.Timings.Solve + stage.Timings.Freeze;
@@ -366,7 +396,9 @@ partial class MainForm
                 stage.Solution,
                 new StageTimings(stage.Timings.Solve, stage.Timings.Freeze, materialize));
 
-            if (!CanAcceptStageCallback() || generation != _presentationGeneration)
+            if (!CanAcceptStageCallback()
+                || generation != _presentationGeneration
+                || requestVersion != _presentationRequestVersion)
                 return;
 
             var applyCompleted = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -376,7 +408,8 @@ partial class MainForm
                 {
                     if (cancellationToken.IsCancellationRequested
                         || !CanAcceptStageCallback()
-                        || generation != _presentationGeneration)
+                        || generation != _presentationGeneration
+                        || requestVersion != _presentationRequestVersion)
                         return;
 
                     apply(materialized);
@@ -413,9 +446,7 @@ partial class MainForm
         if (_pendingExactCompactStage is { } pendingCompact)
         {
             _pendingExactCompactStage = null;
-            _activePresentationTask = MaterializeExactStageAsync(
-                pendingCompact,
-                ApplyMaterializedExactCompactStage);
+            QueueStageMaterialization(pendingCompact, ApplyMaterializedExactCompactStage);
         }
     }
 
@@ -478,9 +509,7 @@ partial class MainForm
 
         if (improved && !stage.HasPlan && stage.Solution is not null)
         {
-            _activePresentationTask = MaterializeExactStageAsync(
-                stage,
-                OnProofTightenStage);
+            QueueStageMaterialization(stage, OnProofTightenStage);
             return;
         }
 

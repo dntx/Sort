@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Reflection;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 using Xunit;
 using TopKFinder;
@@ -150,6 +151,65 @@ public sealed class MainFormRenderingTests
 
         Assert.True(stopwatch.ElapsedMilliseconds >= 100);
         Assert.True(callbackRan);
+    }
+
+    [Fact]
+    public void MaterializeExactStageAsync_StaleRequestVersion_DoesNotApply()
+    {
+        StageResult stage = CreateDeferredExactStepStage();
+
+        using var form = new MainForm();
+        _ = form.Handle;
+        SetPrivateField(form, "_presentationGeneration", 7);
+        SetPrivateField(form, "_presentationRequestVersion", 5);
+
+        bool applied = false;
+        Task task = InvokePrivateInstance<Task>(
+            form,
+            "MaterializeExactStageAsync",
+            stage,
+            (Action<StageResult>)(_ => applied = true),
+            7,
+            4,
+            CancellationToken.None);
+
+        task.GetAwaiter().GetResult();
+        Application.DoEvents();
+
+        Assert.False(applied);
+    }
+
+    [Fact]
+    public void QueueStageMaterialization_NewRequestCancelsPriorRequest()
+    {
+        StageResult stage = CreateDeferredExactStepStage();
+
+        using var form = new MainForm();
+        _ = form.Handle;
+        InvokePrivateInstanceVoid(form, "ResetPresentationInfrastructure");
+
+        InvokePrivateInstanceVoid(
+            form,
+            "QueueStageMaterialization",
+            stage,
+            (Action<StageResult>)(_ => { }));
+        CancellationTokenSource firstRequest = GetPrivateField<CancellationTokenSource>(form, "_activePresentationRequestSource");
+
+        InvokePrivateInstanceVoid(
+            form,
+            "QueueStageMaterialization",
+            stage,
+            (Action<StageResult>)(_ => { }));
+        CancellationTokenSource secondRequest = GetPrivateField<CancellationTokenSource>(form, "_activePresentationRequestSource");
+
+        // Force any in-flight materialization to short-circuit before UI apply so drain is deterministic in tests.
+        SetPrivateField(form, "_presentationRequestVersion", int.MaxValue);
+        Task drain = InvokePrivateInstance<Task>(form, "DrainPresentationTasksAsync");
+        drain.GetAwaiter().GetResult();
+
+        Assert.NotSame(firstRequest, secondRequest);
+        Assert.True(firstRequest.IsCancellationRequested);
+        Assert.False(secondRequest.IsCancellationRequested);
     }
 
     private static StageResult CreateDeferredExactStepStage()
