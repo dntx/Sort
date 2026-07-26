@@ -335,7 +335,7 @@ class Program
             int emittedStages = 1 + (gtProbeRun ? 1 : 0);
             var incumbentStage = new StageResult(
                 StageNames.GreedyFeasible,
-                plan: null,
+                materializedPlan: null,
                 prep.GreedyFeasibleElapsed,
                 StageOutcome.Completed,
                 prep.BaseFeasibleSolution,
@@ -346,7 +346,7 @@ class Program
             {
                 incumbentStage = new StageResult(
                     StageNames.GreedyTighten,
-                    plan: null,
+                    materializedPlan: null,
                     prep.GreedyTightenElapsed,
                     StageOutcome.Completed,
                     prep.GreedyTightenSolution,

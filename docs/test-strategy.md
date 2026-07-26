@@ -94,6 +94,9 @@ CI 硬件通常比开发机慢数倍，且墙钟计时本身抖动很大。如�
 compact 是一个跑在 phase 1 之上的**二级 DP**（`StrategyBuilder.Compact.cs`），在保持 MaxStep 的前提下
 最小化显示边数。**它有时是整个 build 的主导成本，甚至比 default 搜索还慢**，但长期没有工作量护栏。
 
+补充口径：对外 summary/CLI 的 timing 标签现已统一为 `solve / freeze / materialize`。本节里的
+`phase 1 / phase 2` 仍是内部算法阶段称呼，用于描述求解流程与计数器归属，不是最终输出文案。
+
 - **`Compact_WorkCountersStayWithinBaseline`**（7 个算例，含最重的 10,2,4）：锁定 compact 专属计数器
   `CompactStatesSolved` / `CompactGroupsEnumerated` / `CompactStepOptimalGroups`。这是 compact 阶段的
   第一道机器无关性能护栏。

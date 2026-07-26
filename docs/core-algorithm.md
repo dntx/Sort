@@ -24,7 +24,7 @@ minimax 搜索、对称性约减，以及三种剪枝下界（信息论下界、
 `greedy-feasible` 也有明确的运行时边界：Phase A 先求解固定构造策略，产出以 `SearchStateKey` 为键的
 `GreedyPolicySolution`；Phase B 再消费该 solution 物化 display tree。Phase B 只重放已选分组，不重新做策略选择。
 
-当前 exact 入口已收口为不可变 snapshot 边界：phase 1 完成后先把根可达的选组、canonical successor 与剩余深度冻结为 `SolvedStrategy`，随后 display/search 两个视图分别消费该 snapshot。`ProjectDisplayAndSearchTrees()` 在同一会话里产出两个视图，`ProjectSearchTree()` 走独立的 search-only exact 入口；snapshot 创建完成后，search projection 不再读取可变的 exact depth/pattern cache。
+当前 exact 入口已收口为不可变 snapshot 边界：phase 1 完成后先把根可达的选组、canonical successor 与剩余深度冻结为 `SolvedStrategy`，随后 display/materialized plan 与 search projection 分别消费该 snapshot。exact pipeline 直接使用同一 stage 的 solution + materialized plan，不再经过额外的 display/search 兼容投影入口；`ProjectSearchTree()` 仍保留独立的 search-only exact 入口，snapshot 创建完成后，search projection 不再读取可变的 exact depth/pattern cache。
 
 Search-first boundary status:
 

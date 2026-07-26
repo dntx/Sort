@@ -78,16 +78,16 @@ public sealed class ProofTightenPerfGateTests
                     int budget = feasible.MaxStep - 1;
                     StageResult stage = builder.ExecuteProofTightenStage(budget);
 
-                    int? outcomes = stage.Plan?.SearchStatistics.OutcomesConstructed;
-                    int? candidates = stage.Plan?.SearchStatistics.CandidateGroupsEnumerated;
-                    int? searched = stage.Plan?.SearchStatistics.SearchedStates;
+                    int? outcomes = stage.MaterializedPlan?.SearchStatistics.OutcomesConstructed;
+                    int? candidates = stage.MaterializedPlan?.SearchStatistics.CandidateGroupsEnumerated;
+                    int? searched = stage.MaterializedPlan?.SearchStatistics.SearchedStates;
 
                     return (
                         FeasibleStep: feasible.MaxStep,
                         Budget: budget,
                         Outcome: stage.Outcome,
                         HasPlan: stage.HasPlan,
-                        PlanStep: stage.Plan?.MaxStep,
+                        PlanStep: stage.MaterializedPlan?.MaxStep,
                         Outcomes: outcomes,
                         Candidates: candidates,
                         Searched: searched,

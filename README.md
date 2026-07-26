@@ -82,8 +82,9 @@ The refactor track is complete. The runtime now follows a stable layered boundar
 - Display layer (`DisplayRenderEngine` + UI/text renderers): owns rendering,
   folding, and presentation-only behavior.
 
-Exact search-model projection is now canonical via
-`StrategyBuilder.ProjectDisplayAndSearchTrees()` and `ProjectSearchTree()`.
+Exact stages now freeze one immutable solved-strategy snapshot and then project
+display/search independently. `ProjectSearchTree()` remains the standalone
+search-only projection entry.
 
 ### Builder API naming
 
@@ -175,7 +176,7 @@ $ dotnet run -- 5 3 2
 n=5, m=3, k=2
 worst-case steps = 3
 elapsed = 36.9 ms
-phases: step = 18 ms, edge = 0 ms, build = 18 ms
+timings: solve = 18 ms, freeze = 0 ms, materialize = 18 ms
 
 ==================== diagnostics ====================
 searched states = 4
@@ -206,7 +207,8 @@ child lines: a `pattern:` shape line and one line per non-empty effect
 the desktop UI tree so both read identically. The CLI runs the step stage first
 and then the edge refinement automatically: if the edge stage improves
 output-state count, both trees are printed; otherwise only the step tree is
-printed.
+printed. The summary timing row now reports `solve / freeze / materialize`
+components rather than the older `step / edge / build` wording.
 
 ### Desktop UI details
 

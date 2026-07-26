@@ -175,7 +175,7 @@ partial class MainForm
         _runStopwatch?.Stop();
 
         RemoveTrailingComputingPlaceholder();
-        StrategyPlan selectedPlan = _incumbentStage?.Plan ?? feasiblePlan;
+        StrategyPlan selectedPlan = _incumbentStage?.MaterializedPlan ?? feasiblePlan;
         _compactPlan = selectedPlan;
         _compactImproved = _greedyIncumbentImproved;
         _latestProgress = CreateSnapshotFromPlan(selectedPlan);
@@ -522,7 +522,7 @@ partial class MainForm
 
     private void ApplyMaterializedStepProofStage(StageResult stage)
     {
-        StrategyPlan defaultPlan = stage.Plan!;
+        StrategyPlan defaultPlan = stage.MaterializedPlan!;
         _incumbentStage = stage;
         _defaultPlan = defaultPlan;
         _feasiblePlan = defaultPlan;
@@ -548,7 +548,7 @@ partial class MainForm
         if (_defaultPlan is null)
             return;
 
-        StrategyPlan compactPlan = stage.Plan!;
+        StrategyPlan compactPlan = stage.MaterializedPlan!;
         _compactPlan = compactPlan;
         _compactImproved = _incumbentStage.HasValue
             && PipelineStageProtocol.IsImprovement(stage, _incumbentStage.Value);
@@ -643,7 +643,7 @@ partial class MainForm
 
         if (improved)
         {
-            _compactPlan = stage.Plan;
+            _compactPlan = stage.MaterializedPlan;
             _incumbentStage = stage;
             _greedyIncumbentImproved = true;
         }
@@ -678,9 +678,9 @@ partial class MainForm
 
         if (stage.HasPlan)
         {
-            _latestProgress = CreateSnapshotFromPlan(stage.Plan!);
+            _latestProgress = CreateSnapshotFromPlan(stage.MaterializedPlan!);
             if (improved)
-                UpdateSummaryText(_feasiblePlan, defaultPlan: _feasiblePlan, compactPlan: stage.Plan, compactImproved: true);
+                UpdateSummaryText(_feasiblePlan, defaultPlan: _feasiblePlan, compactPlan: stage.MaterializedPlan, compactImproved: true);
         }
         UpdateStatsPanels();
         UpdateElapsedLabel();
@@ -692,7 +692,7 @@ partial class MainForm
             string? marker = stage.HasPlan
                 ? (!improved ? "no improvement" : null)
                 : NoSolutionMarker(stage);
-            ShowStageModal(FormatStageRootLabel(stage.Name, stage.Elapsed, stage.Plan, marker), stage.HasPlan);
+            ShowStageModal(FormatStageRootLabel(stage.Name, stage.Elapsed, stage.MaterializedPlan, marker), stage.HasPlan);
         }
     }
 
@@ -709,18 +709,18 @@ partial class MainForm
             return;
 
         StageResult incumbentStage = _incumbentStage.Value;
-        StrategyPlan incumbent = incumbentStage.Plan!;
+        StrategyPlan incumbent = incumbentStage.MaterializedPlan!;
         int provenLower = incumbentStage.Solution.Score.WorstCaseSteps;
         if (incumbent.SearchStatistics.RootProvenLowerBound >= provenLower)
             return;
 
         StageResult provenStage = incumbentStage.WithProvenLowerBound(provenLower);
-        StrategyPlan proven = provenStage.Plan!;
+        StrategyPlan proven = provenStage.MaterializedPlan!;
         if (_compactPlan is not null)
         {
             for (int i = 0; i < _proofTightenStages.Count; i++)
             {
-                if (ReferenceEquals(_proofTightenStages[i].Plan, incumbent))
+                if (ReferenceEquals(_proofTightenStages[i].MaterializedPlan, incumbent))
                 {
                     StageResult s = _proofTightenStages[i];
                     _proofTightenStages[i] = new StageResult(

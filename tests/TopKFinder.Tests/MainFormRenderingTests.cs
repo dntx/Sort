@@ -108,7 +108,7 @@ public sealed class MainFormRenderingTests
         SetPrivateField(form, "_pauseEachStageForRun", false);
 
         bool callbackRan = false;
-        var stage = new StageResult("proof-tighten<=3", plan: null, TimeSpan.Zero, StageOutcome.Tightened, CreateDeferredExactStepStage().Solution);
+        var stage = new StageResult("proof-tighten<=3", materializedPlan: null, TimeSpan.Zero, StageOutcome.Tightened, CreateDeferredExactStepStage().Solution);
         var stopwatch = Stopwatch.StartNew();
         InvokePrivateInstanceVoid(
             form,
@@ -136,7 +136,7 @@ public sealed class MainFormRenderingTests
         SetPrivateField(form, "_pauseEachStageForRun", true);
 
         bool callbackRan = false;
-        var stage = new StageResult("proof-tighten<=3", plan: null, TimeSpan.Zero, StageOutcome.Tightened, CreateDeferredExactStepStage().Solution);
+        var stage = new StageResult("proof-tighten<=3", materializedPlan: null, TimeSpan.Zero, StageOutcome.Tightened, CreateDeferredExactStepStage().Solution);
         var stopwatch = Stopwatch.StartNew();
         InvokePrivateInstanceVoid(
             form,
@@ -341,7 +341,7 @@ public sealed class MainFormRenderingTests
 
         var terminalNoPlanStage = new StageResult(
             StageNames.FormatProofTighten(feasiblePlan.MaxStep - 1),
-            plan: null,
+            materializedPlan: null,
             elapsed: TimeSpan.FromMilliseconds(1),
             outcome: StageOutcome.Incomplete,
             solution: null);

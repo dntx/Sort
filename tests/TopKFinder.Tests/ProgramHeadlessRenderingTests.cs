@@ -78,7 +78,7 @@ public sealed class ProgramHeadlessRenderingTests
     private static string NormalizeTimings(string text)
     {
         string normalized = Regex.Replace(text, @"elapsed = [0-9]+\.[0-9]+ ms", "elapsed = <ms>");
-        normalized = Regex.Replace(normalized, @"phases: step = [0-9]+ ms, edge = [0-9]+ ms, build = [0-9]+ ms", "phases: step = <ms>, edge = <ms>, build = <ms>");
+        normalized = Regex.Replace(normalized, @"timings: solve = [0-9]+ ms, freeze = [0-9]+ ms, materialize = [0-9]+ ms", "timings: solve = <ms>, freeze = <ms>, materialize = <ms>");
         return normalized;
     }
 }

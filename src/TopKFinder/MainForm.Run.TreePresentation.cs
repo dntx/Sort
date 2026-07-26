@@ -315,22 +315,22 @@ partial class MainForm
 
     private TreeNode BuildStageTreeNode(StageResult stage, string scope, bool improved)
         => improved
-            ? CreatePlanTreeRoot(stage.Name, stage.Plan!, scope, stage.Elapsed)
+            ? CreatePlanTreeRoot(stage.Name, stage.MaterializedPlan!, scope, stage.Elapsed)
             : stage.Solution is not null && !stage.HasPlan
                 ? CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, "no improvement")
             : stage.HasPlan
-                ? CreateNoImprovementTreeRoot(stage.Name, stage.Plan!, stage.Elapsed)
+                ? CreateNoImprovementTreeRoot(stage.Name, stage.MaterializedPlan!, stage.Elapsed)
                 : CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, NoSolutionMarker(stage));
 
     private TreeNode BuildStageOverviewNode(StageResult stage, string scope, bool improved)
         => improved
-            ? BuildOverviewSectionNode(stage.Plan!, scope, stage.Name, stage.Elapsed)
+            ? BuildOverviewSectionNode(stage.MaterializedPlan!, scope, stage.Name, stage.Elapsed)
             : stage.Solution is not null && !stage.HasPlan
                 ? BuildOverviewNoteNode(FormatStageRootLabel(stage.Name, stage.Elapsed, plan: null, marker: "no improvement"))
             : BuildOverviewNoteNode(FormatStageRootLabel(
                 stage.Name,
                 stage.Elapsed,
-                stage.Plan,
+                stage.MaterializedPlan,
                 stage.HasPlan ? "no improvement" : NoSolutionMarker(stage)));
 
     // Leaf note for a solution-less stage: null means "no solution" (a proven-infeasible ceiling),
@@ -345,7 +345,7 @@ partial class MainForm
     // stacked trees.
     private static string BuildGreedyProgressionDetails(StageResult initialStage, List<StageResult> stages)
     {
-        StrategyPlan stepPlan = initialStage.Plan!;
+        StrategyPlan stepPlan = initialStage.MaterializedPlan!;
         var lines = new List<string>
         {
             "GreedyFeasible result (anytime: improving stages are shown as trees)",
@@ -354,7 +354,7 @@ partial class MainForm
         StageResult incumbent = initialStage;
         foreach (StageResult stage in stages)
         {
-            if (stage.Plan is { } p)
+            if (stage.MaterializedPlan is { } p)
             {
                 if (PipelineStageProtocol.IsImprovement(stage, incumbent))
                 {
