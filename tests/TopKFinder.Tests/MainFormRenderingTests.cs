@@ -231,6 +231,51 @@ public sealed class MainFormRenderingTests
         Assert.False(firstStillCached);
     }
 
+    [Fact]
+    public void PresentationStageCache_RecentAccessProtectsEntryFromEviction()
+    {
+        using var form = new MainForm();
+        InvokePrivateInstanceVoid(form, "ResetPresentationInfrastructure");
+
+        StageResult first = CreateDeferredExactStepStage();
+        StageResult second = CreateDeferredExactStepStage();
+        InvokePrivateInstanceVoid(form, "CachePresentationStageResult", first, first);
+        InvokePrivateInstanceVoid(form, "CachePresentationStageResult", second, second);
+
+        for (int i = 0; i < 6; i++)
+        {
+            StageResult stage = CreateDeferredExactStepStage();
+            InvokePrivateInstanceVoid(form, "CachePresentationStageResult", stage, stage);
+        }
+
+        bool firstCachedBeforeTouch = InvokePrivateInstance<bool>(form, "IsPresentationStageCached", first);
+        Assert.True(firstCachedBeforeTouch);
+
+        StageResult ninth = CreateDeferredExactStepStage();
+        InvokePrivateInstanceVoid(form, "CachePresentationStageResult", ninth, ninth);
+
+        bool firstStillCached = InvokePrivateInstance<bool>(form, "IsPresentationStageCached", first);
+        bool secondStillCached = InvokePrivateInstance<bool>(form, "IsPresentationStageCached", second);
+        Assert.True(firstStillCached);
+        Assert.False(secondStillCached);
+    }
+
+    [Fact]
+    public void ResetPresentationInfrastructure_ClearsPresentationStageCache()
+    {
+        using var form = new MainForm();
+        InvokePrivateInstanceVoid(form, "ResetPresentationInfrastructure");
+
+        StageResult stage = CreateDeferredExactStepStage();
+        InvokePrivateInstanceVoid(form, "CachePresentationStageResult", stage, stage);
+        bool cachedBeforeReset = InvokePrivateInstance<bool>(form, "IsPresentationStageCached", stage);
+        Assert.True(cachedBeforeReset);
+
+        InvokePrivateInstanceVoid(form, "ResetPresentationInfrastructure");
+        bool cachedAfterReset = InvokePrivateInstance<bool>(form, "IsPresentationStageCached", stage);
+        Assert.False(cachedAfterReset);
+    }
+
     private static StageResult CreateDeferredExactStepStage()
     {
         StrategyBuilder builder = new(8, 3, 3);
