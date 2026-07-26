@@ -140,7 +140,7 @@ partial class StrategyBuilder
             .ToList();
     }
 
-    private List<SearchBranchSpec>? TryBuildSearchDoomedTailSpecs(
+    private List<TransitionTargetFields>? TryBuildSearchDoomedTailSpecs(
         ComparisonState state,
         int remainingSlots,
         SelectedComparisonGroup chosenGroup)
@@ -150,7 +150,7 @@ partial class StrategyBuilder
             return null;
 
         return doomedTailLines
-            .Select(line => new SearchBranchSpec(
+            .Select(line => new TransitionTargetFields(
                 line.OrderText,
                 line.Representative.NextState,
                 line.Representative.NextFixedTopMask,

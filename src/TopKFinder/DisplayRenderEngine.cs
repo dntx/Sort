@@ -59,14 +59,14 @@ sealed class DisplayRenderEngine
     // render entrypoint rather than reaching helper implementations directly.
     internal static List<RenderBranchLine<T>> PlanBranchLines<T>(
         List<T> families,
-        Func<List<T>, EquivalentOrderSummary?> buildSummary,
+        Func<List<T>, bool> formsSingleMergedOrbit,
         Func<List<T>, List<List<T>>> partitionFamiliesIntoOrbits,
         Func<List<List<T>>, List<(List<T> Members, bool ProjectionMerged)>> mergeOrbitsByProjection,
         Func<T, int> getFamilyCount)
     {
         List<DisplayBranchLinePlanner.PlannerBranchLine<T>> planned = DisplayBranchLinePlanner.SplitMergedBucketIntoBranchLines(
             families,
-            buildSummary,
+            formsSingleMergedOrbit,
             partitionFamiliesIntoOrbits,
             mergeOrbitsByProjection,
             getFamilyCount);
@@ -74,7 +74,8 @@ sealed class DisplayRenderEngine
     }
 
     internal static bool IsSingleMergedOrbit(EquivalentOrderSummary? summary)
-        => DisplayBranchLinePlanner.MergedOrderingsFormSingleOrbit(summary);
+        => summary is null
+            || !summary.PatternText.Contains(" | ", StringComparison.Ordinal);
 
     internal static List<(List<T> Members, bool ProjectionMerged)> MergeProjectionOrbits<T>(
         List<List<T>> orbits,

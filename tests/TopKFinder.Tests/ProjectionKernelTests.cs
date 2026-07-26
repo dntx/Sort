@@ -6,7 +6,7 @@ using TopKFinder;
 public sealed class ProjectionKernelTests
 {
     [Fact]
-    public void PlanBranchLines_ThrowsWhenGetFamilyCountIsNull()
+    public void PlanProjectionBuckets_ThrowsWhenGetFamilyCountIsNull()
     {
         List<int> families =
         [
@@ -14,16 +14,17 @@ public sealed class ProjectionKernelTests
             2,
         ];
 
-        Assert.Throws<ArgumentNullException>(() => ProjectionKernel.PlanBranchLines(
+        Assert.Throws<ArgumentNullException>(() => ProjectionKernel.PlanProjectionBuckets(
             families,
-            members => new EquivalentOrderSummary(members.Count, "x | y", members.Count.ToString()),
+            members => DisplayRenderEngine.IsSingleMergedOrbit(
+                new EquivalentOrderSummary(members.Count, "x | y", members.Count.ToString())),
             members => new List<List<int>> { members },
             parentOrbits => parentOrbits.Select(orbit => (orbit, false)).ToList(),
             null!));
     }
 
     [Fact]
-    public void PlanBranchLines_WrapsGetFamilyCountExceptionsWithClearMessage()
+    public void PlanProjectionBuckets_WrapsGetFamilyCountExceptionsWithClearMessage()
     {
         List<int> families =
         [
@@ -32,9 +33,10 @@ public sealed class ProjectionKernelTests
             3,
         ];
 
-        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() => ProjectionKernel.PlanBranchLines(
+        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() => ProjectionKernel.PlanProjectionBuckets(
             families,
-            members => new EquivalentOrderSummary(members.Count, "x | y", members.Count.ToString()),
+            members => DisplayRenderEngine.IsSingleMergedOrbit(
+                new EquivalentOrderSummary(members.Count, "x | y", members.Count.ToString())),
             _ =>
             [
                 [1, 2, 3],
@@ -47,7 +49,7 @@ public sealed class ProjectionKernelTests
     }
 
     [Fact]
-    public void PlanBranchLines_ThrowsWhenMergeOrbitsByProjectionReturnsNull()
+    public void PlanProjectionBuckets_ThrowsWhenMergeOrbitsByProjectionReturnsNull()
     {
         List<int> families =
         [
@@ -56,9 +58,10 @@ public sealed class ProjectionKernelTests
             3,
         ];
 
-        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() => ProjectionKernel.PlanBranchLines(
+        InvalidOperationException ex = Assert.Throws<InvalidOperationException>(() => ProjectionKernel.PlanProjectionBuckets(
             families,
-            members => new EquivalentOrderSummary(members.Count, "x | y", members.Count.ToString()),
+            members => DisplayRenderEngine.IsSingleMergedOrbit(
+                new EquivalentOrderSummary(members.Count, "x | y", members.Count.ToString())),
             _ =>
             [
                 [1],
@@ -72,7 +75,7 @@ public sealed class ProjectionKernelTests
     }
 
     [Fact]
-    public void PlanBranchLines_MatchesDisplayPlanner_ForMixedOrbitFallbackCase()
+    public void PlanProjectionBuckets_MatchesDisplayPlanner_ForMixedOrbitFallbackCase()
     {
         List<int> families =
         [
@@ -93,6 +96,9 @@ public sealed class ProjectionKernelTests
             return new EquivalentOrderSummary(members.Count, "u | v", members.Count.ToString());
         }
 
+        bool FormsSingleMergedOrbit(List<int> members)
+            => DisplayRenderEngine.IsSingleMergedOrbit(BuildSummary(members));
+
         List<List<int>> PartitionFamiliesIntoOrbits(List<int> _) =>
         [
             [1, 2],
@@ -104,16 +110,16 @@ public sealed class ProjectionKernelTests
 
         int GetFamilyCount(int family) => family <= 2 ? 1 : 2;
 
-            List<ProjectionKernel.KernelBranchLine<int>> kernel = ProjectionKernel.PlanBranchLines(
+            List<ProjectionKernel.ProjectionBucket<int>> kernel = ProjectionKernel.PlanProjectionBuckets(
             families,
-            BuildSummary,
+            FormsSingleMergedOrbit,
             PartitionFamiliesIntoOrbits,
             MergeOrbitsByProjection,
             GetFamilyCount);
 
             List<DisplayBranchLinePlanner.PlannerBranchLine<int>> planner = DisplayBranchLinePlanner.SplitMergedBucketIntoBranchLines(
             families,
-            BuildSummary,
+            FormsSingleMergedOrbit,
             PartitionFamiliesIntoOrbits,
             MergeOrbitsByProjection,
             GetFamilyCount);
@@ -137,9 +143,9 @@ public sealed class ProjectionKernelTests
         var clean = new EquivalentOrderSummary(2, "permute {#1,#2}", "2");
         var split = new EquivalentOrderSummary(2, "#1 > #2 | #2 > #1", "2");
 
-        Assert.True(ProjectionKernel.IsSingleMergedOrbit(clean));
-        Assert.True(ProjectionKernel.IsSingleMergedOrbit(null));
-        Assert.False(ProjectionKernel.IsSingleMergedOrbit(split));
+        Assert.True(DisplayRenderEngine.IsSingleMergedOrbit(clean));
+        Assert.True(DisplayRenderEngine.IsSingleMergedOrbit(null));
+        Assert.False(DisplayRenderEngine.IsSingleMergedOrbit(split));
     }
 
     [Fact]

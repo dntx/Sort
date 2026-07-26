@@ -48,26 +48,43 @@ partial class StrategyBuilder
         int remainingSlots,
         SelectedComparisonGroup chosenGroup)
     {
-        return TransitionPlanner.BuildDisplayTransitionSpecs(
+        IReadOnlyList<BranchSpec> branchSpecs = TransitionPlanner.BuildBranchSpecs(
             state,
-            fixedTopMask,
             remainingSlots,
             chosenGroup);
+
+        return branchSpecs
+            .Select(spec => new TransitionSpec(
+                spec.OrderText,
+                spec.Summary,
+                BuildComparisonEffect(state, fixedTopMask, spec.Outcome.NextState, spec.Outcome.NextFixedTopMask),
+                spec.Outcome.NextState,
+                spec.Outcome.NextFixedTopMask,
+                spec.Outcome.NextRemainingSlots))
+            .ToList();
     }
 
-    // Search transition planner seam: currently reuses the display branch-line planner so behavior
-    // stays stable while search-side planning is being decoupled incrementally.
+    // Search transition planner seam: consumes raw transition targets derived from the shared
+    // projection-bucket kernel rather than the display branch-line planner.
     private IReadOnlyList<SearchTransitionSpec> BuildSearchTransitionSpecs(
         ComparisonState state,
         ulong fixedTopMask,
         int remainingSlots,
         SelectedComparisonGroup chosenGroup)
     {
-        return TransitionPlanner.BuildSearchTransitionSpecs(
+        IReadOnlyList<TransitionTargetFields> targets = TransitionPlanner.BuildSearchTransitionTargets(
             state,
-            fixedTopMask,
             remainingSlots,
             chosenGroup);
+
+        return targets
+            .Select(target => new SearchTransitionSpec(
+                target.OrderText,
+                BuildSearchComparisonEffect(state, fixedTopMask, target.NextState, target.NextFixedTopMask),
+                target.NextState,
+                target.NextFixedTopMask,
+                target.NextRemainingSlots))
+            .ToList();
     }
 
     private static List<OrderFamilyDescriptor> CollectLineFamilies(List<MergedFamilyOutcome> line)
@@ -132,25 +149,16 @@ partial class StrategyBuilder
         return best;
     }
 
-    private IEnumerable<PlannedBranchLine> PlanTransitionBranchLinesForMergedBranch(
+    private IEnumerable<PlannedBranchLine> PlanDisplayTransitionLinesForMergedBranch(
         ComparisonState state,
         MergedBranch merged)
     {
         if (EnableProjectionPairingProbe)
             RecordProjectionPairingBucket(state, merged.FamilyOutcomes);
 
-        return SplitMergedBucketIntoBranchLines(state, merged.FamilyOutcomes);
-    }
-
-    // Splits one merged bucket's order families into the exact set of displayed branch lines.
-    // The line-planning policy is now hosted in DisplayBranchLinePlanner (display layer), while this
-    // adapter provides the builder-specific orbit partition/projection merge hooks.
-    private List<PlannedBranchLine> SplitMergedBucketIntoBranchLines(
-        ComparisonState state, List<MergedFamilyOutcome> families)
-    {
-        return ProjectionKernel.PlanBranchLines(
-                families,
-                buildSummary: members => BuildEquivalentOrderSummary(CollectLineFamilies(members)),
+        return DisplayRenderEngine.PlanBranchLines(
+                merged.FamilyOutcomes,
+            formsSingleMergedOrbit: members => FormsSingleMergedOrbit(CollectLineFamilies(members)),
                 partitionFamiliesIntoOrbits: members => PartitionFamiliesIntoOrbits(state, members),
                 mergeOrbitsByProjection: parentOrbits =>
                     EnableProjectionOrbitMerging
@@ -159,6 +167,175 @@ partial class StrategyBuilder
                 getFamilyCount: outcome => outcome.Family.Count)
             .Select(line => new PlannedBranchLine(line.Members, line.ProjectionMerged))
             .ToList();
+    }
+
+    private List<PlannedBranchLine> PlanDisplayTransitionLinesForChosenGroup(
+        ComparisonState state,
+        SelectedComparisonGroup chosenGroup)
+    {
+        var plannedLines = new List<PlannedBranchLine>();
+        foreach (MergedBranch merged in chosenGroup.Branches)
+            plannedLines.AddRange(PlanDisplayTransitionLinesForMergedBranch(state, merged));
+
+        return plannedLines;
+    }
+
+    private IEnumerable<TransitionTargetFields> PlanSearchTransitionTargetsForMergedBranch(
+        ComparisonState state,
+        MergedBranch merged)
+    {
+        if (EnableProjectionPairingProbe)
+            RecordProjectionPairingBucket(state, merged.FamilyOutcomes);
+
+        // Search transition planning still mirrors the same orbit/projection grouping behavior,
+        // but now emits raw transition targets directly so it no longer needs the display-shaped
+        // PlannedBranchLine carrier.
+        return ProjectionKernel.PlanProjectionBuckets(
+                merged.FamilyOutcomes,
+            formsSingleMergedOrbit: members => FormsSingleMergedOrbit(CollectLineFamilies(members)),
+                partitionFamiliesIntoOrbits: members => PartitionFamiliesIntoOrbits(state, members),
+                mergeOrbitsByProjection: parentOrbits =>
+                    EnableProjectionOrbitMerging
+                        ? MergeOrbitsByProjection(state, parentOrbits)
+                        : parentOrbits.Select(orbit => (orbit, false)).ToList(),
+                getFamilyCount: outcome => outcome.Family.Count)
+            .Select(line =>
+            {
+                MergedFamilyOutcome representative = line.Members[0];
+                if (line.Members.Count > 1)
+                    representative = SelectSearchRepresentativeForSearchTargets(state, line.Members, line.ProjectionMerged);
+
+                return new TransitionTargetFields(
+                    representative.Family.RepresentativeOrder,
+                    representative.NextState,
+                    representative.NextFixedTopMask,
+                    representative.NextRemainingSlots);
+            })
+            .ToList();
+    }
+
+    private List<TransitionTargetFields> PlanSearchTransitionTargetsForChosenGroup(
+        ComparisonState state,
+        SelectedComparisonGroup chosenGroup)
+    {
+        var plannedTargets = new List<TransitionTargetFields>();
+        foreach (MergedBranch merged in chosenGroup.Branches)
+            plannedTargets.AddRange(PlanSearchTransitionTargetsForMergedBranch(state, merged));
+
+        return plannedTargets;
+    }
+
+    private MergedFamilyOutcome SelectSearchRepresentativeForSearchTargets(
+        ComparisonState state,
+        List<MergedFamilyOutcome> line,
+        bool projectionMerged)
+    {
+        if (line.Count <= 1)
+            return line[0];
+
+        List<OrderFamilyDescriptor> families = CollectLineFamilies(line);
+        bool allSingleton = families.All(family => family.Count == 1);
+        if (TrySelectProjectionQuotientRepresentativeForLine(
+                state,
+                line,
+                projectionMerged,
+                allSingleton,
+                out MergedFamilyOutcome quotientRepresentative,
+                out _))
+        {
+            return quotientRepresentative;
+        }
+
+        if (!allSingleton)
+            return line[0];
+
+        if (projectionMerged)
+            return SelectOrbitRepresentative(line);
+
+        if (!FormsSingleMergedOrbit(families))
+            return SelectOrbitRepresentative(line);
+
+        return line[0];
+    }
+
+    private BranchSpec BuildDisplayBranchSpecForPlanner(
+        ComparisonState state,
+        List<MergedFamilyOutcome> line,
+        bool projectionMerged)
+    {
+        List<OrderFamilyDescriptor> families = CollectLineFamilies(line);
+        bool allSingleton = families.All(family => family.Count == 1);
+        if (TrySelectProjectionQuotientRepresentativeForLine(
+                state,
+                line,
+                projectionMerged,
+                allSingleton,
+                out MergedFamilyOutcome quotientRepresentative,
+                out EquivalentOrderSummary? quotientSummary))
+        {
+            return new BranchSpec(
+                quotientRepresentative.Family.RepresentativeOrder,
+                quotientRepresentative,
+                quotientSummary);
+        }
+
+        if (allSingleton && projectionMerged)
+            return BuildRelabelRepresentativeBranchSpecForPlanner(state, line);
+
+        EquivalentOrderSummary? summary = BuildEquivalentOrderSummary(families);
+        if (allSingleton && !FormsSingleMergedOrbit(families))
+            return BuildRelabelRepresentativeBranchSpecForPlanner(state, line);
+
+        MergedFamilyOutcome fallbackRepresentative = line[0];
+        return new BranchSpec(
+            fallbackRepresentative.Family.RepresentativeOrder,
+            fallbackRepresentative,
+            summary);
+    }
+
+    private BranchSpec BuildRelabelRepresentativeBranchSpecForPlanner(
+        ComparisonState state,
+        List<MergedFamilyOutcome> line)
+    {
+        MergedFamilyOutcome representative = SelectOrbitRepresentative(line);
+        EquivalentOrderSummary relabelSummary = BuildRelabelingOrbitSummary(state, line, representative);
+        return new BranchSpec(
+            representative.Family.RepresentativeOrder,
+            representative,
+            relabelSummary);
+    }
+
+    private bool TryBuildProjectionQuotientSummaryForLine(
+        ComparisonState state,
+        List<MergedFamilyOutcome> line,
+        out MergedFamilyOutcome representative,
+        out EquivalentOrderSummary? quotientSummary)
+    {
+        representative = SelectOrbitRepresentative(line);
+        quotientSummary = BuildProjectionQuotientSummary(state, line, representative);
+        return quotientSummary is not null;
+    }
+
+    private bool TrySelectProjectionQuotientRepresentativeForLine(
+        ComparisonState state,
+        List<MergedFamilyOutcome> line,
+        bool projectionMerged,
+        bool allSingleton,
+        out MergedFamilyOutcome representative,
+        out EquivalentOrderSummary? quotientSummary)
+    {
+        if (!projectionMerged || allSingleton)
+        {
+            representative = line[0];
+            quotientSummary = null;
+            return false;
+        }
+
+        return TryBuildProjectionQuotientSummaryForLine(
+            state,
+            line,
+            out representative,
+            out quotientSummary);
     }
 
     // Partitions a merged bucket's families into parent-automorphism orbits over the active poset.
@@ -305,7 +482,12 @@ partial class StrategyBuilder
     // " > ").
     private static bool MergedOrderingsFormSingleOrbit(EquivalentOrderSummary? combinedSummary)
     {
-        return ProjectionKernel.IsSingleMergedOrbit(combinedSummary);
+        return DisplayRenderEngine.IsSingleMergedOrbit(combinedSummary);
+    }
+
+    private bool FormsSingleMergedOrbit(List<OrderFamilyDescriptor> families)
+    {
+        return MergedOrderingsFormSingleOrbit(BuildEquivalentOrderSummary(families));
     }
 
     private void AddMergedBranch(
@@ -485,26 +667,6 @@ partial class StrategyBuilder
 
         public List<MergedFamilyOutcome> Members { get; }
         public bool ProjectionMerged { get; }
-    }
-
-    internal readonly struct SearchBranchSpec
-    {
-        public SearchBranchSpec(
-            string orderText,
-            ComparisonState nextState,
-            ulong nextFixedTopMask,
-            int nextRemainingSlots)
-        {
-            OrderText = orderText;
-            NextState = nextState;
-            NextFixedTopMask = nextFixedTopMask;
-            NextRemainingSlots = nextRemainingSlots;
-        }
-
-        public string OrderText { get; }
-        public ComparisonState NextState { get; }
-        public ulong NextFixedTopMask { get; }
-        public int NextRemainingSlots { get; }
     }
 
     internal readonly struct SearchTransitionSpec
