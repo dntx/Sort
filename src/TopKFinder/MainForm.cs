@@ -104,6 +104,9 @@ partial class MainForm : Form
     private StrategyPlan? _feasiblePlan;
     private StrategyPlan? _defaultPlan;
     private StrategyPlan? _compactPlan;
+    private StageResult? _initialGreedyStage;
+    private StageResult? _incumbentStage;
+    private bool _greedyIncumbentImproved;
     private bool _compactImproved;
     private bool _feasibleMode;
     private Stopwatch? _runStopwatch;

@@ -93,10 +93,18 @@ partial class StrategyBuilder
             StrategyPlan finalPlan = edgeResult.Plan
                 .WithRootProvenLowerBound(_owner._rootProvenLowerBound);
             edgeStopwatch.Stop();
-            PipelineStageProtocol.EmitCompletedPlanStage(
-                edgeCompactStageName,
-                finalPlan,
+            StageTimings edgeTimings = StageTimings.FromTotal(
                 edgeStopwatch.Elapsed,
+                edgeResult.Timings.Freeze,
+                edgeResult.Timings.Materialize);
+            PipelineStageProtocol.EmitStage(
+                new StageResult(
+                    edgeCompactStageName,
+                    finalPlan,
+                    edgeStopwatch.Elapsed,
+                    StageOutcome.Completed,
+                    edgeResult.Solution,
+                    edgeTimings),
                 callbacks);
             return finalPlan;
         }
@@ -119,8 +127,18 @@ partial class StrategyBuilder
                 stopwatch.Stop();
                 if (probe.Plan is not null)
                     _owner._latestGreedyIncumbentPlan = probe.Plan;
-                var result = new StageResult(stageName, probe.Plan, stopwatch.Elapsed, probe.Outcome);
-                return new ProofTightenStageArtifacts(result, probe.Solution);
+                StageTimings timings = StageTimings.FromTotal(
+                    stopwatch.Elapsed,
+                    probe.Timings.Freeze,
+                    probe.Timings.Materialize);
+                var result = new StageResult(
+                    stageName,
+                    probe.Plan,
+                    stopwatch.Elapsed,
+                    probe.Outcome,
+                    probe.Solution,
+                    timings);
+                return new ProofTightenStageArtifacts(result);
             }
             finally
             {
@@ -186,7 +204,8 @@ partial class StrategyBuilder
                     return new CompactProbeArtifacts(
                         StageOutcome.Tightened,
                         candidate.Solution,
-                        candidate.Plan);
+                        candidate.Plan,
+                        candidate.Timings);
                 }
             }
             finally
@@ -221,19 +240,27 @@ partial class StrategyBuilder
                         return null;
                     }
 
+                    TimeSpan solveElapsed = stopwatch.Elapsed;
                     SolvedStrategy solution = _owner.CreateCompactSolvedStrategy(
                         stageKind,
                         stageName,
                         isProvenOptimal: false,
                         wasCandidateEnumerationCapped: _owner._compactEnumerationCapped,
                         includeSearchEdgeCost: stageKind == SolvedStrategyStageKind.GreedyEdgeCompact);
+                    TimeSpan freezeElapsed = stopwatch.Elapsed - solveElapsed;
                     StrategyPlan plan = _owner.MaterializeCompactSolution(
                         solution,
                         stopwatch,
                         _owner._compactRootCost,
                         isFeasibleUpperBound: true);
                     _owner._phase2Milliseconds = stopwatch.ElapsedMilliseconds - _owner._phase1bMilliseconds;
-                    return new CompactStageArtifacts(solution, plan);
+                    return new CompactStageArtifacts(
+                        solution,
+                        plan,
+                        new StageTimings(
+                            solveElapsed,
+                            freezeElapsed,
+                            stopwatch.Elapsed - solveElapsed - freezeElapsed));
                 }
                 finally
                 {
@@ -249,7 +276,10 @@ partial class StrategyBuilder
                 SolvedStrategyStageKind.GreedyEdgeCompact,
                 StageNames.FormatGreedyEdgeCompact(rootBudget));
             if (artifacts is not null)
-                return new CompactPlanResult(artifacts.Solution, artifacts.Plan);
+                return new CompactPlanResult(
+                    artifacts.Solution,
+                    artifacts.Plan,
+                    artifacts.Timings);
 
             if (_owner._lastProbeEnumerationCapped
                 && _owner._latestGreedyIncumbentPlan is not null

@@ -6,19 +6,41 @@ namespace TopKFinder;
 
 partial class StrategyBuilder
 {
+    internal sealed record ExactProjectionArtifacts(
+        SearchTree SearchTree,
+        DisplayTree DisplayTree,
+        SolvedStrategy Solution,
+        StageTimings Timings);
+
     // Mainline-A seam: build exact display + search artifacts inside one active solver session
     // so both materializers consume the same phase-1 caches without nested entrypoint hand-offs.
     private (SearchTree SearchTree, DisplayTree DisplayTree) BuildExactProjectionFromCurrentSession()
     {
+        ExactProjectionArtifacts artifacts = BuildExactProjectionArtifactsFromCurrentSession();
+        return (artifacts.SearchTree, artifacts.DisplayTree);
+    }
+
+    internal ExactProjectionArtifacts BuildExactProjectionArtifactsFromCurrentSession()
+    {
         return RunWithComparisonStateCancellation(() =>
         {
+            var projectionStopwatch = System.Diagnostics.Stopwatch.StartNew();
             _progressScope = _reportCombinedRunProgress
                 ? ProgressScope.DefaultInCombinedRun
                 : ProgressScope.DefaultStandalone;
 
             ExactStepProofStageArtifacts artifacts = BuildExactStepProofStageArtifacts();
             SearchTree searchTree = ProjectSearchTreeFromSolution(artifacts.Solution);
-            return (searchTree, artifacts.Plan);
+            projectionStopwatch.Stop();
+            StageTimings timings = StageTimings.FromTotal(
+                projectionStopwatch.Elapsed,
+                artifacts.Timings.Freeze,
+                projectionStopwatch.Elapsed - artifacts.Timings.Solve - artifacts.Timings.Freeze);
+            return new ExactProjectionArtifacts(
+                searchTree,
+                artifacts.Plan,
+                artifacts.Solution,
+                timings);
         });
     }
 

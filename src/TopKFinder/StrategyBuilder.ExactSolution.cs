@@ -4,7 +4,10 @@ using System.Diagnostics;
 
 namespace TopKFinder;
 
-sealed record ExactStepProofStageArtifacts(SolvedStrategy Solution, StrategyPlan Plan);
+sealed record ExactStepProofStageArtifacts(
+    SolvedStrategy Solution,
+    StrategyPlan Plan,
+    StageTimings Timings);
 
 partial class StrategyBuilder
 {
@@ -13,9 +16,11 @@ partial class StrategyBuilder
         var stopwatch = Stopwatch.StartNew();
         InitializeExactSolverSession(useFeasibleBudget: false);
         _phase1Milliseconds = stopwatch.ElapsedMilliseconds;
+        TimeSpan solveElapsed = stopwatch.Elapsed;
 
         SolvedStrategy solution = CreateExactSolvedStrategy();
         _phase1bMilliseconds = stopwatch.ElapsedMilliseconds - _phase1Milliseconds;
+        TimeSpan freezeElapsed = stopwatch.Elapsed - solveElapsed;
 
         _useCompact = false;
         StrategyNode root = BuildState(
@@ -35,7 +40,13 @@ partial class StrategyBuilder
                 "Exact solved-strategy depth must equal the materialized plan MaxStep.");
         }
 
-        return new ExactStepProofStageArtifacts(solution, plan);
+        return new ExactStepProofStageArtifacts(
+            solution,
+            plan,
+            new StageTimings(
+                solveElapsed,
+                freezeElapsed,
+                stopwatch.Elapsed - solveElapsed - freezeElapsed));
     }
 
     private SolvedStrategy CreateExactSolvedStrategy()
@@ -48,12 +59,13 @@ partial class StrategyBuilder
 
         var nodes = new Dictionary<SearchStateKey, SolvedStrategyNode>();
         int worstCaseSteps = FreezeExactState(rootState, remainingSlots, nodes);
+        int searchEdgeCost = SolvedStrategyScoreService.ComputeSearchEdgeCost(rootKey, nodes);
 
         return new SolvedStrategy(
             new ProblemShape(_n, _m, _requestedK, _k),
             rootKey,
             nodes,
-            new StrategyScore(worstCaseSteps),
+            new StrategyScore(worstCaseSteps, searchEdgeCost),
             new BoundEvidence(
                 worstCaseSteps,
                 worstCaseSteps,

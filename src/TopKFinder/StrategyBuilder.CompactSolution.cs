@@ -4,13 +4,23 @@ using System.Diagnostics;
 
 namespace TopKFinder;
 
-sealed record CompactStageArtifacts(SolvedStrategy Solution, StrategyPlan Plan);
+sealed record CompactStageArtifacts(
+    SolvedStrategy Solution,
+    StrategyPlan Plan,
+    StageTimings Timings);
 sealed record CompactProbeArtifacts(
     StageOutcome Outcome,
     SolvedStrategy? Solution,
-    StrategyPlan? Plan);
-sealed record ProofTightenStageArtifacts(StageResult Result, SolvedStrategy? Solution);
-sealed record CompactPlanResult(SolvedStrategy? Solution, StrategyPlan Plan);
+    StrategyPlan? Plan,
+    StageTimings Timings = default);
+sealed record ProofTightenStageArtifacts(StageResult Result)
+{
+    public SolvedStrategy? Solution => Result.Solution;
+}
+sealed record CompactPlanResult(
+    SolvedStrategy? Solution,
+    StrategyPlan Plan,
+    StageTimings Timings = default);
 
 partial class StrategyBuilder
 {
@@ -29,14 +39,18 @@ partial class StrategyBuilder
 
         var nodes = new Dictionary<SearchStateKey, SolvedStrategyNode>();
         int worstCaseSteps = FreezeCompactState(rootState, remainingSlots, nodes);
+        int searchEdgeCost = SolvedStrategyScoreService.ComputeSearchEdgeCost(rootKey, nodes);
+        if (includeSearchEdgeCost && searchEdgeCost != _compactRootCost)
+        {
+            throw new InvalidOperationException(
+                "Frozen compact strategy cost must equal the compact DP root cost.");
+        }
 
         return new SolvedStrategy(
             new ProblemShape(_n, _m, _requestedK, _k),
             rootKey,
             nodes,
-            new StrategyScore(
-                worstCaseSteps,
-                includeSearchEdgeCost ? _compactRootCost : null),
+            new StrategyScore(worstCaseSteps, searchEdgeCost),
             new BoundEvidence(
                 isProvenOptimal ? worstCaseSteps : _rootProvenLowerBound,
                 worstCaseSteps,

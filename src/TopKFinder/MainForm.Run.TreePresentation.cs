@@ -204,9 +204,9 @@ partial class MainForm
             : CreateNoSolutionTreeRoot(compactStageName, compactPlan.Elapsed);
     }
 
-    private static string FirstCompactTreeStageName(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan)
+    private string FirstCompactTreeStageName(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan)
         => defaultPlan is null
-            ? NextProofTightenStageName(feasiblePlan, feasiblePlan.MaxStep)
+            ? NextProofTightenStageNameForPresentation(feasiblePlan, feasiblePlan.MaxStep)
             : StageNames.FormatExactEdgeCompact(feasiblePlan.MaxStep);
 
     private static string FormatCompactStageName(bool greedyMode, int maxStep)
@@ -339,22 +339,23 @@ partial class MainForm
     // Root-node detail text for greedy mode: the step plan followed by the full edge progression
     // (compact baseline -> each tightening -> any no-solution stage), so the detail pane mirrors the
     // stacked trees.
-    private static string BuildGreedyProgressionDetails(StrategyPlan stepPlan, List<StageResult> stages)
+    private static string BuildGreedyProgressionDetails(StageResult initialStage, List<StageResult> stages)
     {
+        StrategyPlan stepPlan = initialStage.Plan!;
         var lines = new List<string>
         {
             "GreedyFeasible result (anytime: improving stages are shown as trees)",
             $"greedy-feasible: {FormatPlanSqueeze(stepPlan)}, total edges={stepPlan.TotalBranchEdges}",
         };
-        StrategyPlan incumbent = stepPlan;
+        StageResult incumbent = initialStage;
         foreach (StageResult stage in stages)
         {
             if (stage.Plan is { } p)
             {
-                if (p.IsStrictRefinementOver(incumbent))
+                if (PipelineStageProtocol.IsImprovement(stage, incumbent))
                 {
                     lines.Add($"{stage.Name}: {FormatPlanSqueeze(p)}, total edges={p.TotalBranchEdges}");
-                    incumbent = p;
+                    incumbent = stage;
                 }
                 else
                 {

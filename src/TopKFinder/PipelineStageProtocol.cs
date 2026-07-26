@@ -15,44 +15,32 @@ readonly record struct PipelineCallbacks(
 
 static class PipelineStageProtocol
 {
-    public static StrategyPlan ExecuteCompletedPlanStage(
-        string stageName,
-        Func<(StrategyPlan Plan, TimeSpan Elapsed)> stageBody,
-        PipelineCallbacks callbacks)
-    {
-        callbacks.Start(stageName);
-        (StrategyPlan plan, TimeSpan elapsed) = stageBody();
-        callbacks.Complete(new StageResult(stageName, plan, elapsed, StageOutcome.Completed));
-        return plan;
-    }
-
-    public static void EmitCompletedPlanStage(
-        string stageName,
-        StrategyPlan plan,
-        TimeSpan elapsed,
-        PipelineCallbacks callbacks,
-        bool emitStart = false)
-    {
-        if (emitStart)
-            callbacks.Start(stageName);
-        EmitStage(new StageResult(stageName, plan, elapsed, StageOutcome.Completed), callbacks);
-    }
-
     public static void EmitStage(StageResult stage, PipelineCallbacks callbacks)
         => callbacks.Complete(stage);
 
     public static bool ReachedStageLimit(int emittedStages, int? stageLimit)
         => stageLimit.HasValue && emittedStages >= stageLimit.Value;
 
-    public static bool IsImprovement(StageResult stage, StrategyPlan incumbent)
-        => stage.HasPlan && stage.Plan!.IsStrictRefinementOver(incumbent);
+    public static bool IsImprovement(StageResult stage, StageResult incumbent)
+    {
+        if (stage.Solution is not null || incumbent.Solution is not null)
+        {
+            return stage.Solution is not null
+                && incumbent.Solution is not null
+                && stage.Solution.Score.IsStrictRefinementOver(incumbent.Solution.Score);
+        }
+
+        return stage.HasPlan
+            && incumbent.HasPlan
+            && stage.Plan!.IsStrictRefinementOver(incumbent.Plan!);
+    }
 
     public static string NoSolutionMarker(StageResult stage)
         => stage.Incomplete ? "search incomplete (candidate cap reached)" : "no solution";
 
-    public static string NextGreedyStageName(StrategyPlan feasiblePlan, int incumbentMaxStep)
+    public static string NextGreedyStageName(SolvedStrategy feasibleSolution, int incumbentMaxStep)
     {
-        int lower = Math.Max(1, feasiblePlan.SearchStatistics.RootProvenLowerBound);
+        int lower = Math.Max(1, feasibleSolution.Bounds.ProvenLowerBound);
         int nextBudget = incumbentMaxStep - 1;
         return nextBudget >= lower
             ? StageNames.FormatProofTighten(nextBudget)

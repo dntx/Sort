@@ -2,8 +2,8 @@
 
 ## Status
 
-- State: Architecture decisions resolved; Batches 0-5 complete; Batch 6 ready after Batch 5 merge
-- Baseline: `main` after PR #446 (`85259ed`)
+- State: Architecture decisions resolved; Batches 0-6 complete; Batch 7 ready after Batch 6 merge
+- Baseline: `main` after PR #447 (`09a17f8`)
 - Related work: PR #442 is intentionally paused and is not a dependency of this plan
 - Execution rule: implement one batch at a time and complete its focused validation before starting the next
 - Source of truth: when this document and chat history differ, update and follow this document
@@ -488,18 +488,35 @@ Acceptance:
 
 ### Batch 6: Pipeline control moves to solutions
 
-Status: Not started
+Status: Complete, 2026-07-26
 
-- Extend `StageResult` compatibly with solved strategy and split timings.
-- Move incumbent step comparisons and squeeze updates off `StrategyPlan`.
-- Preserve existing eager materialization and callbacks.
+- Extended `StageResult` compatibly with optional `SolvedStrategy` and `StageTimings` split into solve,
+    freeze, and materialize durations; the legacy elapsed value remains the timing sum.
+- Exact, greedy-feasible, greedy-tighten, proof-tighten, and edge-compact stage producers now emit their
+    immutable solution together with the eagerly materialized compatibility plan.
+- Every frozen strategy now carries a comparable search-tree edge cost. Compact snapshots validate that
+    their recomputed immutable cost equals the compact DP root objective.
+- Incumbent replacement, greedy-tighten adoption, next-budget naming, and squeeze evidence updates now use
+    solution score/evidence. Plan comparison remains only as a compatibility fallback when both stages are legacy.
+- Search-side compact cost controls replacement even if display branch edges increase, as resolved in D3;
+    display metrics remain separate and visible.
+- Proven-infeasible squeeze closure updates both immutable evidence and the compatibility plan. Solution-less
+    infeasible, incomplete, and capped fallback stages cannot replace a solution-bearing incumbent.
+- Eager materialization, callback ordering, stage names, and CLI/GUI rendering remain in place for Batch 7/8.
 
 Acceptance:
 
-- exact and greedy stage sequences are unchanged,
-- every stage start has exactly one completion,
-- cancellation still leaves a usable incumbent,
-- GUI/CLI output remains equivalent.
+- exact and greedy stage sequences are unchanged: complete,
+- every stage start has exactly one completion: complete,
+- cancellation still leaves a usable incumbent: complete; existing cancellation suite passed,
+- GUI/CLI output remains equivalent: complete; presentation regression fixed and passed,
+- focused pipeline/snapshot suite: `70/70` passed before final evidence-only cleanup; subsequent focused score,
+    timing, D3, callback, and rendering checks passed,
+- Release build: zero warnings and zero errors,
+- functional suite under the shared VS Code runner: `602/603` passed; the sole failure was the existing
+    `14,2,4` 10-second proof canary under suite load, which passed when run alone,
+- full workspace runner: `1149` passed with the same proof canary plus the `N28M3K6` wall-time performance
+    canary failing; `N28M3K6` also exceeded its isolated 30-second warmup threshold and remains a performance risk.
 
 ### Batch 7: CLI deferred materialization
 
@@ -914,9 +931,9 @@ Risks and follow-ups:
 
 ## 11. Immediate Next Step
 
-After Batch 5 is reviewed and merged, implement Batch 6 as a pipeline-control slice:
+After Batch 6 is reviewed and merged, implement Batch 7 as a CLI deferred-materialization slice:
 
-1. extend `StageResult` compatibly with the solved strategy and split solve/freeze/materialization timings,
-2. move incumbent comparisons and squeeze updates from `StrategyPlan` to solved-strategy score/evidence,
-3. preserve eager compatibility materialization and existing callback ordering,
+1. stop materializing intermediate CLI stages that are not printed by default,
+2. materialize the final or interrupted immutable incumbent on demand,
+3. preserve stage-limit behavior, progression text, and Ctrl+C presentation semantics,
 4. keep paused PR #442 untouched.

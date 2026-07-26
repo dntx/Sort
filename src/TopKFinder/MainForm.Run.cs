@@ -103,6 +103,9 @@ partial class MainForm
         _feasiblePlan = null;
         _defaultPlan = null;
         _compactPlan = null;
+        _initialGreedyStage = null;
+        _incumbentStage = null;
+        _greedyIncumbentImproved = false;
         _compactImproved = false;
         _activePhase = 0;
         _proofTightenStages.Clear();
@@ -131,6 +134,15 @@ partial class MainForm
         StrategyPlan feasiblePlan = prep.EffectiveFeasiblePlan;
 
         _feasiblePlan = feasiblePlan;
+        _incumbentStage = new StageResult(
+            prep.GreedyTightenImproved ? StageNames.GreedyTighten : StageNames.GreedyFeasible,
+            feasiblePlan,
+            prep.GreedyTightenImproved ? prep.GreedyTightenElapsed : prep.GreedyFeasibleElapsed,
+            StageOutcome.Completed,
+            prep.EffectiveFeasibleSolution,
+            prep.GreedyTightenImproved ? prep.GreedyTightenTimings : prep.GreedyFeasibleTimings);
+        _initialGreedyStage = _incumbentStage;
+        _greedyIncumbentImproved = prep.GreedyTightenImproved;
         _latestProgress = CreateSnapshotFromPlan(feasiblePlan);
         PopulateTree(feasiblePlan, defaultPlan: null, compactPlan: null, compactImproved: false);
         _completedFeasibleStats = feasiblePlan.SearchStatistics;
@@ -140,7 +152,8 @@ partial class MainForm
 
         Interlocked.Exchange(ref _activePhase, 2);
         _proofTightenStages.Clear();
-        _currentStageName = NextProofTightenStageName(feasiblePlan, feasiblePlan.MaxStep);
+        _currentStageName = NextProofTightenStageName(
+            prep.EffectiveFeasibleSolution.Score.WorstCaseSteps);
         _stageStartMs = _runStopwatch?.ElapsedMilliseconds ?? 0;
 
         // Each edge stage is surfaced live. The callback runs on the worker thread; a synchronous
@@ -156,11 +169,12 @@ partial class MainForm
         _runStopwatch?.Stop();
 
         RemoveTrailingComputingPlaceholder();
-        _compactPlan = feasibleCompactPlan;
-        _compactImproved = feasibleCompactPlan.IsStrictRefinementOver(feasiblePlan);
-        _latestProgress = CreateSnapshotFromPlan(feasibleCompactPlan);
-        _completedCompactStats = feasibleCompactPlan.SearchStatistics;
-        UpdateSummaryText(feasiblePlan, defaultPlan: feasiblePlan, compactPlan: feasibleCompactPlan, compactImproved: _compactImproved);
+        StrategyPlan selectedPlan = _incumbentStage?.Plan ?? feasibleCompactPlan;
+        _compactPlan = selectedPlan;
+        _compactImproved = _greedyIncumbentImproved;
+        _latestProgress = CreateSnapshotFromPlan(selectedPlan);
+        _completedCompactStats = selectedPlan.SearchStatistics;
+        UpdateSummaryText(feasiblePlan, defaultPlan: feasiblePlan, compactPlan: selectedPlan, compactImproved: _compactImproved);
         UpdateStatsPanels();
     }
 
@@ -257,6 +271,7 @@ partial class MainForm
         if (string.Equals(stage.Name, StageNames.StepProof, StringComparison.Ordinal))
         {
             StrategyPlan defaultPlan = stage.Plan!;
+            _incumbentStage = stage;
             _defaultPlan = defaultPlan;
             _feasiblePlan = defaultPlan;
             _latestProgress = CreateSnapshotFromPlan(defaultPlan);
@@ -282,7 +297,10 @@ partial class MainForm
 
         StrategyPlan compactPlan = stage.Plan!;
         _compactPlan = compactPlan;
-        _compactImproved = compactPlan.IsStrictRefinementOver(_defaultPlan);
+        _compactImproved = _incumbentStage.HasValue
+            && PipelineStageProtocol.IsImprovement(stage, _incumbentStage.Value);
+        if (_compactImproved)
+            _incumbentStage = stage;
 
         _latestProgress = CreateSnapshotFromPlan(compactPlan);
         FinalizeCompactInTree(_defaultPlan, compactPlan, _compactImproved);
@@ -295,8 +313,25 @@ partial class MainForm
     // far. Mirrors the V2 loop: it tightens to the next proof-tighten ceiling while that ceiling is still above
     // the proven analytic lower bound, otherwise the final "greedy-edge-compact@S" pass runs. Used to label
     // the transient "...: computing..." placeholder so it matches the stage name that actually lands.
-    private static string NextProofTightenStageName(StrategyPlan feasiblePlan, int incumbentMaxStep)
-        => PipelineStageProtocol.NextGreedyStageName(feasiblePlan, incumbentMaxStep);
+    private string NextProofTightenStageName(int incumbentMaxStep)
+        => PipelineStageProtocol.NextGreedyStageName(
+            _initialGreedyStage?.Solution
+                ?? throw new InvalidOperationException("Greedy stage naming requires the initial solved strategy."),
+            incumbentMaxStep);
+
+    private string NextProofTightenStageNameForPresentation(
+        StrategyPlan feasiblePlan,
+        int incumbentMaxStep)
+    {
+        if (_initialGreedyStage?.Solution is { } solution)
+            return PipelineStageProtocol.NextGreedyStageName(solution, incumbentMaxStep);
+
+        int lower = Math.Max(1, feasiblePlan.SearchStatistics.RootProvenLowerBound);
+        int nextBudget = incumbentMaxStep - 1;
+        return nextBudget >= lower
+            ? StageNames.FormatProofTighten(nextBudget)
+            : StageNames.FormatGreedyEdgeCompact(incumbentMaxStep);
+    }
 
     // Anytime greedy edge handler: invoked on the UI thread once per edge stage as the worker thread
     // produces it (each proof-tighten stage, then the final "greedy-edge-compact@S"
@@ -318,8 +353,8 @@ partial class MainForm
         // that has a solution but is no better is recorded and marked "no improvement" but rendered
         // only as a leaf note. Tightening
         // continues regardless, since the next ceiling is driven by max-steps, not edges.
-        StrategyPlan incumbent = _compactPlan ?? _feasiblePlan;
-        bool improved = PipelineStageProtocol.IsImprovement(stage, incumbent);
+        bool improved = _incumbentStage.HasValue
+            && PipelineStageProtocol.IsImprovement(stage, _incumbentStage.Value);
 
         // A follow-up stage always lands after every emitted stage except the terminal edge-compact
         // pass: after a proof-tighten stage -- whether it found a solution or proved/failed the
@@ -331,7 +366,7 @@ partial class MainForm
         string? nextStageName = !hasFollowUp
             ? null
             : stage.IsTightened
-                ? NextProofTightenStageName(_feasiblePlan, stage.Plan!.MaxStep)
+                ? NextProofTightenStageName(stage.Solution!.Score.WorstCaseSteps)
             : StageNames.FormatGreedyEdgeCompact(_feasiblePlan.MaxStep); // Phase A ended (proven-infeasible/incomplete); only the edge-compaction pass remains
 
         _treeView.BeginUpdate();
@@ -344,7 +379,11 @@ partial class MainForm
             root.Nodes.Add(CreateComputingPlaceholderNode(nextStageName));
 
         if (improved)
+        {
             _compactPlan = stage.Plan;
+            _incumbentStage = stage;
+            _greedyIncumbentImproved = true;
+        }
 
         // A proven-infeasible terminal (ProvenInfeasible, not a timeout) proves the incumbent is optimal:
         // close its squeeze (opt = incumbent.MaxStep) so the progression detail reports proven optimal.
@@ -353,7 +392,9 @@ partial class MainForm
 
         StrategyPlan shown = _compactPlan ?? _feasiblePlan;
         root.Text = BuildRootLabel(_feasiblePlan, _feasiblePlan, shown);
-        root.Tag = new LazyNodeDetails(() => BuildGreedyProgressionDetails(_feasiblePlan, _proofTightenStages));
+        root.Tag = new LazyNodeDetails(() => BuildGreedyProgressionDetails(
+            _initialGreedyStage!.Value,
+            _proofTightenStages));
         _treeView.EndUpdate();
 
         _overviewTree.BeginUpdate();
@@ -401,12 +442,17 @@ partial class MainForm
         if (_feasiblePlan is null)
             return;
 
-        StrategyPlan incumbent = _compactPlan ?? _feasiblePlan;
-        int provenLower = incumbent.MaxStep;
+        if (!_incumbentStage.HasValue || _incumbentStage.Value.Solution is null)
+            return;
+
+        StageResult incumbentStage = _incumbentStage.Value;
+        StrategyPlan incumbent = incumbentStage.Plan!;
+        int provenLower = incumbentStage.Solution.Score.WorstCaseSteps;
         if (incumbent.SearchStatistics.RootProvenLowerBound >= provenLower)
             return;
 
-        StrategyPlan proven = incumbent.WithRootProvenLowerBound(provenLower);
+        StageResult provenStage = incumbentStage.WithProvenLowerBound(provenLower);
+        StrategyPlan proven = provenStage.Plan!;
         if (_compactPlan is not null)
         {
             for (int i = 0; i < _proofTightenStages.Count; i++)
@@ -414,7 +460,13 @@ partial class MainForm
                 if (ReferenceEquals(_proofTightenStages[i].Plan, incumbent))
                 {
                     StageResult s = _proofTightenStages[i];
-                    _proofTightenStages[i] = new StageResult(s.Name, proven, s.Elapsed, s.Outcome);
+                    _proofTightenStages[i] = new StageResult(
+                        s.Name,
+                        proven,
+                        s.Elapsed,
+                        s.Outcome,
+                        s.Solution,
+                        s.Timings);
                     break;
                 }
             }
@@ -424,6 +476,8 @@ partial class MainForm
         {
             _feasiblePlan = proven;
         }
+
+        _incumbentStage = provenStage;
     }
 
     private void ShowStageModal(string message, bool hasPlan)

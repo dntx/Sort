@@ -83,7 +83,9 @@ partial class StrategyBuilder
 
             GreedyPolicySolution policy = SolveGreedyFeasiblePolicy();
             _phase1Milliseconds = (long)policy.SolveElapsed.TotalMilliseconds;
+            TimeSpan solveElapsed = stopwatch.Elapsed;
             SolvedStrategy solution = CreateGreedyFeasibleSolvedStrategy(policy);
+            TimeSpan freezeElapsed = stopwatch.Elapsed - solveElapsed;
 
             _useCompact = false;
             _feasiblePhase2StartMs = _progressStopwatch.ElapsedMilliseconds;  // Mark the start of the costly BuildState phase
@@ -110,7 +112,13 @@ partial class StrategyBuilder
             // Denominator estimate for the edge phase's live progress (see field doc): the distinct
             // canonical states this step pass touched approximate the compact solve's total work.
             _feasibleCompactStateEstimate = _visitedSearchStates.Count;
-            return new GreedyFeasibleStageArtifacts(solution, plan);
+            return new GreedyFeasibleStageArtifacts(
+                Solution: solution,
+                Plan: plan,
+                Timings: new StageTimings(
+                    solveElapsed,
+                    freezeElapsed,
+                    stopwatch.Elapsed - solveElapsed - freezeElapsed));
         });
     }
 
@@ -137,7 +145,7 @@ partial class StrategyBuilder
             new ProblemShape(_n, _m, _requestedK, _k),
             rootKey,
             nodes,
-            new StrategyScore(policy.WorstCaseSteps),
+            new StrategyScore(policy.WorstCaseSteps, policy.SearchEdgeCost),
             new BoundEvidence(
                 _rootProvenLowerBound,
                 policy.WorstCaseSteps,
@@ -152,9 +160,18 @@ partial class StrategyBuilder
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
         var nodes = new Dictionary<SearchStateKey, GreedyPolicyNode>();
         var finalChoiceKeys = new HashSet<SearchStateKey>();
-        int worstCaseSteps = SolveGreedyPolicyState(new ComparisonState(_n), _k, nodes, finalChoiceKeys);
+        (int worstCaseSteps, int searchEdgeCost) = SolveGreedyPolicyState(
+            new ComparisonState(_n),
+            _k,
+            nodes,
+            finalChoiceKeys);
         stopwatch.Stop();
-        return new GreedyPolicySolution(worstCaseSteps, nodes, finalChoiceKeys, stopwatch.Elapsed);
+        return new GreedyPolicySolution(
+            worstCaseSteps,
+            searchEdgeCost,
+            nodes,
+            finalChoiceKeys,
+            stopwatch.Elapsed);
     }
 
     private StrategyNode MaterializeGreedyFeasiblePolicy(GreedyPolicySolution policy)
@@ -167,7 +184,7 @@ partial class StrategyBuilder
             new MaterializationContext(GreedyPolicy: policy));
     }
 
-    private int SolveGreedyPolicyState(
+    private (int Depth, int SearchEdgeCost) SolveGreedyPolicyState(
         ComparisonState state,
         int remainingSlots,
         Dictionary<SearchStateKey, GreedyPolicyNode> nodes,
@@ -181,23 +198,24 @@ partial class StrategyBuilder
             || TryGetDeterminedTopSet(state, remainingSlots, out _)
             || state.ActiveCount <= remainingSlots)
         {
-            return 0;
+            return (0, 0);
         }
 
         if (state.ActiveCount <= _m)
         {
             finalChoiceKeys.Add(GetSearchStateKey(state, remainingSlots));
-            return 1;
+            return (1, 0);
         }
 
         SearchStateKey key = GetSearchStateKey(state, remainingSlots);
         if (nodes.TryGetValue(key, out GreedyPolicyNode? cached))
-            return cached.RemainingDepth;
+            return (cached.RemainingDepth, cached.SearchEdgeCost);
 
         List<int> group = ChooseConstructiveGroupBase(state, remainingSlots);
         BestGroupPattern selectedGroup = MakeGroupPattern(state, group);
         var successors = new HashSet<SearchStateKey>();
         int maxChildSteps = 0;
+        int childSearchEdgeCost = 0;
 
         VisitComparisonOutcomes(
             state,
@@ -208,20 +226,28 @@ partial class StrategyBuilder
             collectMergedBranches: false,
             onUsefulOutcome: outcome =>
             {
-                successors.Add(outcome.NextSearchKey);
-                int childSteps = SolveGreedyPolicyState(
+                if (!successors.Add(outcome.NextSearchKey))
+                    return true;
+
+                (int childSteps, int childCost) = SolveGreedyPolicyState(
                     outcome.NextState,
                     outcome.NextRemainingSlots,
                     nodes,
                     finalChoiceKeys);
                 if (childSteps > maxChildSteps)
                     maxChildSteps = childSteps;
+                childSearchEdgeCost = checked(childSearchEdgeCost + childCost);
                 return true;
             });
 
         int remainingDepth = 1 + maxChildSteps;
-        nodes[key] = new GreedyPolicyNode(selectedGroup, successors, remainingDepth);
-        return remainingDepth;
+        int searchEdgeCost = checked(successors.Count + childSearchEdgeCost);
+        nodes[key] = new GreedyPolicyNode(
+            selectedGroup,
+            successors,
+            remainingDepth,
+            searchEdgeCost);
+        return (remainingDepth, searchEdgeCost);
     }
 
     // Search-side worst-case step count of the constructive strategy from the root. This supplies the
