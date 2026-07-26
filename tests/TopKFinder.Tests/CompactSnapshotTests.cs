@@ -31,6 +31,9 @@ public sealed class CompactSnapshotTests
         Assert.Equal(
             eagerPlan.SearchStatistics.Diagnostics.MergedOutcomeCollisions,
             replayed.SearchStatistics.Diagnostics.MergedOutcomeCollisions);
+        Assert.Equal(
+            eagerPlan.SearchStatistics.Diagnostics.FeasibleTopSetCacheHits,
+            replayed.SearchStatistics.Diagnostics.FeasibleTopSetCacheHits);
     }
 
     [Fact]

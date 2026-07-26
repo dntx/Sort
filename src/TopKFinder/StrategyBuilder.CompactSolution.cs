@@ -111,7 +111,10 @@ partial class StrategyBuilder
             checked(solver.MergedOutcomeCollisions + display.MergedOutcomeCollisions),
             checked(solver.ExactCacheHits + display.ExactCacheHits),
             checked(solver.LowerBoundCacheHits + display.LowerBoundCacheHits),
-            checked(solver.FeasibleTopSetCacheHits + display.FeasibleTopSetCacheHits),
+            checked(
+                solver.FeasibleTopSetCacheHits
+                + display.FeasibleTopSetCacheHits
+                + display.FeasibleTopSetStates),
             checked(solver.BestGroupPatternCacheHits + display.BestGroupPatternCacheHits));
 
     private SolvedStrategy CreateCompactSolvedStrategy(
