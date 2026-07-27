@@ -354,6 +354,52 @@ public sealed class MainFormRenderingTests
     }
 
     [Fact]
+    public void OnProofTightenStage_BuffersUntilInitialGreedyStageMaterialized()
+    {
+        StrategyPlan feasiblePlan = new StrategyBuilder(8, 3, 3).ExecuteStepProofStage();
+        SolvedStrategy feasibleSolution = CreateDeferredExactStepStage().Solution!;
+
+        using var form = new MainForm();
+        _ = form.Handle;
+
+        SetPrivateField(form, "_feasiblePlan", null);
+        SetPrivateField(form, "_initialGreedyStage", new StageResult(
+            StageNames.GreedyFeasible,
+            materializedPlan: null,
+            TimeSpan.FromMilliseconds(1),
+            StageOutcome.Completed,
+            feasibleSolution,
+            StageTimings.Legacy(TimeSpan.FromMilliseconds(1))));
+
+        var incoming = new StageResult(
+            StageNames.FormatProofTighten(feasiblePlan.MaxStep - 1),
+            feasiblePlan,
+            TimeSpan.FromMilliseconds(2),
+            StageOutcome.Tightened,
+            feasibleSolution,
+            StageTimings.Legacy(TimeSpan.FromMilliseconds(2)));
+
+        InvokePrivateInstanceVoid(form, "OnProofTightenStage", incoming);
+
+        List<StageResult> buffered = GetPrivateField<List<StageResult>>(form, "_pendingGreedyEdgeStages");
+        List<StageResult> landed = GetPrivateField<List<StageResult>>(form, "_proofTightenStages");
+        Assert.Single(buffered);
+        Assert.Empty(landed);
+
+        InvokePrivateInstanceVoid(form, "ApplyMaterializedInitialGreedyStage", new StageResult(
+            StageNames.GreedyFeasible,
+            feasiblePlan,
+            TimeSpan.FromMilliseconds(1),
+            StageOutcome.Completed,
+            feasibleSolution,
+            StageTimings.Legacy(TimeSpan.FromMilliseconds(1))));
+
+        Assert.Empty(buffered);
+        Assert.Single(landed);
+        Assert.Equal(incoming.Name, landed[0].Name);
+    }
+
+    [Fact]
     public void PresentationStageCache_EvictsOldestEntryWhenCapacityExceeded()
     {
         using var form = new MainForm();
@@ -415,6 +461,47 @@ public sealed class MainFormRenderingTests
         InvokePrivateInstanceVoid(form, "ResetPresentationInfrastructure");
         bool cachedAfterReset = InvokePrivateInstance<bool>(form, "IsPresentationStageCached", stage);
         Assert.False(cachedAfterReset);
+    }
+
+    [Fact]
+    public void StopStrategy_WhenSolverRunning_CancelsSolverOnly()
+    {
+        using var form = new MainForm();
+        _ = form.Handle;
+
+        using var runCts = new CancellationTokenSource();
+        using var presentationCts = new CancellationTokenSource();
+        SetPrivateField(form, "_runCancellationSource", runCts);
+        SetPrivateField(form, "_presentationCancellationSource", presentationCts);
+        SetPrivateField(form, "_solverWorkStopped", false);
+
+        InvokePrivateInstanceVoid(form, "StopStrategy");
+
+        Assert.True(runCts.IsCancellationRequested);
+        Assert.False(presentationCts.IsCancellationRequested);
+    }
+
+    [Fact]
+    public void StopStrategy_AfterSolverStopped_CancelsPresentation()
+    {
+        using var form = new MainForm();
+        _ = form.Handle;
+
+        using var runCts = new CancellationTokenSource();
+        using var presentationCts = new CancellationTokenSource();
+        var presentationTask = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        SetPrivateField(form, "_runCancellationSource", runCts);
+        SetPrivateField(form, "_presentationCancellationSource", presentationCts);
+        SetPrivateField(form, "_activePresentationTask", presentationTask.Task);
+        SetPrivateField(form, "_solverWorkStopped", true);
+
+        InvokePrivateInstanceVoid(form, "StopStrategy");
+
+        Assert.False(runCts.IsCancellationRequested);
+        Assert.True(presentationCts.IsCancellationRequested);
+
+        presentationTask.TrySetResult(null);
     }
 
     private static StageResult CreateDeferredExactStepStage()

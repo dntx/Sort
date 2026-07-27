@@ -109,6 +109,8 @@ partial class MainForm
         _compactImproved = false;
         _activePhase = 0;
         _proofTightenStages.Clear();
+        _pendingGreedyEdgeStages.Clear();
+        _solverWorkStopped = false;
         ResetPresentationInfrastructure();
         _pauseEachStageForRun = _pauseEachStageCheckBox.Checked;
         _currentStageName = request.FeasibleMode ? StageNames.GreedyFeasible : StageNames.StepProof;
@@ -131,29 +133,23 @@ partial class MainForm
         // Greedy mode: GreedyFeasible gives an instant browsable strategy even on shapes exact
         // never resolves (e.g. 25,5,5), then ProofTighten + EdgeCompact refine it.
         GreedyPreparationResult prep = await Task.Run(
-            () => PublicPipelineOrchestrator.RunGreedyPreparation(request.Builder, emitStages: false),
+            () => PublicPipelineOrchestrator.RunGreedyPreparation(request.Builder, emitStages: false, materialize: false),
             request.CancellationToken);
-        StrategyPlan feasiblePlan = prep.EffectiveFeasiblePlan!;
-
-        _feasiblePlan = feasiblePlan;
-        _incumbentStage = new StageResult(
+        StageResult initialStage = new StageResult(
             prep.GreedyTightenImproved ? StageNames.GreedyTighten : StageNames.GreedyFeasible,
-            feasiblePlan,
+            materializedPlan: null,
             prep.GreedyTightenImproved ? prep.GreedyTightenElapsed : prep.GreedyFeasibleElapsed,
             StageOutcome.Completed,
             prep.EffectiveFeasibleSolution,
             prep.GreedyTightenImproved ? prep.GreedyTightenTimings : prep.GreedyFeasibleTimings);
-        _initialGreedyStage = _incumbentStage;
+        _incumbentStage = initialStage;
+        _initialGreedyStage = initialStage;
         _greedyIncumbentImproved = prep.GreedyTightenImproved;
-        _latestProgress = CreateSnapshotFromPlan(feasiblePlan);
-        PopulateTree(feasiblePlan, defaultPlan: null, compactPlan: null, compactImproved: false);
-        _completedFeasibleStats = feasiblePlan.SearchStatistics;
-        UpdateSummaryText(feasiblePlan, defaultPlan: null, compactPlan: null, compactImproved: false);
-        UpdateStatsPanels();
-        SetRunUiState(RunUiState.CompactComputingInteractive);
+        QueueStageMaterialization(initialStage, ApplyMaterializedInitialGreedyStage);
 
         Interlocked.Exchange(ref _activePhase, 2);
         _proofTightenStages.Clear();
+        _pendingGreedyEdgeStages.Clear();
         _currentStageName = NextProofTightenStageName(
             prep.EffectiveFeasibleSolution.Score.WorstCaseSteps);
         _stageStartMs = _runStopwatch?.ElapsedMilliseconds ?? 0;
@@ -171,17 +167,51 @@ partial class MainForm
                 return 0;
             },
             request.CancellationToken);
+        _solverWorkStopped = true;
         await DrainPresentationTasksAsync();
         _runStopwatch?.Stop();
 
         RemoveTrailingComputingPlaceholder();
-        StrategyPlan selectedPlan = _incumbentStage?.MaterializedPlan ?? feasiblePlan;
+        StrategyPlan selectedPlan = _incumbentStage?.MaterializedPlan ?? _feasiblePlan
+            ?? throw new InvalidOperationException("Expected a materialized greedy incumbent before final UI reconciliation.");
         _compactPlan = selectedPlan;
         _compactImproved = _greedyIncumbentImproved;
         _latestProgress = CreateSnapshotFromPlan(selectedPlan);
         _completedCompactStats = selectedPlan.SearchStatistics;
-        UpdateSummaryText(feasiblePlan, defaultPlan: feasiblePlan, compactPlan: selectedPlan, compactImproved: _compactImproved);
+        StrategyPlan baselineFeasible = _feasiblePlan ?? selectedPlan;
+        UpdateSummaryText(baselineFeasible, defaultPlan: baselineFeasible, compactPlan: selectedPlan, compactImproved: _compactImproved);
         UpdateStatsPanels();
+    }
+
+    private void ApplyMaterializedInitialGreedyStage(StageResult stage)
+    {
+        StrategyPlan feasiblePlan = stage.MaterializedPlan
+            ?? throw new InvalidOperationException("Initial greedy stage materialization must produce a plan.");
+
+        _feasiblePlan = feasiblePlan;
+        if (_incumbentStage.HasValue
+            && _incumbentStage.Value.Solution is not null
+            && ReferenceEquals(_incumbentStage.Value.Solution, stage.Solution)
+            && !_incumbentStage.Value.HasPlan)
+        {
+            _incumbentStage = stage;
+        }
+
+        _initialGreedyStage = stage;
+        _latestProgress = CreateSnapshotFromPlan(feasiblePlan);
+        PopulateTree(feasiblePlan, defaultPlan: null, compactPlan: null, compactImproved: false);
+        _completedFeasibleStats = feasiblePlan.SearchStatistics;
+        UpdateSummaryText(feasiblePlan, defaultPlan: null, compactPlan: null, compactImproved: false);
+        UpdateStatsPanels();
+        SetRunUiState(RunUiState.CompactComputingInteractive);
+
+        if (_pendingGreedyEdgeStages.Count == 0)
+            return;
+
+        List<StageResult> bufferedStages = _pendingGreedyEdgeStages.ToList();
+        _pendingGreedyEdgeStages.Clear();
+        foreach (StageResult bufferedStage in bufferedStages)
+            OnProofTightenStage(bufferedStage);
     }
 
     private async Task RunExactModeAsync(RunRequest request)
@@ -193,6 +223,7 @@ partial class MainForm
         await Task.Run(
             () => PublicPipelineOrchestrator.RunExactPipelineDeferred(request.Builder, MarshalExactStage),
             request.CancellationToken);
+        _solverWorkStopped = true;
         await DrainPresentationTasksAsync();
         _runStopwatch?.Stop();
     }
@@ -356,6 +387,7 @@ partial class MainForm
     private void TeardownRunSession()
     {
         _activePhase = 0;
+        _solverWorkStopped = false;
         _elapsedTimer.Stop();
         UpdateElapsedLabel();
         SetRunningState(isRunning: false);
@@ -594,7 +626,13 @@ partial class MainForm
     // their per-state navigation keys never collide.
     private void OnProofTightenStage(StageResult stage)
     {
-        if (_feasiblePlan is null || _treeView.Nodes.Count == 0)
+        if (_feasiblePlan is null)
+        {
+            _pendingGreedyEdgeStages.Add(stage);
+            return;
+        }
+
+        if (_treeView.Nodes.Count == 0)
             return;
 
         bool improved = _incumbentStage.HasValue

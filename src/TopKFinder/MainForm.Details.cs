@@ -110,17 +110,38 @@ partial class MainForm
 
     private void StopStrategy()
     {
-        _stopButton.Enabled = false;
         if (_runCancellationSource is null)
             return;
 
-        _runCancellationSource.Cancel();
-        _presentationCancellationSource?.Cancel();
+        if (!_solverWorkStopped)
+        {
+            if (!_runCancellationSource.IsCancellationRequested)
+            {
+                _runCancellationSource.Cancel();
+
+                _stopEscalationSource?.Cancel();
+                _stopEscalationSource?.Dispose();
+                _stopEscalationSource = new CancellationTokenSource();
+                _ = EscalateStopIfStillRunningAsync(_stopEscalationSource.Token);
+
+                if (_activePresentationTask is not null && !_activePresentationTask.IsCompleted)
+                    _statusLabel.Text = "Stopping search... click Stop again to cancel tree preparation.";
+            }
+
+            return;
+        }
+
+        // Phase-aware second stop: solver has already stopped, so this stop cancels pending presentation.
+        if (_activePresentationTask is not null && !_activePresentationTask.IsCompleted)
+        {
+            _presentationCancellationSource?.Cancel();
+            _activePresentationRequestSource?.Cancel();
+            _statusLabel.Text = "Cancelling tree preparation...";
+            return;
+        }
 
         _stopEscalationSource?.Cancel();
         _stopEscalationSource?.Dispose();
-        _stopEscalationSource = new CancellationTokenSource();
-        _ = EscalateStopIfStillRunningAsync(_stopEscalationSource.Token);
     }
 
     private async Task EscalateStopIfStillRunningAsync(CancellationToken cancellationToken)

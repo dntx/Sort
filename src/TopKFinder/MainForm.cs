@@ -169,6 +169,8 @@ partial class MainForm : Form
     // each tightening, plus a terminal no-solution stage). The current-stage name and the run-clock ms
     // at which the current stage began drive the per-stage timing/labels in the progress panel.
     private readonly List<StageResult> _proofTightenStages = new();
+    private readonly List<StageResult> _pendingGreedyEdgeStages = new();
+    private bool _solverWorkStopped;
     private string _currentStageName = "-";
     private long _stageStartMs;
 
