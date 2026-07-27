@@ -189,10 +189,8 @@ partial class MainForm
             ?? throw new InvalidOperationException("Initial greedy stage materialization must produce a plan.");
 
         _feasiblePlan = feasiblePlan;
-        if (_incumbentStage.HasValue
-            && _incumbentStage.Value.Solution is not null
-            && ReferenceEquals(_incumbentStage.Value.Solution, stage.Solution)
-            && !_incumbentStage.Value.HasPlan)
+        if (_incumbentStage is { HasPlan: false, Solution: { } incumbentSolution }
+            && ReferenceEquals(incumbentSolution, stage.Solution))
         {
             _incumbentStage = stage;
         }
