@@ -525,6 +525,24 @@ public sealed class MainFormRenderingTests
         presentationTask.TrySetResult(null);
     }
 
+    [Fact]
+    public void StopStrategy_AfterSolverStopped_NoPresentation_RepeatedStopsDoNotThrow()
+    {
+        using var form = new MainForm();
+        _ = form.Handle;
+
+        using var runCts = new CancellationTokenSource();
+        SetPrivateField(form, "_runCancellationSource", runCts);
+        SetPrivateField(form, "_solverWorkStopped", true);
+        SetPrivateField(form, "_activePresentationTask", null);
+        SetPrivateField(form, "_stopEscalationSource", new CancellationTokenSource());
+
+        InvokePrivateInstanceVoid(form, "StopStrategy");
+        InvokePrivateInstanceVoid(form, "StopStrategy");
+
+        Assert.Null(GetPrivateFieldValue(form, "_stopEscalationSource"));
+    }
+
     private static StageResult CreateDeferredExactStepStage()
     {
         StrategyBuilder builder = new(8, 3, 3);

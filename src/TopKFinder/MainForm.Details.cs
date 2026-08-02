@@ -142,6 +142,7 @@ partial class MainForm
 
         _stopEscalationSource?.Cancel();
         _stopEscalationSource?.Dispose();
+        _stopEscalationSource = null;
     }
 
     private async Task EscalateStopIfStillRunningAsync(CancellationToken cancellationToken)
