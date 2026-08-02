@@ -17,7 +17,7 @@ on:
 permissions:
   contents: read
   pull-requests: write
-  models: read
+  copilot-requests: write
 
 concurrency:
   group: ai-code-review-${{ github.event.pull_request.number || github.event.inputs.pr_number }}
@@ -37,15 +37,18 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Copilot CLI
+        run: npm install -g @github/copilot
+
       - name: Run AI code review
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GH_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number || github.event.inputs.pr_number }}
-          # Comma-separated fallback chain. Each model has its own GitHub Models
-          # quota, so the reviewer rotates to the next one on HTTP 429. The most
-          # capable (high rate-limit tier) models are tried first for review
-          # quality; lower-tier mini models act as higher-quota overflow.
-          REVIEW_MODELS: openai/gpt-4.1,openai/gpt-4o,openai/gpt-4.1-mini,openai/gpt-4o-mini
         run: python .github/scripts/ai_review.py
