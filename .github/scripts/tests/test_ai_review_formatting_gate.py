@@ -222,6 +222,43 @@ def test_request_chat_completion_uses_copilot_cli_prompt_mode():
     assert "[USER]" in command[3]
 
 
+def test_build_change_manifest_keeps_ai_review_infra_files():
+    diff = """diff --git a/.github/scripts/ai_review.py b/.github/scripts/ai_review.py
+index 1111111..2222222 100644
+--- a/.github/scripts/ai_review.py
++++ b/.github/scripts/ai_review.py
+@@ -1 +1 @@
+-old
++new
+diff --git a/.github/workflows/ai-code-review.yml b/.github/workflows/ai-code-review.yml
+index 3333333..4444444 100644
+--- a/.github/workflows/ai-code-review.yml
++++ b/.github/workflows/ai-code-review.yml
+@@ -1 +1 @@
+-old
++new
+"""
+
+    manifest = ai_review.build_change_manifest(diff)
+
+    assert [entry["path"] for entry in manifest] == [
+        ".github/scripts/ai_review.py",
+        ".github/workflows/ai-code-review.yml",
+    ]
+
+
+def test_detects_ai_review_infra_only_change_from_manifest():
+    manifest = [
+        {"path": ".github/scripts/ai_review.py"},
+        {"path": ".github/workflows/ai-code-review.yml"},
+    ]
+
+    assert ai_review._is_ai_review_infra_only_change(manifest) is True
+    assert ai_review._is_ai_review_infra_only_change(
+        [*manifest, {"path": ".github/scripts/tests/test_ai_review_formatting_gate.py"}]
+    ) is False
+
+
 def test_combine_batch_reviews_filters_false_empty_description_structural_block():
     structural_review = """## Structural Review
 Looks fine overall.

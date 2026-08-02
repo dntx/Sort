@@ -526,7 +526,7 @@ def build_change_manifest(diff: str) -> list[dict]:
     manifest: list[dict] = []
     for section in split_diff_sections(diff):
         path = section_path(section)
-        if not path or path in EXCLUDED_REVIEW_PATHS:
+        if not path:
             continue
         added, removed = section_line_counts(section)
         manifest.append(
@@ -539,6 +539,13 @@ def build_change_manifest(diff: str) -> list[dict]:
             }
         )
     return manifest
+
+
+def _is_ai_review_infra_only_change(manifest: list[dict]) -> bool:
+    """True when every changed file belongs to the AI review infrastructure."""
+    return bool(manifest) and all(
+        (entry.get("path") or "") in EXCLUDED_REVIEW_PATHS for entry in manifest
+    )
 
 
 def _iter_changed_content_lines(section: str) -> list[str]:
@@ -2024,7 +2031,7 @@ def main() -> int:
     manifest = build_change_manifest(raw_diff)
 
     batches = build_diff_batches(diff)
-    if not batches and not manifest:
+    if not batches and (not manifest or _is_ai_review_infra_only_change(manifest)):
         review = (
             "## Summary\n"
             "This PR only changes the AI review infrastructure itself, so the reviewer\n"
