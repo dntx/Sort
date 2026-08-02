@@ -199,6 +199,29 @@ def test_post_review_retries_transient_failure_then_succeeds():
     sleep_mock.assert_called_once()
 
 
+def test_request_chat_completion_uses_copilot_cli_prompt_mode():
+    response = subprocess.CompletedProcess(
+        ["copilot", "--yolo"],
+        0,
+        stdout="## Summary\nLooks good.\n\n## Findings\nNo issues found.\n\nVERDICT: APPROVE\n",
+        stderr="",
+    )
+
+    with mock.patch.object(ai_review.subprocess, "run", return_value=response) as run_mock:
+        review = ai_review.request_chat_completion(
+            [
+                {"role": "system", "content": "System instructions."},
+                {"role": "user", "content": "Review this diff."},
+            ]
+        )
+
+    assert "VERDICT: APPROVE" in review
+    command = run_mock.call_args.args[0]
+    assert command[:3] == ["copilot", "--yolo", "-p"]
+    assert "[SYSTEM]" in command[3]
+    assert "[USER]" in command[3]
+
+
 def test_combine_batch_reviews_filters_false_empty_description_structural_block():
     structural_review = """## Structural Review
 Looks fine overall.

@@ -16,8 +16,6 @@ import subprocess
 import sys
 import tempfile
 import time
-import urllib.error
-import urllib.request
 import unicodedata
 
 if hasattr(sys.stdout, "reconfigure"):
@@ -25,39 +23,6 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-MODELS_ENDPOINT = "https://models.github.ai/inference/chat/completions"
-
-
-def _resolve_model_chain() -> list[str]:
-    """Ordered list of models to try; each GitHub Models model has its own quota.
-
-    On HTTP 429 the reviewer falls back to the next model in the chain, so the
-    effective daily budget is the sum of every model's quota. Low rate-limit
-    tier models (150 requests/day) are tried before high tier (50/day).
-    Configure with REVIEW_MODELS (comma-separated) or a single REVIEW_MODEL.
-    """
-    raw = os.environ.get("REVIEW_MODELS", "").strip()
-    if raw:
-        chain = [m.strip() for m in raw.split(",") if m.strip()]
-    else:
-        single = os.environ.get("REVIEW_MODEL", "").strip()
-        chain = [single] if single else []
-    default_chain = [
-        "openai/gpt-4.1",
-        "openai/gpt-4o",
-        "openai/gpt-4.1-mini",
-        "openai/gpt-4o-mini",
-    ]
-    for model in default_chain:
-        if model not in chain:
-            chain.append(model)
-    return chain
-
-
-MODEL_CHAIN = _resolve_model_chain()
-# Index of the model currently in use; advances as models get rate limited so
-# batches after the first do not re-hit a model already known to be exhausted.
-_active_model_index = 0
 MAX_DIFF_CHARS = 60000
 # Group diff sections into larger batches to minimise the number of model
 # requests per review (fewer requests = less rate-limit pressure and faster
@@ -70,12 +35,6 @@ MAX_BATCH_CHARS = 12000
 # new identifiers are extracted from the WHOLE diff separately, so naming checks
 # still work even when this slice is truncated.
 STRUCTURAL_DIFF_CHARS = 14000
-# Transient rate limiting (HTTP 429) is retried with capped exponential backoff.
-# The per-attempt delay is capped so a large server-provided Retry-After (e.g. a
-# quota-window reset that can be many minutes) never stalls the whole review.
-MODEL_MAX_RETRIES = 3
-MODEL_RETRY_BASE_SECONDS = 4
-MODEL_RETRY_MAX_SECONDS = 20
 PR_METADATA_MAX_RETRIES = 3
 PR_METADATA_RETRY_BASE_SECONDS = 2
 PR_METADATA_RETRY_MAX_SECONDS = 10
@@ -83,6 +42,8 @@ REVIEW_PUBLISH_MAX_RETRIES = 3
 REVIEW_PUBLISH_RETRY_BASE_SECONDS = 2
 REVIEW_PUBLISH_RETRY_MAX_SECONDS = 10
 EXCLUDED_REVIEW_PATHS = {".github/scripts/ai_review.py", ".github/workflows/ai-code-review.yml"}
+
+COPILOT_CLI_PACKAGE = "@github/copilot"
 
 SYSTEM_PROMPT = """\
 You are a meticulous senior software engineer reviewing a GitHub pull request
@@ -1307,69 +1268,49 @@ def filtered_review_diff(diff: str, max_chars: int = MAX_DIFF_CHARS) -> str:
     return combined
 
 
-def _post_once(model: str, payload: bytes, token: str) -> str:
-    """Single POST to the models endpoint for a specific model."""
-    request = urllib.request.Request(
-        MODELS_ENDPOINT,
-        data=payload,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
-        method="POST",
+def _render_copilot_prompt(messages: list[dict]) -> str:
+    """Flatten chat messages into a single Copilot CLI prompt."""
+    parts: list[str] = []
+    for message in messages:
+        role = (message.get("role") or "user").upper()
+        content = (message.get("content") or "").strip()
+        if not content:
+            continue
+        parts.append(f"[{role}]\n{content}")
+    parts.append(
+        "[INSTRUCTION]\nRespond only with the requested markdown review body. "
+        "Keep the final standalone verdict line exactly in the form 'VERDICT: <BLOCK|COMMENT|APPROVE>'."
     )
-    with urllib.request.urlopen(request, timeout=180) as response:
-        data = json.loads(response.read().decode("utf-8"))
-    return data["choices"][0]["message"]["content"].strip()
+    return "\n\n".join(parts)
+
+
+def _build_copilot_command(prompt: str) -> list[str]:
+    command = ["copilot", "--yolo", "-p", prompt]
+    model = (os.environ.get("REVIEW_MODEL") or "").strip()
+    if model:
+        command.extend(["--model", model])
+    return command
 
 
 def request_chat_completion(messages: list[dict]) -> str:
-    """POST a chat completion, rotating across the model chain on HTTP 429.
-
-    Each model in ``MODEL_CHAIN`` has its own quota, so on a 429 we immediately
-    fall back to the next model instead of waiting. A model that succeeds
-    becomes "sticky" for subsequent calls (batches) so we don't re-hit models
-    already known to be exhausted. Only when every model in the chain is rate
-    limited do we apply a capped backoff and retry the whole chain, up to
-    ``MODEL_MAX_RETRIES`` passes.
-    """
-    global _active_model_index
-    token = os.environ["GITHUB_TOKEN"]
-
-    def payload_for(model: str) -> bytes:
-        return json.dumps(
-            {"model": model, "temperature": 0.1, "messages": messages}
-        ).encode("utf-8")
-
-    for attempt in range(MODEL_MAX_RETRIES):
-        for offset in range(len(MODEL_CHAIN)):
-            index = (_active_model_index + offset) % len(MODEL_CHAIN)
-            model = MODEL_CHAIN[index]
-            try:
-                result = _post_once(model, payload_for(model), token)
-                _active_model_index = index  # stick with the working model
-                return result
-            except urllib.error.HTTPError as err:
-                if err.code == 429:
-                    print(f"Rate limited (429) on model '{model}'; trying next model.")
-                    continue
-                raise
-        # Every model in the chain was rate limited in this pass (a non-429
-        # error would have propagated above); back off and retry the chain.
-        if attempt < MODEL_MAX_RETRIES - 1:
-            delay = min(
-                MODEL_RETRY_BASE_SECONDS * (2 ** attempt), MODEL_RETRY_MAX_SECONDS
-            )
-            print(
-                f"All models rate limited; backing off {delay:.0f}s "
-                f"(pass {attempt + 1}/{MODEL_MAX_RETRIES})."
-            )
-            time.sleep(delay)
-
-    raise urllib.error.HTTPError(
-        MODELS_ENDPOINT, 429, "All models rate limited (429).", {}, None
+    """Run the review prompt through GitHub Copilot CLI in programmatic mode."""
+    prompt = _render_copilot_prompt(messages)
+    proc = subprocess.run(
+        _build_copilot_command(prompt),
+        text=True,
+        capture_output=True,
     )
+    if proc.returncode != 0:
+        stderr = (proc.stderr or "").strip()
+        stdout = (proc.stdout or "").strip()
+        details = stderr or stdout or f"copilot exited {proc.returncode}"
+        raise RuntimeError(
+            "Copilot CLI review request failed. "
+            f"Ensure {COPILOT_CLI_PACKAGE} is installed and the workflow grants "
+            "copilot-requests: write. "
+            f"Details: {details}"
+        )
+    return (proc.stdout or "").strip()
 
 
 
@@ -2137,9 +2078,6 @@ def main() -> int:
     for index, batch in enumerate(batches, start=1):
         try:
             review = call_model(batch, index, len(batches))
-        except urllib.error.HTTPError as err:
-            print(f"GitHub Models request failed on batch {index}/{len(batches)}: {err.code} {err.read().decode('utf-8', 'replace')}")
-            return 1
         except Exception as err:  # noqa: BLE001
             print(f"Review generation failed on batch {index}/{len(batches)}: {err}")
             return 1
