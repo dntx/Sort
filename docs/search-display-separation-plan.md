@@ -2,7 +2,7 @@
 
 ## Status
 
-- State: Architecture decisions resolved; Batches 0-9 complete; Batch 10 next
+- State: Architecture decisions resolved; Batches 0-10 complete; D7/D8 implementation landed and requires runtime verification on a non-blocked environment
 - Baseline: `main` after PR #450 (`df1c33e`)
 - Related work: PR #442 is intentionally paused and is not a dependency of this plan
 - Execution rule: implement one batch at a time and complete its focused validation before starting the next
@@ -797,7 +797,7 @@ Selected: A.
 
 ### D7. GUI materialization policy
 
-Status: Resolved, 2026-07-25
+Status: In progress, partially implemented
 
 Decision: use fully asynchronous, selection-driven materialization. Search publishes immutable
 `SolvedStrategy` snapshots and never waits for GUI display construction.
@@ -825,9 +825,16 @@ Options:
 
 Selected: D (the discussed B2 variant).
 
+Implementation gap note (2026-07-26):
+
+- The strong D7 target remains the contract (`search never waits for display work`).
+- Exact-mode and post-feasible edge-stage presentation paths are deferred via independent presentation tasks.
+- GUI greedy-feasible initial stage now enters deferred materialization and proof-tighten/edge-stage callbacks are buffered until the initial stage snapshot is materialized and published atomically.
+- Remaining follow-up: align D8's stricter repeated phase-aware GUI Stop semantics.
+
 ### D8. Cancellation during display materialization
 
-Status: Resolved, 2026-07-25
+Status: Implemented, runtime verification pending
 
 Decision: use a separately cancellable materialization phase. After Ctrl+C stops search, a subsequent Ctrl+C
 during incumbent materialization cancels materialization and suppresses strategy-result output.
@@ -855,6 +862,12 @@ Options:
 - C. Ask the user whether to finish materialization after Stop.
 
 Selected: B with phase-aware repeated Ctrl+C cancellation.
+
+Implementation gap note (2026-07-26):
+
+- CLI behavior matches the D8 target semantics (separate search/materialization cancellation and suppression on materialization cancel).
+- GUI Stop now uses phase-aware cancellation: first Stop cancels solver work; once solver work has stopped, a repeated Stop cancels active presentation materialization.
+- Focused runtime test execution remains blocked in this environment by Windows Application Control (`0x800711C7`), so runtime verification is pending on CI or an unblocked machine.
 
 ### D9. Timing semantics
 
@@ -989,9 +1002,8 @@ Risks and follow-ups:
 
 ## 11. Immediate Next Step
 
-After Batch 6 is reviewed and merged, implement Batch 7 as a CLI deferred-materialization slice:
+Complete the remaining D7/D8 implementation gaps while preserving current behavior guarantees:
 
-1. stop materializing intermediate CLI stages that are not printed by default,
-2. materialize the final or interrupted immutable incumbent on demand,
-3. preserve stage-limit behavior, progression text, and Ctrl+C presentation semantics,
-4. keep paused PR #442 untouched.
+1. run focused GUI runtime validation for D7/D8 behavior in CI or an unblocked environment,
+2. confirm no regression in stage-history ordering when deferred initial greedy presentation overlaps proof-tighten callbacks,
+3. keep paused PR #442 untouched.
