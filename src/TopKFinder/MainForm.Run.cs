@@ -185,8 +185,8 @@ partial class MainForm
 
     private void ApplyMaterializedInitialGreedyStage(StageResult stage)
     {
-        StrategyPlan feasiblePlan = stage.MaterializedPlan
-            ?? throw new InvalidOperationException("Initial greedy stage materialization must produce a plan.");
+        if (stage.MaterializedPlan is not StrategyPlan feasiblePlan)
+            return;
 
         _feasiblePlan = feasiblePlan;
         if (_incumbentStage is { HasPlan: false, Solution: { } incumbentSolution }

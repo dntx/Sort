@@ -400,6 +400,27 @@ public sealed class MainFormRenderingTests
     }
 
     [Fact]
+    public void ApplyMaterializedInitialGreedyStage_NullPlan_ReturnsWithoutThrowing()
+    {
+        using var form = new MainForm();
+        _ = form.Handle;
+
+        SetPrivateField(form, "_feasiblePlan", null);
+
+        var stage = new StageResult(
+            StageNames.GreedyFeasible,
+            materializedPlan: null,
+            TimeSpan.FromMilliseconds(1),
+            StageOutcome.Completed,
+            CreateDeferredExactStepStage().Solution,
+            StageTimings.Legacy(TimeSpan.FromMilliseconds(1)));
+
+        InvokePrivateInstanceVoid(form, "ApplyMaterializedInitialGreedyStage", stage);
+
+        Assert.Null(GetPrivateField<StrategyPlan?>(form, "_feasiblePlan"));
+    }
+
+    [Fact]
     public void PresentationStageCache_EvictsOldestEntryWhenCapacityExceeded()
     {
         using var form = new MainForm();
