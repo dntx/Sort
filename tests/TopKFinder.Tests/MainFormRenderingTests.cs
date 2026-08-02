@@ -417,7 +417,7 @@ public sealed class MainFormRenderingTests
 
         InvokePrivateInstanceVoid(form, "ApplyMaterializedInitialGreedyStage", stage);
 
-        Assert.Null(GetPrivateField<StrategyPlan?>(form, "_feasiblePlan"));
+        Assert.Null(GetPrivateFieldValue(form, "_feasiblePlan"));
     }
 
     [Fact]
@@ -618,6 +618,14 @@ public sealed class MainFormRenderingTests
         return value is T typed
             ? typed
             : throw new InvalidOperationException($"{type.Name}.{fieldName} returned unexpected value");
+    }
+
+    private static object? GetPrivateFieldValue(object instance, string fieldName)
+    {
+        Type type = instance.GetType();
+        FieldInfo field = type.GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Instance)
+            ?? throw new InvalidOperationException($"Missing private field {type.Name}.{fieldName}");
+        return field.GetValue(instance);
     }
 
     private static void SetPrivateField(object instance, string fieldName, object? value)
