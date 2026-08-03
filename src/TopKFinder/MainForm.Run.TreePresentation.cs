@@ -7,8 +7,8 @@ namespace TopKFinder;
 
 partial class MainForm
 {
-    private const string SearchRunningSuffix = " [search: running]";
-    private const string DisplayRunningSuffix = " [display: running]";
+    private const string SearchRunningSuffix = " [searching]";
+    private const string DisplayRunningSuffix = " [rendering]";
     private const string StoppedSuffix = " [stopped]";
 
     private static string FormatSearchRunningPlaceholderText(string stageName)
