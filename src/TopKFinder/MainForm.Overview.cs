@@ -93,7 +93,7 @@ partial class MainForm
         string firstStageName = defaultPlan is null
             ? NextProofTightenStageNameForPresentation(feasiblePlan, feasiblePlan.MaxStep)
             : StageNames.FormatExactEdgeCompact(feasiblePlan.MaxStep);
-        return BuildOverviewNoteNode(FormatSearchPendingPlaceholderText(firstStageName));
+        return BuildOverviewNoteNode(FormatSearchRunningPlaceholderText(firstStageName));
     }
 
     private TreeNode BuildFinalCompactOverviewNode(StrategyPlan compactPlan, bool compactImproved)

@@ -698,7 +698,7 @@ partial class MainForm
         // A follow-up stage always lands after every emitted stage except the terminal edge-compact
         // pass: after a proof-tighten stage -- whether it found a solution or proved/failed the
         // ceiling -- the worker next probes a deeper feasible ceiling or runs the final edge-compaction
-        // pass. We announce that probe with a trailing "<next> [search: pending]" placeholder
+        // pass. We announce that probe with a trailing "<next> [search: running]" placeholder
         // so the tree/overview never look idle while it runs. The terminal EdgeCompact stage has nothing
         // after it, so it appends no placeholder.
         bool hasFollowUp = !IsEdgeCompactStageName(stage.Name);
@@ -711,8 +711,6 @@ partial class MainForm
         _treeView.BeginUpdate();
         TreeNode root = _treeView.Nodes[0];
         root.Nodes.Add(BuildStageTreeNode(stage, scope, improved));
-        if (nextStageName is not null)
-            root.Nodes.Add(CreateSearchPendingPlaceholderNode(nextStageName));
 
         if (improved)
         {
@@ -735,9 +733,10 @@ partial class MainForm
 
         _overviewTree.BeginUpdate();
         _overviewTree.Nodes.Add(BuildStageOverviewNode(stage, scope, improved));
-        if (nextStageName is not null)
-            _overviewTree.Nodes.Add(BuildOverviewNoteNode(FormatSearchPendingPlaceholderText(nextStageName)));
         _overviewTree.EndUpdate();
+
+        if (nextStageName is not null)
+            EnsureLatestStageSearchPlaceholder(nextStageName);
 
         RemoveStageStatusPlaceholder(stage.Name);
 

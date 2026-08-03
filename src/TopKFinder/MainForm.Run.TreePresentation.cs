@@ -7,13 +7,9 @@ namespace TopKFinder;
 
 partial class MainForm
 {
-    private const string SearchPendingSuffix = " [search: pending]";
     private const string SearchRunningSuffix = " [search: running]";
     private const string DisplayRunningSuffix = " [display: running]";
     private const string StoppedSuffix = " [stopped]";
-
-    private static string FormatSearchPendingPlaceholderText(string stageName)
-        => stageName + SearchPendingSuffix;
 
     private static string FormatSearchRunningPlaceholderText(string stageName)
         => stageName + SearchRunningSuffix;
@@ -24,14 +20,8 @@ partial class MainForm
     private static string FormatStoppedPlaceholderText(string stageName)
         => stageName + StoppedSuffix;
 
-    private TreeNode CreateSearchPendingPlaceholderNode(string stageName)
-        => new(FormatSearchPendingPlaceholderText(stageName)) { ForeColor = _palette.MutedForeColor };
-
     private TreeNode CreateSearchRunningPlaceholderNode(string stageName)
         => new(FormatSearchRunningPlaceholderText(stageName)) { ForeColor = _palette.MutedForeColor };
-
-    private static bool IsSearchPendingPlaceholderText(string text)
-        => text.EndsWith(SearchPendingSuffix, StringComparison.Ordinal);
 
     private static bool IsSearchRunningPlaceholderText(string text)
         => text.EndsWith(SearchRunningSuffix, StringComparison.Ordinal);
@@ -40,8 +30,7 @@ partial class MainForm
         => text.EndsWith(DisplayRunningSuffix, StringComparison.Ordinal);
 
     private static bool IsAnyStageStatusPlaceholderText(string text)
-        => IsSearchPendingPlaceholderText(text)
-            || IsSearchRunningPlaceholderText(text)
+        => IsSearchRunningPlaceholderText(text)
             || IsDisplayRunningPlaceholderText(text)
             || text.EndsWith(StoppedSuffix, StringComparison.Ordinal);
 
@@ -67,14 +56,12 @@ partial class MainForm
 
     private static int StageStatusRank(string text)
     {
-        if (IsSearchPendingPlaceholderText(text))
-            return 1;
         if (IsSearchRunningPlaceholderText(text))
-            return 2;
+            return 1;
         if (IsDisplayRunningPlaceholderText(text))
-            return 3;
+            return 2;
         if (text.EndsWith(StoppedSuffix, StringComparison.Ordinal))
-            return 4;
+            return 3;
         return 0;
     }
 
@@ -355,7 +342,7 @@ partial class MainForm
     private TreeNode BuildCompactTreeSlotNode(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool compactImproved)
     {
         if (compactPlan is null)
-            return CreateSearchPendingPlaceholderNode(FirstCompactTreeStageName(feasiblePlan, defaultPlan));
+            return CreateSearchRunningPlaceholderNode(FirstCompactTreeStageName(feasiblePlan, defaultPlan));
 
         string compactStageName = FormatCompactStageName(defaultPlan is null, compactPlan.MaxStep);
         return compactImproved
