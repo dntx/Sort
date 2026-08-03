@@ -7,17 +7,120 @@ namespace TopKFinder;
 
 partial class MainForm
 {
-    private const string ComputingSuffix = ": computing...";
+    private const string SearchPendingSuffix = " [search: pending]";
+    private const string SearchRunningSuffix = " [search: running]";
+    private const string DisplayRunningSuffix = " [display: running]";
+    private const string StoppedSuffix = " [stopped]";
 
-    private static string FormatComputingPlaceholderText(string stageName)
-        => stageName + ComputingSuffix;
+    private static string FormatSearchPendingPlaceholderText(string stageName)
+        => stageName + SearchPendingSuffix;
 
-    private TreeNode CreateComputingPlaceholderNode(string stageName)
-        => new(FormatComputingPlaceholderText(stageName)) { ForeColor = _palette.MutedForeColor };
+    private static string FormatSearchRunningPlaceholderText(string stageName)
+        => stageName + SearchRunningSuffix;
+
+    private static string FormatDisplayRunningPlaceholderText(string stageName)
+        => stageName + DisplayRunningSuffix;
+
+    private static string FormatStoppedPlaceholderText(string stageName)
+        => stageName + StoppedSuffix;
+
+    private TreeNode CreateSearchPendingPlaceholderNode(string stageName)
+        => new(FormatSearchPendingPlaceholderText(stageName)) { ForeColor = _palette.MutedForeColor };
+
+    private TreeNode CreateSearchRunningPlaceholderNode(string stageName)
+        => new(FormatSearchRunningPlaceholderText(stageName)) { ForeColor = _palette.MutedForeColor };
+
+    private static bool IsSearchPendingPlaceholderText(string text)
+        => text.EndsWith(SearchPendingSuffix, StringComparison.Ordinal);
+
+    private static bool IsSearchRunningPlaceholderText(string text)
+        => text.EndsWith(SearchRunningSuffix, StringComparison.Ordinal);
+
+    private static bool IsDisplayRunningPlaceholderText(string text)
+        => text.EndsWith(DisplayRunningSuffix, StringComparison.Ordinal);
+
+    private static bool IsAnyStageStatusPlaceholderText(string text)
+        => IsSearchPendingPlaceholderText(text)
+            || IsSearchRunningPlaceholderText(text)
+            || IsDisplayRunningPlaceholderText(text)
+            || text.EndsWith(StoppedSuffix, StringComparison.Ordinal);
+
+    private static bool IsStageStatusPlaceholderForStage(string text, string stageName)
+    {
+        if (text.Length <= stageName.Length)
+            return false;
+
+        if (!text.StartsWith(stageName, StringComparison.Ordinal))
+            return false;
+
+        return IsAnyStageStatusPlaceholderText(text);
+    }
+
+    private static string PlaceholderStageName(string text)
+    {
+        int split = text.IndexOf(" [", StringComparison.Ordinal);
+        return split > 0 ? text[..split] : text;
+    }
+
+    private void UpsertLatestStagePlaceholder(TreeNodeCollection nodes, string stageName, string placeholderText)
+    {
+        for (int i = nodes.Count - 1; i >= 0; i--)
+        {
+            TreeNode node = nodes[i];
+            if (!IsAnyStageStatusPlaceholderText(node.Text))
+                continue;
+
+            if (IsStageStatusPlaceholderForStage(node.Text, stageName))
+            {
+                node.Text = placeholderText;
+                node.ForeColor = _palette.MutedForeColor;
+                return;
+            }
+
+            if (i == nodes.Count - 1)
+            {
+                node.Text = placeholderText;
+                node.ForeColor = _palette.MutedForeColor;
+                return;
+            }
+        }
+
+        nodes.Add(new TreeNode(placeholderText) { ForeColor = _palette.MutedForeColor });
+    }
+
+    private void EnsureLatestStageSearchPlaceholder(string stageName)
+    {
+        if (_treeView.Nodes.Count == 0)
+            return;
+
+        TreeNode root = _treeView.Nodes[0];
+        _treeView.BeginUpdate();
+        UpsertLatestStagePlaceholder(root.Nodes, stageName, FormatSearchRunningPlaceholderText(stageName));
+        _treeView.EndUpdate();
+
+        _overviewTree.BeginUpdate();
+        UpsertLatestStagePlaceholder(_overviewTree.Nodes, stageName, FormatSearchRunningPlaceholderText(stageName));
+        _overviewTree.EndUpdate();
+    }
+
+    private void MarkStageDisplayInProgress(string stageName)
+    {
+        if (_treeView.Nodes.Count == 0)
+            return;
+
+        TreeNode root = _treeView.Nodes[0];
+        _treeView.BeginUpdate();
+        UpsertLatestStagePlaceholder(root.Nodes, stageName, FormatDisplayRunningPlaceholderText(stageName));
+        _treeView.EndUpdate();
+
+        _overviewTree.BeginUpdate();
+        UpsertLatestStagePlaceholder(_overviewTree.Nodes, stageName, FormatDisplayRunningPlaceholderText(stageName));
+        _overviewTree.EndUpdate();
+    }
 
     private static bool TryRemoveTrailingComputingPlaceholder(TreeNodeCollection nodes)
     {
-        if (nodes.Count == 0 || !IsComputingPlaceholderText(nodes[nodes.Count - 1].Text))
+        if (nodes.Count == 0 || !IsAnyStageStatusPlaceholderText(nodes[nodes.Count - 1].Text))
             return false;
 
         nodes.RemoveAt(nodes.Count - 1);
@@ -30,27 +133,18 @@ partial class MainForm
             return false;
 
         TreeNode tail = nodes[nodes.Count - 1];
-        if (!IsComputingPlaceholderText(tail.Text))
+        if (!IsAnyStageStatusPlaceholderText(tail.Text))
             return false;
 
-        tail.Text = MarkComputingPlaceholderStopped(tail.Text);
+        tail.Text = FormatStoppedPlaceholderText(PlaceholderStageName(tail.Text));
         return true;
     }
 
-    // A trailing tree/overview node ending in ": computing..." is a transient in-progress placeholder
-    // (the initial second-stage slot, or a live proof-tighten "<name>: computing..." probe appended between
+    // A trailing tree/overview status node is a transient in-progress placeholder
+    // (the initial second-stage slot, or a live proof-tighten "<name> [search: ...]" probe appended between
     // greedy tightening stages). Both are replaced in place once the stage they announce lands.
-    private static bool IsComputingPlaceholderText(string text)
-        => text.EndsWith(ComputingSuffix, StringComparison.Ordinal);
 
-    // Rewrite a "<stage>: computing..." placeholder to "<stage>: stopped (not computed)" so a Stop
-    // leaves no wording implying a computation is still running.
-    private static string MarkComputingPlaceholderStopped(string text)
-        => IsComputingPlaceholderText(text)
-            ? text[..^ComputingSuffix.Length] + ": stopped (not computed)"
-            : text;
-
-    // On a user Stop, an interrupted stage leaves transient "computing.../in progress" placeholders on
+    // On a user Stop, an interrupted stage leaves transient search/display placeholders on
     // screen (tree root suffix, the trailing compact slot, and the root details). Rewrite them to a
     // "stopped" wording so nothing still implies a computation is running. If the compact/edge stage had
     // already produced output, the placeholders were replaced during the run and there is nothing to fix.
@@ -84,8 +178,8 @@ partial class MainForm
     // Defensive cleanup after a normal (non-stopped) greedy run: RunGreedyPipeline always ends
     // by emitting the terminal EdgeCompact stage, whose handler appends no follow-up placeholder. But the
     // should-not-happen fallback (edgePlan null) returns without that final emission, which would leave
-    // the last "edge compact ...: computing..." placeholder stranded. Drop any such trailing placeholder so a
-    // finished run never shows a "computing..." node.
+    // the last edge-compact pending/running placeholder stranded. Drop any such trailing placeholder so a
+    // finished run never shows a running/pending node.
     private void RemoveTrailingComputingPlaceholder()
     {
         if (_treeView.Nodes.Count > 0)
@@ -109,16 +203,27 @@ partial class MainForm
 
     private static string MarkLabelStopped(string label)
     {
-        int open = label.LastIndexOf(" (computing ", StringComparison.Ordinal);
-        return open >= 0 ? label[..open] + " (stopped)" : label;
+        int searchOpen = label.LastIndexOf(" (search ", StringComparison.Ordinal);
+        if (searchOpen >= 0)
+            return label[..searchOpen] + " (stopped)";
+
+        int computingOpen = label.LastIndexOf(" (computing ", StringComparison.Ordinal);
+        return computingOpen >= 0 ? label[..computingOpen] + " (stopped)" : label;
     }
 
     private static string MarkDetailsStopped(string details)
         => details
             .Replace("next stage in progress", "next stage not run (stopped)")
+            .Replace("next stage search running", "next stage not run (stopped)")
             .Replace($"{StageNames.ExactEdgeCompactPattern} stage in progress", $"{StageNames.ExactEdgeCompactPattern} stage not run (stopped)")
+            .Replace($"{StageNames.ExactEdgeCompactPattern} search running", $"{StageNames.ExactEdgeCompactPattern} stage not run (stopped)")
             .Replace("proof-edge-compact@S stage in progress", $"{StageNames.ExactEdgeCompactPattern} stage not run (stopped)")
-            .Replace("edge compact exact stage in progress", $"{StageNames.ExactEdgeCompactPattern} stage not run (stopped)");
+            .Replace("proof-edge-compact@S search running", $"{StageNames.ExactEdgeCompactPattern} stage not run (stopped)")
+            .Replace("edge compact exact stage in progress", $"{StageNames.ExactEdgeCompactPattern} stage not run (stopped)")
+            .Replace("Greedy-feasible stage in progress.", "Greedy-feasible stage not run (stopped).")
+            .Replace("Step-proof stage in progress.", "Step-proof stage not run (stopped).")
+            .Replace("Greedy-feasible search running.", "Greedy-feasible stage not run (stopped).")
+            .Replace("Step-proof search running.", "Step-proof stage not run (stopped).");
 
     // Before the first stage returns a real plan, show an explicit in-progress placeholder so the tree
     // region is never visually empty during the initial compute.
@@ -126,11 +231,11 @@ partial class MainForm
     {
         string stageName = feasibleMode ? StageNames.GreedyFeasible : StageNames.StepProof;
         string rootLabel = feasibleMode
-            ? $"n={n}, m={m}, k={k} (computing {StageNames.GreedyFeasible} stage...)"
-            : $"n={n}, m={m}, k={k} (computing {StageNames.StepProof} stage...)";
+            ? $"n={n}, m={m}, k={k} (search {StageNames.GreedyFeasible} stage...)"
+            : $"n={n}, m={m}, k={k} (search {StageNames.StepProof} stage...)";
         string rootDetails = feasibleMode
-            ? "Greedy-feasible stage in progress."
-            : "Step-proof stage in progress.";
+            ? "Greedy-feasible search running."
+            : "Step-proof search running.";
 
         _treeView.BeginUpdate();
         _treeView.Nodes.Clear();
@@ -140,7 +245,7 @@ partial class MainForm
             NodeFont = new Font(_treeView.Font, FontStyle.Bold),
             ForeColor = _palette.ForeColor,
         };
-        root.Nodes.Add(CreateComputingPlaceholderNode(stageName));
+        root.Nodes.Add(CreateSearchRunningPlaceholderNode(stageName));
         _treeView.Nodes.Add(root);
         root.Expand();
         _treeView.EndUpdate();
@@ -148,7 +253,7 @@ partial class MainForm
 
         _overviewTree.BeginUpdate();
         _overviewTree.Nodes.Clear();
-        _overviewTree.Nodes.Add(BuildOverviewNoteNode(FormatComputingPlaceholderText(stageName)));
+        _overviewTree.Nodes.Add(BuildOverviewNoteNode(FormatSearchRunningPlaceholderText(stageName)));
         _overviewTree.EndUpdate();
     }
 
@@ -196,7 +301,7 @@ partial class MainForm
     private TreeNode BuildCompactTreeSlotNode(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool compactImproved)
     {
         if (compactPlan is null)
-            return CreateComputingPlaceholderNode(FirstCompactTreeStageName(feasiblePlan, defaultPlan));
+            return CreateSearchPendingPlaceholderNode(FirstCompactTreeStageName(feasiblePlan, defaultPlan));
 
         string compactStageName = FormatCompactStageName(defaultPlan is null, compactPlan.MaxStep);
         return compactImproved
@@ -243,11 +348,11 @@ partial class MainForm
     {
         string head = FormatPlanInputs(feasiblePlan);
         if (defaultPlan is null)
-            return $"{head}, {FormatPlanSqueeze(feasiblePlan)} (computing step...)";
+            return $"{head}, {FormatPlanSqueeze(feasiblePlan)} (search step-proof stage...)";
         if (compactPlan is null)
         {
             double seconds = feasiblePlan.Elapsed.TotalSeconds + defaultPlan.Elapsed.TotalSeconds;
-            return $"{head}, max steps={defaultPlan.MaxStep}, elapsed={seconds:F3} s (computing {StageNames.ExactEdgeCompactPattern} stage...)";
+            return $"{head}, max steps={defaultPlan.MaxStep}, elapsed={seconds:F3} s (search {StageNames.ExactEdgeCompactPattern} stage...)";
         }
         double totalSeconds = feasiblePlan.Elapsed.TotalSeconds + defaultPlan.Elapsed.TotalSeconds + compactPlan.Elapsed.TotalSeconds;
         // Lead with the optimality squeeze on the best plan: once the final tightening proves the next
@@ -270,7 +375,7 @@ partial class MainForm
     // Incrementally folds the finished compact result into the already-rendered tree instead of
     // rebuilding from scratch. The step subtree (root.Nodes[0]) -- along with its navigation map
     // entries -- is left untouched, so a user mid-browse keeps their expand/scroll/selection state.
-    // Only the transient "compact: computing..." placeholder (root.Nodes[1]) is replaced -- either with
+    // Only the transient compact pending/running placeholder (root.Nodes[1]) is replaced -- either with
     // the compact subtree (a sibling scoped "compact" so its state keys never collide) when it improved,
     // or with a "no solution" note when it did not.
     private void FinalizeCompactInTree(StrategyPlan defaultPlan, StrategyPlan compactPlan, bool compactImproved)

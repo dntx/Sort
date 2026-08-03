@@ -163,6 +163,7 @@ partial class MainForm
                 PublicPipelineOrchestrator.RunGreedyPipelineDeferred(
                     request.Builder,
                     MarshalProofTightenStage,
+                    MarshalStageSearchStart,
                     preparationAlreadyApplied: true);
                 return 0;
             },
@@ -219,7 +220,7 @@ partial class MainForm
         // MaxStep-optimal, so EdgeCompact only trims edges among equally optimal groups.
         Interlocked.Exchange(ref _activePhase, 1);
         await Task.Run(
-            () => PublicPipelineOrchestrator.RunExactPipelineDeferred(request.Builder, MarshalExactStage),
+            () => PublicPipelineOrchestrator.RunExactPipelineDeferred(request.Builder, MarshalExactStage, MarshalStageSearchStart),
             request.CancellationToken);
         _solverWorkStopped = true;
         await DrainPresentationTasksAsync();
@@ -421,6 +422,42 @@ partial class MainForm
     private void MarshalExactStage(StageResult stage)
         => MarshalStageToUiThread(stage, OnExactStage);
 
+    private void MarshalStageSearchStart(string stageName)
+    {
+        if (!CanAcceptStageCallback())
+            return;
+
+        try
+        {
+            if (_pauseEachStageForRun)
+            {
+                Invoke(() => OnStageSearchStarted(stageName));
+            }
+            else
+            {
+                BeginInvoke(() => OnStageSearchStarted(stageName));
+            }
+        }
+        catch (ObjectDisposedException)
+        {
+            // Form closed mid-run; nothing to update.
+        }
+        catch (InvalidOperationException)
+        {
+            // Handle destroyed during shutdown.
+        }
+    }
+
+    private void OnStageSearchStarted(string stageName)
+    {
+        // Simplified run headline semantics: once a new stage starts searching, treat the previous
+        // one as finished for the single "current stage" clock and progress header.
+        _currentStageName = stageName;
+        _stageStartMs = _runStopwatch?.ElapsedMilliseconds ?? 0;
+        EnsureLatestStageSearchPlaceholder(stageName);
+        UpdateElapsedLabel();
+    }
+
     private void MarshalStageToUiThread(StageResult stage, Action<StageResult> onStage)
     {
         if (!CanAcceptStageCallback())
@@ -467,9 +504,8 @@ partial class MainForm
             string compactStageName = StageNames.FormatExactEdgeCompact(
                 stage.Solution.Score.WorstCaseSteps);
             Interlocked.Exchange(ref _activePhase, 2);
-            _currentStageName = compactStageName;
-            _stageStartMs = _runStopwatch?.ElapsedMilliseconds ?? 0;
 
+            MarkStageDisplayInProgress(stage.Name);
             QueueStageMaterialization(stage, ApplyMaterializedStepProofStage);
             return;
         }
@@ -595,7 +631,7 @@ partial class MainForm
     // Name of the next stage RunGreedyPipeline will emit given the best incumbent max-step so
     // far. Mirrors the V2 loop: it tightens to the next proof-tighten ceiling while that ceiling is still above
     // the proven analytic lower bound, otherwise the final "greedy-edge-compact@S" pass runs. Used to label
-    // the transient "...: computing..." placeholder so it matches the stage name that actually lands.
+    // the transient stage-status placeholder so it matches the stage name that actually lands.
     private string NextProofTightenStageName(int incumbentMaxStep)
         => PipelineStageProtocol.NextGreedyStageName(
             _initialGreedyStage?.Solution
@@ -618,8 +654,8 @@ partial class MainForm
 
     // Anytime greedy edge handler: invoked on the UI thread once per edge stage as the worker thread
     // produces it (each proof-tighten stage, then the final "greedy-edge-compact@S"
-    // pass, or a no-solution/incomplete terminal stage). The first stage fills the computing
-    // slot in place; every later stage is appended as a new tree + overview section, so the user watches
+    // pass, or a no-solution/incomplete terminal stage). The first stage fills the pending/running slot
+    // in place; every later stage is appended as a new tree + overview section, so the user watches
     // the strategy improve stage by stage. Each tree gets a unique scope ("edge0", "edge1", ...) so
     // their per-state navigation keys never collide.
     private void OnProofTightenStage(StageResult stage)
@@ -642,6 +678,7 @@ partial class MainForm
 
         if (needsDeferredMaterialization)
         {
+            MarkStageDisplayInProgress(stage.Name);
             QueueStageMaterialization(stage, OnProofTightenStage);
             return;
         }
@@ -658,7 +695,7 @@ partial class MainForm
         // A follow-up stage always lands after every emitted stage except the terminal edge-compact
         // pass: after a proof-tighten stage -- whether it found a solution or proved/failed the
         // ceiling -- the worker next probes a deeper feasible ceiling or runs the final edge-compaction
-        // pass. We announce that in-progress probe with a trailing "<next>: computing..." placeholder
+        // pass. We announce that probe with a trailing "<next> [search: pending]" placeholder
         // so the tree/overview never look idle while it runs. The terminal EdgeCompact stage has nothing
         // after it, so it appends no placeholder.
         bool hasFollowUp = !IsEdgeCompactStageName(stage.Name);
@@ -670,12 +707,12 @@ partial class MainForm
 
         _treeView.BeginUpdate();
         TreeNode root = _treeView.Nodes[0];
-        // Replace the trailing in-progress placeholder (the initial second-stage slot, or the previous
-        // proof-tighten "<name>: computing..." note) with the landed stage.
+        // Replace the trailing status placeholder (the initial second-stage slot, or the previous
+        // proof-tighten status note) with the landed stage.
         TryRemoveTrailingComputingPlaceholder(root.Nodes);
         root.Nodes.Add(BuildStageTreeNode(stage, scope, improved));
         if (nextStageName is not null)
-            root.Nodes.Add(CreateComputingPlaceholderNode(nextStageName));
+            root.Nodes.Add(CreateSearchPendingPlaceholderNode(nextStageName));
 
         if (improved)
         {
@@ -700,17 +737,8 @@ partial class MainForm
         TryRemoveTrailingComputingPlaceholder(_overviewTree.Nodes);
         _overviewTree.Nodes.Add(BuildStageOverviewNode(stage, scope, improved));
         if (nextStageName is not null)
-            _overviewTree.Nodes.Add(BuildOverviewNoteNode(FormatComputingPlaceholderText(nextStageName)));
+            _overviewTree.Nodes.Add(BuildOverviewNoteNode(FormatSearchPendingPlaceholderText(nextStageName)));
         _overviewTree.EndUpdate();
-
-        // Reset the per-stage clock so the progress panel times the upcoming probe from zero, and label
-        // it with the stage about to run. Done whenever a follow-up stage exists (after both improving
-        // and non-improving feasible stages, and after a terminal that still leaves the compact pass).
-        if (nextStageName is not null)
-        {
-            _currentStageName = nextStageName;
-            _stageStartMs = _runStopwatch?.ElapsedMilliseconds ?? 0;
-        }
 
         if (stage.HasPlan)
         {
