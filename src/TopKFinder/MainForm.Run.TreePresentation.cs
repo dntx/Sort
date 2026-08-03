@@ -54,6 +54,36 @@ partial class MainForm
     private static bool IsStageRootNodeText(string text, string stageName)
         => text.StartsWith(stageName + ":", StringComparison.Ordinal);
 
+    private int EnsureStageDisplayOrder(string stageName)
+    {
+        if (_stageDisplayOrder.TryGetValue(stageName, out int order))
+            return order;
+
+        order = _nextStageDisplayOrder++;
+        _stageDisplayOrder[stageName] = order;
+        return order;
+    }
+
+    private bool TryExtractListedStageName(string text, out string stageName)
+    {
+        int statusSplit = text.IndexOf(" [", StringComparison.Ordinal);
+        if (statusSplit > 0)
+        {
+            stageName = text[..statusSplit];
+            return true;
+        }
+
+        int rootSplit = text.IndexOf(':');
+        if (rootSplit > 0)
+        {
+            stageName = text[..rootSplit];
+            return true;
+        }
+
+        stageName = string.Empty;
+        return false;
+    }
+
     private static int StageStatusRank(string text)
     {
         if (IsSearchRunningPlaceholderText(text))
@@ -89,6 +119,42 @@ partial class MainForm
         }
     }
 
+    private int FindStageInsertIndex(TreeNodeCollection nodes, string stageName)
+    {
+        int targetOrder = EnsureStageDisplayOrder(stageName);
+        for (int i = 0; i < nodes.Count; i++)
+        {
+            TreeNode node = nodes[i];
+            if (!TryExtractListedStageName(node.Text, out string listedStageName))
+                continue;
+
+            int listedOrder = EnsureStageDisplayOrder(listedStageName);
+            if (listedOrder > targetOrder)
+                return i;
+        }
+
+        return nodes.Count;
+    }
+
+    private void InsertOrReplaceStageNode(TreeNodeCollection nodes, TreeNode stageNode, string stageName)
+    {
+        for (int i = 0; i < nodes.Count; i++)
+        {
+            if (IsStageRootNodeText(nodes[i].Text, stageName))
+            {
+                nodes.RemoveAt(i);
+                nodes.Insert(i, stageNode);
+                return;
+            }
+        }
+
+        int insertIndex = FindStageInsertIndex(nodes, stageName);
+        if (insertIndex < nodes.Count)
+            nodes.Insert(insertIndex, stageNode);
+        else
+            nodes.Add(stageNode);
+    }
+
     private void UpsertStagePlaceholder(TreeNodeCollection nodes, string stageName, string placeholderText)
     {
         if (HasStageRootNode(nodes, stageName))
@@ -111,7 +177,12 @@ partial class MainForm
             }
         }
 
-        nodes.Add(new TreeNode(placeholderText) { ForeColor = _palette.MutedForeColor });
+        TreeNode placeholderNode = new(placeholderText) { ForeColor = _palette.MutedForeColor };
+        int insertIndex = FindStageInsertIndex(nodes, stageName);
+        if (insertIndex < nodes.Count)
+            nodes.Insert(insertIndex, placeholderNode);
+        else
+            nodes.Add(placeholderNode);
     }
 
     private void EnsureLatestStageSearchPlaceholder(string stageName)

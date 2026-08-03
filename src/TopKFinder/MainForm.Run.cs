@@ -110,10 +110,13 @@ partial class MainForm
         _activePhase = 0;
         _proofTightenStages.Clear();
         _pendingGreedyEdgeStages.Clear();
+        _stageDisplayOrder.Clear();
+        _nextStageDisplayOrder = 0;
         _solverWorkStopped = false;
         ResetPresentationInfrastructure();
         _pauseEachStageForRun = _pauseEachStageCheckBox.Checked;
         _currentStageName = request.FeasibleMode ? StageNames.GreedyFeasible : StageNames.StepProof;
+        EnsureStageDisplayOrder(_currentStageName);
         _stageStartMs = 0;
 
         ClearResultsView();
@@ -453,6 +456,7 @@ partial class MainForm
     {
         // Simplified run headline semantics: once a new stage starts searching, treat the previous
         // one as finished for the single "current stage" clock and progress header.
+        EnsureStageDisplayOrder(stageName);
         _currentStageName = stageName;
         _stageStartMs = _runStopwatch?.ElapsedMilliseconds ?? 0;
         EnsureLatestStageSearchPlaceholder(stageName);
@@ -710,7 +714,7 @@ partial class MainForm
 
         _treeView.BeginUpdate();
         TreeNode root = _treeView.Nodes[0];
-        root.Nodes.Add(BuildStageTreeNode(stage, scope, improved));
+        InsertOrReplaceStageNode(root.Nodes, BuildStageTreeNode(stage, scope, improved), stage.Name);
 
         if (improved)
         {
@@ -732,7 +736,7 @@ partial class MainForm
         _treeView.EndUpdate();
 
         _overviewTree.BeginUpdate();
-        _overviewTree.Nodes.Add(BuildStageOverviewNode(stage, scope, improved));
+        InsertOrReplaceStageNode(_overviewTree.Nodes, BuildStageOverviewNode(stage, scope, improved), stage.Name);
         _overviewTree.EndUpdate();
 
         if (nextStageName is not null)
