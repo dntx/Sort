@@ -459,6 +459,7 @@ partial class MainForm
         EnsureStageDisplayOrder(stageName);
         _currentStageName = stageName;
         _stageStartMs = _runStopwatch?.ElapsedMilliseconds ?? 0;
+        UpdateInitialRootSearchStage(stageName);
         EnsureLatestStageSearchPlaceholder(stageName);
         UpdateElapsedLabel();
     }

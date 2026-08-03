@@ -342,12 +342,8 @@ partial class MainForm
     private void ShowInitialStagePlaceholder(int n, int m, int k, bool feasibleMode)
     {
         string stageName = feasibleMode ? StageNames.GreedyFeasible : StageNames.StepProof;
-        string rootLabel = feasibleMode
-            ? $"n={n}, m={m}, k={k} (search {StageNames.GreedyFeasible} stage...)"
-            : $"n={n}, m={m}, k={k} (search {StageNames.StepProof} stage...)";
-        string rootDetails = feasibleMode
-            ? "Greedy-feasible search running."
-            : "Step-proof search running.";
+        string rootLabel = BuildInitialRootSearchLabel(n, m, k, stageName);
+        string rootDetails = BuildInitialRootSearchDetails(stageName);
 
         _treeView.BeginUpdate();
         _treeView.Nodes.Clear();
@@ -367,6 +363,29 @@ partial class MainForm
         _overviewTree.Nodes.Clear();
         _overviewTree.Nodes.Add(BuildOverviewNoteNode(FormatSearchRunningPlaceholderText(stageName)));
         _overviewTree.EndUpdate();
+    }
+
+    private static string BuildInitialRootSearchLabel(int n, int m, int k, string stageName)
+        => $"n={n}, m={m}, k={k} (search {stageName} stage...)";
+
+    private static string BuildInitialRootSearchDetails(string stageName)
+        => $"{stageName} search running.";
+
+    private void UpdateInitialRootSearchStage(string stageName)
+    {
+        if (_treeView.Nodes.Count == 0 || _feasiblePlan is not null)
+            return;
+
+        if (_treeView.Nodes[0] is not TreeNode root)
+            return;
+
+        if (!Program.TryParseAndValidate(_nTextBox.Text, _mTextBox.Text, _kTextBox.Text, out int n, out int m, out int k, out _))
+            return;
+
+        _treeView.BeginUpdate();
+        root.Text = BuildInitialRootSearchLabel(n, m, k, stageName);
+        root.Tag = new LazyNodeDetails(() => BuildInitialRootSearchDetails(stageName));
+        _treeView.EndUpdate();
     }
 
     private void PopulateTree(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool compactImproved)
