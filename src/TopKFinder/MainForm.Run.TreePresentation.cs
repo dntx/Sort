@@ -62,9 +62,53 @@ partial class MainForm
         return split > 0 ? text[..split] : text;
     }
 
-    private void UpsertLatestStagePlaceholder(TreeNodeCollection nodes, string stageName, string placeholderText)
+    private static bool IsStageRootNodeText(string text, string stageName)
+        => text.StartsWith(stageName + ":", StringComparison.Ordinal);
+
+    private static int StageStatusRank(string text)
+    {
+        if (IsSearchPendingPlaceholderText(text))
+            return 1;
+        if (IsSearchRunningPlaceholderText(text))
+            return 2;
+        if (IsDisplayRunningPlaceholderText(text))
+            return 3;
+        if (text.EndsWith(StoppedSuffix, StringComparison.Ordinal))
+            return 4;
+        return 0;
+    }
+
+    private static bool HasStageRootNode(TreeNodeCollection nodes, string stageName)
+    {
+        for (int i = 0; i < nodes.Count; i++)
+        {
+            if (IsStageRootNodeText(nodes[i].Text, stageName))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static void RemoveStageStatusPlaceholders(TreeNodeCollection nodes, string stageName)
     {
         for (int i = nodes.Count - 1; i >= 0; i--)
+        {
+            TreeNode node = nodes[i];
+            if (IsAnyStageStatusPlaceholderText(node.Text)
+                && IsStageStatusPlaceholderForStage(node.Text, stageName))
+            {
+                nodes.RemoveAt(i);
+            }
+        }
+    }
+
+    private void UpsertStagePlaceholder(TreeNodeCollection nodes, string stageName, string placeholderText)
+    {
+        if (HasStageRootNode(nodes, stageName))
+            return;
+
+        int incomingRank = StageStatusRank(placeholderText);
+        for (int i = 0; i < nodes.Count; i++)
         {
             TreeNode node = nodes[i];
             if (!IsAnyStageStatusPlaceholderText(node.Text))
@@ -72,14 +116,9 @@ partial class MainForm
 
             if (IsStageStatusPlaceholderForStage(node.Text, stageName))
             {
-                node.Text = placeholderText;
-                node.ForeColor = _palette.MutedForeColor;
-                return;
-            }
-
-            if (i == nodes.Count - 1)
-            {
-                node.Text = placeholderText;
+                int currentRank = StageStatusRank(node.Text);
+                if (incomingRank >= currentRank)
+                    node.Text = placeholderText;
                 node.ForeColor = _palette.MutedForeColor;
                 return;
             }
@@ -95,11 +134,11 @@ partial class MainForm
 
         TreeNode root = _treeView.Nodes[0];
         _treeView.BeginUpdate();
-        UpsertLatestStagePlaceholder(root.Nodes, stageName, FormatSearchRunningPlaceholderText(stageName));
+        UpsertStagePlaceholder(root.Nodes, stageName, FormatSearchRunningPlaceholderText(stageName));
         _treeView.EndUpdate();
 
         _overviewTree.BeginUpdate();
-        UpsertLatestStagePlaceholder(_overviewTree.Nodes, stageName, FormatSearchRunningPlaceholderText(stageName));
+        UpsertStagePlaceholder(_overviewTree.Nodes, stageName, FormatSearchRunningPlaceholderText(stageName));
         _overviewTree.EndUpdate();
     }
 
@@ -110,11 +149,26 @@ partial class MainForm
 
         TreeNode root = _treeView.Nodes[0];
         _treeView.BeginUpdate();
-        UpsertLatestStagePlaceholder(root.Nodes, stageName, FormatDisplayRunningPlaceholderText(stageName));
+        UpsertStagePlaceholder(root.Nodes, stageName, FormatDisplayRunningPlaceholderText(stageName));
         _treeView.EndUpdate();
 
         _overviewTree.BeginUpdate();
-        UpsertLatestStagePlaceholder(_overviewTree.Nodes, stageName, FormatDisplayRunningPlaceholderText(stageName));
+        UpsertStagePlaceholder(_overviewTree.Nodes, stageName, FormatDisplayRunningPlaceholderText(stageName));
+        _overviewTree.EndUpdate();
+    }
+
+    private void RemoveStageStatusPlaceholder(string stageName)
+    {
+        if (_treeView.Nodes.Count == 0)
+            return;
+
+        TreeNode root = _treeView.Nodes[0];
+        _treeView.BeginUpdate();
+        RemoveStageStatusPlaceholders(root.Nodes, stageName);
+        _treeView.EndUpdate();
+
+        _overviewTree.BeginUpdate();
+        RemoveStageStatusPlaceholders(_overviewTree.Nodes, stageName);
         _overviewTree.EndUpdate();
     }
 

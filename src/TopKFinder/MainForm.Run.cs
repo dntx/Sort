@@ -145,6 +145,7 @@ partial class MainForm
         _incumbentStage = initialStage;
         _initialGreedyStage = initialStage;
         _greedyIncumbentImproved = prep.GreedyTightenImproved;
+        MarkStageDisplayInProgress(initialStage.Name);
         QueueStageMaterialization(initialStage, ApplyMaterializedInitialGreedyStage);
 
         Interlocked.Exchange(ref _activePhase, 2);
@@ -172,7 +173,6 @@ partial class MainForm
         await DrainPresentationTasksAsync();
         _runStopwatch?.Stop();
 
-        RemoveTrailingComputingPlaceholder();
         StrategyPlan selectedPlan = _incumbentStage?.MaterializedPlan ?? _feasiblePlan
             ?? throw new InvalidOperationException("Expected a materialized greedy incumbent before final UI reconciliation.");
         _compactPlan = selectedPlan;
@@ -202,6 +202,7 @@ partial class MainForm
         _completedFeasibleStats = feasiblePlan.SearchStatistics;
         UpdateSummaryText(feasiblePlan, defaultPlan: null, compactPlan: null, compactImproved: false);
         UpdateStatsPanels();
+        RemoveStageStatusPlaceholder(stage.Name);
         SetRunUiState(RunUiState.CompactComputingInteractive);
 
         if (_pendingGreedyEdgeStages.Count == 0)
@@ -597,6 +598,7 @@ partial class MainForm
         _completedDefaultStats = defaultPlan.SearchStatistics;
         UpdateSummaryText(defaultPlan, defaultPlan, compactPlan: null, compactImproved: false);
         UpdateStatsPanels();
+        RemoveStageStatusPlaceholder(stage.Name);
 
         // The exact plan is now browsable while compact search may still be running.
         SetRunUiState(RunUiState.CompactComputingInteractive);
@@ -626,6 +628,7 @@ partial class MainForm
         _completedCompactStats = compactPlan.SearchStatistics;
         UpdateSummaryText(_defaultPlan, _defaultPlan, compactPlan, _compactImproved);
         UpdateStatsPanels();
+        RemoveStageStatusPlaceholder(stage.Name);
     }
 
     // Name of the next stage RunGreedyPipeline will emit given the best incumbent max-step so
@@ -707,9 +710,6 @@ partial class MainForm
 
         _treeView.BeginUpdate();
         TreeNode root = _treeView.Nodes[0];
-        // Replace the trailing status placeholder (the initial second-stage slot, or the previous
-        // proof-tighten status note) with the landed stage.
-        TryRemoveTrailingComputingPlaceholder(root.Nodes);
         root.Nodes.Add(BuildStageTreeNode(stage, scope, improved));
         if (nextStageName is not null)
             root.Nodes.Add(CreateSearchPendingPlaceholderNode(nextStageName));
@@ -734,11 +734,12 @@ partial class MainForm
         _treeView.EndUpdate();
 
         _overviewTree.BeginUpdate();
-        TryRemoveTrailingComputingPlaceholder(_overviewTree.Nodes);
         _overviewTree.Nodes.Add(BuildStageOverviewNode(stage, scope, improved));
         if (nextStageName is not null)
             _overviewTree.Nodes.Add(BuildOverviewNoteNode(FormatSearchPendingPlaceholderText(nextStageName)));
         _overviewTree.EndUpdate();
+
+        RemoveStageStatusPlaceholder(stage.Name);
 
         if (stage.HasPlan)
         {
