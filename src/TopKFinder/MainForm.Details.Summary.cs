@@ -14,7 +14,7 @@ partial class MainForm
         if (defaultPlan is null)
         {
             _statusLabel.Text =
-                $"{head}, {FormatPlanSqueeze(feasiblePlan)} (not proven optimal). Computing step...";
+                $"{head}, {FormatPlanSqueeze(feasiblePlan)} (not proven optimal). Search step-proof stage...";
             return;
         }
 
@@ -22,7 +22,7 @@ partial class MainForm
         {
             double seconds = feasiblePlan.Elapsed.TotalSeconds + defaultPlan.Elapsed.TotalSeconds;
             _statusLabel.Text =
-                $"{head}, step max={defaultPlan.MaxStep}, elapsed={seconds:F3} s. Computing {StageNames.ExactEdgeCompactPattern} stage...";
+                $"{head}, step max={defaultPlan.MaxStep}, elapsed={seconds:F3} s. Search {StageNames.ExactEdgeCompactPattern} stage...";
             return;
         }
 
@@ -44,7 +44,7 @@ partial class MainForm
         string feasibleText = DisplayEngine.RenderStrategyText(feasiblePlan).TrimEnd();
         var lines = new List<string>
         {
-            "Step strategy (greedy upper bound; next stage in progress)",
+            "Step strategy (greedy upper bound; next stage search running)",
             $"squeeze: {FormatPlanSqueeze(feasiblePlan)}  (not proven optimal)",
             $"step elapsed: {feasiblePlan.Elapsed.TotalSeconds:F3} s",
             $"step total edges: {feasiblePlan.TotalBranchEdges}",
@@ -63,7 +63,7 @@ partial class MainForm
         string defaultText = DisplayEngine.RenderStrategyText(defaultPlan).TrimEnd();
         var lines = new List<string>
         {
-            $"Step result ({StageNames.ExactEdgeCompactPattern} stage in progress)",
+            $"Step result ({StageNames.ExactEdgeCompactPattern} search running)",
             $"step elapsed: {defaultPlan.Elapsed.TotalSeconds:F3} s",
             $"step total edges: {defaultPlan.TotalBranchEdges}",
             $"step output states: {defaultPlan.SearchStatistics.OutputStates}",
