@@ -26,7 +26,15 @@ UI 使用与 CLI 相同的阶段名展示进度：
 - `exact-edge-compact@S`（exact 终段）
 - `greedy-edge-compact@S`（greedy 终段）
 
-当阶段尚在运行时，树视图会显示 `computing...` 占位；阶段完成后替换为真实结果。greedy 流水线可能产生多个 tightening 阶段，按完成顺序追加。
+当阶段尚在运行时，tree / overview 会显示阶段状态占位，而不是笼统的 `computing...`：
+
+- 搜索进行中显示 `searching`
+- 该阶段已完成求解、正在物化/渲染树时显示 `rendering`
+- 若用户中止，尚未落地的阶段占位会改写为 `stopped`
+
+阶段一旦有真实树节点落地，对应状态占位就会移除，因此同一个 stage 在树里始终只保留一条可见记录。greedy 流水线可能产生多个 tightening 阶段；这些阶段在 tree / overview 中按 stage 启动顺序稳定显示，而不是按 render 完成先后重排。
+
+在首个真实 stage 树节点出现前，根节点标题中的 `search <stage> stage...` 文案会跟随当前最新启动的 stage 更新，因此例如 greedy 模式会先显示 `greedy-feasible`，随后切到 `proof-tighten≤N` 或 `greedy-edge-compact@S`，而不会停留在初始阶段名。
 
 ## 3. 运行中可见信息
 
