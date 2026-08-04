@@ -104,6 +104,8 @@ partial class MainForm
         _defaultPlan = null;
         _compactPlan = null;
         _initialGreedyStage = null;
+        _materializedStepStage = null;
+        _materializedCompactStage = null;
         _incumbentStage = null;
         _greedyIncumbentImproved = false;
         _compactImproved = false;
@@ -148,7 +150,7 @@ partial class MainForm
         _incumbentStage = initialStage;
         _initialGreedyStage = initialStage;
         _greedyIncumbentImproved = prep.GreedyTightenImproved;
-        MarkStageDisplayInProgress(initialStage.Name);
+        MarkStageDisplayInProgress(initialStage);
         QueueStageMaterialization(initialStage, ApplyMaterializedInitialGreedyStage);
 
         Interlocked.Exchange(ref _activePhase, 2);
@@ -200,6 +202,7 @@ partial class MainForm
         }
 
         _initialGreedyStage = stage;
+        _materializedStepStage = stage;
         _latestProgress = CreateSnapshotFromPlan(feasiblePlan);
         PopulateTree(feasiblePlan, defaultPlan: null, compactPlan: null, compactImproved: false);
         _completedFeasibleStats = feasiblePlan.SearchStatistics;
@@ -511,7 +514,7 @@ partial class MainForm
                 stage.Solution.Score.WorstCaseSteps);
             Interlocked.Exchange(ref _activePhase, 2);
 
-            MarkStageDisplayInProgress(stage.Name);
+            MarkStageDisplayInProgress(stage);
             QueueStageMaterialization(stage, ApplyMaterializedStepProofStage);
             return;
         }
@@ -596,6 +599,7 @@ partial class MainForm
     {
         StrategyPlan defaultPlan = stage.MaterializedPlan!;
         _incumbentStage = stage;
+        _materializedStepStage = stage;
         _defaultPlan = defaultPlan;
         _feasiblePlan = defaultPlan;
         _latestProgress = CreateSnapshotFromPlan(defaultPlan);
@@ -622,6 +626,7 @@ partial class MainForm
             return;
 
         StrategyPlan compactPlan = stage.MaterializedPlan!;
+        _materializedCompactStage = stage;
         _compactPlan = compactPlan;
         _compactImproved = _incumbentStage.HasValue
             && PipelineStageProtocol.IsImprovement(stage, _incumbentStage.Value);
@@ -686,7 +691,7 @@ partial class MainForm
 
         if (needsDeferredMaterialization)
         {
-            MarkStageDisplayInProgress(stage.Name);
+            MarkStageDisplayInProgress(stage);
             QueueStageMaterialization(stage, OnProofTightenStage);
             return;
         }
@@ -761,7 +766,7 @@ partial class MainForm
             string? marker = stage.HasPlan
                 ? (!improved ? "no improvement" : null)
                 : NoSolutionMarker(stage);
-            ShowStageModal(FormatStageRootLabel(stage.Name, stage.Elapsed, stage.MaterializedPlan, marker), stage.HasPlan);
+            ShowStageModal(FormatStageRootLabel(stage.Name, stage.Elapsed, stage.MaterializedPlan, marker, stage.Timings), stage.HasPlan);
         }
     }
 
