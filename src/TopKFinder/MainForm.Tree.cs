@@ -94,13 +94,26 @@ partial class MainForm
     }
 
     // The single unified stage-root label used by BOTH the strategy tree plan roots and the overview
-    // section roots: "<stage>: elapsed=<s>.3f s, max steps=<n>, edges=<n>, output=<n>", optionally
+    // section roots: "<stage>: search <s>s, render <s>s, max steps=<n>, edges=<n>, output=<n>", optionally
     // suffixed with a marker (e.g. "no improvement"). When there is no plan the body collapses to the
     // marker note ("no solution" by default, or e.g. "search incomplete (candidate cap reached)").
-    // elapsed is the stage's own wall time in seconds.
-    private static string FormatStageRootLabel(string stageName, TimeSpan elapsed, StrategyPlan? plan, string? marker = null)
+    // Timings are stage-local wall-clock buckets.
+    private static string FormatStageElapsedText(TimeSpan elapsed, StageTimings? timings = null)
     {
-        string elapsedText = $"elapsed={elapsed.TotalSeconds:F3} s";
+        if (!timings.HasValue)
+            return $"elapsed={elapsed.TotalSeconds:F1}s";
+
+        TimeSpan search = timings.Value.Solve + timings.Value.Freeze;
+        TimeSpan render = timings.Value.Materialize;
+        if (render <= TimeSpan.Zero)
+            return $"search {search.TotalSeconds:F1}s";
+
+        return $"search {search.TotalSeconds:F1}s, render {render.TotalSeconds:F1}s";
+    }
+
+    private static string FormatStageRootLabel(string stageName, TimeSpan elapsed, StrategyPlan? plan, string? marker = null, StageTimings? timings = null)
+    {
+        string elapsedText = FormatStageElapsedText(elapsed, timings);
         if (plan is null)
             return $"{stageName}: {elapsedText}, {marker ?? "no solution"}";
         string body = $"{stageName}: {elapsedText}, max steps={plan.MaxStep}, edges={plan.TotalBranchEdges}, states={plan.SearchStatistics.OutputStates}";
@@ -111,10 +124,10 @@ partial class MainForm
         => stageName.StartsWith(StageNames.ExactEdgeCompactPrefix, StringComparison.Ordinal)
             || stageName.StartsWith(StageNames.GreedyEdgeCompactPrefix, StringComparison.Ordinal);
 
-    private TreeNode CreatePlanTreeRoot(string stageName, StrategyPlan plan, string scope, TimeSpan elapsed)
+    private TreeNode CreatePlanTreeRoot(string stageName, StrategyPlan plan, string scope, TimeSpan elapsed, StageTimings? timings = null)
     {
         var depthIndex = new LazyDepthIndex(plan.Root);
-        var planNode = new TreeNode(FormatStageRootLabel(stageName, elapsed, plan))
+        var planNode = new TreeNode(FormatStageRootLabel(stageName, elapsed, plan, timings: timings))
         {
             Tag = new LazyNodeDetails(() => BuildPlanDetails(plan)),
             NodeFont = new Font(_treeView.Font, FontStyle.Bold),
@@ -155,9 +168,9 @@ partial class MainForm
     // A terminal stage that found no better strategy: a single bold leaf carrying the unified label with
     // the given marker ("no solution" when proven infeasible, "search incomplete (candidate cap reached)"
     // when the greedy cap truncated the enumeration) and no child strategy subtree.
-    private TreeNode CreateNoSolutionTreeRoot(string stageName, TimeSpan elapsed, string? marker = null)
+    private TreeNode CreateNoSolutionTreeRoot(string stageName, TimeSpan elapsed, string? marker = null, StageTimings? timings = null)
     {
-        return new TreeNode(FormatStageRootLabel(stageName, elapsed, plan: null, marker))
+        return new TreeNode(FormatStageRootLabel(stageName, elapsed, plan: null, marker, timings))
         {
             NodeFont = new Font(_treeView.Font, FontStyle.Bold),
             ForeColor = _palette.MutedForeColor,
@@ -168,9 +181,9 @@ partial class MainForm
     // compact baseline lands on the same max-step but more edges than greedy). It is recorded and marked
     // "no improvement" but, like a no-solution stage, shown only as a single leaf note -- the worse tree
     // is not drawn. Tightening still continues past it.
-    private TreeNode CreateNoImprovementTreeRoot(string stageName, StrategyPlan plan, TimeSpan elapsed)
+    private TreeNode CreateNoImprovementTreeRoot(string stageName, StrategyPlan plan, TimeSpan elapsed, StageTimings? timings = null)
     {
-        return new TreeNode(FormatStageRootLabel(stageName, elapsed, plan, "no improvement"))
+        return new TreeNode(FormatStageRootLabel(stageName, elapsed, plan, "no improvement", timings))
         {
             NodeFont = new Font(_treeView.Font, FontStyle.Bold),
             ForeColor = _palette.MutedForeColor,

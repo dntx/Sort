@@ -8,17 +8,23 @@ namespace TopKFinder;
 partial class MainForm
 {
     private const string SearchRunningSuffix = " [searching]";
-    private const string DisplayRunningSuffix = " [rendering]";
+    private const string DisplayRunningSuffix = ", rendering]";
     private const string StoppedSuffix = " [stopped]";
 
     private static string FormatSearchRunningPlaceholderText(string stageName)
         => stageName + SearchRunningSuffix;
 
-    private static string FormatDisplayRunningPlaceholderText(string stageName)
-        => stageName + DisplayRunningSuffix;
+    private static string FormatDisplayRunningPlaceholderText(string stageName, StageTimings timings)
+        => $"{stageName} [{FormatShortSeconds(timings.Solve + timings.Freeze)} search{DisplayRunningSuffix}";
 
     private static string FormatStoppedPlaceholderText(string stageName)
         => stageName + StoppedSuffix;
+
+    private static string FormatStoppedPlaceholderText(string stageName, string prefix)
+        => $"{stageName} [{prefix}, stopped]";
+
+    private static string FormatShortSeconds(TimeSpan elapsed)
+        => $"{elapsed.TotalSeconds:F1}s";
 
     private TreeNode CreateSearchRunningPlaceholderNode(string stageName)
         => new(FormatSearchRunningPlaceholderText(stageName)) { ForeColor = _palette.MutedForeColor };
@@ -49,6 +55,22 @@ partial class MainForm
     {
         int split = text.IndexOf(" [", StringComparison.Ordinal);
         return split > 0 ? text[..split] : text;
+    }
+
+    private static bool TryExtractDisplayPlaceholderPrefix(string text, out string prefix)
+    {
+        prefix = string.Empty;
+        int open = text.IndexOf(" [", StringComparison.Ordinal);
+        if (open < 0 || !IsDisplayRunningPlaceholderText(text))
+            return false;
+
+        int start = open + 2;
+        int length = text.Length - start - DisplayRunningSuffix.Length;
+        if (length <= 0)
+            return false;
+
+        prefix = text.Substring(start, length);
+        return true;
     }
 
     private static bool IsStageRootNodeText(string text, string stageName)
@@ -200,18 +222,20 @@ partial class MainForm
         _overviewTree.EndUpdate();
     }
 
-    private void MarkStageDisplayInProgress(string stageName)
+    private void MarkStageDisplayInProgress(StageResult stage)
     {
+        string stageName = stage.Name;
+        StageTimings timings = stage.Timings;
         if (_treeView.Nodes.Count == 0)
             return;
 
         TreeNode root = _treeView.Nodes[0];
         _treeView.BeginUpdate();
-        UpsertStagePlaceholder(root.Nodes, stageName, FormatDisplayRunningPlaceholderText(stageName));
+        UpsertStagePlaceholder(root.Nodes, stageName, FormatDisplayRunningPlaceholderText(stageName, timings));
         _treeView.EndUpdate();
 
         _overviewTree.BeginUpdate();
-        UpsertStagePlaceholder(_overviewTree.Nodes, stageName, FormatDisplayRunningPlaceholderText(stageName));
+        UpsertStagePlaceholder(_overviewTree.Nodes, stageName, FormatDisplayRunningPlaceholderText(stageName, timings));
         _overviewTree.EndUpdate();
     }
 
@@ -239,7 +263,7 @@ partial class MainForm
         return true;
     }
 
-    private static bool TryMarkTrailingComputingPlaceholderStopped(TreeNodeCollection nodes)
+    private bool TryMarkTrailingComputingPlaceholderStopped(TreeNodeCollection nodes)
     {
         if (nodes.Count == 0)
             return false;
@@ -248,8 +272,20 @@ partial class MainForm
         if (!IsAnyStageStatusPlaceholderText(tail.Text))
             return false;
 
-        tail.Text = FormatStoppedPlaceholderText(PlaceholderStageName(tail.Text));
+        string stageName = PlaceholderStageName(tail.Text);
+        tail.Text = TryExtractDisplayPlaceholderPrefix(tail.Text, out string prefix)
+            ? FormatStoppedPlaceholderText(stageName, prefix)
+            : IsSearchRunningPlaceholderText(tail.Text)
+                ? FormatStoppedPlaceholderText(stageName, $"{FormatShortSeconds(GetCurrentStageElapsed())} searched")
+                : FormatStoppedPlaceholderText(stageName);
         return true;
+    }
+
+    private TimeSpan GetCurrentStageElapsed()
+    {
+        long totalMs = _runStopwatch?.ElapsedMilliseconds ?? 0;
+        long stageMs = Math.Max(0, totalMs - _stageStartMs);
+        return TimeSpan.FromMilliseconds(stageMs);
     }
 
     // A trailing tree/overview status node is a transient in-progress placeholder
@@ -426,7 +462,8 @@ partial class MainForm
     {
         StrategyPlan stepPlan = defaultPlan ?? feasiblePlan;
         string stepStageName = defaultPlan is null ? StageNames.GreedyFeasible : StageNames.StepProof;
-        return CreatePlanTreeRoot(stepStageName, stepPlan, DefaultExplorerScope, stepPlan.Elapsed);
+        StageTimings? timings = defaultPlan is null ? _initialGreedyStage?.Timings : _materializedStepStage?.Timings;
+        return CreatePlanTreeRoot(stepStageName, stepPlan, DefaultExplorerScope, stepPlan.Elapsed, timings);
     }
 
     private TreeNode BuildCompactTreeSlotNode(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool compactImproved)
@@ -435,9 +472,10 @@ partial class MainForm
             return CreateSearchRunningPlaceholderNode(FirstCompactTreeStageName(feasiblePlan, defaultPlan));
 
         string compactStageName = FormatCompactStageName(defaultPlan is null, compactPlan.MaxStep);
+        StageTimings? timings = _materializedCompactStage?.Timings;
         return compactImproved
-            ? CreatePlanTreeRoot(compactStageName, compactPlan, CompactExplorerScope, compactPlan.Elapsed)
-            : CreateNoSolutionTreeRoot(compactStageName, compactPlan.Elapsed);
+            ? CreatePlanTreeRoot(compactStageName, compactPlan, CompactExplorerScope, compactPlan.Elapsed, timings)
+            : CreateNoSolutionTreeRoot(compactStageName, compactPlan.Elapsed, timings: timings);
     }
 
     private string FirstCompactTreeStageName(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan)
@@ -544,30 +582,32 @@ partial class MainForm
             root.Nodes.RemoveAt(root.Nodes.Count - 1);
 
         string compactStageName = FormatCompactStageName(_defaultPlan is null, compactPlan.MaxStep);
+        StageTimings? timings = _materializedCompactStage?.Timings;
         root.Nodes.Add(compactImproved
-            ? CreatePlanTreeRoot(compactStageName, compactPlan, CompactExplorerScope, compactPlan.Elapsed)
-            : CreateNoSolutionTreeRoot(compactStageName, compactPlan.Elapsed));
+            ? CreatePlanTreeRoot(compactStageName, compactPlan, CompactExplorerScope, compactPlan.Elapsed, timings)
+            : CreateNoSolutionTreeRoot(compactStageName, compactPlan.Elapsed, timings: timings));
     }
 
     private TreeNode BuildStageTreeNode(StageResult stage, string scope, bool improved)
         => improved
-            ? CreatePlanTreeRoot(stage.Name, stage.MaterializedPlan!, scope, stage.Elapsed)
+            ? CreatePlanTreeRoot(stage.Name, stage.MaterializedPlan!, scope, stage.Elapsed, stage.Timings)
             : stage.Solution is not null && !stage.HasPlan
-                ? CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, "no improvement")
+                ? CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, "no improvement", stage.Timings)
             : stage.HasPlan
-                ? CreateNoImprovementTreeRoot(stage.Name, stage.MaterializedPlan!, stage.Elapsed)
-                : CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, NoSolutionMarker(stage));
+                ? CreateNoImprovementTreeRoot(stage.Name, stage.MaterializedPlan!, stage.Elapsed, stage.Timings)
+                : CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, NoSolutionMarker(stage), stage.Timings);
 
     private TreeNode BuildStageOverviewNode(StageResult stage, string scope, bool improved)
         => improved
-            ? BuildOverviewSectionNode(stage.MaterializedPlan!, scope, stage.Name, stage.Elapsed)
+            ? BuildOverviewSectionNode(stage.MaterializedPlan!, scope, stage.Name, stage.Elapsed, stage.Timings)
             : stage.Solution is not null && !stage.HasPlan
-                ? BuildOverviewNoteNode(FormatStageRootLabel(stage.Name, stage.Elapsed, plan: null, marker: "no improvement"))
+                ? BuildOverviewNoteNode(FormatStageRootLabel(stage.Name, stage.Elapsed, plan: null, marker: "no improvement", timings: stage.Timings))
             : BuildOverviewNoteNode(FormatStageRootLabel(
                 stage.Name,
                 stage.Elapsed,
                 stage.MaterializedPlan,
-                stage.HasPlan ? "no improvement" : NoSolutionMarker(stage)));
+                stage.HasPlan ? "no improvement" : NoSolutionMarker(stage),
+                stage.Timings));
 
     // Leaf note for a solution-less stage: null means "no solution" (a proven-infeasible ceiling),
     // otherwise the reason the incumbent merely stands -- "search incomplete (candidate cap reached)"

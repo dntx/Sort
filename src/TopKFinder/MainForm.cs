@@ -139,6 +139,8 @@ partial class MainForm : Form
     private StrategyPlan? _defaultPlan;
     private StrategyPlan? _compactPlan;
     private StageResult? _initialGreedyStage;
+    private StageResult? _materializedStepStage;
+    private StageResult? _materializedCompactStage;
     private StageResult? _incumbentStage;
     private bool _greedyIncumbentImproved;
     private bool _compactImproved;

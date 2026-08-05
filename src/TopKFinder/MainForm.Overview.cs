@@ -77,7 +77,8 @@ partial class MainForm
     {
         StrategyPlan stepPlan = defaultPlan ?? feasiblePlan;
         string stepStageName = defaultPlan is null ? StageNames.GreedyFeasible : StageNames.StepProof;
-        return BuildOverviewSectionNode(stepPlan, DefaultExplorerScope, stepStageName, stepPlan.Elapsed);
+        StageTimings? timings = defaultPlan is null ? _initialGreedyStage?.Timings : _materializedStepStage?.Timings;
+        return BuildOverviewSectionNode(stepPlan, DefaultExplorerScope, stepStageName, stepPlan.Elapsed, timings);
     }
 
     private TreeNode BuildCompactOverviewSlotNode(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool compactImproved)
@@ -105,10 +106,12 @@ partial class MainForm
             ? StageNames.FormatGreedyEdgeCompact(compactPlan.MaxStep)
             : StageNames.FormatExactEdgeCompact(compactPlan.MaxStep);
 
-        if (compactImproved)
-            return BuildOverviewSectionNode(compactPlan, CompactExplorerScope, compactStageName, compactPlan.Elapsed);
+        StageTimings? timings = _materializedCompactStage?.Timings;
 
-        return BuildOverviewNoteNode(FormatStageRootLabel(compactStageName, compactPlan.Elapsed, plan: null));
+        if (compactImproved)
+            return BuildOverviewSectionNode(compactPlan, CompactExplorerScope, compactStageName, compactPlan.Elapsed, timings);
+
+        return BuildOverviewNoteNode(FormatStageRootLabel(compactStageName, compactPlan.Elapsed, plan: null, timings: timings));
     }
 
     private void ReplaceTrailingOverviewRoot(TreeNode replacement)
@@ -120,9 +123,9 @@ partial class MainForm
         _overviewTree.Nodes.Add(replacement);
     }
 
-    private TreeNode BuildOverviewSectionNode(StrategyPlan plan, string scope, string stageName, TimeSpan elapsed)
+    private TreeNode BuildOverviewSectionNode(StrategyPlan plan, string scope, string stageName, TimeSpan elapsed, StageTimings? timings = null)
     {
-        var sectionNode = new TreeNode(FormatStageRootLabel(stageName, elapsed, plan))
+        var sectionNode = new TreeNode(FormatStageRootLabel(stageName, elapsed, plan, timings: timings))
         {
             NodeFont = new Font(_overviewTree.Font, FontStyle.Bold),
             ForeColor = _palette.ForeColor,
