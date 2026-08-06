@@ -513,17 +513,17 @@ partial class MainForm
         return $"n={plan.N}, m={plan.M}, k={plan.RequestedK} (dual k'={plan.K})";
     }
 
-    private static string BuildRootLabel(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan)
+    private string BuildRootLabel(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan)
     {
         string head = FormatPlanInputs(feasiblePlan);
         if (defaultPlan is null)
             return $"{head}, {FormatPlanSqueeze(feasiblePlan)} (search step-proof stage...)";
         if (compactPlan is null)
         {
-            double seconds = feasiblePlan.Elapsed.TotalSeconds + defaultPlan.Elapsed.TotalSeconds;
+            double seconds = ComputeDisplayedTotalElapsedSeconds(feasiblePlan, defaultPlan, compactPlan: null);
             return $"{head}, max steps={defaultPlan.MaxStep}, elapsed={seconds:F3} s (search {StageNames.ExactEdgeCompactPattern} stage...)";
         }
-        double totalSeconds = feasiblePlan.Elapsed.TotalSeconds + defaultPlan.Elapsed.TotalSeconds + compactPlan.Elapsed.TotalSeconds;
+        double totalSeconds = ComputeDisplayedTotalElapsedSeconds(feasiblePlan, defaultPlan, compactPlan);
         // Lead with the optimality squeeze on the best plan: once the final tightening proves the next
         // step ceiling infeasible (the no-solution terminal), the incumbent's lower bound is closed to
         // its max-step and this reads "max steps = N (proven optimal)" -- the headline signal that the
