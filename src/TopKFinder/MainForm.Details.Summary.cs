@@ -5,6 +5,34 @@ namespace TopKFinder;
 
 partial class MainForm
 {
+    private static double ComputeFallbackTotalElapsedSeconds(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan)
+    {
+        double totalSeconds = feasiblePlan.Elapsed.TotalSeconds;
+
+        if (defaultPlan is not null && !ReferenceEquals(defaultPlan, feasiblePlan))
+            totalSeconds += defaultPlan.Elapsed.TotalSeconds;
+
+        if (compactPlan is not null
+            && !ReferenceEquals(compactPlan, feasiblePlan)
+            && !ReferenceEquals(compactPlan, defaultPlan))
+        {
+            totalSeconds += compactPlan.Elapsed.TotalSeconds;
+        }
+
+        return totalSeconds;
+    }
+
+    // Overall elapsed should reflect real wall-clock runtime (search + display overlap accounted once).
+    // When no run stopwatch is available (fallback contexts), approximate from distinct plan elapsed values.
+    private double ComputeDisplayedTotalElapsedSeconds(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan)
+    {
+        double runElapsedSeconds = GetRunElapsedSeconds();
+        if (runElapsedSeconds > 0)
+            return runElapsedSeconds;
+
+        return ComputeFallbackTotalElapsedSeconds(feasiblePlan, defaultPlan, compactPlan);
+    }
+
     private void UpdateSummaryText(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool compactImproved)
     {
         string head = feasiblePlan.RequestedK == feasiblePlan.K
@@ -20,13 +48,13 @@ partial class MainForm
 
         if (compactPlan is null)
         {
-            double seconds = feasiblePlan.Elapsed.TotalSeconds + defaultPlan.Elapsed.TotalSeconds;
+            double seconds = ComputeDisplayedTotalElapsedSeconds(feasiblePlan, defaultPlan, compactPlan: null);
             _statusLabel.Text =
                 $"{head}, step max={defaultPlan.MaxStep}, elapsed={seconds:F3} s. Search {StageNames.ExactEdgeCompactPattern} stage...";
             return;
         }
 
-        double totalElapsedSeconds = feasiblePlan.Elapsed.TotalSeconds + defaultPlan.Elapsed.TotalSeconds + compactPlan.Elapsed.TotalSeconds;
+        double totalElapsedSeconds = ComputeDisplayedTotalElapsedSeconds(feasiblePlan, defaultPlan, compactPlan);
         string compactText;
         if (compactPlan.MaxStep < defaultPlan.MaxStep)
             compactText = $"compact lowered max steps {defaultPlan.MaxStep} -> {compactPlan.MaxStep} (edges {defaultPlan.TotalBranchEdges} -> {compactPlan.TotalBranchEdges})";
