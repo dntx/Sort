@@ -8,14 +8,18 @@ namespace TopKFinder;
 partial class MainForm
 {
     private const string SearchRunningSuffix = " [searching]";
-    private const string DisplayRunningSuffix = ", rendering]";
+    private const string DisplayRunningSuffix = ", building tree]";
+    private const string DisplayPendingSuffix = ", tree queued]";
     private const string StoppedSuffix = " [stopped]";
 
     private static string FormatSearchRunningPlaceholderText(string stageName)
         => stageName + SearchRunningSuffix;
 
     private static string FormatDisplayRunningPlaceholderText(string stageName, StageTimings timings)
-        => $"{stageName} [{FormatShortSeconds(timings.Solve + timings.Freeze)} search{DisplayRunningSuffix}";
+        => $"{stageName} [{FormatShortSeconds(timings.Solve + timings.Freeze)} searched{DisplayRunningSuffix}";
+
+    private static string FormatDisplayPendingPlaceholderText(string stageName, StageTimings timings)
+        => $"{stageName} [{FormatShortSeconds(timings.Solve + timings.Freeze)} searched, {FormatShortSeconds(timings.Materialize)} built{DisplayPendingSuffix}";
 
     private static string FormatStoppedPlaceholderText(string stageName)
         => stageName + StoppedSuffix;
@@ -35,9 +39,13 @@ partial class MainForm
     private static bool IsDisplayRunningPlaceholderText(string text)
         => text.EndsWith(DisplayRunningSuffix, StringComparison.Ordinal);
 
+    private static bool IsDisplayPendingPlaceholderText(string text)
+        => text.EndsWith(DisplayPendingSuffix, StringComparison.Ordinal);
+
     private static bool IsAnyStageStatusPlaceholderText(string text)
         => IsSearchRunningPlaceholderText(text)
             || IsDisplayRunningPlaceholderText(text)
+            || IsDisplayPendingPlaceholderText(text)
             || text.EndsWith(StoppedSuffix, StringComparison.Ordinal);
 
     private static bool IsStageStatusPlaceholderForStage(string text, string stageName)
@@ -61,11 +69,25 @@ partial class MainForm
     {
         prefix = string.Empty;
         int open = text.IndexOf(" [", StringComparison.Ordinal);
-        if (open < 0 || !IsDisplayRunningPlaceholderText(text))
+        if (open < 0)
             return false;
 
+        int suffixLength;
+        if (IsDisplayRunningPlaceholderText(text))
+        {
+            suffixLength = DisplayRunningSuffix.Length;
+        }
+        else if (IsDisplayPendingPlaceholderText(text))
+        {
+            suffixLength = DisplayPendingSuffix.Length;
+        }
+        else
+        {
+            return false;
+        }
+
         int start = open + 2;
-        int length = text.Length - start - DisplayRunningSuffix.Length;
+        int length = text.Length - start - suffixLength;
         if (length <= 0)
             return false;
 
@@ -89,13 +111,25 @@ partial class MainForm
     private bool TryExtractListedStageName(string text, out string stageName)
     {
         int statusSplit = text.IndexOf(" [", StringComparison.Ordinal);
-        if (statusSplit > 0)
+        int rootSplit = text.IndexOf(':');
+
+        // Prefer the explicit root-stage prefix (<stage>: ...) when it appears before any
+        // status suffix. This keeps names like "greedy-tighten: [search ...]" normalized to
+        // "greedy-tighten" instead of accidentally including the trailing colon.
+        if (rootSplit > 0 && (statusSplit < 0 || rootSplit < statusSplit))
         {
-            stageName = text[..statusSplit];
+            stageName = text[..rootSplit];
             return true;
         }
 
-        int rootSplit = text.IndexOf(':');
+        if (statusSplit > 0)
+        {
+            stageName = text[..statusSplit];
+            if (stageName.EndsWith(":", StringComparison.Ordinal))
+                stageName = stageName[..^1];
+            return true;
+        }
+
         if (rootSplit > 0)
         {
             stageName = text[..rootSplit];
@@ -112,8 +146,10 @@ partial class MainForm
             return 1;
         if (IsDisplayRunningPlaceholderText(text))
             return 2;
-        if (text.EndsWith(StoppedSuffix, StringComparison.Ordinal))
+        if (IsDisplayPendingPlaceholderText(text))
             return 3;
+        if (text.EndsWith(StoppedSuffix, StringComparison.Ordinal))
+            return 4;
         return 0;
     }
 
@@ -224,8 +260,12 @@ partial class MainForm
 
     private void MarkStageDisplayInProgress(StageResult stage)
     {
-        string stageName = stage.Name;
-        StageTimings timings = stage.Timings;
+        MarkStageDisplayInProgress(stage.Name, stage.Timings.Solve + stage.Timings.Freeze);
+    }
+
+    private void MarkStageDisplayInProgress(string stageName, TimeSpan searchElapsed)
+    {
+        StageTimings timings = StageTimings.Legacy(searchElapsed);
         if (_treeView.Nodes.Count == 0)
             return;
 
@@ -236,6 +276,21 @@ partial class MainForm
 
         _overviewTree.BeginUpdate();
         UpsertStagePlaceholder(_overviewTree.Nodes, stageName, FormatDisplayRunningPlaceholderText(stageName, timings));
+        _overviewTree.EndUpdate();
+    }
+
+    private void MarkStageDisplayPending(StageResult stage)
+    {
+        if (_treeView.Nodes.Count == 0)
+            return;
+
+        _treeView.BeginUpdate();
+        TreeNode root = _treeView.Nodes[0];
+        UpsertStagePlaceholder(root.Nodes, stage.Name, FormatDisplayPendingPlaceholderText(stage.Name, stage.Timings));
+        _treeView.EndUpdate();
+
+        _overviewTree.BeginUpdate();
+        UpsertStagePlaceholder(_overviewTree.Nodes, stage.Name, FormatDisplayPendingPlaceholderText(stage.Name, stage.Timings));
         _overviewTree.EndUpdate();
     }
 
@@ -480,13 +535,47 @@ partial class MainForm
 
     private string FirstCompactTreeStageName(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan)
         => defaultPlan is null
-            ? NextProofTightenStageNameForPresentation(feasiblePlan, feasiblePlan.MaxStep)
+            ? NextProofTightenStageNameForPresentation(
+                feasiblePlan,
+                _incumbentStage?.Solution?.Score.WorstCaseSteps ?? feasiblePlan.MaxStep)
             : StageNames.FormatExactEdgeCompact(feasiblePlan.MaxStep);
 
     private static string FormatCompactStageName(bool greedyMode, int maxStep)
         => greedyMode
             ? StageNames.FormatGreedyEdgeCompact(maxStep)
             : StageNames.FormatExactEdgeCompact(maxStep);
+
+    private void ShowSearchOnlySummaryStage(StageResult stage)
+    {
+        if (_treeView.Nodes.Count == 0)
+            return;
+        EnsureStageDisplayOrder(stage.Name);
+
+        string marker = stage.Skipped
+            ? "skipped (root probe)"
+            : _greedyIncumbentImproved && stage.Solution is not null
+                ? $"search-only tightened to <= {stage.Solution.Score.WorstCaseSteps}"
+                : "search-only (no improvement)";
+
+        // Reuse the same stage de-dup flow as the proof-tighten stages: remove transient
+        // placeholders first, then insert/replace the concrete stage node.
+        RemoveStageStatusPlaceholder(stage.Name);
+
+        _treeView.BeginUpdate();
+        TreeNode root = _treeView.Nodes[0];
+        InsertOrReplaceStageNode(
+            root.Nodes,
+            CreateStageStatusNoteNode(stage.Name, stage.Elapsed, marker, stage.Timings),
+            stage.Name);
+        _treeView.EndUpdate();
+
+        _overviewTree.BeginUpdate();
+        InsertOrReplaceStageNode(
+            _overviewTree.Nodes,
+            BuildOverviewNoteNode(FormatStageStatusNoteLabel(stage.Name, stage.Elapsed, marker, stage.Timings)),
+            stage.Name);
+        _overviewTree.EndUpdate();
+    }
 
     // Squeeze on the optimum for a plan: L is the proven analytic lower bound
     // (RootProvenLowerBound), U is the achieved upper bound (MaxStep). When L == U the strategy is
@@ -512,6 +601,15 @@ partial class MainForm
             return $"n={plan.N}, m={plan.M}, k={plan.K}";
         return $"n={plan.N}, m={plan.M}, k={plan.RequestedK} (dual k'={plan.K})";
     }
+
+    private static string FormatStageStatusNoteLabel(string stageName, TimeSpan elapsed, string marker, StageTimings? timings = null)
+        => $"{stageName} [{FormatStageElapsedText(elapsed, timings)}, {marker}]";
+
+    private TreeNode CreateStageStatusNoteNode(string stageName, TimeSpan elapsed, string marker, StageTimings? timings = null)
+        => new TreeNode(FormatStageStatusNoteLabel(stageName, elapsed, marker, timings))
+        {
+            ForeColor = _palette.MutedForeColor,
+        };
 
     private static string BuildRootLabel(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan)
     {

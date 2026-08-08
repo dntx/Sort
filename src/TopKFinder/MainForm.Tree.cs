@@ -115,7 +115,7 @@ partial class MainForm
     {
         string elapsedText = FormatStageElapsedText(elapsed, timings);
         if (plan is null)
-            return $"{stageName}: {elapsedText}, {marker ?? "no solution"}";
+            return $"{stageName}: [{elapsedText}, {marker ?? "no solution"}]";
         string body = $"{stageName}: {elapsedText}, max steps={plan.MaxStep}, edges={plan.TotalBranchEdges}, states={plan.SearchStatistics.OutputStates}";
         return marker is null ? body : $"{body}, {marker}";
     }
