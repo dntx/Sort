@@ -139,6 +139,7 @@ partial class MainForm : Form
     private StrategyPlan? _defaultPlan;
     private StrategyPlan? _compactPlan;
     private StageResult? _initialGreedyStage;
+    private StageResult? _greedyTightenStage;
     private StageResult? _materializedStepStage;
     private StageResult? _materializedCompactStage;
     private StageResult? _incumbentStage;
@@ -177,6 +178,10 @@ partial class MainForm : Form
     private bool _solverWorkStopped;
     private string _currentStageName = "-";
     private long _stageStartMs;
+    private readonly object _timelineLock = new();
+    private readonly List<RunTimelineEvent> _runTimeline = new();
+
+    private readonly record struct RunTimelineEvent(long ElapsedMilliseconds, string Label, string? Detail);
 
     public MainForm()
     {

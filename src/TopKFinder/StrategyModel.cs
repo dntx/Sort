@@ -165,6 +165,8 @@ sealed class StrategyPlan
 // probe produces exactly one of these (the driver never stops without reporting one):
 //   Tightened        - a complete strategy meets the requested step ceiling (Solution set); it
 //                      strictly improves the incumbent, so tightening continues.
+//   Skipped          - a conditional stage was not run (for example, GreedyTighten root probe failed);
+//                      no search work was done for that stage.
 //   ProvenInfeasible - a probe ran to completion over the COMPLETE candidate enumeration and found no
 //                      strategy at that ceiling, so the previous best is optimal (closes the squeeze).
 //   Incomplete       - a probe found no strategy but the greedy candidate cap truncated the enumeration,
@@ -179,6 +181,7 @@ sealed class StrategyPlan
 enum StageOutcome
 {
     Tightened,
+    Skipped,
     ProvenInfeasible,
     Incomplete,
     Completed,
@@ -250,6 +253,10 @@ readonly struct StageResult
     // The probe realized a strategy that meets the requested ceiling (strictly improves the incumbent).
     // The ONLY outcome under which tightening continues to a deeper ceiling.
     public bool IsTightened => Outcome == StageOutcome.Tightened;
+
+    // A conditional stage was not executed at all, so the stage is shown as skipped rather than as a
+    // failed or incomplete search.
+    public bool Skipped => Outcome == StageOutcome.Skipped;
 
     // A completed probe whose infeasibility verdict is not a proof because the greedy candidate cap
     // truncated the group enumeration: it leaves the incumbent standing without closing the squeeze to a

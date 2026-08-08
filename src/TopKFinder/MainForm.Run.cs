@@ -95,6 +95,8 @@ partial class MainForm
 
     private void InitializeRunUi(RunRequest request)
     {
+        ResetRunTimeline();
+        RecordRunTimeline("run start", $"mode={(request.FeasibleMode ? "greedy" : "exact")}, n={request.N}, m={request.M}, k={request.K}");
         _feasibleMode = request.FeasibleMode;
         _latestProgress = CreateInitialProgressSnapshot();
         _completedDefaultStats = null;
@@ -104,6 +106,7 @@ partial class MainForm
         _defaultPlan = null;
         _compactPlan = null;
         _initialGreedyStage = null;
+        _greedyTightenStage = null;
         _materializedStepStage = null;
         _materializedCompactStage = null;
         _incumbentStage = null;
@@ -135,22 +138,45 @@ partial class MainForm
 
     private async Task RunFeasibleModeAsync(RunRequest request)
     {
-        // Greedy mode: GreedyFeasible gives an instant browsable strategy even on shapes exact
-        // never resolves (e.g. 25,5,5), then ProofTighten + EdgeCompact refine it.
+        // Greedy mode: GreedyFeasible establishes the initial upper bound, GreedyTighten may lower
+        // that upper bound, then ProofTighten + EdgeCompact refine the result further.
         GreedyPreparationResult prep = await Task.Run(
             () => PublicPipelineOrchestrator.RunGreedyPreparation(request.Builder, emitStages: false, materialize: false),
             request.CancellationToken);
-        StageResult initialStage = new StageResult(
-            prep.GreedyTightenImproved ? StageNames.GreedyTighten : StageNames.GreedyFeasible,
+        RecordRunTimeline("greedy-feasible complete", $"solve={prep.GreedyFeasibleElapsed.TotalMilliseconds:F1} ms");
+        StageResult initialStage = new(
+            StageNames.GreedyFeasible,
             materializedPlan: null,
-            prep.GreedyTightenImproved ? prep.GreedyTightenElapsed : prep.GreedyFeasibleElapsed,
+            prep.GreedyFeasibleElapsed,
             StageOutcome.Completed,
-            prep.EffectiveFeasibleSolution,
-            prep.GreedyTightenImproved ? prep.GreedyTightenTimings : prep.GreedyFeasibleTimings);
+            prep.BaseFeasibleSolution,
+            prep.GreedyFeasibleTimings);
+        StageResult greedyTightenStage = prep.GreedyTightenProbeRun
+            ? new StageResult(
+                StageNames.GreedyTighten,
+                materializedPlan: null,
+                prep.GreedyTightenElapsed,
+                prep.GreedyTightenSolution is null ? StageOutcome.Skipped : StageOutcome.Completed,
+                prep.GreedyTightenSolution,
+                prep.GreedyTightenTimings)
+            : new StageResult(
+                StageNames.GreedyTighten,
+                materializedPlan: null,
+                TimeSpan.Zero,
+                StageOutcome.Skipped,
+                solution: null,
+                timings: default);
+        RecordRunTimeline("greedy-tighten stage ready", prep.GreedyTightenProbeRun
+            ? (prep.GreedyTightenSolution is null ? "skipped" : $"solve={prep.GreedyTightenElapsed.TotalMilliseconds:F1} ms")
+            : "skipped");
         _incumbentStage = initialStage;
         _initialGreedyStage = initialStage;
+        _greedyTightenStage = greedyTightenStage;
         _greedyIncumbentImproved = prep.GreedyTightenImproved;
+        if (prep.GreedyTightenImproved && prep.GreedyTightenSolution is not null)
+            _incumbentStage = greedyTightenStage;
         MarkStageDisplayInProgress(initialStage);
+        RecordRunTimeline("initial greedy materialization queued", initialStage.Name);
         QueueStageMaterialization(initialStage, ApplyMaterializedInitialGreedyStage);
 
         Interlocked.Exchange(ref _activePhase, 2);
@@ -159,6 +185,7 @@ partial class MainForm
         _currentStageName = NextProofTightenStageName(
             prep.EffectiveFeasibleSolution.Score.WorstCaseSteps);
         _stageStartMs = _runStopwatch?.ElapsedMilliseconds ?? 0;
+        RecordRunTimeline("proof-tighten pipeline scheduled", _currentStageName);
 
         // Each edge stage is surfaced live. The callback runs on the worker thread; a synchronous
         // Invoke marshals it onto the UI thread AND blocks the worker until the handler returns,
@@ -166,6 +193,7 @@ partial class MainForm
         _ = await Task.Run(
             () =>
             {
+                RecordRunTimeline("worker entered proof-tighten pipeline", _currentStageName);
                 PublicPipelineOrchestrator.RunGreedyPipelineDeferred(
                     request.Builder,
                     MarshalProofTightenStage,
@@ -191,6 +219,7 @@ partial class MainForm
 
     private void ApplyMaterializedInitialGreedyStage(StageResult stage)
     {
+        RecordRunTimeline("ui applying greedy-feasible materialization", stage.Name);
         if (stage.MaterializedPlan is not StrategyPlan feasiblePlan)
             return;
 
@@ -210,6 +239,7 @@ partial class MainForm
         UpdateStatsPanels();
         RemoveStageStatusPlaceholder(stage.Name);
         SetRunUiState(RunUiState.CompactComputingInteractive);
+        RecordRunTimeline("ui finished greedy-feasible materialization", stage.Name);
 
         if (_pendingGreedyEdgeStages.Count == 0)
             return;
@@ -459,6 +489,7 @@ partial class MainForm
     {
         // Simplified run headline semantics: once a new stage starts searching, treat the previous
         // one as finished for the single "current stage" clock and progress header.
+        RecordRunTimeline("ui received stage-search-start", stageName);
         EnsureStageDisplayOrder(stageName);
         _currentStageName = stageName;
         _stageStartMs = _runStopwatch?.ElapsedMilliseconds ?? 0;
@@ -537,6 +568,7 @@ partial class MainForm
     {
         try
         {
+            RecordRunTimeline("presentation materialization started", stage.Name);
             StageResult materialized;
             if (GetCachedPresentationStageResult(stage) is { } cached)
             {
@@ -564,6 +596,8 @@ partial class MainForm
                 CachePresentationStageResult(stage, materialized);
             }
 
+            RecordRunTimeline("presentation materialization finished", $"{stage.Name} ({materialized.Timings.Materialize.TotalMilliseconds:F1} ms render)");
+
             if (!CanAcceptStageCallback()
                 || generation != _presentationGeneration
                 || requestVersion != _presentationRequestVersion)
@@ -574,6 +608,7 @@ partial class MainForm
             {
                 try
                 {
+                    RecordRunTimeline("ui applying materialized stage", stage.Name);
                     if (cancellationToken.IsCancellationRequested
                         || !CanAcceptStageCallback()
                         || generation != _presentationGeneration
@@ -584,6 +619,7 @@ partial class MainForm
                 }
                 finally
                 {
+                    RecordRunTimeline("ui finished materialized stage", stage.Name);
                     applyCompleted.TrySetResult(null);
                 }
             });
@@ -738,6 +774,7 @@ partial class MainForm
         root.Text = BuildRootLabel(_feasiblePlan, _feasiblePlan, shown);
         root.Tag = new LazyNodeDetails(() => BuildGreedyProgressionDetails(
             _initialGreedyStage!.Value,
+            _greedyTightenStage,
             _proofTightenStages));
         _treeView.EndUpdate();
 
