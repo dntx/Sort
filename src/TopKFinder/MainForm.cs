@@ -142,11 +142,17 @@ partial class MainForm : Form
     // - _greedyFeasibleStage: stage-1 result
     // - _greedyTightenStage: optional stage-2 result (or skipped)
     // - _incumbentStage: incumbent best stage by objective, independent of UI materialization
+    // Exact mode mapping:
+    // - _greedyFeasibleStage / _greedyTightenStage stay null (not part of exact pipeline)
+    // - _incumbentStage first points to step-proof, then may advance to exact-edge-compact if improved
     private StageResult? _greedyFeasibleStage;
     private StageResult? _greedyTightenStage;
     private StageResult? _incumbentStage;
     // Display-stage records (presentation semantics): the latest materialized stage rendered into
     // the step/compact slots, used for timing labels and section headers.
+    // Exact mode mapping:
+    // - _materializedStepDisplayStage = materialized step-proof stage
+    // - _materializedCompactDisplayStage = materialized exact-edge-compact stage
     private StageResult? _materializedStepDisplayStage;
     private StageResult? _materializedCompactDisplayStage;
     private bool _greedyIncumbentImproved;
