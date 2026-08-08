@@ -328,7 +328,7 @@ public sealed class MainFormRenderingTests
         _ = form.Handle;
         SetPrivateField(form, "_feasiblePlan", feasiblePlan);
         SetPrivateField(form, "_incumbentStage", deferredStage);
-        SetPrivateField(form, "_initialGreedyStage", deferredStage);
+        SetPrivateField(form, "_greedyFeasibleStage", deferredStage);
         InvokePrivateInstanceVoid(form, "ShowInitialStagePlaceholder", 8, 3, 3, true);
 
         InvokePrivateInstanceVoid(
@@ -363,7 +363,7 @@ public sealed class MainFormRenderingTests
         _ = form.Handle;
 
         SetPrivateField(form, "_feasiblePlan", null);
-        SetPrivateField(form, "_initialGreedyStage", new StageResult(
+        SetPrivateField(form, "_greedyFeasibleStage", new StageResult(
             StageNames.GreedyFeasible,
             materializedPlan: null,
             TimeSpan.FromMilliseconds(1),
