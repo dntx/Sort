@@ -63,7 +63,7 @@ function Write-SummaryJson {
         New-Item -ItemType Directory -Force -Path $parent | Out-Null
     }
 
-    $Summary | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8NoBOM -Path $Path
+    $Summary | ConvertTo-Json -Depth 6 | Set-Content -Encoding UTF8 -Path $Path
     Write-Host "Wrote summary JSON: $Path"
 }
 

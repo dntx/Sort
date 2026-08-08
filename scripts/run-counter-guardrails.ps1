@@ -91,7 +91,7 @@ function Write-SummaryJson {
         New-Item -ItemType Directory -Force -Path $parent | Out-Null
     }
 
-    $Summary | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8NoBOM -Path $Path
+    $Summary | ConvertTo-Json -Depth 6 | Set-Content -Encoding UTF8 -Path $Path
     Write-Host "Wrote summary JSON: $Path"
 }
 
@@ -111,7 +111,7 @@ function Write-MatchedTests {
         New-Item -ItemType Directory -Force -Path $parent | Out-Null
     }
 
-    $MatchedTests | Set-Content -Encoding utf8NoBOM -Path $Path
+    $MatchedTests | Set-Content -Encoding UTF8 -Path $Path
     Write-Host "Wrote matched test list: $Path"
 }
 

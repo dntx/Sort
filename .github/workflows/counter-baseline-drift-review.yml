@@ -34,7 +34,7 @@ jobs:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: |
           $bodyPath = Join-Path $env:RUNNER_TEMP "pr-body.md"
-          Set-Content -Path $bodyPath -Value $env:PR_BODY -Encoding utf8NoBOM
+          Set-Content -Path $bodyPath -Value $env:PR_BODY -Encoding UTF8
           "body_path=$bodyPath" >> $env:GITHUB_OUTPUT
 
       - name: Enforce baseline drift explanation

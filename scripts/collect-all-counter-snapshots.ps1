@@ -114,7 +114,7 @@ $combined = [ordered]@{
 $combinedJsonPath = Join-Path $ArtifactsDir "counter-snapshot-summary.json"
 $combinedMdPath = Join-Path $ArtifactsDir "counter-snapshot-summary.md"
 
-$combined | ConvertTo-Json -Depth 8 | Set-Content -Encoding utf8NoBOM -Path $combinedJsonPath
+$combined | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 -Path $combinedJsonPath
 
 $mdLines = @(
     "# Counter Snapshot Summary",
@@ -141,7 +141,7 @@ $mdLines += "- iterative csv: $iterativeCsv"
 $mdLines += "- combined json: $combinedJsonPath"
 $mdLines += "- combined md: $combinedMdPath"
 
-$mdLines -join "`r`n" | Set-Content -Encoding utf8NoBOM -Path $combinedMdPath
+$mdLines -join "`r`n" | Set-Content -Encoding UTF8 -Path $combinedMdPath
 
 Write-Host "Wrote combined summary JSON: $combinedJsonPath" -ForegroundColor Green
 Write-Host "Wrote combined summary MD:   $combinedMdPath" -ForegroundColor Green

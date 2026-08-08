@@ -46,7 +46,7 @@ function Write-JsonFile {
         New-Item -ItemType Directory -Force -Path $parent | Out-Null
     }
 
-    $Value | ConvertTo-Json -Depth 8 | Set-Content -Encoding utf8NoBOM -Path $Path
+    $Value | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 -Path $Path
 }
 
 function Write-MarkdownFile {
@@ -62,7 +62,7 @@ function Write-MarkdownFile {
         New-Item -ItemType Directory -Force -Path $parent | Out-Null
     }
 
-    @($Lines | ForEach-Object { [string]$_ }) -join "`r`n" | Set-Content -Encoding utf8NoBOM -Path $Path
+    @($Lines | ForEach-Object { [string]$_ }) -join "`r`n" | Set-Content -Encoding UTF8 -Path $Path
 }
 
 function Compare-MatchedTests {

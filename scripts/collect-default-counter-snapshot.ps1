@@ -33,7 +33,7 @@ $cases = @(
 	@{ n = 25; m = 5; k = 3; searchedCap = 173;  outcomesCap = 469;    candidateCap = 7254;   duplicateCap = 7 }
 )
 
-function Parse-IntMatch {
+function Get-IntMatch {
 	param(
 		[string]$Text,
 		[string]$Pattern
@@ -47,7 +47,7 @@ function Parse-IntMatch {
 	return [int]$match.Groups[1].Value
 }
 
-function Parse-OutcomesAndDuplicate {
+function Get-OutcomesAndDuplicate {
 	param([string]$Text)
 
 	$match = [regex]::Match($Text, 'outcomes constructed = (\d+) \(duplicate skips (\d+),')
@@ -70,9 +70,9 @@ foreach ($case in $cases) {
 		throw "dotnet run failed for ($n,$m,$k)."
 	}
 
-	$searched = Parse-IntMatch -Text $output -Pattern 'searched states = (\d+)'
-	$candidate = Parse-IntMatch -Text $output -Pattern 'candidate groups enumerated = (\d+)'
-	$pair = Parse-OutcomesAndDuplicate -Text $output
+	$searched = Get-IntMatch -Text $output -Pattern 'searched states = (\d+)'
+	$candidate = Get-IntMatch -Text $output -Pattern 'candidate groups enumerated = (\d+)'
+	$pair = Get-OutcomesAndDuplicate -Text $output
 	$outcomes = $pair[0]
 	$duplicate = $pair[1]
 
@@ -109,8 +109,8 @@ if (-not [string]::IsNullOrWhiteSpace($csvParent)) {
 	New-Item -ItemType Directory -Force -Path $csvParent | Out-Null
 }
 
-$results | Sort-Object n, m, k | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8NoBOM -Path $OutputJsonPath
-$results | Sort-Object n, m, k | Export-Csv -NoTypeInformation -Encoding utf8NoBOM -Path $OutputCsvPath
+$results | Sort-Object n, m, k | ConvertTo-Json -Depth 5 | Set-Content -Encoding UTF8 -Path $OutputJsonPath
+$results | Sort-Object n, m, k | Export-Csv -NoTypeInformation -Encoding UTF8 -Path $OutputCsvPath
 
 Write-Host "Wrote snapshot JSON: $OutputJsonPath" -ForegroundColor Green
 Write-Host "Wrote snapshot CSV:  $OutputCsvPath" -ForegroundColor Green
