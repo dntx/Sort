@@ -105,10 +105,10 @@ partial class MainForm
         _feasiblePlan = null;
         _defaultPlan = null;
         _compactPlan = null;
-        _initialGreedyStage = null;
+        _greedyFeasibleStage = null;
         _greedyTightenStage = null;
-        _materializedStepStage = null;
-        _materializedCompactStage = null;
+        _materializedStepDisplayStage = null;
+        _materializedCompactDisplayStage = null;
         _incumbentStage = null;
         _greedyIncumbentImproved = false;
         _compactImproved = false;
@@ -170,7 +170,7 @@ partial class MainForm
             ? (prep.GreedyTightenSolution is null ? "skipped" : $"solve={prep.GreedyTightenElapsed.TotalMilliseconds:F1} ms")
             : "skipped");
         _incumbentStage = initialStage;
-        _initialGreedyStage = initialStage;
+        _greedyFeasibleStage = initialStage;
         _greedyTightenStage = greedyTightenStage;
         _greedyIncumbentImproved = prep.GreedyTightenImproved;
         if (prep.GreedyTightenImproved && prep.GreedyTightenSolution is not null)
@@ -230,8 +230,8 @@ partial class MainForm
             _incumbentStage = stage;
         }
 
-        _initialGreedyStage = stage;
-        _materializedStepStage = stage;
+        _greedyFeasibleStage = stage;
+        _materializedStepDisplayStage = stage;
         _latestProgress = CreateSnapshotFromPlan(feasiblePlan);
         PopulateTree(feasiblePlan, defaultPlan: null, compactPlan: null, compactImproved: false);
         _completedFeasibleStats = feasiblePlan.SearchStatistics;
@@ -635,7 +635,7 @@ partial class MainForm
     {
         StrategyPlan defaultPlan = stage.MaterializedPlan!;
         _incumbentStage = stage;
-        _materializedStepStage = stage;
+        _materializedStepDisplayStage = stage;
         _defaultPlan = defaultPlan;
         _feasiblePlan = defaultPlan;
         _latestProgress = CreateSnapshotFromPlan(defaultPlan);
@@ -662,7 +662,7 @@ partial class MainForm
             return;
 
         StrategyPlan compactPlan = stage.MaterializedPlan!;
-        _materializedCompactStage = stage;
+        _materializedCompactDisplayStage = stage;
         _compactPlan = compactPlan;
         _compactImproved = _incumbentStage.HasValue
             && PipelineStageProtocol.IsImprovement(stage, _incumbentStage.Value);
@@ -683,7 +683,7 @@ partial class MainForm
     // the transient stage-status placeholder so it matches the stage name that actually lands.
     private string NextProofTightenStageName(int incumbentMaxStep)
         => PipelineStageProtocol.NextGreedyStageName(
-            _initialGreedyStage?.Solution
+            _greedyFeasibleStage?.Solution
                 ?? throw new InvalidOperationException("Greedy stage naming requires the initial solved strategy."),
             incumbentMaxStep);
 
@@ -691,7 +691,7 @@ partial class MainForm
         StrategyPlan feasiblePlan,
         int incumbentMaxStep)
     {
-        if (_initialGreedyStage?.Solution is { } solution)
+        if (_greedyFeasibleStage?.Solution is { } solution)
             return PipelineStageProtocol.NextGreedyStageName(solution, incumbentMaxStep);
 
         int lower = Math.Max(1, feasiblePlan.SearchStatistics.RootProvenLowerBound);
@@ -773,7 +773,7 @@ partial class MainForm
         StrategyPlan shown = _compactPlan ?? _feasiblePlan;
         root.Text = BuildRootLabel(_feasiblePlan, _feasiblePlan, shown);
         root.Tag = new LazyNodeDetails(() => BuildGreedyProgressionDetails(
-            _initialGreedyStage!.Value,
+            _greedyFeasibleStage!.Value,
             _greedyTightenStage,
             _proofTightenStages));
         _treeView.EndUpdate();
