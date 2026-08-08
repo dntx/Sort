@@ -138,11 +138,17 @@ partial class MainForm : Form
     private StrategyPlan? _feasiblePlan;
     private StrategyPlan? _defaultPlan;
     private StrategyPlan? _compactPlan;
-    private StageResult? _initialGreedyStage;
+    // Greedy stage records (algorithm semantics):
+    // - _greedyFeasibleStage: stage-1 result
+    // - _greedyTightenStage: optional stage-2 result (or skipped)
+    // - _incumbentStage: incumbent best stage by objective, independent of UI materialization
+    private StageResult? _greedyFeasibleStage;
     private StageResult? _greedyTightenStage;
-    private StageResult? _materializedStepStage;
-    private StageResult? _materializedCompactStage;
     private StageResult? _incumbentStage;
+    // Display-stage records (presentation semantics): the latest materialized stage rendered into
+    // the step/compact slots, used for timing labels and section headers.
+    private StageResult? _materializedStepDisplayStage;
+    private StageResult? _materializedCompactDisplayStage;
     private bool _greedyIncumbentImproved;
     private bool _compactImproved;
     private bool _feasibleMode;

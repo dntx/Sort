@@ -88,6 +88,32 @@ partial class MainForm
         return string.Join(Environment.NewLine, lines);
     }
 
+    private static string FormatStageRecord(StageResult? stage)
+    {
+        if (stage is null)
+            return "-";
+
+        StageResult value = stage.Value;
+        string outcome = value.Skipped
+            ? "skipped"
+            : value.IsTightened
+                ? "tightened"
+                : value.ProvesOptimal
+                    ? "proven-infeasible"
+                    : value.Incomplete
+                        ? "incomplete"
+                        : value.IsCompleted
+                            ? "completed"
+                            : value.Outcome.ToString().ToLowerInvariant();
+        string solution = value.Solution is null
+            ? "solution: -"
+            : $"solution max={value.Solution.Score.WorstCaseSteps}";
+        string plan = value.HasPlan
+            ? $"materialized max={value.MaterializedPlan!.MaxStep}"
+            : "materialized: -";
+        return $"{value.Name} [{outcome}], {solution}, {plan}";
+    }
+
     // Updates the three live stat panels (States / Work / Progress) from the latest snapshot.
     // Each metric lives in exactly one panel so the panels do not duplicate one another.
     private void UpdateStatsPanels()
@@ -277,6 +303,14 @@ partial class MainForm
             lines.Add(
                 $"  found at t={latest.ElapsedMilliseconds / 1000.0:F1}s, searched={latest.SearchedStates}, output={latest.OutputStates}, prunes={latest.LowerBoundPrunes}");
         }
+
+        lines.Add(string.Empty);
+        lines.Add("Stage records (incumbent = best objective stage; display-* = materialized tree slots):");
+        lines.Add($"  greedy-feasible: {FormatStageRecord(_greedyFeasibleStage)}");
+        lines.Add($"  greedy-tighten: {FormatStageRecord(_greedyTightenStage)}");
+        lines.Add($"  incumbent: {FormatStageRecord(_incumbentStage)}");
+        lines.Add($"  display-step: {FormatStageRecord(_materializedStepDisplayStage)}");
+        lines.Add($"  display-compact: {FormatStageRecord(_materializedCompactDisplayStage)}");
 
         lines.Add(string.Empty);
         lines.Add(FormatTimelineText(SnapshotRunTimeline()));

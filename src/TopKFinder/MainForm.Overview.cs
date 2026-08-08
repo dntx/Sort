@@ -77,7 +77,7 @@ partial class MainForm
     {
         StrategyPlan stepPlan = defaultPlan ?? feasiblePlan;
         string stepStageName = defaultPlan is null ? StageNames.GreedyFeasible : StageNames.StepProof;
-        StageTimings? timings = defaultPlan is null ? _initialGreedyStage?.Timings : _materializedStepStage?.Timings;
+        StageTimings? timings = defaultPlan is null ? _greedyFeasibleStage?.Timings : _materializedStepDisplayStage?.Timings;
         return BuildOverviewSectionNode(stepPlan, DefaultExplorerScope, stepStageName, stepPlan.Elapsed, timings);
     }
 
@@ -106,7 +106,7 @@ partial class MainForm
             ? StageNames.FormatGreedyEdgeCompact(compactPlan.MaxStep)
             : StageNames.FormatExactEdgeCompact(compactPlan.MaxStep);
 
-        StageTimings? timings = _materializedCompactStage?.Timings;
+        StageTimings? timings = _materializedCompactDisplayStage?.Timings;
 
         if (compactImproved)
             return BuildOverviewSectionNode(compactPlan, CompactExplorerScope, compactStageName, compactPlan.Elapsed, timings);
