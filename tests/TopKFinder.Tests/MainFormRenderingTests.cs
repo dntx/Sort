@@ -618,6 +618,63 @@ public sealed class MainFormRenderingTests
         Assert.True(tightenIndex < proofIndex, "Expected greedy-tighten to remain before proof-tighten.");
     }
 
+    [Fact]
+    public async Task GreedyPreparationStages_AreHandledByUnifiedStageCallback()
+    {
+        using var form = new MainForm();
+        _ = form.Handle;
+
+        var request = CreateRunRequest(
+            n: 30,
+            m: 10,
+            k: 15,
+            feasibleMode: true,
+            builder: new StrategyBuilder(30, 10, 15),
+            cancellationToken: CancellationToken.None);
+        InvokePrivateInstanceVoid(form, "InitializeRunUi", request);
+
+        SolvedStrategy solution = CreateDeferredExactStepStage().Solution
+            ?? throw new InvalidOperationException("Expected deferred stage solution.");
+
+        var feasibleStage = new StageResult(
+            StageNames.GreedyFeasible,
+            materializedPlan: null,
+            elapsed: TimeSpan.FromMilliseconds(300),
+            outcome: StageOutcome.Completed,
+            solution,
+            timings: StageTimings.Legacy(TimeSpan.FromMilliseconds(300)));
+        InvokePrivateInstanceVoid(form, "OnGreedyPreparationStage", feasibleStage);
+
+        StageResult? recordedFeasible = GetPrivateField<StageResult?>(form, "_greedyFeasibleStage");
+        StageResult? incumbent = GetPrivateField<StageResult?>(form, "_incumbentStage");
+        Assert.True(recordedFeasible.HasValue);
+        Assert.Equal(StageNames.GreedyFeasible, recordedFeasible.Value.Name);
+        Assert.True(incumbent.HasValue);
+        Assert.Equal(StageNames.GreedyFeasible, incumbent.Value.Name);
+
+        var tightenStage = new StageResult(
+            StageNames.GreedyTighten,
+            materializedPlan: null,
+            elapsed: TimeSpan.FromMilliseconds(5600),
+            outcome: StageOutcome.Skipped,
+            solution: null,
+            timings: StageTimings.Legacy(TimeSpan.FromMilliseconds(5600)));
+        InvokePrivateInstanceVoid(form, "OnGreedyPreparationStage", tightenStage);
+
+        StageResult? recordedTighten = GetPrivateField<StageResult?>(form, "_greedyTightenStage");
+        Assert.True(recordedTighten.HasValue);
+        Assert.Equal(StageNames.GreedyTighten, recordedTighten.Value.Name);
+
+        TreeView tree = GetPrivateField<TreeView>(form, "_treeView");
+        TreeNode root = tree.Nodes[0];
+        Assert.Contains(root.Nodes.Cast<TreeNode>(), node =>
+            node.Text.StartsWith(StageNames.GreedyTighten, StringComparison.Ordinal));
+
+        Task drain = InvokePrivateInstance<Task>(form, "DrainPresentationTasksAsync");
+        PumpUiUntilTaskCompletes(drain, timeoutMs: 2000);
+        await drain;
+    }
+
     private static StageResult CreateDeferredExactStepStage()
     {
         StrategyBuilder builder = new(8, 3, 3);
