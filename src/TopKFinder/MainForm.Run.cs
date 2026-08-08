@@ -122,8 +122,6 @@ partial class MainForm
         _pauseEachStageForRun = _pauseEachStageCheckBox.Checked;
         _currentStageName = request.FeasibleMode ? StageNames.GreedyFeasible : StageNames.StepProof;
         EnsureStageDisplayOrder(_currentStageName);
-        if (request.FeasibleMode)
-            EnsureStageDisplayOrder(StageNames.GreedyTighten);
         _stageStartMs = 0;
 
         ClearResultsView();

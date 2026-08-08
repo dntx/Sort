@@ -544,7 +544,7 @@ public sealed class MainFormRenderingTests
     }
 
     [Fact]
-    public void InitializeRunUi_GreedyMode_PreRegistersGreedyTightenDisplayOrder()
+    public void InitializeRunUi_GreedyMode_TracksInitialStageOnlyUntilCallbacksArrive()
     {
         using var form = new MainForm();
         _ = form.Handle;
@@ -561,15 +561,7 @@ public sealed class MainFormRenderingTests
 
         var stageOrder = GetPrivateField<Dictionary<string, int>>(form, "_stageDisplayOrder");
         Assert.True(stageOrder.ContainsKey(StageNames.GreedyFeasible));
-        Assert.True(stageOrder.ContainsKey(StageNames.GreedyTighten));
-
-        int tightenOrder = stageOrder[StageNames.GreedyTighten];
-        string proofName = StageNames.FormatProofTighten(6);
-        InvokePrivateInstanceVoid(form, "OnStageSearchStarted", proofName);
-
-        stageOrder = GetPrivateField<Dictionary<string, int>>(form, "_stageDisplayOrder");
-        Assert.True(stageOrder.ContainsKey(proofName));
-        Assert.True(stageOrder[proofName] > tightenOrder);
+        Assert.False(stageOrder.ContainsKey(StageNames.GreedyTighten));
     }
 
     [Fact]
