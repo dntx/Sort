@@ -8,14 +8,18 @@ namespace TopKFinder;
 partial class MainForm
 {
     private const string SearchRunningSuffix = " [searching]";
-    private const string DisplayRunningSuffix = ", rendering]";
+    private const string DisplayRunningSuffix = ", building tree]";
+    private const string DisplayPendingSuffix = ", tree queued]";
     private const string StoppedSuffix = " [stopped]";
 
     private static string FormatSearchRunningPlaceholderText(string stageName)
         => stageName + SearchRunningSuffix;
 
     private static string FormatDisplayRunningPlaceholderText(string stageName, StageTimings timings)
-        => $"{stageName} [{FormatShortSeconds(timings.Solve + timings.Freeze)} search{DisplayRunningSuffix}";
+        => $"{stageName} [{FormatShortSeconds(timings.Solve + timings.Freeze)} searched{DisplayRunningSuffix}";
+
+    private static string FormatDisplayPendingPlaceholderText(string stageName, StageTimings timings)
+        => $"{stageName} [{FormatShortSeconds(timings.Solve + timings.Freeze)} searched, {FormatShortSeconds(timings.Materialize)} built{DisplayPendingSuffix}";
 
     private static string FormatStoppedPlaceholderText(string stageName)
         => stageName + StoppedSuffix;
@@ -35,9 +39,13 @@ partial class MainForm
     private static bool IsDisplayRunningPlaceholderText(string text)
         => text.EndsWith(DisplayRunningSuffix, StringComparison.Ordinal);
 
+    private static bool IsDisplayPendingPlaceholderText(string text)
+        => text.EndsWith(DisplayPendingSuffix, StringComparison.Ordinal);
+
     private static bool IsAnyStageStatusPlaceholderText(string text)
         => IsSearchRunningPlaceholderText(text)
             || IsDisplayRunningPlaceholderText(text)
+            || IsDisplayPendingPlaceholderText(text)
             || text.EndsWith(StoppedSuffix, StringComparison.Ordinal);
 
     private static bool IsStageStatusPlaceholderForStage(string text, string stageName)
@@ -61,11 +69,25 @@ partial class MainForm
     {
         prefix = string.Empty;
         int open = text.IndexOf(" [", StringComparison.Ordinal);
-        if (open < 0 || !IsDisplayRunningPlaceholderText(text))
+        if (open < 0)
             return false;
 
+        int suffixLength;
+        if (IsDisplayRunningPlaceholderText(text))
+        {
+            suffixLength = DisplayRunningSuffix.Length;
+        }
+        else if (IsDisplayPendingPlaceholderText(text))
+        {
+            suffixLength = DisplayPendingSuffix.Length;
+        }
+        else
+        {
+            return false;
+        }
+
         int start = open + 2;
-        int length = text.Length - start - DisplayRunningSuffix.Length;
+        int length = text.Length - start - suffixLength;
         if (length <= 0)
             return false;
 
@@ -124,8 +146,10 @@ partial class MainForm
             return 1;
         if (IsDisplayRunningPlaceholderText(text))
             return 2;
-        if (text.EndsWith(StoppedSuffix, StringComparison.Ordinal))
+        if (IsDisplayPendingPlaceholderText(text))
             return 3;
+        if (text.EndsWith(StoppedSuffix, StringComparison.Ordinal))
+            return 4;
         return 0;
     }
 
@@ -252,6 +276,21 @@ partial class MainForm
 
         _overviewTree.BeginUpdate();
         UpsertStagePlaceholder(_overviewTree.Nodes, stageName, FormatDisplayRunningPlaceholderText(stageName, timings));
+        _overviewTree.EndUpdate();
+    }
+
+    private void MarkStageDisplayPending(StageResult stage)
+    {
+        if (_treeView.Nodes.Count == 0)
+            return;
+
+        _treeView.BeginUpdate();
+        TreeNode root = _treeView.Nodes[0];
+        UpsertStagePlaceholder(root.Nodes, stage.Name, FormatDisplayPendingPlaceholderText(stage.Name, stage.Timings));
+        _treeView.EndUpdate();
+
+        _overviewTree.BeginUpdate();
+        UpsertStagePlaceholder(_overviewTree.Nodes, stage.Name, FormatDisplayPendingPlaceholderText(stage.Name, stage.Timings));
         _overviewTree.EndUpdate();
     }
 
@@ -506,12 +545,10 @@ partial class MainForm
             ? StageNames.FormatGreedyEdgeCompact(maxStep)
             : StageNames.FormatExactEdgeCompact(maxStep);
 
-    private void ShowGreedyTightenSummaryStage()
+    private void ShowGreedyTightenSummaryStage(StageResult stage)
     {
-        if (!_greedyTightenStage.HasValue || _treeView.Nodes.Count == 0)
+        if (_treeView.Nodes.Count == 0)
             return;
-
-        StageResult stage = _greedyTightenStage.Value;
         EnsureStageDisplayOrder(stage.Name);
 
         string marker = stage.Skipped

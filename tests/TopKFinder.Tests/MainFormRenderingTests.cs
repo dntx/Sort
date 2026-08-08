@@ -361,6 +361,7 @@ public sealed class MainFormRenderingTests
 
         using var form = new MainForm();
         _ = form.Handle;
+        InvokePrivateInstanceVoid(form, "ShowInitialStagePlaceholder", 8, 3, 3, true);
 
         SetPrivateField(form, "_feasiblePlan", null);
         SetPrivateField(form, "_greedyFeasibleStage", new StageResult(
@@ -373,11 +374,18 @@ public sealed class MainFormRenderingTests
 
         var incoming = new StageResult(
             StageNames.FormatProofTighten(feasiblePlan.MaxStep - 1),
-            feasiblePlan,
+            materializedPlan: null,
             TimeSpan.FromMilliseconds(2),
             StageOutcome.Tightened,
             feasibleSolution,
             StageTimings.Legacy(TimeSpan.FromMilliseconds(2)));
+
+        InvokePrivateInstanceVoid(form, "OnStageSearchStarted", incoming.Name);
+        TreeView tree = GetPrivateField<TreeView>(form, "_treeView");
+        TreeNode root = tree.Nodes[0];
+        Assert.Contains(root.Nodes.Cast<TreeNode>(), node =>
+            node.Text.StartsWith(incoming.Name, StringComparison.Ordinal)
+            && node.Text.Contains("searching", StringComparison.Ordinal));
 
         InvokePrivateInstanceVoid(form, "OnProofTightenStage", incoming);
 
@@ -385,6 +393,20 @@ public sealed class MainFormRenderingTests
         List<StageResult> landed = GetPrivateField<List<StageResult>>(form, "_proofTightenStages");
         Assert.Single(buffered);
         Assert.Empty(landed);
+
+        Assert.Contains(root.Nodes.Cast<TreeNode>(), node =>
+            node.Text.StartsWith(incoming.Name, StringComparison.Ordinal)
+            && (node.Text.Contains("searched, building tree", StringComparison.Ordinal)
+                || node.Text.Contains("tree queued", StringComparison.Ordinal)));
+
+        PumpUiUntil(
+            () => root.Nodes.Cast<TreeNode>().Any(node =>
+                node.Text.StartsWith(incoming.Name, StringComparison.Ordinal)
+                && node.Text.Contains("tree queued", StringComparison.Ordinal)),
+            timeoutMs: 2000);
+        Assert.Contains(root.Nodes.Cast<TreeNode>(), node =>
+            node.Text.StartsWith(incoming.Name, StringComparison.Ordinal)
+            && node.Text.Contains("tree queued", StringComparison.Ordinal));
 
         InvokePrivateInstanceVoid(form, "ApplyMaterializedInitialGreedyStage", new StageResult(
             StageNames.GreedyFeasible,
@@ -394,9 +416,23 @@ public sealed class MainFormRenderingTests
             feasibleSolution,
             StageTimings.Legacy(TimeSpan.FromMilliseconds(1))));
 
+        PumpUiUntil(
+            () => landed.Count == 1,
+            timeoutMs: 2000);
+
+        root = tree.Nodes[0];
+
         Assert.Empty(buffered);
         Assert.Single(landed);
         Assert.Equal(incoming.Name, landed[0].Name);
+        PumpUiUntil(
+            () => root.Nodes.Cast<TreeNode>().Any(node =>
+                node.Text.StartsWith(incoming.Name, StringComparison.Ordinal)
+                && !node.Text.Contains("tree queued", StringComparison.Ordinal)),
+            timeoutMs: 2000);
+        Assert.DoesNotContain(root.Nodes.Cast<TreeNode>(), node =>
+            node.Text.StartsWith(incoming.Name, StringComparison.Ordinal)
+            && node.Text.Contains("tree queued", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -587,8 +623,8 @@ public sealed class MainFormRenderingTests
             solution: null,
             timings: StageTimings.Legacy(TimeSpan.FromMilliseconds(5600)));
         SetPrivateField(form, "_greedyTightenStage", skippedTighten);
-
-        InvokePrivateInstanceVoid(form, "ShowGreedyTightenSummaryStage");
+        SetPrivateField(form, "_feasiblePlan", new StrategyBuilder(30, 10, 15).ExecuteStepProofStage());
+        InvokePrivateInstanceVoid(form, "OnProofTightenStage", skippedTighten);
         InvokePrivateInstanceVoid(form, "OnStageSearchStarted", StageNames.FormatProofTighten(6));
 
         TreeView tree = GetPrivateField<TreeView>(form, "_treeView");
@@ -657,10 +693,8 @@ public sealed class MainFormRenderingTests
         Assert.True(recordedTighten.HasValue);
         Assert.Equal(StageNames.GreedyTighten, recordedTighten.Value.Name);
 
-        TreeView tree = GetPrivateField<TreeView>(form, "_treeView");
-        TreeNode root = tree.Nodes[0];
-        Assert.Contains(root.Nodes.Cast<TreeNode>(), node =>
-            node.Text.StartsWith(StageNames.GreedyTighten, StringComparison.Ordinal));
+        List<StageResult> buffered = GetPrivateField<List<StageResult>>(form, "_pendingGreedyEdgeStages");
+        Assert.Contains(buffered, stage => string.Equals(stage.Name, StageNames.GreedyTighten, StringComparison.Ordinal));
 
         Task drain = InvokePrivateInstance<Task>(form, "DrainPresentationTasksAsync");
         PumpUiUntilTaskCompletes(drain, timeoutMs: 2000);

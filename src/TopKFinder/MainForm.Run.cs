@@ -115,6 +115,8 @@ partial class MainForm
         _activePhase = 0;
         _proofTightenStages.Clear();
         _pendingGreedyEdgeStages.Clear();
+        _pendingGreedyEdgeMaterializationNames.Clear();
+        _bufferedGreedyEdgeMaterializationTasks.Clear();
         _stageDisplayOrder.Clear();
         _nextStageDisplayOrder = 0;
         _solverWorkStopped = false;
@@ -168,6 +170,8 @@ partial class MainForm
         Interlocked.Exchange(ref _activePhase, 2);
         _proofTightenStages.Clear();
         _pendingGreedyEdgeStages.Clear();
+        _pendingGreedyEdgeMaterializationNames.Clear();
+        _bufferedGreedyEdgeMaterializationTasks.Clear();
         string proofStartStageName = NextProofTightenStageName(
             prep.EffectiveFeasibleSolution.Score.WorstCaseSteps);
         RecordRunTimeline("proof-tighten pipeline scheduled (after greedy searches)", proofStartStageName);
@@ -219,7 +223,6 @@ partial class MainForm
         _materializedStepDisplayStage = stage;
         _latestProgress = CreateSnapshotFromPlan(feasiblePlan);
         PopulateTree(feasiblePlan, defaultPlan: null, compactPlan: null, compactImproved: false);
-        ShowGreedyTightenSummaryStage();
         _completedFeasibleStats = feasiblePlan.SearchStatistics;
         UpdateSummaryText(feasiblePlan, defaultPlan: null, compactPlan: null, compactImproved: false);
         UpdateStatsPanels();
@@ -233,7 +236,15 @@ partial class MainForm
         List<StageResult> bufferedStages = _pendingGreedyEdgeStages.ToList();
         _pendingGreedyEdgeStages.Clear();
         foreach (StageResult bufferedStage in bufferedStages)
+        {
+            if (_pendingGreedyEdgeMaterializationNames.Contains(bufferedStage.Name))
+            {
+                UpsertPendingGreedyEdgeStage(bufferedStage);
+                continue;
+            }
+
             OnProofTightenStage(bufferedStage);
+        }
     }
 
     private async Task RunExactModeAsync(RunRequest request)
@@ -288,6 +299,8 @@ partial class MainForm
         _activePresentationTask = null;
         _exactStepStageMaterialized = false;
         _pendingExactCompactStage = null;
+        _pendingGreedyEdgeMaterializationNames.Clear();
+        _bufferedGreedyEdgeMaterializationTasks.Clear();
         ClearPresentationStageCache();
     }
 
@@ -399,12 +412,20 @@ partial class MainForm
         while (true)
         {
             Task? task = _activePresentationTask;
+            if (task is null && _bufferedGreedyEdgeMaterializationTasks.Count > 0)
+                task = Task.WhenAll(_bufferedGreedyEdgeMaterializationTasks.ToArray());
+
             if (task is null)
                 break;
 
             await task;
             if (ReferenceEquals(_activePresentationTask, task))
                 _activePresentationTask = null;
+
+            _bufferedGreedyEdgeMaterializationTasks.RemoveAll(t => t.IsCompleted);
+
+            if (_activePresentationTask is null && _bufferedGreedyEdgeMaterializationTasks.Count == 0)
+                break;
         }
     }
 
@@ -453,6 +474,8 @@ partial class MainForm
         _activePresentationRequestSource = null;
 
         _activePresentationTask = null;
+        _pendingGreedyEdgeMaterializationNames.Clear();
+        _bufferedGreedyEdgeMaterializationTasks.Clear();
         ClearPresentationStageCache();
 
         _activeBuilder = null;
@@ -529,9 +552,9 @@ partial class MainForm
             ? $"skipped (root probe), solve={stage.Timings.Solve.TotalMilliseconds:F1} ms"
             : $"solve={stage.Timings.Solve.TotalMilliseconds:F1} ms");
 
-        // Surface greedy-tighten immediately after preparation search completes, even while
-        // greedy-feasible display materialization may still be running.
-        ShowGreedyTightenSummaryStage();
+        // Keep greedy-tighten on the same UI lifecycle as proof-tighten stages so all greedy edge
+        // stages share one buffering/materialization/display path.
+        OnProofTightenStage(stage);
     }
 
     private void OnStageSearchStarted(string stageName)
@@ -761,12 +784,31 @@ partial class MainForm
     {
         if (_feasiblePlan is null)
         {
-            _pendingGreedyEdgeStages.Add(stage);
+            UpsertPendingGreedyEdgeStage(stage);
+            if (stage.HasPlan)
+            {
+                MarkStageDisplayPending(stage);
+                return;
+            }
+
+            if (stage.Solution is null)
+                return;
+
+            MarkStageDisplayInProgress(stage);
+            QueueBufferedGreedyEdgeMaterialization(stage);
             return;
         }
 
         if (_treeView.Nodes.Count == 0)
             return;
+
+        if (string.Equals(stage.Name, StageNames.GreedyTighten, StringComparison.Ordinal))
+        {
+            ShowGreedyTightenSummaryStage(stage);
+            RemoveStageStatusPlaceholder(stage.Name);
+            UpdateElapsedLabel();
+            return;
+        }
 
         bool improved = _incumbentStage.HasValue
             && PipelineStageProtocol.IsImprovement(stage, _incumbentStage.Value);
@@ -855,6 +897,108 @@ partial class MainForm
                 : NoSolutionMarker(stage);
             ShowStageModal(FormatStageRootLabel(stage.Name, stage.Elapsed, stage.MaterializedPlan, marker, stage.Timings), stage.HasPlan);
         }
+    }
+
+    private void QueueBufferedGreedyEdgeMaterialization(StageResult stage)
+    {
+        if (!_pendingGreedyEdgeMaterializationNames.Add(stage.Name))
+            return;
+
+        int generation = _presentationGeneration;
+        int requestVersion = _presentationRequestVersion;
+        CancellationToken cancellationToken = _presentationCancellationSource?.Token ?? CancellationToken.None;
+
+        Task task = MaterializeExactStageAsync(
+            stage,
+            OnBufferedGreedyEdgeStageMaterialized,
+            generation,
+            requestVersion,
+            cancellationToken);
+        _bufferedGreedyEdgeMaterializationTasks.Add(task);
+        _ = ObserveBufferedGreedyEdgeMaterializationAsync(stage.Name, task);
+    }
+
+    private async Task ObserveBufferedGreedyEdgeMaterializationAsync(string stageName, Task task)
+    {
+        try
+        {
+            await task;
+        }
+        finally
+        {
+            if (!CanAcceptStageCallback())
+            {
+                _pendingGreedyEdgeMaterializationNames.Remove(stageName);
+                _bufferedGreedyEdgeMaterializationTasks.Remove(task);
+            }
+            else
+            {
+                try
+                {
+                    BeginInvoke(() =>
+                    {
+                        _pendingGreedyEdgeMaterializationNames.Remove(stageName);
+                        _bufferedGreedyEdgeMaterializationTasks.Remove(task);
+
+                        if (_feasiblePlan is null)
+                            return;
+
+                        if (TryRemovePendingGreedyEdgeStage(stageName, out StageResult pendingStage))
+                            OnProofTightenStage(pendingStage);
+                    });
+                }
+                catch (ObjectDisposedException)
+                {
+                    // Form closed mid-run; nothing to update.
+                }
+                catch (InvalidOperationException)
+                {
+                    // Handle destroyed during shutdown.
+                }
+            }
+        }
+    }
+
+    private void OnBufferedGreedyEdgeStageMaterialized(StageResult stage)
+    {
+        UpsertPendingGreedyEdgeStage(stage);
+        MarkStageDisplayPending(stage);
+
+        if (_feasiblePlan is null)
+            return;
+
+        if (TryRemovePendingGreedyEdgeStage(stage.Name, out StageResult pendingStage))
+            OnProofTightenStage(pendingStage);
+    }
+
+    private void UpsertPendingGreedyEdgeStage(StageResult stage)
+    {
+        for (int i = 0; i < _pendingGreedyEdgeStages.Count; i++)
+        {
+            if (string.Equals(_pendingGreedyEdgeStages[i].Name, stage.Name, StringComparison.Ordinal))
+            {
+                _pendingGreedyEdgeStages[i] = stage;
+                return;
+            }
+        }
+
+        _pendingGreedyEdgeStages.Add(stage);
+    }
+
+    private bool TryRemovePendingGreedyEdgeStage(string stageName, out StageResult stage)
+    {
+        for (int i = 0; i < _pendingGreedyEdgeStages.Count; i++)
+        {
+            if (!string.Equals(_pendingGreedyEdgeStages[i].Name, stageName, StringComparison.Ordinal))
+                continue;
+
+            stage = _pendingGreedyEdgeStages[i];
+            _pendingGreedyEdgeStages.RemoveAt(i);
+            return true;
+        }
+
+        stage = default;
+        return false;
     }
 
     // Closes the squeeze on the greedy incumbent (the best plan so far) to a proven optimum after a

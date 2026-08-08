@@ -185,6 +185,8 @@ partial class MainForm : Form
     // at which the current stage began drive the per-stage timing/labels in the progress panel.
     private readonly List<StageResult> _proofTightenStages = new();
     private readonly List<StageResult> _pendingGreedyEdgeStages = new();
+    private readonly HashSet<string> _pendingGreedyEdgeMaterializationNames = new(StringComparer.Ordinal);
+    private readonly List<Task> _bufferedGreedyEdgeMaterializationTasks = new();
     private readonly Dictionary<string, int> _stageDisplayOrder = new(StringComparer.Ordinal);
     private int _nextStageDisplayOrder;
     private bool _solverWorkStopped;
