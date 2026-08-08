@@ -154,18 +154,13 @@ partial class MainForm
         // stage metadata in the mode transition code.
         await FlushUiCallbackQueueAsync();
 
-        if (_greedyFeasibleStage is not { } initialStage)
-            throw new InvalidOperationException("Expected greedy-feasible stage callback before greedy preparation completion.");
-        if (_greedyTightenStage is not { } greedyTightenStage)
-            throw new InvalidOperationException("Expected greedy-tighten stage callback before greedy preparation completion.");
-
         _greedyIncumbentImproved = prep.GreedyTightenImproved;
-        _incumbentStage ??= initialStage;
-        if (prep.GreedyTightenImproved && prep.GreedyTightenSolution is not null)
+        if (_greedyFeasibleStage is { } initialStage)
+            _incumbentStage ??= initialStage;
+        if (prep.GreedyTightenImproved
+            && prep.GreedyTightenSolution is not null
+            && _greedyTightenStage is { } greedyTightenStage)
             _incumbentStage = greedyTightenStage;
-
-        // Make stage order explicit in greedy mode: feasible -> tighten -> proof-tighten.
-        EnsureStageDisplayOrder(StageNames.GreedyTighten);
 
         Interlocked.Exchange(ref _activePhase, 2);
         _proofTightenStages.Clear();
@@ -524,9 +519,10 @@ partial class MainForm
         if (!_feasibleMode)
             return;
 
-        if (string.Equals(stage.Name, StageNames.GreedyFeasible, StringComparison.Ordinal))
+        // Greedy preparation emits two callbacks in order: feasible, then tighten (completed or skipped).
+        if (_greedyFeasibleStage is null)
         {
-            RecordRunTimeline("greedy-feasible search complete", $"solve={stage.Timings.Solve.TotalMilliseconds:F1} ms");
+            RecordRunTimeline("greedy preparation stage complete", $"{stage.Name}, solve={stage.Timings.Solve.TotalMilliseconds:F1} ms");
             _incumbentStage = stage;
             _greedyFeasibleStage = stage;
 
@@ -537,7 +533,7 @@ partial class MainForm
             return;
         }
 
-        if (!string.Equals(stage.Name, StageNames.GreedyTighten, StringComparison.Ordinal))
+        if (_greedyTightenStage is not null)
             return;
 
         _greedyTightenStage = stage;
@@ -547,9 +543,9 @@ partial class MainForm
         if (_greedyIncumbentImproved)
             _incumbentStage = stage;
 
-        RecordRunTimeline("greedy-tighten search complete", stage.Skipped
+        RecordRunTimeline("greedy preparation stage complete", stage.Skipped
             ? $"skipped (root probe), solve={stage.Timings.Solve.TotalMilliseconds:F1} ms"
-            : $"solve={stage.Timings.Solve.TotalMilliseconds:F1} ms");
+            : $"{stage.Name}, solve={stage.Timings.Solve.TotalMilliseconds:F1} ms");
 
         // Keep greedy-tighten on the same UI lifecycle as proof-tighten stages so all greedy edge
         // stages share one buffering/materialization/display path.
