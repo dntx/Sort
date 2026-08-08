@@ -21,6 +21,12 @@ minimax 搜索、对称性约减，以及三种剪枝下界（信息论下界、
 - `PublicPipelineOrchestrator`（公共编排层）负责 CLI/UI 共用的阶段顺序与 stage-emission 契约。
 - `DisplayRenderEngine` 与 UI/文本渲染器（显示层）负责折叠与展示语义，不改变搜索求解语义。
 
+已定架构决策（维护基线）：
+
+- 不强制把 shared-reference / DAG 风格求解表示扩成纯显式树。搜索层继续以 cache-driven 的隐式策略语义为主，必要时才物化显式节点。
+- 不推动大规模 display mapping 对象化重写。继续使用现有 facade + parity tests 路径，按实际维护痛点做增量式收口。
+- 这些取舍是有意的工程权衡，不是待完成重构项。
+
 `greedy-feasible` 也有明确的运行时边界：Phase A 先求解固定构造策略，产出以 `SearchStateKey` 为键的
 `GreedyPolicySolution`；Phase B 再消费该 solution 物化 display tree。Phase B 只重放已选分组，不重新做策略选择。
 

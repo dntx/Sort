@@ -10,6 +10,12 @@
 - Mainline B（test layering governance）已完成：required PR gate 直接运行完整 `TopKFinder.Tests` + 轻量 perf tests，贡献者运行矩阵已文档化。
 - Mainline C（performance baseline governance）基础设施已完成：focused counter lanes、bundled full audit、baseline drift 审批和 nightly deterministic audit 都已就位；后续主要是 ratchet maintenance。
 
+夜间策略范围决议（已定）：
+
+- 目前保持 nightly deterministic audit 的现有范围，不做预防性扩面。
+- 只有在证据显示现有覆盖存在盲区（漏报/误报导致可用性下降）时，才扩展 nightly lane 或升级策略。
+- 优先优化现有信号质量与分诊效率，再考虑新增 nightly 轨道。
+
 ---
 
 ## 1. 总体哲学：两层监控，确定性计数器为主、墙钟时间为辅
