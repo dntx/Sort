@@ -210,13 +210,14 @@ readonly record struct StageTimings(
     }
 }
 
+enum StagePresentationMode
+{
+    Auto,
+    SearchOnlySummary,
+}
+
 // One stage of the proof-tighten progression as it is produced by RunGreedyPipeline: the final
 // edge-compaction pass, each successful downward tightening, or a terminal ceiling. Name is the stage
-            enum StagePresentationMode
-            {
-                Auto,
-                SearchOnlySummary,
-            }
 // label (e.g. "exact-edge-compact@6", "proof-tighten<=4"); Solution is the immutable strategy for
 // Tightened and Completed, while Plan is an optional display artifact. Elapsed is the stage's own wall
 // time, not a cumulative total. Outcome and Solution form the solver result.
@@ -224,17 +225,17 @@ readonly struct StageResult
 {
     public StageResult(string name, StrategyPlan? materializedPlan, TimeSpan elapsed,
         StageOutcome outcome = StageOutcome.Tightened,
-                    StagePresentationMode presentationMode = StagePresentationMode.Auto)
         SolvedStrategy? solution = null,
-        StageTimings? timings = null)
+        StageTimings? timings = null,
+        StagePresentationMode presentationMode = StagePresentationMode.Auto)
     {
         Name = name;
         MaterializedPlan = materializedPlan;
         Elapsed = elapsed;
         Outcome = outcome;
-                    PresentationMode = presentationMode;
         Solution = solution;
         Timings = timings ?? StageTimings.Legacy(elapsed);
+        PresentationMode = presentationMode;
     }
 
     public string Name { get; }
