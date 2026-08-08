@@ -749,6 +749,47 @@ public sealed class MainFormRenderingTests
         await drain;
     }
 
+    [Fact]
+    public void ApplyMaterializedInitialGreedyStage_ReplaysBufferedSearchOnlyGreedyTighten()
+    {
+        using var form = new MainForm();
+        _ = form.Handle;
+
+        StrategyPlan feasiblePlan = new StrategyBuilder(8, 3, 3).ExecuteStepProofStage();
+        SolvedStrategy solution = CreateDeferredExactStepStage().Solution
+            ?? throw new InvalidOperationException("Expected deferred stage solution.");
+
+        InvokePrivateInstanceVoid(form, "ShowInitialStagePlaceholder", 8, 3, 3, true);
+        SetPrivateField(form, "_feasiblePlan", null);
+
+        var tightenStage = new StageResult(
+            StageNames.GreedyTighten,
+            materializedPlan: null,
+            elapsed: TimeSpan.FromMilliseconds(5600),
+            outcome: StageOutcome.Completed,
+            solution,
+            timings: StageTimings.Legacy(TimeSpan.FromMilliseconds(5600)),
+            presentationMode: StagePresentationMode.SearchOnlySummary);
+
+        InvokePrivateInstanceVoid(form, "OnProofTightenStage", tightenStage);
+
+        List<StageResult> buffered = GetPrivateField<List<StageResult>>(form, "_pendingGreedyEdgeStages");
+        Assert.Contains(buffered, stage => string.Equals(stage.Name, StageNames.GreedyTighten, StringComparison.Ordinal));
+
+        InvokePrivateInstanceVoid(form, "ApplyMaterializedInitialGreedyStage", new StageResult(
+            StageNames.GreedyFeasible,
+            feasiblePlan,
+            feasiblePlan.Elapsed,
+            StageOutcome.Completed,
+            solution,
+            StageTimings.Legacy(feasiblePlan.Elapsed)));
+
+        TreeView tree = GetPrivateField<TreeView>(form, "_treeView");
+        TreeNode root = tree.Nodes[0];
+        Assert.Contains(root.Nodes.Cast<TreeNode>(), node =>
+            node.Text.StartsWith(StageNames.GreedyTighten, StringComparison.Ordinal));
+    }
+
     private static StageResult CreateDeferredExactStepStage()
     {
         StrategyBuilder builder = new(8, 3, 3);

@@ -169,7 +169,6 @@ partial class MainForm
 
         Interlocked.Exchange(ref _activePhase, 2);
         _proofTightenStages.Clear();
-        _pendingGreedyEdgeStages.Clear();
         _pendingGreedyEdgeMaterializationNames.Clear();
         _bufferedGreedyEdgeMaterializationTasks.Clear();
         string proofStartStageName = NextProofTightenStageName(
