@@ -97,3 +97,62 @@ Start in this order:
 - Use `manual-counter-full-audit` before major merges, after large algorithm changes, or when selector drift is suspected.
 - Use `nightly-counter-full-audit` for unattended deterministic regression surveillance once manual audit coverage has stabilized.
 - Use `manual-perf-gate` only for wall-clock smoke diagnostics; deterministic counters remain the primary regression signal.
+
+## Maintainer Backlog (Current Open Items)
+
+The governance foundation is complete. Remaining work is maintenance-oriented and evidence-driven.
+
+### 1) Nightly deterministic audit observation (open)
+
+What remains:
+
+- Observe consecutive `nightly-counter-full-audit` runs on `main`.
+- Confirm signal quality:
+	- stable matched-tests drift behavior,
+	- stable snapshot positive-delta behavior,
+	- acceptable false-positive rate.
+- If failures occur, classify first:
+	- selector drift,
+	- deterministic counter regression,
+	- infrastructure/runtime flake.
+
+Latest status note:
+
+- Historical mismatch windows were reconciled by updating the full-counter-suite matched-tests baseline and aligning audit invocation to explicit `full-counter-suite` semantics.
+- Keep this item open until a fresh post-reconciliation nightly window remains stable.
+
+Exit criterion:
+
+- A meaningful post-reconciliation run window is stable, and triage guidance has been validated by at least one real or simulated failure investigation.
+
+### 2) Evidence-driven ratchet maintenance (open, ongoing)
+
+What remains:
+
+- Ratchet only when deterministic counters show real, repeatable headroom.
+- Do not force cap changes when positive deltas remain zero.
+
+Exit criterion:
+
+- Ongoing maintenance stream; no single terminal milestone.
+
+### 3) Optional unattended-output polish (optional)
+
+Potential improvements:
+
+- tighten nightly failure issue text,
+- add concise triage checklist links,
+- improve artifact naming/readability for faster incident response.
+
+Exit criterion:
+
+- Team accepts current output as sufficient, or adopts a revised template.
+
+## Maintenance Resumption Order
+
+When resuming maintenance work in a fresh session:
+
+1. Check latest `nightly-counter-full-audit` outcomes first.
+2. If no actionable signal exists, do not force code changes.
+3. If actionable signal exists, fix the smallest root-cause slice.
+4. Revisit deeper architecture changes only when they unblock concrete maintenance work.
