@@ -543,6 +543,81 @@ public sealed class MainFormRenderingTests
         Assert.Null(GetPrivateFieldValue(form, "_stopEscalationSource"));
     }
 
+    [Fact]
+    public void InitializeRunUi_GreedyMode_PreRegistersGreedyTightenDisplayOrder()
+    {
+        using var form = new MainForm();
+        _ = form.Handle;
+
+        var request = CreateRunRequest(
+            n: 30,
+            m: 10,
+            k: 15,
+            feasibleMode: true,
+            builder: new StrategyBuilder(30, 10, 15),
+            cancellationToken: CancellationToken.None);
+
+        InvokePrivateInstanceVoid(form, "InitializeRunUi", request);
+
+        var stageOrder = GetPrivateField<Dictionary<string, int>>(form, "_stageDisplayOrder");
+        Assert.True(stageOrder.ContainsKey(StageNames.GreedyFeasible));
+        Assert.True(stageOrder.ContainsKey(StageNames.GreedyTighten));
+
+        int tightenOrder = stageOrder[StageNames.GreedyTighten];
+        string proofName = StageNames.FormatProofTighten(6);
+        InvokePrivateInstanceVoid(form, "OnStageSearchStarted", proofName);
+
+        stageOrder = GetPrivateField<Dictionary<string, int>>(form, "_stageDisplayOrder");
+        Assert.True(stageOrder.ContainsKey(proofName));
+        Assert.True(stageOrder[proofName] > tightenOrder);
+    }
+
+    [Fact]
+    public void GreedyTightenSummaryNode_StaysBeforeProofPlaceholder()
+    {
+        using var form = new MainForm();
+        _ = form.Handle;
+
+        var request = CreateRunRequest(
+            n: 30,
+            m: 10,
+            k: 15,
+            feasibleMode: true,
+            builder: new StrategyBuilder(30, 10, 15),
+            cancellationToken: CancellationToken.None);
+        InvokePrivateInstanceVoid(form, "InitializeRunUi", request);
+
+        var skippedTighten = new StageResult(
+            StageNames.GreedyTighten,
+            materializedPlan: null,
+            elapsed: TimeSpan.FromMilliseconds(5600),
+            outcome: StageOutcome.Skipped,
+            solution: null,
+            timings: StageTimings.Legacy(TimeSpan.FromMilliseconds(5600)));
+        SetPrivateField(form, "_greedyTightenStage", skippedTighten);
+
+        InvokePrivateInstanceVoid(form, "ShowGreedyTightenSummaryStage");
+        InvokePrivateInstanceVoid(form, "OnStageSearchStarted", StageNames.FormatProofTighten(6));
+
+        TreeView tree = GetPrivateField<TreeView>(form, "_treeView");
+        TreeNode root = tree.Nodes[0];
+
+        int tightenIndex = -1;
+        int proofIndex = -1;
+        for (int i = 0; i < root.Nodes.Count; i++)
+        {
+            string text = root.Nodes[i].Text;
+            if (text.StartsWith(StageNames.GreedyTighten, StringComparison.Ordinal))
+                tightenIndex = i;
+            if (text.StartsWith(StageNames.ProofTightenPrefix, StringComparison.Ordinal))
+                proofIndex = i;
+        }
+
+        Assert.True(tightenIndex >= 0, "Expected greedy-tighten stage node to be present.");
+        Assert.True(proofIndex >= 0, "Expected proof-tighten placeholder to be present.");
+        Assert.True(tightenIndex < proofIndex, "Expected greedy-tighten to remain before proof-tighten.");
+    }
+
     private static StageResult CreateDeferredExactStepStage()
     {
         StrategyBuilder builder = new(8, 3, 3);
@@ -556,6 +631,27 @@ public sealed class MainFormRenderingTests
             });
 
         return first ?? throw new InvalidOperationException("Deferred exact pipeline did not emit a stage.");
+    }
+
+    private static object CreateRunRequest(
+        int n,
+        int m,
+        int k,
+        bool feasibleMode,
+        StrategyBuilder builder,
+        CancellationToken cancellationToken)
+    {
+        Type requestType = typeof(MainForm).GetNestedType("RunRequest", BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Missing nested type MainForm.RunRequest");
+        return Activator.CreateInstance(
+            requestType,
+            n,
+            m,
+            k,
+            feasibleMode,
+            builder,
+            cancellationToken)
+            ?? throw new InvalidOperationException("Failed to construct MainForm.RunRequest");
     }
 
     private static T InvokePrivateStatic<T>(Type type, string methodName, params object?[] args)

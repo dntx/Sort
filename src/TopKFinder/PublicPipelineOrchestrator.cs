@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 
 namespace TopKFinder;
 
@@ -96,7 +97,12 @@ static class PublicPipelineOrchestrator
         var callbacks = new PipelineCallbacks(onStageCompleted, onStageStart);
 
         if (!preparationAlreadyApplied)
-            RunGreedyPreparation(builder, onStageCompleted, onStageStart, emitPreparationStages);
+            RunGreedyPreparation(
+                builder,
+                onStageCompleted,
+                onStageStart,
+                onGreedyFeasibleSearchCompleted: null,
+                emitStages: emitPreparationStages);
 
         return builder.RunGreedyPipelineCore(onStageCompleted, onStageStart);
     }
@@ -120,41 +126,17 @@ static class PublicPipelineOrchestrator
         StrategyBuilder builder,
         Action<StageResult>? onStageCompleted = null,
         Action<string>? onStageStart = null,
+        Action<StageResult>? onGreedyFeasibleSearchCompleted = null,
         bool emitStages = true,
         bool materialize = true)
     {
         var callbacks = new PipelineCallbacks(onStageCompleted, onStageStart);
-        GreedyPreparationResult prep = PrepareGreedyUpperBound(builder, materialize);
-
-        if (!emitStages)
-            return prep;
-
-        callbacks.Start(StageNames.GreedyFeasible);
-        PipelineStageProtocol.EmitStage(
-            new StageResult(
-                StageNames.GreedyFeasible,
-                prep.BaseFeasiblePlan,
-                prep.GreedyFeasibleElapsed,
-                StageOutcome.Completed,
-                prep.BaseFeasibleSolution,
-                prep.GreedyFeasibleTimings),
-            callbacks);
-
-        if (prep.GreedyTightenProbeRun && prep.GreedyTightenSolution is not null)
-        {
-            callbacks.Start(StageNames.GreedyTighten);
-            PipelineStageProtocol.EmitStage(
-                new StageResult(
-                    StageNames.GreedyTighten,
-                    prep.GreedyTightenPlan,
-                    prep.GreedyTightenElapsed,
-                    StageOutcome.Completed,
-                    prep.GreedyTightenSolution,
-                    prep.GreedyTightenTimings),
-                callbacks);
-        }
-
-        return prep;
+        return PrepareGreedyUpperBound(
+            builder,
+            materialize,
+            callbacks.Start,
+            emitStages ? callbacks.Complete : null,
+            onGreedyFeasibleSearchCompleted);
     }
 
     // Shared greedy pre-stage orchestration used by public callers (CLI/UI): build a feasible upper
@@ -162,27 +144,48 @@ static class PublicPipelineOrchestrator
     // tightening wins. Search semantics are unchanged; this only centralizes pipeline routing.
     public static GreedyPreparationResult PrepareGreedyUpperBound(
         StrategyBuilder builder,
-        bool materialize = true)
+        bool materialize = true,
+        Action<string>? onStageStart = null,
+        Action<StageResult>? onStageCompleted = null,
+        Action<StageResult>? onGreedyFeasibleSearchCompleted = null)
     {
+        onStageStart?.Invoke(StageNames.GreedyFeasible);
         GreedyFeasibleStageArtifacts feasibleArtifacts = builder.ExecuteGreedyFeasibleStageWithSolution(materialize);
         StrategyPlan? baseFeasiblePlan = materialize ? feasibleArtifacts.Plan : null;
         SolvedStrategy baseFeasibleSolution = feasibleArtifacts.Solution;
         StrategyPlan? effectiveFeasiblePlan = baseFeasiblePlan;
         SolvedStrategy effectiveFeasibleSolution = baseFeasibleSolution;
 
+        var greedyFeasibleStage = new StageResult(
+            StageNames.GreedyFeasible,
+            baseFeasiblePlan,
+            feasibleArtifacts.Timings.Total,
+            StageOutcome.Completed,
+            baseFeasibleSolution,
+            feasibleArtifacts.Timings);
+        onGreedyFeasibleSearchCompleted?.Invoke(greedyFeasibleStage);
+        onStageCompleted?.Invoke(greedyFeasibleStage);
+
+        onStageStart?.Invoke(StageNames.GreedyTighten);
+        var gtProbeStopwatch = Stopwatch.StartNew();
         bool gtProbeRun = builder.ShouldRunGreedyTightenByRootProbe();
+        gtProbeStopwatch.Stop();
+        TimeSpan gtProbeElapsed = gtProbeStopwatch.Elapsed;
         StrategyPlan? gtPlan = null;
         SolvedStrategy? gtSolution = null;
         bool gtImproved = false;
-        TimeSpan gtElapsed = TimeSpan.Zero;
-        StageTimings gtTimings = default;
+        TimeSpan gtElapsed = gtProbeElapsed;
+        StageTimings gtTimings = StageTimings.Legacy(gtProbeElapsed);
         if (gtProbeRun)
         {
             GreedyTightenStageArtifacts gtArtifacts = builder.ExecuteGreedyTightenStageWithSolution(materialize);
             gtPlan = materialize ? gtArtifacts.Plan : null;
             gtSolution = gtArtifacts.Solution;
-            gtElapsed = gtArtifacts.Timings.Total;
-            gtTimings = gtArtifacts.Timings;
+            gtTimings = new StageTimings(
+                gtProbeElapsed + gtArtifacts.Timings.Solve,
+                gtArtifacts.Timings.Freeze,
+                gtArtifacts.Timings.Materialize);
+            gtElapsed = gtTimings.Total;
             gtImproved = gtSolution.Score.IsStrictRefinementOver(baseFeasibleSolution.Score);
             if (gtImproved)
             {
@@ -191,6 +194,15 @@ static class PublicPipelineOrchestrator
                 builder.OverrideGreedyPipelineUpperBound(effectiveFeasibleSolution.Score.WorstCaseSteps);
             }
         }
+
+        var greedyTightenStage = new StageResult(
+            StageNames.GreedyTighten,
+            gtPlan,
+            gtElapsed,
+            gtSolution is null ? StageOutcome.Skipped : StageOutcome.Completed,
+            gtSolution,
+            gtTimings);
+        onStageCompleted?.Invoke(greedyTightenStage);
 
         return new GreedyPreparationResult(
             baseFeasiblePlan,
