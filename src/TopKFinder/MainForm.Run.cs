@@ -115,7 +115,7 @@ partial class MainForm
         _activePhase = 0;
         _proofTightenStages.Clear();
         _pendingGreedyEdgeStages.Clear();
-        _pendingGreedyEdgeMaterializationNames.Clear();
+        _inFlightGreedyEdgeMaterializationNames.Clear();
         _bufferedGreedyEdgeMaterializationTasks.Clear();
         _stageDisplayOrder.Clear();
         _nextStageDisplayOrder = 0;
@@ -169,7 +169,7 @@ partial class MainForm
 
         Interlocked.Exchange(ref _activePhase, 2);
         _proofTightenStages.Clear();
-        _pendingGreedyEdgeMaterializationNames.Clear();
+        _inFlightGreedyEdgeMaterializationNames.Clear();
         _bufferedGreedyEdgeMaterializationTasks.Clear();
         string proofStartStageName = NextProofTightenStageName(
             prep.EffectiveFeasibleSolution.Score.WorstCaseSteps);
@@ -236,7 +236,7 @@ partial class MainForm
         _pendingGreedyEdgeStages.Clear();
         foreach (StageResult bufferedStage in bufferedStages)
         {
-            if (_pendingGreedyEdgeMaterializationNames.Contains(bufferedStage.Name))
+            if (_inFlightGreedyEdgeMaterializationNames.Contains(bufferedStage.Name))
             {
                 UpsertPendingGreedyEdgeStage(bufferedStage);
                 continue;
@@ -298,7 +298,7 @@ partial class MainForm
         _activePresentationTask = null;
         _exactStepStageMaterialized = false;
         _pendingExactCompactStage = null;
-        _pendingGreedyEdgeMaterializationNames.Clear();
+        _inFlightGreedyEdgeMaterializationNames.Clear();
         _bufferedGreedyEdgeMaterializationTasks.Clear();
         ClearPresentationStageCache();
     }
@@ -473,7 +473,7 @@ partial class MainForm
         _activePresentationRequestSource = null;
 
         _activePresentationTask = null;
-        _pendingGreedyEdgeMaterializationNames.Clear();
+        _inFlightGreedyEdgeMaterializationNames.Clear();
         _bufferedGreedyEdgeMaterializationTasks.Clear();
         ClearPresentationStageCache();
 
@@ -910,7 +910,7 @@ partial class MainForm
 
     private void QueueBufferedGreedyEdgeMaterialization(StageResult stage)
     {
-        if (!_pendingGreedyEdgeMaterializationNames.Add(stage.Name))
+        if (!_inFlightGreedyEdgeMaterializationNames.Add(stage.Name))
             return;
 
         int generation = _presentationGeneration;
@@ -937,7 +937,7 @@ partial class MainForm
         {
             if (!CanAcceptStageCallback())
             {
-                _pendingGreedyEdgeMaterializationNames.Remove(stageName);
+                _inFlightGreedyEdgeMaterializationNames.Remove(stageName);
                 _bufferedGreedyEdgeMaterializationTasks.Remove(task);
             }
             else
@@ -946,7 +946,7 @@ partial class MainForm
                 {
                     BeginInvoke(() =>
                     {
-                        _pendingGreedyEdgeMaterializationNames.Remove(stageName);
+                        _inFlightGreedyEdgeMaterializationNames.Remove(stageName);
                         _bufferedGreedyEdgeMaterializationTasks.Remove(task);
 
                         if (_feasiblePlan is null)
