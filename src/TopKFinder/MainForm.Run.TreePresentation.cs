@@ -591,6 +591,8 @@ partial class MainForm
     private TreeNode BuildStageTreeNode(StageResult stage, string scope, bool improved)
         => improved
             ? CreatePlanTreeRoot(stage.Name, stage.MaterializedPlan!, scope, stage.Elapsed, stage.Timings)
+            : stage.Skipped
+                ? CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, "skipped (root probe)", stage.Timings)
             : stage.Solution is not null && !stage.HasPlan
                 ? CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, "no improvement", stage.Timings)
             : stage.HasPlan
@@ -600,6 +602,8 @@ partial class MainForm
     private TreeNode BuildStageOverviewNode(StageResult stage, string scope, bool improved)
         => improved
             ? BuildOverviewSectionNode(stage.MaterializedPlan!, scope, stage.Name, stage.Elapsed, stage.Timings)
+            : stage.Skipped
+                ? BuildOverviewNoteNode(FormatStageRootLabel(stage.Name, stage.Elapsed, plan: null, marker: "skipped (root probe)", timings: stage.Timings))
             : stage.Solution is not null && !stage.HasPlan
                 ? BuildOverviewNoteNode(FormatStageRootLabel(stage.Name, stage.Elapsed, plan: null, marker: "no improvement", timings: stage.Timings))
             : BuildOverviewNoteNode(FormatStageRootLabel(
@@ -613,21 +617,48 @@ partial class MainForm
     // otherwise the reason the incumbent merely stands -- "search incomplete (candidate cap reached)"
     // (the greedy cap truncated the enumeration, so infeasibility is unproven).
     private static string? NoSolutionMarker(StageResult stage)
-        => stage.Incomplete ? "search incomplete (candidate cap reached)"
+        => stage.Skipped ? "skipped (root probe)"
+            : stage.Incomplete ? "search incomplete (candidate cap reached)"
             : null;
 
     // Root-node detail text for greedy mode: the step plan followed by the full edge progression
     // (compact baseline -> each tightening -> any no-solution stage), so the detail pane mirrors the
     // stacked trees.
-    private static string BuildGreedyProgressionDetails(StageResult initialStage, List<StageResult> stages)
+    private static string BuildGreedyProgressionDetails(StageResult initialStage, StageResult? greedyTightenStage, List<StageResult> stages)
     {
         StrategyPlan stepPlan = initialStage.MaterializedPlan!;
         var lines = new List<string>
         {
-            "GreedyFeasible result (anytime: improving stages are shown as trees)",
+            "Greedy progression (greedy-feasible -> greedy-tighten -> proof-tighten)",
             $"greedy-feasible: {FormatPlanSqueeze(stepPlan)}, total edges={stepPlan.TotalBranchEdges}",
         };
         StageResult incumbent = initialStage;
+
+        if (greedyTightenStage is not null)
+        {
+            StageResult stage = greedyTightenStage.Value;
+            if (stage.Skipped)
+            {
+                lines.Add($"{stage.Name}: skipped (root probe)");
+            }
+            else if (stage.MaterializedPlan is { } p)
+            {
+                if (PipelineStageProtocol.IsImprovement(stage, incumbent))
+                {
+                    lines.Add($"{stage.Name}: {FormatPlanSqueeze(p)}, total edges={p.TotalBranchEdges}");
+                    incumbent = stage;
+                }
+                else
+                {
+                    lines.Add($"{stage.Name}: max steps={p.MaxStep}, total edges={p.TotalBranchEdges} (no improvement)");
+                }
+            }
+            else
+            {
+                lines.Add($"{stage.Name}: no solution (no better strategy at this step ceiling)");
+            }
+        }
+
         foreach (StageResult stage in stages)
         {
             if (stage.MaterializedPlan is { } p)
@@ -641,6 +672,10 @@ partial class MainForm
                 {
                     lines.Add($"{stage.Name}: max steps={p.MaxStep}, total edges={p.TotalBranchEdges} (no improvement)");
                 }
+            }
+            else if (stage.Skipped)
+            {
+                lines.Add($"{stage.Name}: skipped (root probe)");
             }
             else if (stage.Incomplete)
             {

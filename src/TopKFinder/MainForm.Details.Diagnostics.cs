@@ -46,6 +46,48 @@ partial class MainForm
         _detailsTextBox.Text = BuildLiveDiagnosticsText(snapshot);
     }
 
+    private void ResetRunTimeline()
+    {
+        lock (_timelineLock)
+            _runTimeline.Clear();
+    }
+
+    private void RecordRunTimeline(string label, string? detail = null)
+    {
+        long elapsedMilliseconds = (long)((_runStopwatch?.Elapsed.TotalMilliseconds) ?? 0);
+        lock (_timelineLock)
+            _runTimeline.Add(new RunTimelineEvent(elapsedMilliseconds, label, detail));
+
+        string suffix = string.IsNullOrWhiteSpace(detail) ? label : $"{label}: {detail}";
+        System.Diagnostics.Debug.WriteLine($"[run {elapsedMilliseconds / 1000.0:F3}s] {suffix}");
+    }
+
+    private List<RunTimelineEvent> SnapshotRunTimeline()
+    {
+        lock (_timelineLock)
+            return _runTimeline.ToList();
+    }
+
+    private static string FormatTimelineText(IReadOnlyList<RunTimelineEvent> events)
+    {
+        if (events.Count == 0)
+            return "Timeline: (no events captured yet)";
+
+        var lines = new List<string> { "Timeline:" };
+        int start = Math.Max(0, events.Count - 12);
+        long? previousElapsed = null;
+        for (int i = start; i < events.Count; i++)
+        {
+            RunTimelineEvent entry = events[i];
+            long deltaMs = previousElapsed is null ? entry.ElapsedMilliseconds : entry.ElapsedMilliseconds - previousElapsed.Value;
+            string detailText = string.IsNullOrWhiteSpace(entry.Detail) ? string.Empty : $" ({entry.Detail})";
+            lines.Add($"  +{deltaMs / 1000.0:F3}s @ {entry.ElapsedMilliseconds / 1000.0:F3}s: {entry.Label}{detailText}");
+            previousElapsed = entry.ElapsedMilliseconds;
+        }
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
     // Updates the three live stat panels (States / Work / Progress) from the latest snapshot.
     // Each metric lives in exactly one panel so the panels do not duplicate one another.
     private void UpdateStatsPanels()
@@ -235,6 +277,9 @@ partial class MainForm
             lines.Add(
                 $"  found at t={latest.ElapsedMilliseconds / 1000.0:F1}s, searched={latest.SearchedStates}, output={latest.OutputStates}, prunes={latest.LowerBoundPrunes}");
         }
+
+        lines.Add(string.Empty);
+        lines.Add(FormatTimelineText(SnapshotRunTimeline()));
 
         return string.Join(Environment.NewLine, lines);
     }
