@@ -101,7 +101,6 @@ static class PublicPipelineOrchestrator
                 builder,
                 onStageCompleted,
                 onStageStart,
-                onGreedyFeasibleSearchCompleted: null,
                 emitStages: emitPreparationStages);
 
         return builder.RunGreedyPipelineCore(onStageCompleted, onStageStart);
@@ -126,7 +125,6 @@ static class PublicPipelineOrchestrator
         StrategyBuilder builder,
         Action<StageResult>? onStageCompleted = null,
         Action<string>? onStageStart = null,
-        Action<StageResult>? onGreedyFeasibleSearchCompleted = null,
         bool emitStages = true,
         bool materialize = true)
     {
@@ -135,8 +133,7 @@ static class PublicPipelineOrchestrator
             builder,
             materialize,
             callbacks.Start,
-            emitStages ? callbacks.Complete : null,
-            onGreedyFeasibleSearchCompleted);
+            emitStages ? callbacks.Complete : null);
     }
 
     // Shared greedy pre-stage orchestration used by public callers (CLI/UI): build a feasible upper
@@ -146,8 +143,7 @@ static class PublicPipelineOrchestrator
         StrategyBuilder builder,
         bool materialize = true,
         Action<string>? onStageStart = null,
-        Action<StageResult>? onStageCompleted = null,
-        Action<StageResult>? onGreedyFeasibleSearchCompleted = null)
+        Action<StageResult>? onStageCompleted = null)
     {
         onStageStart?.Invoke(StageNames.GreedyFeasible);
         GreedyFeasibleStageArtifacts feasibleArtifacts = builder.ExecuteGreedyFeasibleStageWithSolution(materialize);
@@ -163,7 +159,6 @@ static class PublicPipelineOrchestrator
             StageOutcome.Completed,
             baseFeasibleSolution,
             feasibleArtifacts.Timings);
-        onGreedyFeasibleSearchCompleted?.Invoke(greedyFeasibleStage);
         onStageCompleted?.Invoke(greedyFeasibleStage);
 
         onStageStart?.Invoke(StageNames.GreedyTighten);

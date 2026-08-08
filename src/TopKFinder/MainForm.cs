@@ -187,7 +187,6 @@ partial class MainForm : Form
     private readonly List<StageResult> _pendingGreedyEdgeStages = new();
     private readonly Dictionary<string, int> _stageDisplayOrder = new(StringComparer.Ordinal);
     private int _nextStageDisplayOrder;
-    private bool _greedyFeasibleMaterializationQueued;
     private bool _solverWorkStopped;
     private string _currentStageName = "-";
     private long _stageStartMs;
