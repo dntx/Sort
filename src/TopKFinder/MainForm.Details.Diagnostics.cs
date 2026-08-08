@@ -306,11 +306,11 @@ partial class MainForm
 
         lines.Add(string.Empty);
         lines.Add("Stage records (incumbent = best objective stage; display-* = materialized tree slots):");
-        lines.Add($"  greedy-feasible: {FormatStageRecord(_greedyFeasibleStage)}");
+        lines.Add($"  greedy-feasible: {FormatStageRecord(_initialGreedyStage)}");
         lines.Add($"  greedy-tighten: {FormatStageRecord(_greedyTightenStage)}");
         lines.Add($"  incumbent: {FormatStageRecord(_incumbentStage)}");
-        lines.Add($"  display-step: {FormatStageRecord(_materializedStepDisplayStage)}");
-        lines.Add($"  display-compact: {FormatStageRecord(_materializedCompactDisplayStage)}");
+        lines.Add($"  display-step: {FormatStageRecord(_materializedStepStage)}");
+        lines.Add($"  display-compact: {FormatStageRecord(_materializedCompactStage)}");
 
         lines.Add(string.Empty);
         lines.Add(FormatTimelineText(SnapshotRunTimeline()));

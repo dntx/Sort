@@ -138,23 +138,23 @@ partial class MainForm : Form
     private StrategyPlan? _feasiblePlan;
     private StrategyPlan? _defaultPlan;
     private StrategyPlan? _compactPlan;
-    // Greedy stage records (algorithm semantics):
+    // - _initialGreedyStage: stage-1 result (greedy-feasible)
     // - _greedyFeasibleStage: stage-1 result
     // - _greedyTightenStage: optional stage-2 result (or skipped)
     // - _incumbentStage: incumbent best stage by objective, independent of UI materialization
-    // Exact mode mapping:
+    // - _initialGreedyStage / _greedyTightenStage stay null (not part of exact pipeline)
     // - _greedyFeasibleStage / _greedyTightenStage stay null (not part of exact pipeline)
     // - _incumbentStage first points to step-proof, then may advance to exact-edge-compact if improved
-    private StageResult? _greedyFeasibleStage;
+    private StageResult? _initialGreedyStage;
     private StageResult? _greedyTightenStage;
     private StageResult? _incumbentStage;
     // Display-stage records (presentation semantics): the latest materialized stage rendered into
     // the step/compact slots, used for timing labels and section headers.
-    // Exact mode mapping:
-    // - _materializedStepDisplayStage = materialized step-proof stage
+    // - _materializedStepStage = materialized step-proof stage
+    // - _materializedCompactStage = materialized exact-edge-compact stage
     // - _materializedCompactDisplayStage = materialized exact-edge-compact stage
-    private StageResult? _materializedStepDisplayStage;
-    private StageResult? _materializedCompactDisplayStage;
+    private StageResult? _materializedStepStage;
+    private StageResult? _materializedCompactStage;
     private bool _greedyIncumbentImproved;
     private bool _compactImproved;
     private bool _feasibleMode;

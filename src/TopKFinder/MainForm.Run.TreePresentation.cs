@@ -462,7 +462,7 @@ partial class MainForm
     {
         StrategyPlan stepPlan = defaultPlan ?? feasiblePlan;
         string stepStageName = defaultPlan is null ? StageNames.GreedyFeasible : StageNames.StepProof;
-        StageTimings? timings = defaultPlan is null ? _greedyFeasibleStage?.Timings : _materializedStepDisplayStage?.Timings;
+        StageTimings? timings = defaultPlan is null ? _initialGreedyStage?.Timings : _materializedStepStage?.Timings;
         return CreatePlanTreeRoot(stepStageName, stepPlan, DefaultExplorerScope, stepPlan.Elapsed, timings);
     }
 
@@ -472,7 +472,7 @@ partial class MainForm
             return CreateSearchRunningPlaceholderNode(FirstCompactTreeStageName(feasiblePlan, defaultPlan));
 
         string compactStageName = FormatCompactStageName(defaultPlan is null, compactPlan.MaxStep);
-        StageTimings? timings = _materializedCompactDisplayStage?.Timings;
+        StageTimings? timings = _materializedCompactStage?.Timings;
         return compactImproved
             ? CreatePlanTreeRoot(compactStageName, compactPlan, CompactExplorerScope, compactPlan.Elapsed, timings)
             : CreateNoSolutionTreeRoot(compactStageName, compactPlan.Elapsed, timings: timings);
@@ -582,7 +582,7 @@ partial class MainForm
             root.Nodes.RemoveAt(root.Nodes.Count - 1);
 
         string compactStageName = FormatCompactStageName(_defaultPlan is null, compactPlan.MaxStep);
-        StageTimings? timings = _materializedCompactDisplayStage?.Timings;
+        StageTimings? timings = _materializedCompactStage?.Timings;
         root.Nodes.Add(compactImproved
             ? CreatePlanTreeRoot(compactStageName, compactPlan, CompactExplorerScope, compactPlan.Elapsed, timings)
             : CreateNoSolutionTreeRoot(compactStageName, compactPlan.Elapsed, timings: timings));
