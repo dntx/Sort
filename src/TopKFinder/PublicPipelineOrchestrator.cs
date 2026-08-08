@@ -196,7 +196,8 @@ static class PublicPipelineOrchestrator
             gtElapsed,
             gtSolution is null ? StageOutcome.Skipped : StageOutcome.Completed,
             gtSolution,
-            gtTimings);
+            gtTimings,
+            gtPlan is null ? StagePresentationMode.SearchOnlySummary : StagePresentationMode.Auto);
         onStageCompleted?.Invoke(greedyTightenStage);
 
         return new GreedyPreparationResult(

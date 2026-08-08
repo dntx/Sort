@@ -785,6 +785,10 @@ partial class MainForm
         if (_feasiblePlan is null)
         {
             UpsertPendingGreedyEdgeStage(stage);
+
+            if (TryRenderSearchOnlySummaryStage(stage))
+                return;
+
             if (stage.HasPlan)
             {
                 MarkStageDisplayPending(stage);
@@ -802,13 +806,8 @@ partial class MainForm
         if (_treeView.Nodes.Count == 0)
             return;
 
-        if (string.Equals(stage.Name, StageNames.GreedyTighten, StringComparison.Ordinal))
-        {
-            ShowGreedyTightenSummaryStage(stage);
-            RemoveStageStatusPlaceholder(stage.Name);
-            UpdateElapsedLabel();
+        if (TryRenderSearchOnlySummaryStage(stage))
             return;
-        }
 
         bool improved = _incumbentStage.HasValue
             && PipelineStageProtocol.IsImprovement(stage, _incumbentStage.Value);
@@ -897,6 +896,17 @@ partial class MainForm
                 : NoSolutionMarker(stage);
             ShowStageModal(FormatStageRootLabel(stage.Name, stage.Elapsed, stage.MaterializedPlan, marker, stage.Timings), stage.HasPlan);
         }
+    }
+
+    private bool TryRenderSearchOnlySummaryStage(StageResult stage)
+    {
+        if (stage.PresentationMode != StagePresentationMode.SearchOnlySummary)
+            return false;
+
+        ShowSearchOnlySummaryStage(stage);
+        RemoveStageStatusPlaceholder(stage.Name);
+        UpdateElapsedLabel();
+        return true;
     }
 
     private void QueueBufferedGreedyEdgeMaterialization(StageResult stage)

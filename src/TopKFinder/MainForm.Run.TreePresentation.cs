@@ -545,7 +545,7 @@ partial class MainForm
             ? StageNames.FormatGreedyEdgeCompact(maxStep)
             : StageNames.FormatExactEdgeCompact(maxStep);
 
-    private void ShowGreedyTightenSummaryStage(StageResult stage)
+    private void ShowSearchOnlySummaryStage(StageResult stage)
     {
         if (_treeView.Nodes.Count == 0)
             return;

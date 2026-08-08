@@ -644,6 +644,54 @@ public sealed class MainFormRenderingTests
         Assert.True(tightenIndex >= 0, "Expected greedy-tighten stage node to be present.");
         Assert.True(proofIndex >= 0, "Expected proof-tighten placeholder to be present.");
         Assert.True(tightenIndex < proofIndex, "Expected greedy-tighten to remain before proof-tighten.");
+        Assert.DoesNotContain(root.Nodes.Cast<TreeNode>(), node =>
+            string.Equals(node.Text, StageNames.GreedyTighten + " [searching]", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void GreedyTighten_WithMaterializedPlan_RendersTreeInsteadOfSearchOnlySummary()
+    {
+        using var form = new MainForm();
+        _ = form.Handle;
+
+        StrategyPlan feasiblePlan = new StrategyBuilder(8, 3, 3).ExecuteStepProofStage();
+        StrategyPlan improvedPlan = new StrategyBuilder(9, 3, 3).ExecuteStepProofStage();
+        SolvedStrategy solution = CreateDeferredExactStepStage().Solution
+            ?? throw new InvalidOperationException("Expected deferred stage solution.");
+
+        InvokePrivateInstanceVoid(form, "ShowInitialStagePlaceholder", 8, 3, 3, true);
+        SetPrivateField(form, "_feasiblePlan", feasiblePlan);
+        SetPrivateField(form, "_greedyFeasibleStage", new StageResult(
+            StageNames.GreedyFeasible,
+            feasiblePlan,
+            feasiblePlan.Elapsed,
+            StageOutcome.Completed,
+            solution,
+            StageTimings.Legacy(feasiblePlan.Elapsed)));
+        SetPrivateField(form, "_incumbentStage", new StageResult(
+            StageNames.GreedyFeasible,
+            feasiblePlan,
+            feasiblePlan.Elapsed,
+            StageOutcome.Completed,
+            solution,
+            StageTimings.Legacy(feasiblePlan.Elapsed)));
+
+        var stage = new StageResult(
+            StageNames.GreedyTighten,
+            improvedPlan,
+            improvedPlan.Elapsed,
+            StageOutcome.Completed,
+            solution,
+            StageTimings.Legacy(improvedPlan.Elapsed));
+
+        InvokePrivateInstanceVoid(form, "OnProofTightenStage", stage);
+
+        TreeView tree = GetPrivateField<TreeView>(form, "_treeView");
+        TreeNode root = tree.Nodes[0];
+        Assert.Contains(root.Nodes.Cast<TreeNode>(), node =>
+            node.Text.StartsWith(StageNames.GreedyTighten + ":", StringComparison.Ordinal));
+        Assert.DoesNotContain(root.Nodes.Cast<TreeNode>(), node =>
+            node.Text.Contains("search-only", StringComparison.Ordinal));
     }
 
     [Fact]
