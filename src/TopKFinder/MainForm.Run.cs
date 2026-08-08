@@ -150,52 +150,27 @@ partial class MainForm
                 emitStages: true,
                 materialize: false),
             request.CancellationToken);
-        _greedyIncumbentImproved = prep.GreedyTightenImproved;
+        // Unify callback timing across modes: flush queued UI callbacks before consuming
+        // stage metadata in the mode transition code.
+        await FlushUiCallbackQueueAsync();
 
-        // Stage callbacks above are the main source of truth, but keep a synchronous fallback for
-        // stage metadata used immediately below.
-        _greedyFeasibleStage ??= new StageResult(
-            StageNames.GreedyFeasible,
-            materializedPlan: null,
-            prep.GreedyFeasibleElapsed,
-            StageOutcome.Completed,
-            prep.BaseFeasibleSolution,
-            prep.GreedyFeasibleTimings);
-        _greedyTightenStage ??= prep.GreedyTightenProbeRun
-            ? new StageResult(
-                StageNames.GreedyTighten,
-                materializedPlan: null,
-                prep.GreedyTightenElapsed,
-                prep.GreedyTightenSolution is null ? StageOutcome.Skipped : StageOutcome.Completed,
-                prep.GreedyTightenSolution,
-                prep.GreedyTightenTimings)
-            : new StageResult(
-                StageNames.GreedyTighten,
-                materializedPlan: null,
-                prep.GreedyTightenElapsed,
-                StageOutcome.Skipped,
-                solution: null,
-                prep.GreedyTightenTimings);
-        _incumbentStage ??= _greedyFeasibleStage;
+        if (_greedyFeasibleStage is not { } initialStage)
+            throw new InvalidOperationException("Expected greedy-feasible stage callback before greedy preparation completion.");
+        if (_greedyTightenStage is not { } greedyTightenStage)
+            throw new InvalidOperationException("Expected greedy-tighten stage callback before greedy preparation completion.");
+
+        _greedyIncumbentImproved = prep.GreedyTightenImproved;
+        _incumbentStage ??= initialStage;
         if (prep.GreedyTightenImproved && prep.GreedyTightenSolution is not null)
-            _incumbentStage = _greedyTightenStage;
+            _incumbentStage = greedyTightenStage;
 
         // Make stage order explicit in greedy mode: feasible -> tighten -> proof-tighten.
         EnsureStageDisplayOrder(StageNames.GreedyTighten);
 
-        // Before proof-tighten starts, keep the progress panel on greedy-tighten so users can
-        // account for the pre-proof search cost directly from the main panel.
-        _currentStageName = StageNames.GreedyTighten;
-        long totalMsBeforeProof = _runStopwatch?.ElapsedMilliseconds ?? 0;
-        long tightenStageMs = Math.Max(0, (long)prep.GreedyTightenElapsed.TotalMilliseconds);
-        _stageStartMs = Math.Max(0, totalMsBeforeProof - tightenStageMs);
-        UpdateElapsedLabel();
-
         Interlocked.Exchange(ref _activePhase, 2);
         _proofTightenStages.Clear();
         _pendingGreedyEdgeStages.Clear();
-        string proofStartStageName = PipelineStageProtocol.NextGreedyStageName(
-            prep.BaseFeasibleSolution,
+        string proofStartStageName = NextProofTightenStageName(
             prep.EffectiveFeasibleSolution.Score.WorstCaseSteps);
         RecordRunTimeline("proof-tighten pipeline scheduled (after greedy searches)", proofStartStageName);
 
@@ -272,9 +247,32 @@ partial class MainForm
         await Task.Run(
             () => PublicPipelineOrchestrator.RunExactPipelineDeferred(request.Builder, MarshalExactStage, MarshalStageSearchStart),
             request.CancellationToken);
+        await FlushUiCallbackQueueAsync();
         _solverWorkStopped = true;
         await DrainPresentationTasksAsync();
         _runStopwatch?.Stop();
+    }
+
+    private Task FlushUiCallbackQueueAsync()
+    {
+        if (!CanAcceptStageCallback())
+            return Task.CompletedTask;
+
+        var flushed = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        try
+        {
+            BeginInvoke(() => flushed.TrySetResult(null));
+        }
+        catch (ObjectDisposedException)
+        {
+            flushed.TrySetResult(null);
+        }
+        catch (InvalidOperationException)
+        {
+            flushed.TrySetResult(null);
+        }
+
+        return flushed.Task;
     }
 
     private void ResetPresentationInfrastructure()
