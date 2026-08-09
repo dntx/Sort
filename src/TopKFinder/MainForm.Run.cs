@@ -28,6 +28,7 @@ partial class MainForm
             MessageBox.Show(this, error, "Invalid input", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
+
         try
         {
             InitializeRunUi(request);
@@ -36,10 +37,11 @@ partial class MainForm
             if (request.FeasibleMode)
             {
                 await RunFeasibleModeAsync(request);
-                return;
             }
-
-            await RunExactModeAsync(request);
+            else
+            {
+                await RunExactModeAsync(request);
+            }
         }
         catch (OperationCanceledException)
         {
@@ -825,20 +827,8 @@ partial class MainForm
         // A stage is "shown" as a full browsable tree only when it strictly improves the incumbent
         // (the best plan so far: the greedy-feasible plan, then any improving downstream stage). A stage
         // that has a solution but is no better is recorded and marked "no improvement" but rendered
-        // only as a leaf note. Tightening
-        // continues regardless, since the next ceiling is driven by max-steps, not edges.
-        // A follow-up stage always lands after every emitted stage except the terminal edge-compact
-        // pass: after a proof-tighten stage -- whether it found a solution or proved/failed the
-        // ceiling -- the worker next probes a deeper feasible ceiling or runs the final edge-compaction
-        // pass. We announce that probe with a trailing "<next> [search: running]" placeholder
-        // so the tree/overview never look idle while it runs. The terminal EdgeCompact stage has nothing
-        // after it, so it appends no placeholder.
-        bool hasFollowUp = !IsEdgeCompactStageName(stage.Name);
-        string? nextStageName = !hasFollowUp
-            ? null
-            : stage.IsTightened
-                ? NextProofTightenStageName(stage.Solution!.Score.WorstCaseSteps)
-            : StageNames.FormatGreedyEdgeCompact(_feasiblePlan.MaxStep); // Phase A ended (proven-infeasible/incomplete); only the edge-compaction pass remains
+        // only as a leaf note. Tightening continues regardless, since the next ceiling is driven by
+        // max-steps, not edges.
 
         _treeView.BeginUpdate();
         TreeNode root = _treeView.Nodes[0];
@@ -867,9 +857,6 @@ partial class MainForm
         _overviewTree.BeginUpdate();
         InsertOrReplaceStageNode(_overviewTree.Nodes, BuildStageOverviewNode(stage, scope, improved), stage.Name);
         _overviewTree.EndUpdate();
-
-        if (nextStageName is not null)
-            EnsureLatestStageSearchPlaceholder(nextStageName);
 
         RemoveStageStatusPlaceholder(stage.Name);
 
