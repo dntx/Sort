@@ -623,7 +623,7 @@ public sealed class MainFormRenderingTests
             solution: null,
             timings: StageTimings.Legacy(TimeSpan.FromMilliseconds(5600)));
         SetPrivateField(form, "_greedyTightenStage", skippedTighten);
-        SetPrivateField(form, "_feasiblePlan", new StrategyBuilder(30, 10, 15).ExecuteStepProofStage());
+        SetPrivateField(form, "_feasiblePlan", new StrategyBuilder(8, 3, 3).ExecuteStepProofStage());
         InvokePrivateInstanceVoid(form, "OnProofTightenStage", skippedTighten);
         InvokePrivateInstanceVoid(form, "OnStageSearchStarted", StageNames.FormatProofTighten(6));
 
