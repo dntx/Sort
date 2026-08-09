@@ -26,6 +26,12 @@ partial class StrategyBuilder
     private int GetGreedyTightenCandidateCap(int activeCount, int groupSize)
         => ScaleDefaultCandidateCap(GreedyTightenCandidateCap, DefaultGreedyTightenCandidateCap, activeCount, groupSize);
 
+    // Root-probe gate is intentionally conservative. Keep its candidate surface smaller than the
+    // full GreedyTighten stage to avoid paying multi-second probe cost on large (n, m) cases that
+    // usually skip anyway.
+    private int GetGreedyTightenRootProbeCandidateCap(int activeCount, int groupSize)
+        => Math.Min(GetGreedyTightenCandidateCap(activeCount, groupSize), 64);
+
     internal int GetGreedyTightenCandidateCapForTesting(int activeCount, int groupSize)
         => GetGreedyTightenCandidateCap(activeCount, groupSize);
 
@@ -79,12 +85,16 @@ partial class StrategyBuilder
             return false;
 
         SearchStateKey key = GetSearchStateKey(root, remainingSlots);
-        int rootHeight = GreedyTightenHeight(root, remainingSlots, _greedyTightenSharedHeightMemo);
+        // When GreedyFeasible has already run on this builder, the feasible root budget is the same
+        // constructive-policy root height that root probe needs as its baseline.
+        int rootHeight = _feasibleRootBudget > 0
+            ? _feasibleRootBudget
+            : GreedyTightenHeight(root, remainingSlots, _greedyTightenSharedHeightMemo);
         List<int> baselineGroup = CurrentGreedyTightenGroup(root, remainingSlots, key);
 
         var candidates = root.GetActiveItemsOrdered();
         int groupSize = Math.Min(_m, candidates.Count);
-        int candidateCap = GetGreedyTightenCandidateCap(candidates.Count, groupSize);
+        int candidateCap = GetGreedyTightenRootProbeCandidateCap(candidates.Count, groupSize);
         foreach (List<int> candidate in EnumerateDistinctGroups(root, candidates, groupSize, candidateCap))
         {
             if (!GroupHasUnresolvedPair(root, candidate))
@@ -92,12 +102,62 @@ partial class StrategyBuilder
             if (SameGroupSequence(candidate, baselineGroup))
                 continue;
 
-            int candidateHeight = GreedyTightenHeightUnderGroup(root, remainingSlots, candidate, _greedyTightenSharedHeightMemo);
-            if (candidateHeight < rootHeight)
+            if (CandidateLowersBaselineHeight(
+                    root,
+                    remainingSlots,
+                    key,
+                    candidate,
+                    rootHeight,
+                    _greedyTightenSharedHeightMemo))
                 return true;
         }
 
         return false;
+    }
+
+    // Root-probe-only fast check: we only need to know whether this candidate can beat the baseline
+    // root height, not its exact subtree height. As soon as a child already reaches the no-improvement
+    // threshold, the candidate cannot win and we stop traversing its remaining outcomes.
+    private bool CandidateLowersBaselineHeight(
+        ComparisonState state,
+        int remainingSlots,
+        SearchStateKey key,
+        List<int> candidate,
+        int baselineHeight,
+        Dictionary<SearchStateKey, int> memo)
+    {
+        int maxChildAllowed = baselineHeight - 2;
+        int maxChild = 0;
+        bool sawOutcome = false;
+        bool prunedByBound = false;
+
+        VisitComparisonOutcomes(
+            state,
+            fixedTopMask: 0,
+            remainingSlots,
+            candidate,
+            currentKey: key,
+            collectMergedBranches: false,
+            onUsefulOutcome: outcome =>
+            {
+                sawOutcome = true;
+                int childHeight = GreedyTightenHeight(outcome.NextState, outcome.NextRemainingSlots, memo);
+                if (childHeight > maxChild)
+                    maxChild = childHeight;
+
+                if (maxChild > maxChildAllowed)
+                {
+                    prunedByBound = true;
+                    return false;
+                }
+
+                return true;
+            });
+
+        if (!sawOutcome || prunedByBound)
+            return false;
+
+        return 1 + maxChild < baselineHeight;
     }
 
     // Builds the GreedyTighten stage plan: runs the local restructuring to tighten the upper bound,
