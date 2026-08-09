@@ -28,6 +28,7 @@ partial class MainForm
             MessageBox.Show(this, error, "Invalid input", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
+
         try
         {
             InitializeRunUi(request);
@@ -36,10 +37,13 @@ partial class MainForm
             if (request.FeasibleMode)
             {
                 await RunFeasibleModeAsync(request);
-                return;
+            }
+            else
+            {
+                await RunExactModeAsync(request);
             }
 
-            await RunExactModeAsync(request);
+            RemoveTrailingComputingPlaceholder();
         }
         catch (OperationCanceledException)
         {
