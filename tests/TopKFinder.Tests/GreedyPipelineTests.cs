@@ -49,14 +49,18 @@ public class GreedyPipelineTests
             emitStages: true,
             materialize: false);
 
-        int expectedCount = 1 + (preparation.GreedyTightenSolution is null ? 0 : 1);
-        Assert.Equal(expectedCount, stages.Count);
-        Assert.All(stages, stage =>
-        {
-            Assert.False(stage.HasPlan);
-            Assert.NotNull(stage.Solution);
-            Assert.Equal(TimeSpan.Zero, stage.Timings.Materialize);
-        });
+        Assert.Equal(2, stages.Count);
+        Assert.Equal(StageNames.GreedyFeasible, stages[0].Name);
+        Assert.Equal(StageNames.GreedyTighten, stages[1].Name);
+        Assert.False(stages[0].HasPlan);
+        Assert.False(stages[1].HasPlan);
+        Assert.NotNull(stages[0].Solution);
+        Assert.Equal(TimeSpan.Zero, stages[0].Timings.Materialize);
+        Assert.Equal(TimeSpan.Zero, stages[1].Timings.Materialize);
+        if (stages[1].Skipped)
+            Assert.Null(stages[1].Solution);
+        else
+            Assert.NotNull(stages[1].Solution);
     }
 
     // The edge pass must always produce a valid, fully-grouped strategy under the constructive U
@@ -179,15 +183,29 @@ public class GreedyPipelineTests
 
         Assert.Equal(started, completed.Select(stage => stage.Name));
         Assert.NotEmpty(completed);
+        Assert.Equal(StageNames.GreedyFeasible, completed[0].Name);
+        Assert.False(completed[0].Skipped);
+        Assert.NotNull(completed[0].Solution);
+        Assert.True(completed[0].HasPlan);
         Assert.All(completed, stage =>
         {
-            Assert.NotNull(stage.MaterializedPlan);
-            Assert.NotNull(stage.Solution);
-            Assert.Equal(stage.MaterializedPlan!.MaxStep, stage.Solution!.Score.WorstCaseSteps);
-            Assert.True(stage.Solution.Score.SearchEdgeCost.HasValue);
             Assert.Equal(stage.Elapsed, stage.Timings.Total);
-            Assert.True(stage.Timings.Freeze > TimeSpan.Zero);
-            Assert.True(stage.Timings.Materialize > TimeSpan.Zero);
+            if (stage.Skipped)
+            {
+                Assert.Null(stage.MaterializedPlan);
+                Assert.Null(stage.Solution);
+                Assert.Equal(TimeSpan.Zero, stage.Timings.Freeze);
+                Assert.Equal(TimeSpan.Zero, stage.Timings.Materialize);
+            }
+            else
+            {
+                Assert.NotNull(stage.MaterializedPlan);
+                Assert.NotNull(stage.Solution);
+                Assert.Equal(stage.MaterializedPlan!.MaxStep, stage.Solution!.Score.WorstCaseSteps);
+                Assert.True(stage.Solution.Score.SearchEdgeCost.HasValue);
+                Assert.True(stage.Timings.Freeze > TimeSpan.Zero);
+                Assert.True(stage.Timings.Materialize > TimeSpan.Zero);
+            }
         });
         Assert.Equal(SolvedStrategyStageKind.GreedyFeasible, completed[0].Solution!.Provenance.Kind);
     }
