@@ -210,6 +210,12 @@ readonly record struct StageTimings(
     }
 }
 
+enum StagePresentationMode
+{
+    Auto,
+    SearchOnlySummary,
+}
+
 // One stage of the proof-tighten progression as it is produced by RunGreedyPipeline: the final
 // edge-compaction pass, each successful downward tightening, or a terminal ceiling. Name is the stage
 // label (e.g. "exact-edge-compact@6", "proof-tighten<=4"); Solution is the immutable strategy for
@@ -220,7 +226,8 @@ readonly struct StageResult
     public StageResult(string name, StrategyPlan? materializedPlan, TimeSpan elapsed,
         StageOutcome outcome = StageOutcome.Tightened,
         SolvedStrategy? solution = null,
-        StageTimings? timings = null)
+        StageTimings? timings = null,
+        StagePresentationMode presentationMode = StagePresentationMode.Auto)
     {
         Name = name;
         MaterializedPlan = materializedPlan;
@@ -228,6 +235,7 @@ readonly struct StageResult
         Outcome = outcome;
         Solution = solution;
         Timings = timings ?? StageTimings.Legacy(elapsed);
+        PresentationMode = presentationMode;
     }
 
     public string Name { get; }
@@ -236,6 +244,7 @@ readonly struct StageResult
     public StageOutcome Outcome { get; }
     public SolvedStrategy? Solution { get; }
     public StageTimings Timings { get; }
+    public StagePresentationMode PresentationMode { get; }
 
     public StageResult WithProvenLowerBound(int provenLowerBound)
         => new(
@@ -244,7 +253,8 @@ readonly struct StageResult
             Elapsed,
             Outcome,
             Solution?.WithProvenLowerBound(provenLowerBound),
-            Timings);
+            Timings,
+            PresentationMode);
 
     // A materialized strategy tree is attached. This is a display predicate only and does not imply
     // improvement; solution-first consumers may receive successful stages with no plan.
