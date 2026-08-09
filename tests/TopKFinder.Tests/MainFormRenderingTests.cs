@@ -695,6 +695,57 @@ public sealed class MainFormRenderingTests
     }
 
     [Fact]
+    public void OnProofTightenStage_DoesNotInventNextStageSearchingPlaceholder()
+    {
+        using var form = new MainForm();
+        _ = form.Handle;
+
+        StrategyPlan feasiblePlan = new StrategyBuilder(8, 3, 3).ExecuteStepProofStage();
+        SolvedStrategy solution = CreateDeferredExactStepStage().Solution
+            ?? throw new InvalidOperationException("Expected deferred stage solution.");
+
+        TreeView tree = GetPrivateField<TreeView>(form, "_treeView");
+        var root = new TreeNode("root");
+        root.Nodes.Add(new TreeNode("stable-node"));
+        tree.Nodes.Add(root);
+
+        TreeView overview = GetPrivateField<TreeView>(form, "_overviewTree");
+        overview.Nodes.Add(new TreeNode("stable-node"));
+
+        SetPrivateField(form, "_feasiblePlan", feasiblePlan);
+        SetPrivateField(form, "_greedyFeasibleStage", new StageResult(
+            StageNames.GreedyFeasible,
+            feasiblePlan,
+            feasiblePlan.Elapsed,
+            StageOutcome.Completed,
+            solution,
+            StageTimings.Legacy(feasiblePlan.Elapsed)));
+        SetPrivateField(form, "_incumbentStage", new StageResult(
+            StageNames.GreedyFeasible,
+            feasiblePlan,
+            feasiblePlan.Elapsed,
+            StageOutcome.Completed,
+            solution,
+            StageTimings.Legacy(feasiblePlan.Elapsed)));
+
+        var stage = new StageResult(
+            StageNames.GreedyTighten,
+            materializedPlan: null,
+            elapsed: TimeSpan.FromMilliseconds(10),
+            outcome: StageOutcome.Skipped,
+            solution: null,
+            timings: StageTimings.Legacy(TimeSpan.FromMilliseconds(10)),
+            presentationMode: StagePresentationMode.SearchOnlySummary);
+
+        InvokePrivateInstanceVoid(form, "OnProofTightenStage", stage);
+
+        Assert.DoesNotContain(tree.Nodes[0].Nodes.Cast<TreeNode>(), node =>
+            node.Text.EndsWith(" [searching]", StringComparison.Ordinal));
+        Assert.DoesNotContain(overview.Nodes.Cast<TreeNode>(), node =>
+            node.Text.EndsWith(" [searching]", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task GreedyPreparationStages_AreHandledByUnifiedStageCallback()
     {
         using var form = new MainForm();
