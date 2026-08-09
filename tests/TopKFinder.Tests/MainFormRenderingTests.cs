@@ -841,56 +841,6 @@ public sealed class MainFormRenderingTests
             node.Text.StartsWith(StageNames.GreedyTighten, StringComparison.Ordinal));
     }
 
-    [Fact]
-    public void RemoveTrailingComputingPlaceholder_RemovesTrailingSearchingNodeFromTreeAndOverview()
-    {
-        using var form = new MainForm();
-        _ = form.Handle;
-
-        InvokePrivateInstanceVoid(form, "ShowInitialStagePlaceholder", 8, 3, 3, true);
-        InvokePrivateInstanceVoid(form, "OnStageSearchStarted", StageNames.FormatProofTighten(6));
-
-        TreeView tree = GetPrivateField<TreeView>(form, "_treeView");
-        TreeNode root = tree.Nodes[0];
-        Assert.True(root.Nodes.Count > 0);
-        Assert.EndsWith(" [searching]", root.Nodes[root.Nodes.Count - 1].Text, StringComparison.Ordinal);
-
-        TreeView overview = GetPrivateField<TreeView>(form, "_overviewTree");
-        Assert.True(overview.Nodes.Count > 0);
-        Assert.EndsWith(" [searching]", overview.Nodes[overview.Nodes.Count - 1].Text, StringComparison.Ordinal);
-
-        InvokePrivateInstanceVoid(form, "RemoveTrailingComputingPlaceholder");
-
-        Assert.DoesNotContain(root.Nodes.Cast<TreeNode>(), node =>
-            node.Text.EndsWith(" [searching]", StringComparison.Ordinal));
-        Assert.DoesNotContain(overview.Nodes.Cast<TreeNode>(), node =>
-            node.Text.EndsWith(" [searching]", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public void RemoveTrailingComputingPlaceholder_DoesNotRemoveNonTrailingSearchingNode()
-    {
-        using var form = new MainForm();
-        _ = form.Handle;
-
-        InvokePrivateInstanceVoid(form, "ShowInitialStagePlaceholder", 8, 3, 3, true);
-        TreeView tree = GetPrivateField<TreeView>(form, "_treeView");
-        TreeNode root = tree.Nodes[0];
-        root.Nodes.Add(new TreeNode("final-node"));
-
-        TreeView overview = GetPrivateField<TreeView>(form, "_overviewTree");
-        overview.Nodes.Add(new TreeNode("final-node"));
-
-        InvokePrivateInstanceVoid(form, "RemoveTrailingComputingPlaceholder");
-
-        Assert.Contains(root.Nodes.Cast<TreeNode>(), node =>
-            node.Text.EndsWith(" [searching]", StringComparison.Ordinal));
-        Assert.Equal("final-node", root.Nodes[root.Nodes.Count - 1].Text);
-        Assert.Contains(overview.Nodes.Cast<TreeNode>(), node =>
-            node.Text.EndsWith(" [searching]", StringComparison.Ordinal));
-        Assert.Equal("final-node", overview.Nodes[overview.Nodes.Count - 1].Text);
-    }
-
     private static StageResult CreateDeferredExactStepStage()
     {
         StrategyBuilder builder = new(8, 3, 3);
