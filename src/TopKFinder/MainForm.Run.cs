@@ -539,7 +539,7 @@ partial class MainForm
             return;
 
         _greedyTightenStage = stage;
-        _greedyIncumbentImproved = stage.ImprovesPreviousStage;
+        _greedyIncumbentImproved = stage.IsBetterThanPreviousStage;
         if (_greedyIncumbentImproved)
             _incumbentStage = stage;
 
@@ -662,7 +662,7 @@ partial class MainForm
                     new StageTimings(stage.Timings.Solve, stage.Timings.Freeze, materialize),
                     stage.PresentationMode,
                     stage.Sequence,
-                    stage.ImprovesPreviousStage);
+                    stage.IsBetterThanPreviousStage);
 
                 CachePresentationStageResult(stage, materialized);
             }
@@ -735,7 +735,7 @@ partial class MainForm
         StrategyPlan compactPlan = stage.MaterializedPlan!;
         _materializedCompactDisplayStage = stage;
         _compactPlan = compactPlan;
-        _compactImproved = stage.ImprovesPreviousStage;
+        _compactImproved = stage.IsBetterThanPreviousStage;
         if (_compactImproved)
             _incumbentStage = stage;
 
@@ -806,7 +806,7 @@ partial class MainForm
         if (TryRenderSearchOnlySummaryStage(stage))
             return;
 
-        bool improved = stage.ImprovesPreviousStage;
+        bool improved = stage.IsBetterThanPreviousStage;
 
         bool needsDeferredMaterialization = improved && !stage.HasPlan && stage.Solution is not null;
         if (!needsDeferredMaterialization)
@@ -1028,7 +1028,7 @@ partial class MainForm
                         s.Timings,
                         s.PresentationMode,
                         s.Sequence,
-                        s.ImprovesPreviousStage);
+                        s.IsBetterThanPreviousStage);
                     break;
                 }
             }

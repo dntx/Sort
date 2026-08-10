@@ -402,7 +402,7 @@ class Program
                         return;
                 }
 
-                if (stage.ImprovesPreviousStage)
+                if (stage.IsBetterThanPreviousStage)
                 {
                     stageSummaries.Add(FormatStageSummary(stage.Name, stage.Solution!));
                     WriteStageStatus(FormatStageStatus(stage.Name, stage.Solution!, stage.Elapsed));
@@ -478,7 +478,7 @@ class Program
                         return;
                     }
 
-                    bool compactImproved = stage.ImprovesPreviousStage;
+                    bool compactImproved = stage.IsBetterThanPreviousStage;
                     if (compactImproved)
                         exactIncumbent = stage;
                     string status = FormatStageStatus(stage.Name, stage.Solution!, stage.Elapsed);

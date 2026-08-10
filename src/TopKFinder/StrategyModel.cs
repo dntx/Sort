@@ -239,7 +239,7 @@ readonly struct StageResult
         Timings = timings ?? StageTimings.Legacy(elapsed);
         PresentationMode = presentationMode;
         Sequence = sequence;
-        ImprovesPreviousStage = improvesPreviousStage;
+        IsBetterThanPreviousStage = improvesPreviousStage;
     }
 
     public string Name { get; }
@@ -250,7 +250,7 @@ readonly struct StageResult
     public StageTimings Timings { get; }
     public StagePresentationMode PresentationMode { get; }
     public int Sequence { get; }
-    public bool ImprovesPreviousStage { get; }
+    public bool IsBetterThanPreviousStage { get; }
 
     public StageResult WithProvenLowerBound(int provenLowerBound)
         => new(
@@ -262,7 +262,7 @@ readonly struct StageResult
             Timings,
             PresentationMode,
             Sequence,
-            ImprovesPreviousStage);
+            IsBetterThanPreviousStage);
 
     // A materialized strategy tree is attached. This is a display predicate only and does not imply
     // improvement; solution-first consumers may receive successful stages with no plan.
