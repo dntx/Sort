@@ -90,6 +90,7 @@ partial class StrategyBuilder
             StrategyPlan? plan = null;
             _useCompact = false;
             _feasiblePhase2StartMs = _progressStopwatch.ElapsedMilliseconds;
+            _latestGreedyIncumbentSolution = solution;
             if (materialize)
             {
                 StrategyNode root = MaterializeGreedyFeasiblePolicy(policy);

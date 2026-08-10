@@ -227,7 +227,9 @@ readonly struct StageResult
         StageOutcome outcome = StageOutcome.Tightened,
         SolvedStrategy? solution = null,
         StageTimings? timings = null,
-        StagePresentationMode presentationMode = StagePresentationMode.Auto)
+        StagePresentationMode presentationMode = StagePresentationMode.Auto,
+        int sequence = 0,
+        bool improvesPreviousStage = false)
     {
         Name = name;
         MaterializedPlan = materializedPlan;
@@ -236,6 +238,8 @@ readonly struct StageResult
         Solution = solution;
         Timings = timings ?? StageTimings.Legacy(elapsed);
         PresentationMode = presentationMode;
+        Sequence = sequence;
+        ImprovesPreviousStage = improvesPreviousStage;
     }
 
     public string Name { get; }
@@ -245,6 +249,8 @@ readonly struct StageResult
     public SolvedStrategy? Solution { get; }
     public StageTimings Timings { get; }
     public StagePresentationMode PresentationMode { get; }
+    public int Sequence { get; }
+    public bool ImprovesPreviousStage { get; }
 
     public StageResult WithProvenLowerBound(int provenLowerBound)
         => new(
@@ -254,7 +260,9 @@ readonly struct StageResult
             Outcome,
             Solution?.WithProvenLowerBound(provenLowerBound),
             Timings,
-            PresentationMode);
+            PresentationMode,
+            Sequence,
+            ImprovesPreviousStage);
 
     // A materialized strategy tree is attached. This is a display predicate only and does not imply
     // improvement; solution-first consumers may receive successful stages with no plan.

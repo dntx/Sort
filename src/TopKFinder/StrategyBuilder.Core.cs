@@ -126,6 +126,7 @@ partial class StrategyBuilder
     private bool _phase1Solved;
     private bool _phase1bSolved;
     private StrategyPlan? _latestGreedyIncumbentPlan;
+    private SolvedStrategy? _latestGreedyIncumbentSolution;
     private bool _progressEstimateInitialized;
     private double _progressEstimateEma01;
     private long _lastProgressSampleElapsedMs;

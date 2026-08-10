@@ -34,6 +34,8 @@ partial class StrategyBuilder
 
             int U = _owner._feasibleRootBudget;
             int provenLowerBound = Math.Max(1, _owner._rootProvenLowerBound);
+            SolvedStrategy incumbentSolution = _owner._latestGreedyIncumbentSolution ?? throw new InvalidOperationException(
+                "Greedy pipeline requires a feasible incumbent solution before proof tightening.");
 
             // Phase A: proof tightening to find the smallest feasible step S.
             _owner._compactFeasibilityOnly = true;
@@ -54,6 +56,17 @@ partial class StrategyBuilder
                     callbacks.Start(stageName);
                     ProofTightenStageArtifacts artifacts = ExecuteProofTightenStageWithSolution(budget, materializeStages);
                     StageResult stage = artifacts.Result;
+                    stage = new StageResult(
+                        stage.Name,
+                        stage.MaterializedPlan,
+                        stage.Elapsed,
+                        stage.Outcome,
+                        stage.Solution,
+                        stage.Timings,
+                        stage.PresentationMode,
+                        sequence: stage.Sequence,
+                        improvesPreviousStage: stage.Solution is not null
+                            && stage.Solution.Score.IsStrictRefinementOver(incumbentSolution.Score));
                     PipelineStageProtocol.EmitStage(stage, callbacks);
 
                     if (stage.Outcome == StageOutcome.Tightened)
@@ -65,6 +78,7 @@ partial class StrategyBuilder
                         }
 
                         bestStep = artifacts.Solution.Score.WorstCaseSteps;
+                        incumbentSolution = artifacts.Solution;
                         budget = bestStep - 1; // realized max-step may already be below the attempted ceiling
                         continue;
                     }
@@ -99,6 +113,8 @@ partial class StrategyBuilder
                 edgeStopwatch.Elapsed,
                 edgeResult.Timings.Freeze,
                 edgeResult.Timings.Materialize);
+            bool edgeImproved = edgeResult.Solution is not null
+                && edgeResult.Solution.Score.IsStrictRefinementOver(incumbentSolution.Score);
             PipelineStageProtocol.EmitStage(
                 new StageResult(
                     edgeCompactStageName,
@@ -106,10 +122,15 @@ partial class StrategyBuilder
                     edgeStopwatch.Elapsed,
                     edgeResult.Solution is null ? StageOutcome.Incomplete : StageOutcome.Completed,
                     edgeResult.Solution,
-                    edgeTimings),
+                    edgeTimings,
+                    sequence: stageDisplaySequenceForEdgeCompact(bestStep),
+                    improvesPreviousStage: edgeImproved),
                 callbacks);
             return finalPlan!;
         }
+
+        private static int stageDisplaySequenceForEdgeCompact(int bestStep)
+            => bestStep;
 
         public StageResult ExecuteProofTightenStage(int budget)
             => ExecuteProofTightenStageWithSolution(budget).Result;
@@ -141,7 +162,10 @@ partial class StrategyBuilder
                     timings.Total,
                     probe.Outcome,
                     probe.Solution,
-                    timings);
+                    timings,
+                    improvesPreviousStage: probe.Solution is not null
+                        && _owner._latestGreedyIncumbentSolution is not null
+                        && probe.Solution.Score.IsStrictRefinementOver(_owner._latestGreedyIncumbentSolution.Score));
                 return new ProofTightenStageArtifacts(result);
             }
             finally

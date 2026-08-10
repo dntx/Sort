@@ -539,9 +539,7 @@ partial class MainForm
             return;
 
         _greedyTightenStage = stage;
-        _greedyIncumbentImproved = stage.Solution is not null
-            && _greedyFeasibleStage?.Solution is not null
-            && stage.Solution.Score.IsStrictRefinementOver(_greedyFeasibleStage.Value.Solution!.Score);
+        _greedyIncumbentImproved = stage.ImprovesPreviousStage;
         if (_greedyIncumbentImproved)
             _incumbentStage = stage;
 
@@ -661,7 +659,10 @@ partial class MainForm
                     stage.Timings.Solve + stage.Timings.Freeze + materialize,
                     stage.Outcome,
                     stage.Solution,
-                    new StageTimings(stage.Timings.Solve, stage.Timings.Freeze, materialize));
+                    new StageTimings(stage.Timings.Solve, stage.Timings.Freeze, materialize),
+                    stage.PresentationMode,
+                    stage.Sequence,
+                    stage.ImprovesPreviousStage);
 
                 CachePresentationStageResult(stage, materialized);
             }
@@ -734,8 +735,7 @@ partial class MainForm
         StrategyPlan compactPlan = stage.MaterializedPlan!;
         _materializedCompactDisplayStage = stage;
         _compactPlan = compactPlan;
-        _compactImproved = _incumbentStage.HasValue
-            && PipelineStageProtocol.IsImprovement(stage, _incumbentStage.Value);
+        _compactImproved = stage.ImprovesPreviousStage;
         if (_compactImproved)
             _incumbentStage = stage;
 
@@ -806,8 +806,7 @@ partial class MainForm
         if (TryRenderSearchOnlySummaryStage(stage))
             return;
 
-        bool improved = _incumbentStage.HasValue
-            && PipelineStageProtocol.IsImprovement(stage, _incumbentStage.Value);
+        bool improved = stage.ImprovesPreviousStage;
 
         bool needsDeferredMaterialization = improved && !stage.HasPlan && stage.Solution is not null;
         if (!needsDeferredMaterialization)
@@ -1026,7 +1025,10 @@ partial class MainForm
                         s.Elapsed,
                         s.Outcome,
                         s.Solution,
-                        s.Timings);
+                        s.Timings,
+                        s.PresentationMode,
+                        s.Sequence,
+                        s.ImprovesPreviousStage);
                     break;
                 }
             }

@@ -125,6 +125,7 @@ partial class StrategyBuilder
             TimeSpan solveElapsed = stopwatch.Elapsed;
             SolvedStrategy solution = CreateGreedyTightenSolvedStrategy();
             TimeSpan freezeElapsed = stopwatch.Elapsed - solveElapsed;
+            _latestGreedyIncumbentSolution = solution;
 
             StrategyPlan? plan = null;
             if (materialize)

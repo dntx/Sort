@@ -339,7 +339,9 @@ class Program
                 prep.GreedyFeasibleElapsed,
                 StageOutcome.Completed,
                 prep.BaseFeasibleSolution,
-                prep.GreedyFeasibleTimings);
+                prep.GreedyFeasibleTimings,
+                sequence: 0,
+                improvesPreviousStage: false);
             string finalName = StageNames.GreedyFeasible;
 
             if (gtSolution is not null && gtImproved)
@@ -350,7 +352,9 @@ class Program
                     prep.GreedyTightenElapsed,
                     StageOutcome.Completed,
                     prep.GreedyTightenSolution,
-                    prep.GreedyTightenTimings);
+                    prep.GreedyTightenTimings,
+                    sequence: 1,
+                    improvesPreviousStage: prep.GreedyTightenImproved);
                 finalName = StageNames.GreedyTighten;
             }
 
@@ -398,7 +402,7 @@ class Program
                         return;
                 }
 
-                if (PipelineStageProtocol.IsImprovement(stage, incumbentStage))
+                if (stage.ImprovesPreviousStage)
                 {
                     stageSummaries.Add(FormatStageSummary(stage.Name, stage.Solution!));
                     WriteStageStatus(FormatStageStatus(stage.Name, stage.Solution!, stage.Elapsed));
@@ -474,8 +478,7 @@ class Program
                         return;
                     }
 
-                    bool compactImproved = exactIncumbent.HasValue
-                        && PipelineStageProtocol.IsImprovement(stage, exactIncumbent.Value);
+                    bool compactImproved = stage.ImprovesPreviousStage;
                     if (compactImproved)
                         exactIncumbent = stage;
                     string status = FormatStageStatus(stage.Name, stage.Solution!, stage.Elapsed);

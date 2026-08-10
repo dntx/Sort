@@ -25,17 +25,21 @@ static class PublicPipelineOrchestrator
         Action<string>? onStageStart = null)
     {
         var callbacks = new PipelineCallbacks(onStageCompleted, onStageStart);
+        int sequence = 0;
 
         callbacks.Start(StageNames.StepProof);
         ExactStepProofStageArtifacts stepArtifacts = builder.BuildExactStepProofStageArtifacts(materialize: false);
+        var stepStage = new StageResult(
+            StageNames.StepProof,
+            materializedPlan: null,
+            stepArtifacts.Timings.Total,
+            StageOutcome.Completed,
+            stepArtifacts.Solution,
+            stepArtifacts.Timings,
+            sequence: sequence++,
+            improvesPreviousStage: false);
         PipelineStageProtocol.EmitStage(
-            new StageResult(
-                StageNames.StepProof,
-                materializedPlan: null,
-                stepArtifacts.Timings.Total,
-                StageOutcome.Completed,
-                stepArtifacts.Solution,
-                stepArtifacts.Timings),
+            stepStage,
             callbacks);
 
         string compactStageName = StageNames.FormatExactEdgeCompact(
@@ -49,7 +53,9 @@ static class PublicPipelineOrchestrator
                 compactArtifacts.Timings.Total,
                 StageOutcome.Completed,
                 compactArtifacts.Solution,
-                compactArtifacts.Timings),
+                compactArtifacts.Timings,
+                sequence: sequence++,
+                improvesPreviousStage: true),
             callbacks);
     }
 
@@ -59,6 +65,7 @@ static class PublicPipelineOrchestrator
         Action<string>? onStageStart = null)
     {
         var callbacks = new PipelineCallbacks(onStageCompleted, onStageStart);
+        int sequence = 0;
 
         callbacks.Start(StageNames.StepProof);
         ExactStepProofStageArtifacts stepArtifacts = builder.ExecuteStepProofStageWithSolution();
@@ -68,7 +75,9 @@ static class PublicPipelineOrchestrator
             stepArtifacts.Timings.Total,
             StageOutcome.Completed,
             stepArtifacts.Solution,
-            stepArtifacts.Timings);
+            stepArtifacts.Timings,
+            sequence: sequence++,
+            improvesPreviousStage: false);
         PipelineStageProtocol.EmitStage(stepStage, callbacks);
         StrategyPlan stepPlan = stepArtifacts.Plan!;
 
@@ -82,7 +91,9 @@ static class PublicPipelineOrchestrator
             compactArtifacts.Plan!.Elapsed,
             StageOutcome.Completed,
             compactArtifacts.Solution,
-            compactArtifacts.Timings);
+            compactArtifacts.Timings,
+            sequence: sequence++,
+            improvesPreviousStage: true);
         PipelineStageProtocol.EmitStage(compactStage, callbacks);
         return compactArtifacts.Plan!;
     }
@@ -145,6 +156,7 @@ static class PublicPipelineOrchestrator
         Action<string>? onStageStart = null,
         Action<StageResult>? onStageCompleted = null)
     {
+        int sequence = 0;
         onStageStart?.Invoke(StageNames.GreedyFeasible);
         GreedyFeasibleStageArtifacts feasibleArtifacts = builder.ExecuteGreedyFeasibleStageWithSolution(materialize);
         StrategyPlan? baseFeasiblePlan = materialize ? feasibleArtifacts.Plan : null;
@@ -158,7 +170,9 @@ static class PublicPipelineOrchestrator
             feasibleArtifacts.Timings.Total,
             StageOutcome.Completed,
             baseFeasibleSolution,
-            feasibleArtifacts.Timings);
+            feasibleArtifacts.Timings,
+            sequence: sequence++,
+            improvesPreviousStage: false);
         onStageCompleted?.Invoke(greedyFeasibleStage);
 
         onStageStart?.Invoke(StageNames.GreedyTighten);
@@ -197,7 +211,9 @@ static class PublicPipelineOrchestrator
             gtSolution is null ? StageOutcome.Skipped : StageOutcome.Completed,
             gtSolution,
             gtTimings,
-            gtPlan is null ? StagePresentationMode.SearchOnlySummary : StagePresentationMode.Auto);
+            gtPlan is null ? StagePresentationMode.SearchOnlySummary : StagePresentationMode.Auto,
+            sequence: sequence++,
+            improvesPreviousStage: gtImproved);
         onStageCompleted?.Invoke(greedyTightenStage);
 
         return new GreedyPreparationResult(

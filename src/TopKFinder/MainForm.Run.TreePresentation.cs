@@ -741,7 +741,7 @@ partial class MainForm
             }
             else if (stage.MaterializedPlan is { } p)
             {
-                if (PipelineStageProtocol.IsImprovement(stage, incumbent))
+                if (stage.ImprovesPreviousStage)
                 {
                     lines.Add($"{stage.Name}: {FormatPlanSqueeze(p)}, total edges={p.TotalBranchEdges}");
                     incumbent = stage;
@@ -761,7 +761,7 @@ partial class MainForm
         {
             if (stage.MaterializedPlan is { } p)
             {
-                if (PipelineStageProtocol.IsImprovement(stage, incumbent))
+                if (stage.ImprovesPreviousStage)
                 {
                     lines.Add($"{stage.Name}: {FormatPlanSqueeze(p)}, total edges={p.TotalBranchEdges}");
                     incumbent = stage;
