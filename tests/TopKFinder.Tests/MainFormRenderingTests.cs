@@ -180,6 +180,34 @@ public sealed class MainFormRenderingTests
     }
 
     [Fact]
+    public async Task MaterializeExactStageAsync_PreservesImprovementMetadata()
+    {
+        var completed = new List<StageResult>();
+        PublicPipelineOrchestrator.RunExactPipelineDeferred(new StrategyBuilder(9, 3, 3), completed.Add);
+        StageResult compact = Assert.Single(completed.Skip(1));
+        Assert.True(compact.IsBetterThanPreviousStage);
+
+        using var form = new MainForm();
+        _ = form.Handle;
+
+        StageResult? applied = null;
+        Task task = InvokePrivateInstance<Task>(
+            form,
+            "MaterializeExactStageAsync",
+            compact,
+            (Action<StageResult>)(stage => applied = stage),
+            0,
+            0,
+            CancellationToken.None);
+
+        await task;
+        Application.DoEvents();
+
+        Assert.True(applied.HasValue);
+        Assert.True(applied.Value.IsBetterThanPreviousStage);
+    }
+
+    [Fact]
     public async Task MaterializeExactStageAsync_CurrentRequestVersion_Applies()
     {
         StageResult stage = CreateDeferredExactStepStage();

@@ -23,6 +23,8 @@ public sealed class ExactPipelineTests
             Assert.Equal(TimeSpan.Zero, stage.Timings.Materialize);
             Assert.Equal(stage.Elapsed, stage.Timings.Solve + stage.Timings.Freeze);
         });
+        Assert.False(stages[0].IsBetterThanPreviousStage);
+        Assert.True(stages[1].IsBetterThanPreviousStage);
     }
 
     [Fact]

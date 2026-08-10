@@ -57,6 +57,8 @@ public class GreedyPipelineTests
         Assert.NotNull(stages[0].Solution);
         Assert.Equal(TimeSpan.Zero, stages[0].Timings.Materialize);
         Assert.Equal(TimeSpan.Zero, stages[1].Timings.Materialize);
+        Assert.False(stages[0].IsBetterThanPreviousStage);
+        Assert.Equal(preparation.GreedyTightenImproved, stages[1].IsBetterThanPreviousStage);
         if (stages[1].Skipped)
             Assert.Null(stages[1].Solution);
         else

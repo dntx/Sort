@@ -156,6 +156,8 @@ partial class StrategyBuilder
                     stopwatch.Elapsed,
                     probe.Timings.Freeze,
                     probe.Timings.Materialize);
+                if (probe.Solution is not null)
+                    _owner._latestGreedyIncumbentSolution = probe.Solution;
                 var result = new StageResult(
                     stageName,
                     probe.Plan,
