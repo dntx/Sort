@@ -156,7 +156,11 @@ partial class StrategyBuilder
                     stopwatch.Elapsed,
                     probe.Timings.Freeze,
                     probe.Timings.Materialize);
-                if (probe.Solution is not null)
+                SolvedStrategy? priorIncumbent = _owner._latestGreedyIncumbentSolution;
+                bool improvesPreviousStage = probe.Solution is not null
+                    && (priorIncumbent is null
+                        || probe.Solution.Score.IsStrictRefinementOver(priorIncumbent.Score));
+                if (improvesPreviousStage)
                     _owner._latestGreedyIncumbentSolution = probe.Solution;
                 var result = new StageResult(
                     stageName,
@@ -165,9 +169,7 @@ partial class StrategyBuilder
                     probe.Outcome,
                     probe.Solution,
                     timings,
-                    improvesPreviousStage: probe.Solution is not null
-                        && _owner._latestGreedyIncumbentSolution is not null
-                        && probe.Solution.Score.IsStrictRefinementOver(_owner._latestGreedyIncumbentSolution.Score));
+                    improvesPreviousStage: improvesPreviousStage);
                 return new ProofTightenStageArtifacts(result);
             }
             finally

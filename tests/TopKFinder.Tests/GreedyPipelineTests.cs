@@ -469,6 +469,8 @@ public class GreedyPipelineTests
         Assert.Equal($"proof-tighten\u2264{budget}", probe.Name);
         Assert.Equal(StageOutcome.Tightened, probe.Outcome);
         Assert.NotNull(probe.MaterializedPlan);
+        Assert.True(probe.IsBetterThanPreviousStage,
+            "direct proof-tighten probe should be marked as improving over the prior incumbent");
         Assert.True(probe.MaterializedPlan!.MaxStep <= budget,
             $"tightened probe must realize a step within budget {budget}, got {probe.MaterializedPlan.MaxStep}");
         Assert.True(probe.MaterializedPlan.MaxStep <= 14,
@@ -516,6 +518,7 @@ public class GreedyPipelineTests
         Assert.Equal(probe.Name, firstTighten!.Value.Name);
         Assert.Equal(probe.Outcome, firstTighten.Value.Outcome);
         Assert.NotNull(firstTighten.Value.MaterializedPlan);
+        Assert.True(probe.IsBetterThanPreviousStage);
         Assert.Equal(probe.MaterializedPlan!.MaxStep, firstTighten.Value.MaterializedPlan!.MaxStep);
     }
 
