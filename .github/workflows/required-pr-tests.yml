@@ -12,7 +12,7 @@ permissions:
 jobs:
   required-tests:
     runs-on: windows-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
 
     steps:
       - name: Checkout
@@ -38,12 +38,43 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
-      - name: Run structural regression tests
+      - name: Run required tests with hard fail timeout
         if: steps.changes.outputs.has_code == 'true'
-        working-directory: ./tests/TopKFinder.Tests
-        run: dotnet test TopKFinder.Tests.csproj --configuration Release --nologo
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $totalTimeoutSeconds = 300
+          $deadline = (Get-Date).AddSeconds($totalTimeoutSeconds)
 
-      - name: Run lightweight performance tests
-        if: steps.changes.outputs.has_code == 'true'
-        working-directory: ./tests/TopKFinder.PerfTests
-        run: dotnet test TopKFinder.PerfTests.csproj --configuration Release --nologo
+          function Invoke-TestWithRemainingBudget {
+            param(
+              [Parameter(Mandatory = $true)][string]$ProjectPath,
+              [Parameter(Mandatory = $true)][string]$WorkingDirectory
+            )
+
+            $remainingSeconds = [int][Math]::Floor(($deadline - (Get-Date)).TotalSeconds)
+            if ($remainingSeconds -le 0) {
+              throw "Required PR tests failed: exceeded ${totalTimeoutSeconds}s total timeout before running $ProjectPath."
+            }
+
+            Write-Host "Running $ProjectPath with $remainingSeconds seconds remaining."
+            $process = Start-Process -FilePath 'dotnet' -ArgumentList @('test', $ProjectPath, '--configuration', 'Release', '--nologo') -WorkingDirectory $WorkingDirectory -NoNewWindow -PassThru
+
+            if (-not $process.WaitForExit($remainingSeconds * 1000)) {
+              try {
+                $process.Kill($true)
+              }
+              catch {
+                Write-Warning "Could not kill timed out process for ${ProjectPath}: $($_.Exception.Message)"
+              }
+
+              throw "Required PR tests failed: exceeded ${totalTimeoutSeconds}s total timeout while running $ProjectPath."
+            }
+
+            if ($process.ExitCode -ne 0) {
+              throw "dotnet test failed for $ProjectPath with exit code $($process.ExitCode)."
+            }
+          }
+
+          Invoke-TestWithRemainingBudget -ProjectPath 'TopKFinder.Tests.csproj' -WorkingDirectory './tests/TopKFinder.Tests'
+          Invoke-TestWithRemainingBudget -ProjectPath 'TopKFinder.PerfTests.csproj' -WorkingDirectory './tests/TopKFinder.PerfTests'
