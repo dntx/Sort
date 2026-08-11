@@ -7,7 +7,7 @@ namespace TopKFinder;
 
 partial class MainForm
 {
-    private const string RenderSkippedNoImprovementMarker = "no improvement (tree skipped)";
+    private const string SkippedNoImprovementMarker = "no improvement (tree skipped)";
     private const string SearchRunningSuffix = " [searching]";
     private const string TreeBuildingSuffix = ", building tree]";
     private const string TreeReadySuffix = ", tree ready]";
@@ -639,7 +639,7 @@ partial class MainForm
         return BuildTwoPhaseDetails(defaultPlan, compactPlan, compactImproved);
     }
 
-    // Incrementally folds the finished compact result into the already-rendered tree instead of
+    // Incrementally folds the finished compact result into the already-displayed tree instead of
     // rebuilding from scratch. The step subtree (root.Nodes[0]) -- along with its navigation map
     // entries -- is left untouched, so a user mid-browse keeps their expand/scroll/selection state.
     // Only the transient compact ready/running placeholder (root.Nodes[1]) is replaced -- either with
@@ -692,7 +692,7 @@ partial class MainForm
             : stage.Skipped
                 ? CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, "skipped", stage.Timings)
             : stage.Solution is not null && !stage.HasPlan
-                ? CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, RenderSkippedNoImprovementMarker, stage.Timings)
+                ? CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, SkippedNoImprovementMarker, stage.Timings)
             : stage.HasPlan
                 ? CreateNoImprovementTreeRoot(stage.Name, stage.MaterializedPlan!, stage.Elapsed, stage.Timings)
                 : CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, NoSolutionMarker(stage), stage.Timings);
@@ -703,7 +703,7 @@ partial class MainForm
             : stage.Skipped
                 ? BuildOverviewNoteNode(FormatStageRootLabel(stage.Name, stage.Elapsed, plan: null, marker: "skipped", timings: stage.Timings))
             : stage.Solution is not null && !stage.HasPlan
-                ? BuildOverviewNoteNode(FormatStageRootLabel(stage.Name, stage.Elapsed, plan: null, marker: RenderSkippedNoImprovementMarker, timings: stage.Timings))
+                ? BuildOverviewNoteNode(FormatStageRootLabel(stage.Name, stage.Elapsed, plan: null, marker: SkippedNoImprovementMarker, timings: stage.Timings))
             : BuildOverviewNoteNode(FormatStageRootLabel(
                 stage.Name,
                 stage.Elapsed,
@@ -777,7 +777,7 @@ partial class MainForm
             }
             else if (stage.Solution is not null)
             {
-                lines.Add($"{stage.Name}: {RenderSkippedNoImprovementMarker}");
+                lines.Add($"{stage.Name}: {SkippedNoImprovementMarker}");
             }
             else if (stage.Incomplete)
             {

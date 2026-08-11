@@ -148,7 +148,7 @@ partial class MainForm : Form
     private StageResult? _greedyFeasibleStage;
     private StageResult? _greedyTightenStage;
     private StageResult? _incumbentStage;
-    // Display-stage records (presentation semantics): the latest materialized stage rendered into
+    // Display-stage records (presentation semantics): the latest materialized stage displayed in
     // the step/compact slots, used for timing labels and section headers.
     // Exact mode mapping:
     // - _materializedStepDisplayStage = materialized step-proof stage

@@ -359,7 +359,7 @@ partial class MainForm
     }
 
     // A stage needs display materialization only when it is a solved improvement that does not already
-    // carry a materialized plan. Non-improving solved stages are intentionally rendered as notes.
+    // carry a materialized plan. Non-improving solved stages are intentionally shown as notes.
     private static bool ShouldMaterializeStageForDisplay(StageResult stage, bool improved)
         => improved && !stage.HasPlan && stage.Solution is not null;
 
@@ -881,7 +881,7 @@ partial class MainForm
 
         // A stage is "shown" as a full browsable tree only when it strictly improves the incumbent
         // (the best plan so far: the greedy-feasible plan, then any improving downstream stage). A stage
-        // that has a solution but is no better is recorded and marked "no improvement" but rendered
+        // that has a solution but is no better is recorded and marked "no improvement" but shown
         // only as a leaf note. Tightening continues regardless, since the next ceiling is driven by
         // max-steps, not edges.
 
