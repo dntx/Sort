@@ -611,6 +611,67 @@ public sealed class MainFormRenderingTests
     }
 
     [Fact]
+    public void OnProofTightenStage_EdgeArrivesBeforeProofTreeLanding_UsesProofAsBaseline()
+    {
+        var builder = new StrategyBuilder(8, 3, 3);
+        GreedyPreparationResult prep = PublicPipelineOrchestrator.RunGreedyPreparation(
+            builder,
+            emitStages: false,
+            materialize: true);
+
+        StrategyPlan feasiblePlan = prep.BaseFeasiblePlan
+            ?? throw new InvalidOperationException("Expected greedy feasible plan.");
+        StageResult feasibleStage = new(
+            StageNames.GreedyFeasible,
+            feasiblePlan,
+            feasiblePlan.Elapsed,
+            StageOutcome.Completed,
+            prep.BaseFeasibleSolution,
+            StageTimings.Legacy(feasiblePlan.Elapsed));
+
+        StageResult proofMaterialized = builder.ExecuteProofTightenStage(feasiblePlan.MaxStep - 1);
+        StageResult proofDeferred = new(
+            proofMaterialized.Name,
+            materializedPlan: null,
+            elapsed: proofMaterialized.Elapsed,
+            outcome: proofMaterialized.Outcome,
+            solution: proofMaterialized.Solution,
+            timings: proofMaterialized.Timings);
+
+        CompactPlanResult edgeResult = builder.BuildEdgeCompactPlanAtBudget(proofMaterialized.MaterializedPlan!.MaxStep);
+        StageResult edgeDeferred = new(
+            StageNames.FormatGreedyEdgeCompact(proofMaterialized.MaterializedPlan.MaxStep),
+            materializedPlan: null,
+            elapsed: edgeResult.Timings.Total,
+            outcome: edgeResult.Solution is null ? StageOutcome.Incomplete : StageOutcome.Completed,
+            solution: edgeResult.Solution,
+            timings: edgeResult.Timings);
+
+        Assert.True(PipelineStageProtocol.IsImprovement(proofDeferred, feasibleStage));
+        Assert.False(PipelineStageProtocol.IsImprovement(edgeDeferred, proofDeferred));
+
+        using var form = new MainForm();
+        _ = form.Handle;
+        InvokePrivateInstanceVoid(form, "ShowInitialStagePlaceholder", 8, 3, 3, true);
+        SetPrivateField(form, "_feasiblePlan", feasiblePlan);
+        SetPrivateField(form, "_greedyFeasibleStage", feasibleStage);
+        SetPrivateField(form, "_incumbentStage", feasibleStage);
+        SetPrivateField(form, "_frozenGreedyStageComparisonBaseline", feasibleStage);
+
+        // proof lands first and is improving, but still needs deferred tree materialization.
+        InvokePrivateInstanceVoid(form, "OnProofTightenStage", proofDeferred);
+
+        // edge arrives before proof tree materialization callback re-enters.
+        InvokePrivateInstanceVoid(form, "OnProofTightenStage", edgeDeferred);
+
+        TreeView tree = GetPrivateField<TreeView>(form, "_treeView");
+        TreeNode root = tree.Nodes[0];
+        Assert.Contains(root.Nodes.Cast<TreeNode>(), node =>
+            node.Text.StartsWith(edgeDeferred.Name + ":", StringComparison.Ordinal)
+            && node.Text.Contains("no improvement", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void OnProofTightenStage_NoImprovement_DoesNotQueueBufferedMaterialization()
     {
         using var form = new MainForm();

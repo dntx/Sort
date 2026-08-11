@@ -343,6 +343,13 @@ partial class MainForm
             baseline = resolvedGreedyEdgeBaseline;
         }
 
+        if (!baseline.HasValue
+            && IsGreedyEdgeCompactStage(stage)
+            && _incumbentStage is { Solution: not null } incumbentSolvedStage)
+        {
+            baseline = incumbentSolvedStage;
+        }
+
         baseline ??= _frozenGreedyStageComparisonBaseline;
         if (!baseline.HasValue
             && _incumbentStage is { Solution: not null } incumbent)
@@ -928,6 +935,13 @@ partial class MainForm
     private void OnProofTightenStage(StageResult stage)
     {
         bool improved = GetOrCreateFrozenStageImprovementDecision(stage);
+
+        // Objective incumbent is stage-level (score), not tree-materialization-level. Advance it as
+        // soon as an improving solved stage arrives so subsequent stage comparisons (especially
+        // greedy-edge right after proof-tighten) use the latest solved baseline.
+        if (improved && stage.Solution is not null)
+            _incumbentStage = stage;
+
         bool needsDeferredMaterialization = ShouldMaterializeStageForDisplay(stage, improved);
 
         if (_feasiblePlan is null)
