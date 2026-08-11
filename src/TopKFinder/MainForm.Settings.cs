@@ -14,6 +14,7 @@ partial class MainForm
         public int ModeIndex { get; set; }
         public string Theme { get; set; } = nameof(ColorTheme.Dark);
         public bool PauseEachStage { get; set; }
+        public bool EnableGt { get; set; }
     }
 
     private static string SettingsFilePath =>
@@ -46,6 +47,7 @@ partial class MainForm
             if (_themeComboBox.Items.Contains(settings.Theme))
                 _themeComboBox.SelectedItem = settings.Theme;
             _pauseEachStageCheckBox.Checked = settings.PauseEachStage;
+            _enableGtCheckBox.Checked = settings.EnableGt;
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
         {
@@ -65,6 +67,7 @@ partial class MainForm
                 ModeIndex = _modeComboBox.SelectedIndex,
                 Theme = ParseSelectedTheme().ToString(),
                 PauseEachStage = _pauseEachStageCheckBox.Checked,
+                EnableGt = _enableGtCheckBox.Checked,
             };
 
             string path = SettingsFilePath;

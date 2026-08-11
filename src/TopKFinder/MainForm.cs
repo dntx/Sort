@@ -113,6 +113,7 @@ partial class MainForm : Form
     private readonly ComboBox _themeComboBox;
     private readonly ComboBox _modeComboBox;
     private readonly CheckBox _pauseEachStageCheckBox;
+    private readonly CheckBox _enableGtCheckBox;
     private readonly Button _runButton;
     private readonly Button _stopButton;
     private readonly Button _treeExpandButton;
@@ -215,6 +216,7 @@ partial class MainForm : Form
         // When checked, the run pauses after each new stage tree appears (a modal shows that stage's
         // summary and the search blocks until OK). Default off so runs are uninterrupted.
         _pauseEachStageCheckBox = CreatePauseEachStageCheckBox();
+        _enableGtCheckBox = CreateEnableGtCheckBox();
 
         _runButton = CreateRunButton();
         _stopButton = CreateStopButton();
@@ -239,6 +241,7 @@ partial class MainForm : Form
         inputsPanel.Controls.Add(CreateLabeledInput("mode", _modeComboBox));
         inputsPanel.Controls.Add(CreateLabeledInput("theme", _themeComboBox));
         inputsPanel.Controls.Add(_pauseEachStageCheckBox);
+        inputsPanel.Controls.Add(_enableGtCheckBox);
 
         var actionsPanel = CreatePanelRow();
         actionsPanel.Controls.Add(_runButton);
@@ -400,6 +403,16 @@ partial class MainForm : Form
         return new CheckBox
         {
             Text = "pause each stage",
+            AutoSize = true,
+            Margin = new Padding(0, 8, 0, 0),
+        };
+    }
+
+    private static CheckBox CreateEnableGtCheckBox()
+    {
+        return new CheckBox
+        {
+            Text = "enable GT",
             AutoSize = true,
             Margin = new Padding(0, 8, 0, 0),
         };
