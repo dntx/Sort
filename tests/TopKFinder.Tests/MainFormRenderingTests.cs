@@ -319,7 +319,7 @@ public sealed class MainFormRenderingTests
     }
 
     [Fact]
-    public void OnProofTightenStage_NonMaterializingStage_InvalidatesOlderPresentationRequest()
+    public void OnProofTightenStage_NonMaterializingStage_DoesNotInvalidateOlderPresentationRequest()
     {
         StageResult deferredStage = CreateDeferredExactStepStage();
         StrategyPlan feasiblePlan = new StrategyBuilder(8, 3, 3).ExecuteStepProofStage();
@@ -349,8 +349,8 @@ public sealed class MainFormRenderingTests
         InvokePrivateInstanceVoid(form, "OnProofTightenStage", terminalNoPlanStage);
 
         int requestVersionAfter = GetPrivateField<int>(form, "_presentationRequestVersion");
-        Assert.True(pendingRequest.IsCancellationRequested);
-        Assert.True(requestVersionAfter > requestVersionBefore);
+        Assert.False(pendingRequest.IsCancellationRequested);
+        Assert.Equal(requestVersionBefore, requestVersionAfter);
     }
 
     [Fact]

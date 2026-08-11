@@ -865,13 +865,10 @@ partial class MainForm
         if (TryRenderSearchOnlySummaryStage(stage))
             return;
 
-        if (!needsDeferredMaterialization)
-            InvalidateActivePresentationRequest();
-
         if (needsDeferredMaterialization)
         {
             MarkStageTreeBuilding(stage);
-            StartStageTreeMaterialization(stage, OnProofTightenStage);
+            StartGreedyEdgeTreeMaterialization(stage);
             return;
         }
 
