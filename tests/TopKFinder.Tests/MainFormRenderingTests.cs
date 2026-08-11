@@ -154,6 +154,29 @@ public sealed class MainFormRenderingTests
     }
 
     [Fact]
+    public void MarshalStageToUiThread_StaleGeneration_DropsCallback()
+    {
+        using var form = new MainForm();
+        _ = form.Handle;
+        SetPrivateField(form, "_pauseEachStageForRun", false);
+        SetPrivateField(form, "_presentationGeneration", 10);
+
+        bool callbackRan = false;
+        var stage = new StageResult("proof-tighten<=3", materializedPlan: null, TimeSpan.Zero, StageOutcome.Tightened, CreateDeferredExactStepStage().Solution);
+        InvokePrivateInstanceVoid(
+            form,
+            "MarshalStageToUiThread",
+            stage,
+            (Action<StageResult>)(_ => callbackRan = true));
+
+        // Simulate a new run generation before queued callback dispatch.
+        SetPrivateField(form, "_presentationGeneration", 11);
+        Application.DoEvents();
+
+        Assert.False(callbackRan);
+    }
+
+    [Fact]
     public async Task MaterializeStageTreeAsync_StaleRequestVersion_DoesNotApply()
     {
         StageResult stage = CreateDeferredExactStepStage();
@@ -681,6 +704,32 @@ public sealed class MainFormRenderingTests
         InvokePrivateInstanceVoid(form, "ResetPresentationInfrastructure");
         bool cachedAfterReset = InvokePrivateInstance<bool>(form, "IsPresentationStageCached", stage);
         Assert.False(cachedAfterReset);
+    }
+
+    [Fact]
+    public void MarkGreedyIncumbentProvenOptimal_IncumbentWithoutPlan_DoesNotThrow()
+    {
+        using var form = new MainForm();
+        _ = form.Handle;
+
+        StrategyPlan feasiblePlan = new StrategyBuilder(8, 3, 3).ExecuteGreedyFeasibleStage();
+        StageResult deferredStage = CreateDeferredExactStepStage();
+        var incumbentWithoutPlan = new StageResult(
+            StageNames.FormatProofTighten(feasiblePlan.MaxStep - 1),
+            materializedPlan: null,
+            elapsed: TimeSpan.FromMilliseconds(1),
+            outcome: StageOutcome.Tightened,
+            solution: deferredStage.Solution,
+            timings: StageTimings.Legacy(TimeSpan.FromMilliseconds(1)));
+
+        SetPrivateField(form, "_feasiblePlan", feasiblePlan);
+        SetPrivateField(form, "_incumbentStage", incumbentWithoutPlan);
+
+        InvokePrivateInstanceVoid(form, "MarkGreedyIncumbentProvenOptimal");
+
+        StageResult? updatedIncumbent = GetPrivateField<StageResult?>(form, "_incumbentStage");
+        Assert.True(updatedIncumbent.HasValue);
+        Assert.NotNull(updatedIncumbent.Value.Solution);
     }
 
     [Fact]

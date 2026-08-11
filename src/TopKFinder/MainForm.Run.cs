@@ -539,15 +539,24 @@ partial class MainForm
         if (!CanAcceptStageCallback())
             return;
 
+        int expectedGeneration = _presentationGeneration;
+        void apply()
+        {
+            if (expectedGeneration != _presentationGeneration)
+                return;
+
+            OnStageSearchStarted(stageName);
+        }
+
         try
         {
             if (_pauseEachStageForRun)
             {
-                Invoke(() => OnStageSearchStarted(stageName));
+                Invoke((MethodInvoker)apply);
             }
             else
             {
-                BeginInvoke(() => OnStageSearchStarted(stageName));
+                BeginInvoke((MethodInvoker)apply);
             }
         }
         catch (ObjectDisposedException)
@@ -625,17 +634,26 @@ partial class MainForm
         if (!CanAcceptStageCallback())
             return;
 
+        int expectedGeneration = _presentationGeneration;
+        void apply()
+        {
+            if (expectedGeneration != _presentationGeneration)
+                return;
+
+            onStage(stage);
+        }
+
         try
         {
             if (_pauseEachStageForRun)
             {
                 // In pause mode we preserve strict stage-by-stage blocking semantics.
-                Invoke(() => onStage(stage));
+                Invoke((MethodInvoker)apply);
             }
             else
             {
                 // In normal mode do not block the solver thread on UI work.
-                BeginInvoke(() => onStage(stage));
+                BeginInvoke((MethodInvoker)apply);
             }
         }
         catch (ObjectDisposedException)
@@ -1061,13 +1079,30 @@ partial class MainForm
             return;
 
         StageResult incumbentStage = _incumbentStage.Value;
-        StrategyPlan incumbent = incumbentStage.MaterializedPlan!;
+        StrategyPlan? incumbent = incumbentStage.MaterializedPlan
+            ?? _compactPlan
+            ?? _feasiblePlan;
+        if (incumbent is null)
+            return;
+
         int provenLower = incumbentStage.Solution.Score.WorstCaseSteps;
         if (incumbent.SearchStatistics.RootProvenLowerBound >= provenLower)
             return;
 
         StageResult provenStage = incumbentStage.WithProvenLowerBound(provenLower);
-        StrategyPlan proven = provenStage.MaterializedPlan!;
+        StrategyPlan proven = incumbent.WithRootProvenLowerBound(provenLower);
+        if (!provenStage.HasPlan)
+        {
+            provenStage = new StageResult(
+                provenStage.Name,
+                proven,
+                provenStage.Elapsed,
+                provenStage.Outcome,
+                provenStage.Solution,
+                provenStage.Timings,
+                provenStage.PresentationMode);
+        }
+
         if (_compactPlan is not null)
         {
             for (int i = 0; i < _proofTightenStages.Count; i++)
