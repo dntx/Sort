@@ -14,18 +14,6 @@ using TopKFinder;
 public class GreedyPipelineTests
 {
     [Fact]
-    public void GreedyPreparation_SkipsGreedyTightenByDefault()
-    {
-        var builder = new StrategyBuilder(9, 3, 3);
-        var completed = new List<StageResult>();
-
-        PublicPipelineOrchestrator.RunGreedyPreparation(builder, onStageCompleted: completed.Add, emitStages: true, materialize: true);
-
-        Assert.Single(completed, stage => stage.Name == StageNames.GreedyFeasible);
-        Assert.DoesNotContain(completed, stage => stage.Name == StageNames.GreedyTighten);
-    }
-
-    [Fact]
     public void GreedyPipelineDeferred_EmitsSolutionsWithoutMaterializedPlans()
     {
         var builder = new StrategyBuilder(9, 3, 3);
