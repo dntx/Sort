@@ -314,6 +314,26 @@ partial class MainForm
         _presentationStageCache.Clear();
         _presentationStageCacheLru.Clear();
         _presentationStageCacheNodes.Clear();
+        _frozenStageImprovementDecisions.Clear();
+    }
+
+    // Improvement labels for greedy edge stages must remain stable across deferred materialization
+    // re-entry. Freeze the decision on first UI ingress and reuse it for later callbacks.
+    private bool GetOrCreateFrozenStageImprovementDecision(StageResult stage)
+    {
+        if (stage.Solution is null)
+            return false;
+
+        if (!_incumbentStage.HasValue)
+            return false;
+
+        PresentationStageCacheKey key = BuildPresentationStageCacheKey(stage);
+        if (_frozenStageImprovementDecisions.TryGetValue(key, out bool cachedDecision))
+            return cachedDecision;
+
+        bool improved = PipelineStageProtocol.IsImprovement(stage, _incumbentStage.Value);
+        _frozenStageImprovementDecisions[key] = improved;
+        return improved;
     }
 
     private StageResult? GetCachedPresentationStageResult(StageResult stage)
@@ -779,6 +799,8 @@ partial class MainForm
     // their per-state navigation keys never collide.
     private void OnProofTightenStage(StageResult stage)
     {
+        bool improved = GetOrCreateFrozenStageImprovementDecision(stage);
+
         if (_feasiblePlan is null)
         {
             UpsertPendingGreedyEdgeStage(stage);
@@ -805,9 +827,6 @@ partial class MainForm
 
         if (TryRenderSearchOnlySummaryStage(stage))
             return;
-
-        bool improved = _incumbentStage.HasValue
-            && PipelineStageProtocol.IsImprovement(stage, _incumbentStage.Value);
 
         bool needsDeferredMaterialization = improved && !stage.HasPlan && stage.Solution is not null;
         if (!needsDeferredMaterialization)
