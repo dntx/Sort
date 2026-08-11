@@ -154,6 +154,35 @@ public sealed class MainFormRenderingTests
     }
 
     [Fact]
+    public void MarshalStageToUiThread_StaleGeneration_DropsCallback()
+    {
+        using var form = new MainForm();
+        _ = form.Handle;
+        SetPrivateField(form, "_pauseEachStageForRun", false);
+        SetPrivateField(form, "_presentationGeneration", 10);
+
+        bool callbackRan = false;
+        var stage = new StageResult(
+            "proof-tighten<=3",
+            materializedPlan: null,
+            elapsed: TimeSpan.Zero,
+            outcome: StageOutcome.Tightened,
+            solution: CreateDeferredExactStepStage().Solution);
+
+        InvokePrivateInstanceVoid(
+            form,
+            "MarshalStageToUiThread",
+            stage,
+            (Action<StageResult>)(_ => callbackRan = true));
+
+        // Simulate a new run generation before the queued callback is dispatched.
+        SetPrivateField(form, "_presentationGeneration", 11);
+        Application.DoEvents();
+
+        Assert.False(callbackRan);
+    }
+
+    [Fact]
     public async Task MaterializeStageTreeAsync_StaleRequestVersion_DoesNotApply()
     {
         StageResult stage = CreateDeferredExactStepStage();

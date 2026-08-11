@@ -539,15 +539,24 @@ partial class MainForm
         if (!CanAcceptStageCallback())
             return;
 
+        int expectedGeneration = _presentationGeneration;
+        void apply()
+        {
+            if (expectedGeneration != _presentationGeneration)
+                return;
+
+            OnStageSearchStarted(stageName);
+        }
+
         try
         {
             if (_pauseEachStageForRun)
             {
-                Invoke(() => OnStageSearchStarted(stageName));
+                Invoke((MethodInvoker)apply);
             }
             else
             {
-                BeginInvoke(() => OnStageSearchStarted(stageName));
+                BeginInvoke((MethodInvoker)apply);
             }
         }
         catch (ObjectDisposedException)
@@ -625,17 +634,26 @@ partial class MainForm
         if (!CanAcceptStageCallback())
             return;
 
+        int expectedGeneration = _presentationGeneration;
+        void apply()
+        {
+            if (expectedGeneration != _presentationGeneration)
+                return;
+
+            onStage(stage);
+        }
+
         try
         {
             if (_pauseEachStageForRun)
             {
                 // In pause mode we preserve strict stage-by-stage blocking semantics.
-                Invoke(() => onStage(stage));
+                Invoke((MethodInvoker)apply);
             }
             else
             {
                 // In normal mode do not block the solver thread on UI work.
-                BeginInvoke(() => onStage(stage));
+                BeginInvoke((MethodInvoker)apply);
             }
         }
         catch (ObjectDisposedException)
