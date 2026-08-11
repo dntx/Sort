@@ -112,6 +112,7 @@ partial class MainForm
         _materializedStepDisplayStage = null;
         _materializedCompactDisplayStage = null;
         _incumbentStage = null;
+        _frozenGreedyStageComparisonBaseline = null;
         _greedyIncumbentImproved = false;
         _compactImproved = false;
         _activePhase = 0;
@@ -314,7 +315,53 @@ partial class MainForm
         _presentationStageCache.Clear();
         _presentationStageCacheLru.Clear();
         _presentationStageCacheNodes.Clear();
+        _frozenStageImprovementDecisions.Clear();
+        _frozenGreedyStageComparisonBaseline = null;
     }
+
+    // Improvement labels for greedy edge stages must remain stable across deferred materialization
+    // re-entry. Freeze the decision on first UI ingress and reuse it for later callbacks.
+    private bool GetOrCreateFrozenStageImprovementDecision(StageResult stage)
+    {
+        if (stage.Solution is null)
+            return false;
+
+        PresentationStageCacheKey key = BuildPresentationStageCacheKey(stage);
+        if (_frozenStageImprovementDecisions.TryGetValue(key, out bool cachedDecision))
+            return cachedDecision;
+
+        StageResult? baseline = _frozenGreedyStageComparisonBaseline;
+        if (!baseline.HasValue
+            && _incumbentStage is { Solution: not null } incumbent)
+        {
+            baseline = incumbent;
+            _frozenGreedyStageComparisonBaseline = incumbent;
+        }
+
+        bool improved;
+        if (!baseline.HasValue)
+        {
+            // Defensive fallback: if no comparable baseline exists yet, treat the first solved stage
+            // as accepted so it can establish the progression baseline without a spurious marker.
+            improved = true;
+        }
+        else
+        {
+            improved = PipelineStageProtocol.IsImprovement(stage, baseline.Value);
+        }
+
+        _frozenStageImprovementDecisions[key] = improved;
+
+        if (improved)
+            _frozenGreedyStageComparisonBaseline = stage;
+
+        return improved;
+    }
+
+    // A stage needs display materialization only when it is a solved improvement that does not already
+    // carry a materialized plan. Non-improving solved stages are intentionally rendered as notes.
+    private static bool ShouldMaterializeStageForDisplay(StageResult stage, bool improved)
+        => improved && !stage.HasPlan && stage.Solution is not null;
 
     private StageResult? GetCachedPresentationStageResult(StageResult stage)
     {
@@ -544,6 +591,12 @@ partial class MainForm
             && stage.Solution.Score.IsStrictRefinementOver(_greedyFeasibleStage.Value.Solution!.Score);
         if (_greedyIncumbentImproved)
             _incumbentStage = stage;
+
+        if (_frozenGreedyStageComparisonBaseline is null
+            && _incumbentStage is { Solution: not null } incumbent)
+        {
+            _frozenGreedyStageComparisonBaseline = incumbent;
+        }
 
         RecordRunTimeline("greedy preparation stage complete", stage.Skipped
             ? $"skipped (root probe), solve={stage.Timings.Solve.TotalMilliseconds:F1} ms"
@@ -779,6 +832,9 @@ partial class MainForm
     // their per-state navigation keys never collide.
     private void OnProofTightenStage(StageResult stage)
     {
+        bool improved = GetOrCreateFrozenStageImprovementDecision(stage);
+        bool needsDeferredMaterialization = ShouldMaterializeStageForDisplay(stage, improved);
+
         if (_feasiblePlan is null)
         {
             UpsertPendingGreedyEdgeStage(stage);
@@ -795,8 +851,12 @@ partial class MainForm
             if (stage.Solution is null)
                 return;
 
-            MarkStageDisplayInProgress(stage);
-            QueueBufferedGreedyEdgeMaterialization(stage);
+            if (needsDeferredMaterialization)
+            {
+                MarkStageDisplayInProgress(stage);
+                QueueBufferedGreedyEdgeMaterialization(stage);
+            }
+
             return;
         }
 
@@ -806,10 +866,6 @@ partial class MainForm
         if (TryRenderSearchOnlySummaryStage(stage))
             return;
 
-        bool improved = _incumbentStage.HasValue
-            && PipelineStageProtocol.IsImprovement(stage, _incumbentStage.Value);
-
-        bool needsDeferredMaterialization = improved && !stage.HasPlan && stage.Solution is not null;
         if (!needsDeferredMaterialization)
             InvalidateActivePresentationRequest();
 
@@ -1038,6 +1094,7 @@ partial class MainForm
         }
 
         _incumbentStage = provenStage;
+        _frozenGreedyStageComparisonBaseline = provenStage;
     }
 
     private void ShowStageModal(string message, bool hasPlan)

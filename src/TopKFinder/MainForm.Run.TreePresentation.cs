@@ -7,6 +7,7 @@ namespace TopKFinder;
 
 partial class MainForm
 {
+    private const string RenderSkippedNoImprovementMarker = "render skipped (no improvement)";
     private const string SearchRunningSuffix = " [searching]";
     private const string DisplayRunningSuffix = ", building tree]";
     private const string DisplayPendingSuffix = ", tree queued]";
@@ -692,7 +693,7 @@ partial class MainForm
             : stage.Skipped
                 ? CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, "skipped (root probe)", stage.Timings)
             : stage.Solution is not null && !stage.HasPlan
-                ? CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, "no improvement", stage.Timings)
+                ? CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, RenderSkippedNoImprovementMarker, stage.Timings)
             : stage.HasPlan
                 ? CreateNoImprovementTreeRoot(stage.Name, stage.MaterializedPlan!, stage.Elapsed, stage.Timings)
                 : CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, NoSolutionMarker(stage), stage.Timings);
@@ -703,7 +704,7 @@ partial class MainForm
             : stage.Skipped
                 ? BuildOverviewNoteNode(FormatStageRootLabel(stage.Name, stage.Elapsed, plan: null, marker: "skipped (root probe)", timings: stage.Timings))
             : stage.Solution is not null && !stage.HasPlan
-                ? BuildOverviewNoteNode(FormatStageRootLabel(stage.Name, stage.Elapsed, plan: null, marker: "no improvement", timings: stage.Timings))
+                ? BuildOverviewNoteNode(FormatStageRootLabel(stage.Name, stage.Elapsed, plan: null, marker: RenderSkippedNoImprovementMarker, timings: stage.Timings))
             : BuildOverviewNoteNode(FormatStageRootLabel(
                 stage.Name,
                 stage.Elapsed,
@@ -774,6 +775,10 @@ partial class MainForm
             else if (stage.Skipped)
             {
                 lines.Add($"{stage.Name}: skipped (root probe)");
+            }
+            else if (stage.Solution is not null)
+            {
+                lines.Add($"{stage.Name}: {RenderSkippedNoImprovementMarker}");
             }
             else if (stage.Incomplete)
             {

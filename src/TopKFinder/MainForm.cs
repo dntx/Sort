@@ -167,6 +167,8 @@ partial class MainForm : Form
     private int _presentationGeneration;
     private int _presentationRequestVersion;
     private readonly Dictionary<PresentationStageCacheKey, StageResult> _presentationStageCache = new(new PresentationStageCacheKeyComparer());
+    private readonly Dictionary<PresentationStageCacheKey, bool> _frozenStageImprovementDecisions = new(new PresentationStageCacheKeyComparer());
+    private StageResult? _frozenGreedyStageComparisonBaseline;
     private readonly LinkedList<PresentationStageCacheKey> _presentationStageCacheLru = new();
     private readonly Dictionary<PresentationStageCacheKey, LinkedListNode<PresentationStageCacheKey>> _presentationStageCacheNodes = new(new PresentationStageCacheKeyComparer());
     private bool _exactStepStageMaterialized;
