@@ -94,7 +94,7 @@ partial class MainForm
     }
 
     // The single unified stage-root label used by BOTH the strategy tree plan roots and the overview
-    // section roots: "<stage>: search <s>s, render <s>s, max steps=<n>, edges=<n>, output=<n>", optionally
+    // section roots: "<stage>: search <s>s, build <s>s, max steps=<n>, edges=<n>, output=<n>", optionally
     // suffixed with a marker (e.g. "no improvement"). When there is no plan the body collapses to the
     // marker note ("no solution" by default, or e.g. "search incomplete (candidate cap reached)").
     // Timings are stage-local wall-clock buckets.
@@ -104,11 +104,11 @@ partial class MainForm
             return $"elapsed={elapsed.TotalSeconds:F1}s";
 
         TimeSpan search = timings.Value.Solve + timings.Value.Freeze;
-        TimeSpan render = timings.Value.Materialize;
-        if (render <= TimeSpan.Zero)
+        TimeSpan build = timings.Value.Materialize;
+        if (build <= TimeSpan.Zero)
             return $"search {search.TotalSeconds:F1}s";
 
-        return $"search {search.TotalSeconds:F1}s, render {render.TotalSeconds:F1}s";
+        return $"search {search.TotalSeconds:F1}s, build {build.TotalSeconds:F1}s";
     }
 
     private static string FormatStageRootLabel(string stageName, TimeSpan elapsed, StrategyPlan? plan, string? marker = null, StageTimings? timings = null)

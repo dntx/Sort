@@ -7,7 +7,7 @@ namespace TopKFinder;
 
 partial class MainForm
 {
-    private const string RenderSkippedNoImprovementMarker = "tree display skipped (no improvement)";
+    private const string RenderSkippedNoImprovementMarker = "no improvement (tree skipped)";
     private const string SearchRunningSuffix = " [searching]";
     private const string TreeBuildingSuffix = ", building tree]";
     private const string TreeReadySuffix = ", tree ready]";
