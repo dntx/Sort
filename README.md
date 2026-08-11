@@ -167,6 +167,11 @@ printf "10\n4\n3\n" | dotnet run
 Running with no arguments and no redirected input opens the WinForms explorer
 (see `docs/ui-explorer.md`).
 
+The explorer now includes an explicit `enable GT` checkbox in the input/actions
+area. When checked, the greedy preparation pipeline runs the optional
+`greedy-tighten` stage before proof-tighten begins; when unchecked, the default
+path skips GT and proceeds straight to the normal proof-tighten flow.
+
 ### Example
 
 ```
