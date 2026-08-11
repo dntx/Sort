@@ -112,6 +112,7 @@ partial class MainForm
         _materializedStepDisplayStage = null;
         _materializedCompactDisplayStage = null;
         _incumbentStage = null;
+        _frozenGreedyStageComparisonBaseline = null;
         _greedyIncumbentImproved = false;
         _compactImproved = false;
         _activePhase = 0;
@@ -315,6 +316,7 @@ partial class MainForm
         _presentationStageCacheLru.Clear();
         _presentationStageCacheNodes.Clear();
         _frozenStageImprovementDecisions.Clear();
+        _frozenGreedyStageComparisonBaseline = null;
     }
 
     // Improvement labels for greedy edge stages must remain stable across deferred materialization
@@ -324,15 +326,35 @@ partial class MainForm
         if (stage.Solution is null)
             return false;
 
-        if (!_incumbentStage.HasValue)
-            return false;
-
         PresentationStageCacheKey key = BuildPresentationStageCacheKey(stage);
         if (_frozenStageImprovementDecisions.TryGetValue(key, out bool cachedDecision))
             return cachedDecision;
 
-        bool improved = PipelineStageProtocol.IsImprovement(stage, _incumbentStage.Value);
+        StageResult? baseline = _frozenGreedyStageComparisonBaseline;
+        if (!baseline.HasValue
+            && _incumbentStage is { Solution: not null } incumbent)
+        {
+            baseline = incumbent;
+            _frozenGreedyStageComparisonBaseline = incumbent;
+        }
+
+        bool improved;
+        if (!baseline.HasValue)
+        {
+            // Defensive fallback: if no comparable baseline exists yet, treat the first solved stage
+            // as accepted so it can establish the progression baseline without a spurious marker.
+            improved = true;
+        }
+        else
+        {
+            improved = PipelineStageProtocol.IsImprovement(stage, baseline.Value);
+        }
+
         _frozenStageImprovementDecisions[key] = improved;
+
+        if (improved)
+            _frozenGreedyStageComparisonBaseline = stage;
+
         return improved;
     }
 
@@ -564,6 +586,12 @@ partial class MainForm
             && stage.Solution.Score.IsStrictRefinementOver(_greedyFeasibleStage.Value.Solution!.Score);
         if (_greedyIncumbentImproved)
             _incumbentStage = stage;
+
+        if (_frozenGreedyStageComparisonBaseline is null
+            && _incumbentStage is { Solution: not null } incumbent)
+        {
+            _frozenGreedyStageComparisonBaseline = incumbent;
+        }
 
         RecordRunTimeline("greedy preparation stage complete", stage.Skipped
             ? $"skipped (root probe), solve={stage.Timings.Solve.TotalMilliseconds:F1} ms"
@@ -1057,6 +1085,7 @@ partial class MainForm
         }
 
         _incumbentStage = provenStage;
+        _frozenGreedyStageComparisonBaseline = provenStage;
     }
 
     private void ShowStageModal(string message, bool hasPlan)
