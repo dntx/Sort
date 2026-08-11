@@ -98,17 +98,37 @@ partial class MainForm
     // suffixed with a marker (e.g. "no improvement"). When there is no plan the body collapses to the
     // marker note ("no solution" by default, or e.g. "search incomplete (candidate cap reached)").
     // Timings are stage-local wall-clock buckets.
+    private static string FormatAdaptiveElapsed(TimeSpan elapsed)
+    {
+        if (elapsed < TimeSpan.Zero)
+            elapsed = TimeSpan.Zero;
+
+        double ms = elapsed.TotalMilliseconds;
+        if (ms < 1000.0)
+        {
+            int roundedMs = ms > 0 ? Math.Max(1, (int)Math.Round(ms)) : 0;
+            return $"{roundedMs}ms";
+        }
+
+        double seconds = elapsed.TotalSeconds;
+        if (seconds < 10.0)
+            return $"{seconds:F2}s";
+        if (seconds < 100.0)
+            return $"{seconds:F1}s";
+        return $"{seconds:F0}s";
+    }
+
     private static string FormatStageElapsedText(TimeSpan elapsed, StageTimings? timings = null)
     {
         if (!timings.HasValue)
-            return $"elapsed={elapsed.TotalSeconds:F1}s";
+            return $"elapsed={FormatAdaptiveElapsed(elapsed)}";
 
         TimeSpan search = timings.Value.Solve + timings.Value.Freeze;
         TimeSpan build = timings.Value.Materialize;
         if (build <= TimeSpan.Zero)
-            return $"search {search.TotalSeconds:F1}s";
+            return $"search {FormatAdaptiveElapsed(search)}";
 
-        return $"search {search.TotalSeconds:F1}s, build {build.TotalSeconds:F1}s";
+        return $"search {FormatAdaptiveElapsed(search)}, build {FormatAdaptiveElapsed(build)}";
     }
 
     private static string FormatStageRootLabel(string stageName, TimeSpan elapsed, StrategyPlan? plan, string? marker = null, StageTimings? timings = null)

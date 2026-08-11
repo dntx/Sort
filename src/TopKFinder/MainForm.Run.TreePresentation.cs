@@ -29,7 +29,7 @@ partial class MainForm
         => $"{stageName} [{prefix}, stopped]";
 
     private static string FormatShortSeconds(TimeSpan elapsed)
-        => $"{elapsed.TotalSeconds:F1}s";
+        => FormatAdaptiveElapsed(elapsed);
 
     private TreeNode CreateSearchRunningPlaceholderNode(string stageName)
         => new(FormatSearchRunningPlaceholderText(stageName)) { ForeColor = _palette.MutedForeColor };

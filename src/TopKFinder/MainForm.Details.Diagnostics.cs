@@ -310,7 +310,7 @@ partial class MainForm
             foreach (SearchMilestone milestone in diagnostics.RootIncumbents)
             {
                 lines.Add(
-                    $"  {milestone.ElapsedMilliseconds / 1000.0:F1}s: max steps <= {milestone.BestWorstCaseSteps} via {milestone.ComparisonGroupText} " +
+                    $"  {FormatAdaptiveElapsed(TimeSpan.FromMilliseconds(milestone.ElapsedMilliseconds))}: max steps <= {milestone.BestWorstCaseSteps} via {milestone.ComparisonGroupText} " +
                     $"(searched {milestone.SearchedStates}, pending {milestone.PendingStates}, peak {milestone.PeakPendingStates}, output {milestone.OutputStates}, prunes {milestone.LowerBoundPrunes})");
             }
         }
@@ -338,7 +338,7 @@ partial class MainForm
             SearchMilestone latest = snapshot.LatestRootIncumbent;
             lines.Add($"latest incumbent: max steps <= {latest.BestWorstCaseSteps} via {latest.ComparisonGroupText}");
             lines.Add(
-                $"  found at t={latest.ElapsedMilliseconds / 1000.0:F1}s, searched={latest.SearchedStates}, output={latest.OutputStates}, prunes={latest.LowerBoundPrunes}");
+                $"  found at t={FormatAdaptiveElapsed(TimeSpan.FromMilliseconds(latest.ElapsedMilliseconds))}, searched={latest.SearchedStates}, output={latest.OutputStates}, prunes={latest.LowerBoundPrunes}");
         }
 
         lines.Add(string.Empty);
