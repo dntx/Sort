@@ -552,7 +552,7 @@ partial class MainForm
         EnsureStageDisplayOrder(stage.Name);
 
         string marker = stage.Skipped
-            ? "skipped (root probe)"
+            ? "skipped"
             : _greedyIncumbentImproved && stage.Solution is not null
                 ? $"search-only tightened to <= {stage.Solution.Score.WorstCaseSteps}"
                 : "search-only (no improvement)";
@@ -690,7 +690,7 @@ partial class MainForm
         => improved
             ? CreatePlanTreeRoot(stage.Name, stage.MaterializedPlan!, scope, stage.Elapsed, stage.Timings)
             : stage.Skipped
-                ? CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, "skipped (root probe)", stage.Timings)
+                ? CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, "skipped", stage.Timings)
             : stage.Solution is not null && !stage.HasPlan
                 ? CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, RenderSkippedNoImprovementMarker, stage.Timings)
             : stage.HasPlan
@@ -701,7 +701,7 @@ partial class MainForm
         => improved
             ? BuildOverviewSectionNode(stage.MaterializedPlan!, scope, stage.Name, stage.Elapsed, stage.Timings)
             : stage.Skipped
-                ? BuildOverviewNoteNode(FormatStageRootLabel(stage.Name, stage.Elapsed, plan: null, marker: "skipped (root probe)", timings: stage.Timings))
+                ? BuildOverviewNoteNode(FormatStageRootLabel(stage.Name, stage.Elapsed, plan: null, marker: "skipped", timings: stage.Timings))
             : stage.Solution is not null && !stage.HasPlan
                 ? BuildOverviewNoteNode(FormatStageRootLabel(stage.Name, stage.Elapsed, plan: null, marker: RenderSkippedNoImprovementMarker, timings: stage.Timings))
             : BuildOverviewNoteNode(FormatStageRootLabel(
@@ -715,7 +715,7 @@ partial class MainForm
     // otherwise the reason the incumbent merely stands -- "search incomplete (candidate cap reached)"
     // (the greedy cap truncated the enumeration, so infeasibility is unproven).
     private static string? NoSolutionMarker(StageResult stage)
-        => stage.Skipped ? "skipped (root probe)"
+        => stage.Skipped ? "skipped"
             : stage.Incomplete ? "search incomplete (candidate cap reached)"
             : null;
 
@@ -737,7 +737,7 @@ partial class MainForm
             StageResult stage = greedyTightenStage.Value;
             if (stage.Skipped)
             {
-                lines.Add($"{stage.Name}: skipped (root probe)");
+                lines.Add($"{stage.Name}: skipped");
             }
             else if (stage.MaterializedPlan is { } p)
             {
@@ -773,7 +773,7 @@ partial class MainForm
             }
             else if (stage.Skipped)
             {
-                lines.Add($"{stage.Name}: skipped (root probe)");
+                lines.Add($"{stage.Name}: skipped");
             }
             else if (stage.Solution is not null)
             {

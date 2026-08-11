@@ -599,7 +599,7 @@ partial class MainForm
         }
 
         RecordRunTimeline("pipeline/greedy-preparation-complete", stage.Skipped
-            ? $"skipped (root probe), solve={stage.Timings.Solve.TotalMilliseconds:F1} ms"
+            ? $"skipped, solve={stage.Timings.Solve.TotalMilliseconds:F1} ms"
             : $"{stage.Name}, solve={stage.Timings.Solve.TotalMilliseconds:F1} ms");
 
         // Keep greedy-tighten on the same UI lifecycle as proof-tighten stages so all greedy edge

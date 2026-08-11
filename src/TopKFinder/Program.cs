@@ -330,7 +330,7 @@ class Program
             }
             else
             {
-                stageSummaries.Add($"{StageNames.GreedyTighten}: skipped (root probe)");
+                stageSummaries.Add($"{StageNames.GreedyTighten}: skipped");
             }
             int emittedStages = 1 + (gtProbeRun ? 1 : 0);
             var incumbentStage = new StageResult(
