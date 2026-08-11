@@ -358,6 +358,11 @@ partial class MainForm
         return improved;
     }
 
+    // A stage needs display materialization only when it is a solved improvement that does not already
+    // carry a materialized plan. Non-improving solved stages are intentionally rendered as notes.
+    private static bool ShouldMaterializeStageForDisplay(StageResult stage, bool improved)
+        => improved && !stage.HasPlan && stage.Solution is not null;
+
     private StageResult? GetCachedPresentationStageResult(StageResult stage)
     {
         if (stage.Solution is null)
@@ -828,6 +833,7 @@ partial class MainForm
     private void OnProofTightenStage(StageResult stage)
     {
         bool improved = GetOrCreateFrozenStageImprovementDecision(stage);
+        bool needsDeferredMaterialization = ShouldMaterializeStageForDisplay(stage, improved);
 
         if (_feasiblePlan is null)
         {
@@ -845,8 +851,12 @@ partial class MainForm
             if (stage.Solution is null)
                 return;
 
-            MarkStageDisplayInProgress(stage);
-            QueueBufferedGreedyEdgeMaterialization(stage);
+            if (needsDeferredMaterialization)
+            {
+                MarkStageDisplayInProgress(stage);
+                QueueBufferedGreedyEdgeMaterialization(stage);
+            }
+
             return;
         }
 
@@ -856,7 +866,6 @@ partial class MainForm
         if (TryRenderSearchOnlySummaryStage(stage))
             return;
 
-        bool needsDeferredMaterialization = improved && !stage.HasPlan && stage.Solution is not null;
         if (!needsDeferredMaterialization)
             InvalidateActivePresentationRequest();
 

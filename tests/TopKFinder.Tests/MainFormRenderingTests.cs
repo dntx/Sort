@@ -467,6 +467,56 @@ public sealed class MainFormRenderingTests
     }
 
     [Fact]
+    public void OnProofTightenStage_NoImprovement_DoesNotQueueBufferedMaterialization()
+    {
+        using var form = new MainForm();
+        _ = form.Handle;
+
+        StrategyPlan feasiblePlan = new StrategyBuilder(8, 3, 3).ExecuteStepProofStage();
+        SolvedStrategy baselineSolution = CreateDeferredExactStepStage().Solution
+            ?? throw new InvalidOperationException("Expected deferred stage solution.");
+
+        StageResult baselineStage = new(
+            StageNames.GreedyFeasible,
+            feasiblePlan,
+            feasiblePlan.Elapsed,
+            StageOutcome.Completed,
+            baselineSolution,
+            StageTimings.Legacy(feasiblePlan.Elapsed));
+
+        InvokePrivateInstanceVoid(form, "ShowInitialStagePlaceholder", 8, 3, 3, true);
+        SetPrivateField(form, "_feasiblePlan", null);
+        SetPrivateField(form, "_greedyFeasibleStage", baselineStage);
+        SetPrivateField(form, "_incumbentStage", baselineStage);
+        SetPrivateField(form, "_frozenGreedyStageComparisonBaseline", baselineStage);
+
+        StageResult nonImprovingStage = new(
+            StageNames.FormatGreedyEdgeCompact(feasiblePlan.MaxStep),
+            materializedPlan: null,
+            elapsed: TimeSpan.FromMilliseconds(5),
+            outcome: StageOutcome.Completed,
+            solution: baselineSolution,
+            timings: StageTimings.Legacy(TimeSpan.FromMilliseconds(5)));
+
+        // Ensure the stage is not an improvement against the baseline.
+        Assert.False(PipelineStageProtocol.IsImprovement(nonImprovingStage, baselineStage));
+
+        InvokePrivateInstanceVoid(form, "OnProofTightenStage", nonImprovingStage);
+
+        HashSet<string> inFlight = GetPrivateField<HashSet<string>>(form, "_inFlightGreedyEdgeMaterializationNames");
+        List<Task> bufferedTasks = GetPrivateField<List<Task>>(form, "_bufferedGreedyEdgeMaterializationTasks");
+        Assert.DoesNotContain(nonImprovingStage.Name, inFlight);
+        Assert.Empty(bufferedTasks);
+
+        InvokePrivateInstanceVoid(form, "ApplyMaterializedInitialGreedyStage", baselineStage);
+        TreeView tree = GetPrivateField<TreeView>(form, "_treeView");
+        TreeNode root = tree.Nodes[0];
+        Assert.Contains(root.Nodes.Cast<TreeNode>(), node =>
+            node.Text.StartsWith(nonImprovingStage.Name + ":", StringComparison.Ordinal)
+            && node.Text.Contains("render skipped (no improvement)", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void OnProofTightenStage_BuffersUntilInitialGreedyStageMaterialized()
     {
         StrategyPlan feasiblePlan = new StrategyBuilder(8, 3, 3).ExecuteStepProofStage();
