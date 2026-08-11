@@ -7,20 +7,20 @@ namespace TopKFinder;
 
 partial class MainForm
 {
-    private const string RenderSkippedNoImprovementMarker = "render skipped (no improvement)";
+    private const string RenderSkippedNoImprovementMarker = "tree display skipped (no improvement)";
     private const string SearchRunningSuffix = " [searching]";
-    private const string DisplayRunningSuffix = ", building tree]";
-    private const string DisplayPendingSuffix = ", tree queued]";
+    private const string TreeBuildingSuffix = ", building tree]";
+    private const string TreeReadySuffix = ", tree ready]";
     private const string StoppedSuffix = " [stopped]";
 
     private static string FormatSearchRunningPlaceholderText(string stageName)
         => stageName + SearchRunningSuffix;
 
-    private static string FormatDisplayRunningPlaceholderText(string stageName, StageTimings timings)
-        => $"{stageName} [{FormatShortSeconds(timings.Solve + timings.Freeze)} searched{DisplayRunningSuffix}";
+    private static string FormatTreeBuildingPlaceholderText(string stageName, StageTimings timings)
+        => $"{stageName} [{FormatShortSeconds(timings.Solve + timings.Freeze)} searched{TreeBuildingSuffix}";
 
-    private static string FormatDisplayPendingPlaceholderText(string stageName, StageTimings timings)
-        => $"{stageName} [{FormatShortSeconds(timings.Solve + timings.Freeze)} searched, {FormatShortSeconds(timings.Materialize)} built{DisplayPendingSuffix}";
+    private static string FormatTreeReadyPlaceholderText(string stageName, StageTimings timings)
+        => $"{stageName} [{FormatShortSeconds(timings.Solve + timings.Freeze)} searched, {FormatShortSeconds(timings.Materialize)} built{TreeReadySuffix}";
 
     private static string FormatStoppedPlaceholderText(string stageName)
         => stageName + StoppedSuffix;
@@ -37,16 +37,16 @@ partial class MainForm
     private static bool IsSearchRunningPlaceholderText(string text)
         => text.EndsWith(SearchRunningSuffix, StringComparison.Ordinal);
 
-    private static bool IsDisplayRunningPlaceholderText(string text)
-        => text.EndsWith(DisplayRunningSuffix, StringComparison.Ordinal);
+    private static bool IsTreeBuildingPlaceholderText(string text)
+        => text.EndsWith(TreeBuildingSuffix, StringComparison.Ordinal);
 
-    private static bool IsDisplayPendingPlaceholderText(string text)
-        => text.EndsWith(DisplayPendingSuffix, StringComparison.Ordinal);
+    private static bool IsTreeReadyPlaceholderText(string text)
+        => text.EndsWith(TreeReadySuffix, StringComparison.Ordinal);
 
     private static bool IsAnyStageStatusPlaceholderText(string text)
         => IsSearchRunningPlaceholderText(text)
-            || IsDisplayRunningPlaceholderText(text)
-            || IsDisplayPendingPlaceholderText(text)
+            || IsTreeBuildingPlaceholderText(text)
+            || IsTreeReadyPlaceholderText(text)
             || text.EndsWith(StoppedSuffix, StringComparison.Ordinal);
 
     private static bool IsStageStatusPlaceholderForStage(string text, string stageName)
@@ -66,7 +66,7 @@ partial class MainForm
         return split > 0 ? text[..split] : text;
     }
 
-    private static bool TryExtractDisplayPlaceholderPrefix(string text, out string prefix)
+    private static bool TryExtractTreeStatusPlaceholderPrefix(string text, out string prefix)
     {
         prefix = string.Empty;
         int open = text.IndexOf(" [", StringComparison.Ordinal);
@@ -74,13 +74,13 @@ partial class MainForm
             return false;
 
         int suffixLength;
-        if (IsDisplayRunningPlaceholderText(text))
+        if (IsTreeBuildingPlaceholderText(text))
         {
-            suffixLength = DisplayRunningSuffix.Length;
+            suffixLength = TreeBuildingSuffix.Length;
         }
-        else if (IsDisplayPendingPlaceholderText(text))
+        else if (IsTreeReadyPlaceholderText(text))
         {
-            suffixLength = DisplayPendingSuffix.Length;
+            suffixLength = TreeReadySuffix.Length;
         }
         else
         {
@@ -99,55 +99,13 @@ partial class MainForm
     private static bool IsStageRootNodeText(string text, string stageName)
         => text.StartsWith(stageName + ":", StringComparison.Ordinal);
 
-    private int EnsureStageDisplayOrder(string stageName)
-    {
-        if (_stageDisplayOrder.TryGetValue(stageName, out int order))
-            return order;
-
-        order = _nextStageDisplayOrder++;
-        _stageDisplayOrder[stageName] = order;
-        return order;
-    }
-
-    private bool TryExtractListedStageName(string text, out string stageName)
-    {
-        int statusSplit = text.IndexOf(" [", StringComparison.Ordinal);
-        int rootSplit = text.IndexOf(':');
-
-        // Prefer the explicit root-stage prefix (<stage>: ...) when it appears before any
-        // status suffix. This keeps names like "greedy-tighten: [search ...]" normalized to
-        // "greedy-tighten" instead of accidentally including the trailing colon.
-        if (rootSplit > 0 && (statusSplit < 0 || rootSplit < statusSplit))
-        {
-            stageName = text[..rootSplit];
-            return true;
-        }
-
-        if (statusSplit > 0)
-        {
-            stageName = text[..statusSplit];
-            if (stageName.EndsWith(":", StringComparison.Ordinal))
-                stageName = stageName[..^1];
-            return true;
-        }
-
-        if (rootSplit > 0)
-        {
-            stageName = text[..rootSplit];
-            return true;
-        }
-
-        stageName = string.Empty;
-        return false;
-    }
-
     private static int StageStatusRank(string text)
     {
         if (IsSearchRunningPlaceholderText(text))
             return 1;
-        if (IsDisplayRunningPlaceholderText(text))
+        if (IsTreeBuildingPlaceholderText(text))
             return 2;
-        if (IsDisplayPendingPlaceholderText(text))
+        if (IsTreeReadyPlaceholderText(text))
             return 3;
         if (text.EndsWith(StoppedSuffix, StringComparison.Ordinal))
             return 4;
@@ -178,23 +136,6 @@ partial class MainForm
         }
     }
 
-    private int FindStageInsertIndex(TreeNodeCollection nodes, string stageName)
-    {
-        int targetOrder = EnsureStageDisplayOrder(stageName);
-        for (int i = 0; i < nodes.Count; i++)
-        {
-            TreeNode node = nodes[i];
-            if (!TryExtractListedStageName(node.Text, out string listedStageName))
-                continue;
-
-            int listedOrder = EnsureStageDisplayOrder(listedStageName);
-            if (listedOrder > targetOrder)
-                return i;
-        }
-
-        return nodes.Count;
-    }
-
     private void InsertOrReplaceStageNode(TreeNodeCollection nodes, TreeNode stageNode, string stageName)
     {
         for (int i = 0; i < nodes.Count; i++)
@@ -207,11 +148,9 @@ partial class MainForm
             }
         }
 
-        int insertIndex = FindStageInsertIndex(nodes, stageName);
-        if (insertIndex < nodes.Count)
-            nodes.Insert(insertIndex, stageNode);
-        else
-            nodes.Add(stageNode);
+        // Completion-order semantics: a first-time concrete stage node is appended at the time
+        // it actually lands, not re-ordered back to when search started.
+        nodes.Add(stageNode);
     }
 
     private void UpsertStagePlaceholder(TreeNodeCollection nodes, string stageName, string placeholderText)
@@ -237,11 +176,7 @@ partial class MainForm
         }
 
         TreeNode placeholderNode = new(placeholderText) { ForeColor = _palette.MutedForeColor };
-        int insertIndex = FindStageInsertIndex(nodes, stageName);
-        if (insertIndex < nodes.Count)
-            nodes.Insert(insertIndex, placeholderNode);
-        else
-            nodes.Add(placeholderNode);
+        nodes.Add(placeholderNode);
     }
 
     private void EnsureLatestStageSearchPlaceholder(string stageName)
@@ -259,12 +194,12 @@ partial class MainForm
         _overviewTree.EndUpdate();
     }
 
-    private void MarkStageDisplayInProgress(StageResult stage)
+    private void MarkStageTreeBuilding(StageResult stage)
     {
-        MarkStageDisplayInProgress(stage.Name, stage.Timings.Solve + stage.Timings.Freeze);
+        MarkStageTreeBuilding(stage.Name, stage.Timings.Solve + stage.Timings.Freeze);
     }
 
-    private void MarkStageDisplayInProgress(string stageName, TimeSpan searchElapsed)
+    private void MarkStageTreeBuilding(string stageName, TimeSpan searchElapsed)
     {
         StageTimings timings = StageTimings.Legacy(searchElapsed);
         if (_treeView.Nodes.Count == 0)
@@ -272,26 +207,26 @@ partial class MainForm
 
         TreeNode root = _treeView.Nodes[0];
         _treeView.BeginUpdate();
-        UpsertStagePlaceholder(root.Nodes, stageName, FormatDisplayRunningPlaceholderText(stageName, timings));
+        UpsertStagePlaceholder(root.Nodes, stageName, FormatTreeBuildingPlaceholderText(stageName, timings));
         _treeView.EndUpdate();
 
         _overviewTree.BeginUpdate();
-        UpsertStagePlaceholder(_overviewTree.Nodes, stageName, FormatDisplayRunningPlaceholderText(stageName, timings));
+        UpsertStagePlaceholder(_overviewTree.Nodes, stageName, FormatTreeBuildingPlaceholderText(stageName, timings));
         _overviewTree.EndUpdate();
     }
 
-    private void MarkStageDisplayPending(StageResult stage)
+    private void MarkStageTreeReady(StageResult stage)
     {
         if (_treeView.Nodes.Count == 0)
             return;
 
         _treeView.BeginUpdate();
         TreeNode root = _treeView.Nodes[0];
-        UpsertStagePlaceholder(root.Nodes, stage.Name, FormatDisplayPendingPlaceholderText(stage.Name, stage.Timings));
+        UpsertStagePlaceholder(root.Nodes, stage.Name, FormatTreeReadyPlaceholderText(stage.Name, stage.Timings));
         _treeView.EndUpdate();
 
         _overviewTree.BeginUpdate();
-        UpsertStagePlaceholder(_overviewTree.Nodes, stage.Name, FormatDisplayPendingPlaceholderText(stage.Name, stage.Timings));
+        UpsertStagePlaceholder(_overviewTree.Nodes, stage.Name, FormatTreeReadyPlaceholderText(stage.Name, stage.Timings));
         _overviewTree.EndUpdate();
     }
 
@@ -329,7 +264,7 @@ partial class MainForm
             return false;
 
         string stageName = PlaceholderStageName(tail.Text);
-        tail.Text = TryExtractDisplayPlaceholderPrefix(tail.Text, out string prefix)
+        tail.Text = TryExtractTreeStatusPlaceholderPrefix(tail.Text, out string prefix)
             ? FormatStoppedPlaceholderText(stageName, prefix)
             : IsSearchRunningPlaceholderText(tail.Text)
                 ? FormatStoppedPlaceholderText(stageName, $"{FormatShortSeconds(GetCurrentStageElapsed())} searched")
@@ -382,8 +317,8 @@ partial class MainForm
     // Defensive cleanup after a normal (non-stopped) greedy run: RunGreedyPipeline always ends
     // by emitting the terminal EdgeCompact stage, whose handler appends no follow-up placeholder. But the
     // should-not-happen fallback (edgePlan null) returns without that final emission, which would leave
-    // the last edge-compact pending/running placeholder stranded. Drop any such trailing placeholder so a
-    // finished run never shows a running/pending node.
+    // the last edge-compact ready/running placeholder stranded. Drop any such trailing placeholder so a
+    // finished run never shows a running/ready node.
     private void RemoveTrailingComputingPlaceholder()
     {
         if (_treeView.Nodes.Count > 0)
@@ -550,7 +485,6 @@ partial class MainForm
     {
         if (_treeView.Nodes.Count == 0)
             return;
-        EnsureStageDisplayOrder(stage.Name);
 
         string marker = stage.Skipped
             ? "skipped (root probe)"
@@ -643,7 +577,7 @@ partial class MainForm
     // Incrementally folds the finished compact result into the already-rendered tree instead of
     // rebuilding from scratch. The step subtree (root.Nodes[0]) -- along with its navigation map
     // entries -- is left untouched, so a user mid-browse keeps their expand/scroll/selection state.
-    // Only the transient compact pending/running placeholder (root.Nodes[1]) is replaced -- either with
+    // Only the transient compact ready/running placeholder (root.Nodes[1]) is replaced -- either with
     // the compact subtree (a sibling scoped "compact" so its state keys never collide) when it improved,
     // or with a "no solution" note when it did not.
     private void FinalizeCompactInTree(StrategyPlan defaultPlan, StrategyPlan compactPlan, bool compactImproved)

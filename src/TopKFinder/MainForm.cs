@@ -186,11 +186,9 @@ partial class MainForm : Form
     // each tightening, plus a terminal no-solution stage). The current-stage name and the run-clock ms
     // at which the current stage began drive the per-stage timing/labels in the progress panel.
     private readonly List<StageResult> _proofTightenStages = new();
-    private readonly List<StageResult> _pendingGreedyEdgeStages = new();
-    private readonly HashSet<string> _inFlightGreedyEdgeMaterializationNames = new(StringComparer.Ordinal);
-    private readonly List<Task> _bufferedGreedyEdgeMaterializationTasks = new();
-    private readonly Dictionary<string, int> _stageDisplayOrder = new(StringComparer.Ordinal);
-    private int _nextStageDisplayOrder;
+    private readonly List<StageResult> _readyGreedyEdgeStages = new();
+    private readonly HashSet<string> _materializingGreedyEdgeStageNames = new(StringComparer.Ordinal);
+    private readonly List<Task> _greedyEdgeTreeMaterializationTasks = new();
     private bool _solverWorkStopped;
     private string _currentStageName = "-";
     private long _stageStartMs;

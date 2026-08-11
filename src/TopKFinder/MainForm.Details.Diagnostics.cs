@@ -74,18 +74,55 @@ partial class MainForm
             return "Timeline: (no events captured yet)";
 
         var lines = new List<string> { "Timeline:" };
-        int start = Math.Max(0, events.Count - 12);
+        int start = Math.Max(0, events.Count - 16);
         long? previousElapsed = null;
+
+        // Keep recent-window timing semantics but present entries grouped by domain prefix
+        // (run/pipeline/worker/presentation/ui) for faster visual scanning.
+        var grouped = new Dictionary<string, List<(RunTimelineEvent Entry, long DeltaMs)>>();
+        foreach (string key in new[] { "run", "pipeline", "worker", "presentation", "ui", "other" })
+            grouped[key] = new List<(RunTimelineEvent, long)>();
+
         for (int i = start; i < events.Count; i++)
         {
             RunTimelineEvent entry = events[i];
             long deltaMs = previousElapsed is null ? entry.ElapsedMilliseconds : entry.ElapsedMilliseconds - previousElapsed.Value;
-            string detailText = string.IsNullOrWhiteSpace(entry.Detail) ? string.Empty : $" ({entry.Detail})";
-            lines.Add($"  +{deltaMs / 1000.0:F3}s @ {entry.ElapsedMilliseconds / 1000.0:F3}s: {entry.Label}{detailText}");
+            string prefix = ExtractTimelinePrefix(entry.Label);
+            if (!grouped.ContainsKey(prefix))
+                prefix = "other";
+
+            grouped[prefix].Add((entry, deltaMs));
             previousElapsed = entry.ElapsedMilliseconds;
         }
 
+        foreach (string group in new[] { "run", "pipeline", "worker", "presentation", "ui", "other" })
+        {
+            List<(RunTimelineEvent Entry, long DeltaMs)> entries = grouped[group];
+            if (entries.Count == 0)
+                continue;
+
+            lines.Add($"  [{group}]");
+            foreach ((RunTimelineEvent entry, long deltaMs) in entries)
+            {
+                string detailText = string.IsNullOrWhiteSpace(entry.Detail) ? string.Empty : $" ({entry.Detail})";
+                string shortLabel = ShortTimelineLabel(entry.Label);
+                lines.Add($"    +{deltaMs / 1000.0:F3}s @ {entry.ElapsedMilliseconds / 1000.0:F3}s: {shortLabel}{detailText}");
+            }
+        }
+
         return string.Join(Environment.NewLine, lines);
+    }
+
+    private static string ExtractTimelinePrefix(string label)
+    {
+        int split = label.IndexOf('/');
+        return split <= 0 ? "other" : label[..split].ToLowerInvariant();
+    }
+
+    private static string ShortTimelineLabel(string label)
+    {
+        int split = label.IndexOf('/');
+        return split < 0 || split + 1 >= label.Length ? label : label[(split + 1)..];
     }
 
     private static string FormatStageRecord(StageResult? stage)
