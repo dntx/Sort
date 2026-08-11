@@ -330,7 +330,14 @@ partial class MainForm
         if (_frozenStageImprovementDecisions.TryGetValue(key, out bool cachedDecision))
             return cachedDecision;
 
-        StageResult? baseline = _frozenGreedyStageComparisonBaseline;
+        StageResult? baseline = null;
+        if (IsGreedyEdgeCompactStage(stage)
+            && TryResolveGreedyEdgeComparisonBaseline(stage, out StageResult resolvedGreedyEdgeBaseline))
+        {
+            baseline = resolvedGreedyEdgeBaseline;
+        }
+
+        baseline ??= _frozenGreedyStageComparisonBaseline;
         if (!baseline.HasValue
             && _incumbentStage is { Solution: not null } incumbent)
         {
@@ -356,6 +363,52 @@ partial class MainForm
             _frozenGreedyStageComparisonBaseline = stage;
 
         return improved;
+    }
+
+    private static bool IsGreedyEdgeCompactStage(StageResult stage)
+        => stage.Name.StartsWith(StageNames.GreedyEdgeCompactPrefix, StringComparison.Ordinal);
+
+    // Edge-compact should compare against the latest proof-tighten stage for this run when available.
+    // In deferred UI flow the proof stage may still be in the ready buffer when edge-compact lands.
+    private bool TryResolveGreedyEdgeComparisonBaseline(StageResult stage, out StageResult baseline)
+    {
+        baseline = default;
+        if (stage.Solution is null)
+            return false;
+
+        int edgeStep = stage.Solution.Score.WorstCaseSteps;
+        StageResult? best = null;
+
+        void consider(StageResult candidate)
+        {
+            if (candidate.Solution is null
+                || !candidate.Name.StartsWith(StageNames.ProofTightenPrefix, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            int candidateStep = candidate.Solution.Score.WorstCaseSteps;
+            if (candidateStep > edgeStep)
+                return;
+
+            if (!best.HasValue
+                || candidateStep > best.Value.Solution!.Score.WorstCaseSteps)
+            {
+                best = candidate;
+            }
+        }
+
+        for (int i = 0; i < _proofTightenStages.Count; i++)
+            consider(_proofTightenStages[i]);
+
+        for (int i = 0; i < _readyGreedyEdgeStages.Count; i++)
+            consider(_readyGreedyEdgeStages[i]);
+
+        if (!best.HasValue)
+            return false;
+
+        baseline = best.Value;
+        return true;
     }
 
     // A stage needs display materialization only when it is a solved improvement that does not already
