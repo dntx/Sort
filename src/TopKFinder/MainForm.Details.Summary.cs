@@ -50,7 +50,7 @@ partial class MainForm
         {
             double seconds = ComputeDisplayedTotalElapsedSeconds(feasiblePlan, defaultPlan, compactPlan: null);
             _statusLabel.Text =
-                $"{head}, step max={defaultPlan.MaxStep}, elapsed={seconds:F3} s. Search {StageNames.ExactEdgeCompactPattern} stage...";
+                $"{head}, step max={defaultPlan.MaxStep}, elapsed={FormatAdaptiveElapsed(TimeSpan.FromSeconds(seconds))}. Search {StageNames.ExactEdgeCompactPattern} stage...";
             return;
         }
 
@@ -63,7 +63,7 @@ partial class MainForm
         else
             compactText = $"compact produced no better result (step total edges {defaultPlan.TotalBranchEdges}, compact {compactPlan.TotalBranchEdges})";
         _statusLabel.Text =
-            $"{head}, total elapsed={totalElapsedSeconds:F3} s, " +
+            $"{head}, total elapsed={FormatAdaptiveElapsed(TimeSpan.FromSeconds(totalElapsedSeconds))}, " +
             $"max steps={compactPlan.MaxStep}, {compactText}.";
     }
 
