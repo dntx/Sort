@@ -320,14 +320,20 @@ partial class MainForm
     }
 
     // Improvement labels for greedy edge stages must remain stable across deferred materialization
-    // re-entry. Freeze the decision on first UI ingress and reuse it for later callbacks.
+    // re-entry, but only after a stable baseline exists. During pre-feasible buffering, callbacks can
+    // arrive before the proof-tighten baseline is visible to the UI; defer freezing for that window so
+    // replay can evaluate against the actual proof baseline.
     private bool GetOrCreateFrozenStageImprovementDecision(StageResult stage)
     {
         if (stage.Solution is null)
             return false;
 
+        bool deferFreeze = IsGreedyEdgeCompactStage(stage)
+            && _feasiblePlan is null;
+
         PresentationStageCacheKey key = BuildPresentationStageCacheKey(stage);
-        if (_frozenStageImprovementDecisions.TryGetValue(key, out bool cachedDecision))
+        if (!deferFreeze
+            && _frozenStageImprovementDecisions.TryGetValue(key, out bool cachedDecision))
             return cachedDecision;
 
         StageResult? baseline = null;
@@ -357,12 +363,31 @@ partial class MainForm
             improved = PipelineStageProtocol.IsImprovement(stage, baseline.Value);
         }
 
-        _frozenStageImprovementDecisions[key] = improved;
+        RecordStageImprovementDecision(stage, baseline, improved, deferFreeze);
+
+        if (!deferFreeze)
+            _frozenStageImprovementDecisions[key] = improved;
 
         if (improved)
             _frozenGreedyStageComparisonBaseline = stage;
 
         return improved;
+    }
+
+    private void RecordStageImprovementDecision(StageResult stage, StageResult? baseline, bool improved, bool deferFreeze)
+    {
+        if (stage.Solution is null)
+            return;
+
+        string stageScore = $"{stage.Solution.Score.WorstCaseSteps}/{stage.Solution.Score.SearchEdgeCost?.ToString() ?? "-"}";
+        string baselineName = baseline?.Name ?? "-";
+        string baselineScore = baseline is { Solution: { } baselineSolution }
+            ? $"{baselineSolution.Score.WorstCaseSteps}/{baselineSolution.Score.SearchEdgeCost?.ToString() ?? "-"}"
+            : "-";
+
+        RecordRunTimeline(
+            "ui/stage-improvement-evaluated",
+            $"stage={stage.Name}, stageScore={stageScore}, baseline={baselineName}, baselineScore={baselineScore}, improved={improved}, deferFreeze={deferFreeze}, hasPlan={stage.HasPlan}, feasibleReady={_feasiblePlan is not null}");
     }
 
     private static bool IsGreedyEdgeCompactStage(StageResult stage)
