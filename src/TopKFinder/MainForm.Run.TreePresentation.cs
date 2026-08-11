@@ -619,7 +619,7 @@ partial class MainForm
         if (compactPlan is null)
         {
             double seconds = ComputeFallbackTotalElapsedSeconds(feasiblePlan, defaultPlan, compactPlan: null);
-            return $"{head}, max steps={defaultPlan.MaxStep}, elapsed={seconds:F3} s (search {StageNames.ExactEdgeCompactPattern} stage...)";
+            return $"{head}, max steps={defaultPlan.MaxStep}, elapsed={FormatAdaptiveElapsed(TimeSpan.FromSeconds(seconds))} (search {StageNames.ExactEdgeCompactPattern} stage...)";
         }
         double totalSeconds = ComputeFallbackTotalElapsedSeconds(feasiblePlan, defaultPlan, compactPlan);
         // Lead with the optimality squeeze on the best plan: once the final tightening proves the next
@@ -627,7 +627,7 @@ partial class MainForm
         // its max-step and this reads "max steps = N (proven optimal)" -- the headline signal that the
         // search is done and the step count is provably best. While still tightening it reads
         // "L <= max steps <= U".
-        return $"{head}, {FormatPlanSqueeze(compactPlan)}, total elapsed={totalSeconds:F3} s";
+        return $"{head}, {FormatPlanSqueeze(compactPlan)}, total elapsed={FormatAdaptiveElapsed(TimeSpan.FromSeconds(totalSeconds))}";
     }
 
     private static string BuildRootDetails(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool compactImproved)
