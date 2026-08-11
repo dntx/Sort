@@ -189,6 +189,8 @@ partial class MainForm : Form
     private readonly List<StageResult> _readyGreedyEdgeStages = new();
     private readonly HashSet<string> _materializingGreedyEdgeStageNames = new(StringComparer.Ordinal);
     private readonly List<Task> _greedyEdgeTreeMaterializationTasks = new();
+    private readonly Dictionary<string, int> _stageDisplayOrder = new(StringComparer.Ordinal);
+    private int _nextStageDisplayOrder;
     private bool _solverWorkStopped;
     private string _currentStageName = "-";
     private long _stageStartMs;

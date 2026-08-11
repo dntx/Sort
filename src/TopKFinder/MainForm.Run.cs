@@ -120,10 +120,13 @@ partial class MainForm
         _readyGreedyEdgeStages.Clear();
         _materializingGreedyEdgeStageNames.Clear();
         _greedyEdgeTreeMaterializationTasks.Clear();
+        _stageDisplayOrder.Clear();
+        _nextStageDisplayOrder = 0;
         _solverWorkStopped = false;
         ResetPresentationInfrastructure();
         _pauseEachStageForRun = _pauseEachStageCheckBox.Checked;
         _currentStageName = request.FeasibleMode ? StageNames.GreedyFeasible : StageNames.StepProof;
+        EnsureStageDisplayOrder(_currentStageName);
         _stageStartMs = 0;
 
         ClearResultsView();
@@ -609,6 +612,7 @@ partial class MainForm
         // Simplified run headline semantics: once a new stage starts searching, treat the previous
         // one as finished for the single "current stage" clock and progress header.
         RecordRunTimeline("ui/stage-search-started", stageName);
+        EnsureStageDisplayOrder(stageName);
         _currentStageName = stageName;
         _stageStartMs = _runStopwatch?.ElapsedMilliseconds ?? 0;
         UpdateInitialRootSearchStage(stageName);

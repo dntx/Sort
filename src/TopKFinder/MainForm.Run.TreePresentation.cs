@@ -99,6 +99,47 @@ partial class MainForm
     private static bool IsStageRootNodeText(string text, string stageName)
         => text.StartsWith(stageName + ":", StringComparison.Ordinal);
 
+    private int EnsureStageDisplayOrder(string stageName)
+    {
+        if (_stageDisplayOrder.TryGetValue(stageName, out int order))
+            return order;
+
+        order = _nextStageDisplayOrder++;
+        _stageDisplayOrder[stageName] = order;
+        return order;
+    }
+
+    private bool TryExtractListedStageName(string text, out string stageName)
+    {
+        int statusSplit = text.IndexOf(" [", StringComparison.Ordinal);
+        int rootSplit = text.IndexOf(':');
+
+        // Prefer explicit root-stage prefix (<stage>: ...) when it appears before any
+        // status suffix so labels like "greedy-tighten: [...]" normalize correctly.
+        if (rootSplit > 0 && (statusSplit < 0 || rootSplit < statusSplit))
+        {
+            stageName = text[..rootSplit];
+            return true;
+        }
+
+        if (statusSplit > 0)
+        {
+            stageName = text[..statusSplit];
+            if (stageName.EndsWith(":", StringComparison.Ordinal))
+                stageName = stageName[..^1];
+            return true;
+        }
+
+        if (rootSplit > 0)
+        {
+            stageName = text[..rootSplit];
+            return true;
+        }
+
+        stageName = string.Empty;
+        return false;
+    }
+
     private static int StageStatusRank(string text)
     {
         if (IsSearchRunningPlaceholderText(text))
@@ -136,6 +177,23 @@ partial class MainForm
         }
     }
 
+    private int FindStageInsertIndex(TreeNodeCollection nodes, string stageName)
+    {
+        int targetOrder = EnsureStageDisplayOrder(stageName);
+        for (int i = 0; i < nodes.Count; i++)
+        {
+            TreeNode node = nodes[i];
+            if (!TryExtractListedStageName(node.Text, out string listedStageName))
+                continue;
+
+            int listedOrder = EnsureStageDisplayOrder(listedStageName);
+            if (listedOrder > targetOrder)
+                return i;
+        }
+
+        return nodes.Count;
+    }
+
     private void InsertOrReplaceStageNode(TreeNodeCollection nodes, TreeNode stageNode, string stageName)
     {
         for (int i = 0; i < nodes.Count; i++)
@@ -148,9 +206,11 @@ partial class MainForm
             }
         }
 
-        // Completion-order semantics: a first-time concrete stage node is appended at the time
-        // it actually lands, not re-ordered back to when search started.
-        nodes.Add(stageNode);
+        int insertIndex = FindStageInsertIndex(nodes, stageName);
+        if (insertIndex < nodes.Count)
+            nodes.Insert(insertIndex, stageNode);
+        else
+            nodes.Add(stageNode);
     }
 
     private void UpsertStagePlaceholder(TreeNodeCollection nodes, string stageName, string placeholderText)
@@ -176,7 +236,11 @@ partial class MainForm
         }
 
         TreeNode placeholderNode = new(placeholderText) { ForeColor = _palette.MutedForeColor };
-        nodes.Add(placeholderNode);
+        int insertIndex = FindStageInsertIndex(nodes, stageName);
+        if (insertIndex < nodes.Count)
+            nodes.Insert(insertIndex, placeholderNode);
+        else
+            nodes.Add(placeholderNode);
     }
 
     private void EnsureLatestStageSearchPlaceholder(string stageName)
@@ -485,6 +549,7 @@ partial class MainForm
     {
         if (_treeView.Nodes.Count == 0)
             return;
+        EnsureStageDisplayOrder(stage.Name);
 
         string marker = stage.Skipped
             ? "skipped (root probe)"

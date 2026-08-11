@@ -44,7 +44,7 @@ UI 使用与 CLI 相同的阶段名展示进度：
 
 说明：早期仅使用静态后缀；当前实现会在相关状态中携带阶段耗时，便于运行期观察。
 
-阶段一旦有真实树节点落地，对应状态占位就会移除，因此同一个 stage 在树里始终只保留一条可见记录。greedy 流水线可能产生多个 tightening 阶段；这些阶段在 tree / overview 中按“完成即展示”的时间顺序落地，哪个阶段先完成物化就先出现。
+阶段一旦有真实树节点落地，对应状态占位就会移除，因此同一个 stage 在树里始终只保留一条可见记录。greedy 流水线可能产生多个 tightening 阶段；这些阶段在 tree / overview 中按 stage 启动顺序稳定显示，而不是按树构建完成先后重排。
 
 在首个真实 stage 树节点出现前，根节点标题中的 `search <stage> stage...` 文案会跟随当前最新启动的 stage 更新，因此例如 greedy 模式会先显示 `greedy-feasible`，随后切到 `proof-tighten≤N` 或 `greedy-edge-compact@S`，而不会停留在初始阶段名。
 
