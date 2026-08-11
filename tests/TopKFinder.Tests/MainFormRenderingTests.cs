@@ -958,8 +958,11 @@ public sealed class MainFormRenderingTests
         List<StageResult> buffered = GetPrivateField<List<StageResult>>(form, "_readyGreedyEdgeStages");
         Assert.Contains(buffered, stage => string.Equals(stage.Name, StageNames.GreedyTighten, StringComparison.Ordinal));
 
+        // This test validates callback routing/state updates, not background materialization throughput.
+        // Reset presentation infra to cancel in-flight work, then verify drain is non-blocking.
+        InvokePrivateInstanceVoid(form, "ResetPresentationInfrastructure");
         Task drain = InvokePrivateInstance<Task>(form, "DrainPresentationTasksAsync");
-        PumpUiUntilTaskCompletes(drain, timeoutMs: 5000);
+        PumpUiUntilTaskCompletes(drain, timeoutMs: 1000);
         await drain;
     }
 
