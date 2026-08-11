@@ -850,6 +850,15 @@ partial class MainForm
     private void OnProofTightenStage(StageResult stage)
     {
         bool improved = GetOrCreateFrozenStageImprovementDecision(stage);
+
+        // Objective incumbent should advance as soon as an improving solved stage is known,
+        // even if tree materialization is still pending.
+        if (improved && stage.Solution is not null)
+        {
+            _incumbentStage = stage;
+            _greedyIncumbentImproved = true;
+        }
+
         bool needsDeferredMaterialization = ShouldMaterializeStageForDisplay(stage, improved);
 
         if (_feasiblePlan is null)
@@ -883,13 +892,10 @@ partial class MainForm
         if (TryRenderSearchOnlySummaryStage(stage))
             return;
 
-        if (!needsDeferredMaterialization)
-            InvalidateActivePresentationRequest();
-
         if (needsDeferredMaterialization)
         {
             MarkStageTreeBuilding(stage);
-            StartStageTreeMaterialization(stage, OnProofTightenStage);
+            StartGreedyEdgeTreeMaterialization(stage);
             return;
         }
 
