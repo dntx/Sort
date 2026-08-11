@@ -29,19 +29,22 @@ UI 使用与 CLI 相同的阶段名展示进度：
 当阶段尚在运行时，tree / overview 会显示阶段状态占位，而不是笼统的 `computing...`：
 
 - 搜索进行中显示 `searching`
-- 该阶段已完成求解、正在物化/渲染树时显示 `rendering`
+- 该阶段已完成求解、正在构建树时显示 `building tree`
+- 树已构建完成、等待 UI 落地时显示 `tree ready`
 - 若用户中止，尚未落地的阶段占位会改写为 `stopped`
 
 当前占位文案格式如下（`<stage>` 为阶段名，`X.Xs` 为秒级耗时，保留 1 位小数）：
 
 - 搜索中：`<stage> [searching]`
-- 渲染中：`<stage> [X.Xs search, rendering]`
+- 构建中：`<stage> [X.Xs searched, building tree]`
+- 树已就绪：`<stage> [X.Xs searched, Y.Ys built, tree ready]`
 - 搜索占位被停止：`<stage> [X.Xs searched, stopped]`
-- 渲染占位被停止：`<stage> [X.Xs search, rendering, stopped]`
+- 树构建占位被停止：`<stage> [X.Xs searched, building tree, stopped]`
+- 树就绪占位被停止：`<stage> [X.Xs searched, Y.Ys built, stopped]`
 
-说明：早期仅使用静态后缀（如 `[rendering]` / `[stopped]`）；当前实现会在相关状态中携带阶段耗时，便于运行期观察。
+说明：早期仅使用静态后缀；当前实现会在相关状态中携带阶段耗时，便于运行期观察。
 
-阶段一旦有真实树节点落地，对应状态占位就会移除，因此同一个 stage 在树里始终只保留一条可见记录。greedy 流水线可能产生多个 tightening 阶段；这些阶段在 tree / overview 中按 stage 启动顺序稳定显示，而不是按 render 完成先后重排。
+阶段一旦有真实树节点落地，对应状态占位就会移除，因此同一个 stage 在树里始终只保留一条可见记录。greedy 流水线可能产生多个 tightening 阶段；这些阶段在 tree / overview 中按 stage 启动顺序稳定显示，而不是按树构建完成先后重排。
 
 在首个真实 stage 树节点出现前，根节点标题中的 `search <stage> stage...` 文案会跟随当前最新启动的 stage 更新，因此例如 greedy 模式会先显示 `greedy-feasible`，随后切到 `proof-tighten≤N` 或 `greedy-edge-compact@S`，而不会停留在初始阶段名。
 
@@ -49,7 +52,7 @@ UI 使用与 CLI 相同的阶段名展示进度：
 
 运行时会持续刷新：
 
-- `searched / pending / output` 状态计数
+- `searched / ready / output` 状态计数
 - 当前最优 root 上界（incumbent）
 - 下界剪枝、缓存命中等诊断计数
 - 累计 elapsed、当前 stage 自身 elapsed，以及 stage 相关的 timing / compact 进度信息

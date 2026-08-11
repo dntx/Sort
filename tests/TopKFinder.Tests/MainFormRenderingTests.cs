@@ -154,7 +154,7 @@ public sealed class MainFormRenderingTests
     }
 
     [Fact]
-    public async Task MaterializeExactStageAsync_StaleRequestVersion_DoesNotApply()
+    public async Task MaterializeStageTreeAsync_StaleRequestVersion_DoesNotApply()
     {
         StageResult stage = CreateDeferredExactStepStage();
 
@@ -166,7 +166,7 @@ public sealed class MainFormRenderingTests
         bool applied = false;
         Task task = InvokePrivateInstance<Task>(
             form,
-            "MaterializeExactStageAsync",
+            "MaterializeStageTreeAsync",
             stage,
             (Action<StageResult>)(_ => applied = true),
             7,
@@ -180,7 +180,7 @@ public sealed class MainFormRenderingTests
     }
 
     [Fact]
-    public async Task MaterializeExactStageAsync_CurrentRequestVersion_Applies()
+    public async Task MaterializeStageTreeAsync_CurrentRequestVersion_Applies()
     {
         StageResult stage = CreateDeferredExactStepStage();
 
@@ -193,7 +193,7 @@ public sealed class MainFormRenderingTests
         bool applied = false;
         Task task = InvokePrivateInstance<Task>(
             form,
-            "MaterializeExactStageAsync",
+            "MaterializeStageTreeAsync",
             stage,
             (Action<StageResult>)(_ => applied = true),
             8,
@@ -207,7 +207,7 @@ public sealed class MainFormRenderingTests
     }
 
     [Fact]
-    public async Task MaterializeExactStageAsync_OnlyCurrentRequestApplies()
+    public async Task MaterializeStageTreeAsync_OnlyCurrentRequestApplies()
     {
         StageResult stage = CreateDeferredExactStepStage();
 
@@ -222,7 +222,7 @@ public sealed class MainFormRenderingTests
 
         Task stale = InvokePrivateInstance<Task>(
             form,
-            "MaterializeExactStageAsync",
+            "MaterializeStageTreeAsync",
             stage,
             (Action<StageResult>)(_ => staleApplied = true),
             11,
@@ -230,7 +230,7 @@ public sealed class MainFormRenderingTests
             CancellationToken.None);
         Task current = InvokePrivateInstance<Task>(
             form,
-            "MaterializeExactStageAsync",
+            "MaterializeStageTreeAsync",
             stage,
             (Action<StageResult>)(_ => currentApplied = true),
             11,
@@ -286,7 +286,7 @@ public sealed class MainFormRenderingTests
     }
 
     [Fact]
-    public async Task QueueStageMaterialization_NewRequestCancelsPriorRequest()
+    public async Task StartStageTreeMaterialization_NewRequestCancelsPriorRequest()
     {
         StageResult stage = CreateDeferredExactStepStage();
 
@@ -296,14 +296,14 @@ public sealed class MainFormRenderingTests
 
         InvokePrivateInstanceVoid(
             form,
-            "QueueStageMaterialization",
+            "StartStageTreeMaterialization",
             stage,
             (Action<StageResult>)(_ => { }));
         CancellationTokenSource firstRequest = GetPrivateField<CancellationTokenSource>(form, "_activePresentationRequestSource");
 
         InvokePrivateInstanceVoid(
             form,
-            "QueueStageMaterialization",
+            "StartStageTreeMaterialization",
             stage,
             (Action<StageResult>)(_ => { }));
         CancellationTokenSource secondRequest = GetPrivateField<CancellationTokenSource>(form, "_activePresentationRequestSource");
@@ -333,7 +333,7 @@ public sealed class MainFormRenderingTests
 
         InvokePrivateInstanceVoid(
             form,
-            "QueueStageMaterialization",
+            "StartStageTreeMaterialization",
             deferredStage,
             (Action<StageResult>)(_ => { }));
         CancellationTokenSource pendingRequest = GetPrivateField<CancellationTokenSource>(form, "_activePresentationRequestSource");
@@ -452,7 +452,7 @@ public sealed class MainFormRenderingTests
         // Simulate incumbent drift before buffered replay; frozen decisions must stay stable.
         SetPrivateField(form, "_incumbentStage", edgeStage);
 
-        InvokePrivateInstanceVoid(form, "ApplyMaterializedInitialGreedyStage", feasibleStage);
+        InvokePrivateInstanceVoid(form, "DisplayInitialGreedyStageTree", feasibleStage);
 
         TreeView tree = GetPrivateField<TreeView>(form, "_treeView");
         TreeNode root = tree.Nodes[0];
@@ -503,17 +503,17 @@ public sealed class MainFormRenderingTests
 
         InvokePrivateInstanceVoid(form, "OnProofTightenStage", nonImprovingStage);
 
-        HashSet<string> inFlight = GetPrivateField<HashSet<string>>(form, "_inFlightGreedyEdgeMaterializationNames");
-        List<Task> bufferedTasks = GetPrivateField<List<Task>>(form, "_bufferedGreedyEdgeMaterializationTasks");
+        HashSet<string> inFlight = GetPrivateField<HashSet<string>>(form, "_materializingGreedyEdgeStageNames");
+        List<Task> bufferedTasks = GetPrivateField<List<Task>>(form, "_greedyEdgeTreeMaterializationTasks");
         Assert.DoesNotContain(nonImprovingStage.Name, inFlight);
         Assert.Empty(bufferedTasks);
 
-        InvokePrivateInstanceVoid(form, "ApplyMaterializedInitialGreedyStage", baselineStage);
+        InvokePrivateInstanceVoid(form, "DisplayInitialGreedyStageTree", baselineStage);
         TreeView tree = GetPrivateField<TreeView>(form, "_treeView");
         TreeNode root = tree.Nodes[0];
         Assert.Contains(root.Nodes.Cast<TreeNode>(), node =>
             node.Text.StartsWith(nonImprovingStage.Name + ":", StringComparison.Ordinal)
-            && node.Text.Contains("render skipped (no improvement)", StringComparison.Ordinal));
+            && node.Text.Contains("no improvement (tree skipped)", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -552,7 +552,7 @@ public sealed class MainFormRenderingTests
 
         InvokePrivateInstanceVoid(form, "OnProofTightenStage", incoming);
 
-        List<StageResult> buffered = GetPrivateField<List<StageResult>>(form, "_pendingGreedyEdgeStages");
+        List<StageResult> buffered = GetPrivateField<List<StageResult>>(form, "_readyGreedyEdgeStages");
         List<StageResult> landed = GetPrivateField<List<StageResult>>(form, "_proofTightenStages");
         Assert.Single(buffered);
         Assert.Empty(landed);
@@ -560,18 +560,18 @@ public sealed class MainFormRenderingTests
         Assert.Contains(root.Nodes.Cast<TreeNode>(), node =>
             node.Text.StartsWith(incoming.Name, StringComparison.Ordinal)
             && (node.Text.Contains("searched, building tree", StringComparison.Ordinal)
-                || node.Text.Contains("tree queued", StringComparison.Ordinal)));
+                || node.Text.Contains("tree ready", StringComparison.Ordinal)));
 
         PumpUiUntil(
             () => root.Nodes.Cast<TreeNode>().Any(node =>
                 node.Text.StartsWith(incoming.Name, StringComparison.Ordinal)
-                && node.Text.Contains("tree queued", StringComparison.Ordinal)),
+                && node.Text.Contains("tree ready", StringComparison.Ordinal)),
             timeoutMs: 2000);
         Assert.Contains(root.Nodes.Cast<TreeNode>(), node =>
             node.Text.StartsWith(incoming.Name, StringComparison.Ordinal)
-            && node.Text.Contains("tree queued", StringComparison.Ordinal));
+            && node.Text.Contains("tree ready", StringComparison.Ordinal));
 
-        InvokePrivateInstanceVoid(form, "ApplyMaterializedInitialGreedyStage", new StageResult(
+        InvokePrivateInstanceVoid(form, "DisplayInitialGreedyStageTree", new StageResult(
             StageNames.GreedyFeasible,
             feasiblePlan,
             TimeSpan.FromMilliseconds(1),
@@ -591,15 +591,15 @@ public sealed class MainFormRenderingTests
         PumpUiUntil(
             () => root.Nodes.Cast<TreeNode>().Any(node =>
                 node.Text.StartsWith(incoming.Name, StringComparison.Ordinal)
-                && !node.Text.Contains("tree queued", StringComparison.Ordinal)),
+                && !node.Text.Contains("tree ready", StringComparison.Ordinal)),
             timeoutMs: 2000);
         Assert.DoesNotContain(root.Nodes.Cast<TreeNode>(), node =>
             node.Text.StartsWith(incoming.Name, StringComparison.Ordinal)
-            && node.Text.Contains("tree queued", StringComparison.Ordinal));
+            && node.Text.Contains("tree ready", StringComparison.Ordinal));
     }
 
     [Fact]
-    public void ApplyMaterializedInitialGreedyStage_NullPlan_ReturnsWithoutThrowing()
+    public void DisplayInitialGreedyStageTree_NullPlan_ReturnsWithoutThrowing()
     {
         using var form = new MainForm();
         _ = form.Handle;
@@ -614,7 +614,7 @@ public sealed class MainFormRenderingTests
             CreateDeferredExactStepStage().Solution,
             StageTimings.Legacy(TimeSpan.FromMilliseconds(1)));
 
-        InvokePrivateInstanceVoid(form, "ApplyMaterializedInitialGreedyStage", stage);
+        InvokePrivateInstanceVoid(form, "DisplayInitialGreedyStageTree", stage);
 
         Assert.Null(GetPrivateFieldValue(form, "_feasiblePlan"));
     }
@@ -955,16 +955,19 @@ public sealed class MainFormRenderingTests
         Assert.True(recordedTighten.HasValue);
         Assert.Equal(StageNames.GreedyTighten, recordedTighten.Value.Name);
 
-        List<StageResult> buffered = GetPrivateField<List<StageResult>>(form, "_pendingGreedyEdgeStages");
+        List<StageResult> buffered = GetPrivateField<List<StageResult>>(form, "_readyGreedyEdgeStages");
         Assert.Contains(buffered, stage => string.Equals(stage.Name, StageNames.GreedyTighten, StringComparison.Ordinal));
 
+        // This test validates callback routing/state updates, not background materialization throughput.
+        // Reset presentation infra to cancel in-flight work, then verify drain is non-blocking.
+        InvokePrivateInstanceVoid(form, "ResetPresentationInfrastructure");
         Task drain = InvokePrivateInstance<Task>(form, "DrainPresentationTasksAsync");
-        PumpUiUntilTaskCompletes(drain, timeoutMs: 2000);
+        PumpUiUntilTaskCompletes(drain, timeoutMs: 1000);
         await drain;
     }
 
     [Fact]
-    public void ApplyMaterializedInitialGreedyStage_ReplaysBufferedSearchOnlyGreedyTighten()
+    public void DisplayInitialGreedyStageTree_ReplaysBufferedSearchOnlyGreedyTighten()
     {
         using var form = new MainForm();
         _ = form.Handle;
@@ -987,10 +990,10 @@ public sealed class MainFormRenderingTests
 
         InvokePrivateInstanceVoid(form, "OnProofTightenStage", tightenStage);
 
-        List<StageResult> buffered = GetPrivateField<List<StageResult>>(form, "_pendingGreedyEdgeStages");
+        List<StageResult> buffered = GetPrivateField<List<StageResult>>(form, "_readyGreedyEdgeStages");
         Assert.Contains(buffered, stage => string.Equals(stage.Name, StageNames.GreedyTighten, StringComparison.Ordinal));
 
-        InvokePrivateInstanceVoid(form, "ApplyMaterializedInitialGreedyStage", new StageResult(
+        InvokePrivateInstanceVoid(form, "DisplayInitialGreedyStageTree", new StageResult(
             StageNames.GreedyFeasible,
             feasiblePlan,
             feasiblePlan.Elapsed,

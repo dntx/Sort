@@ -36,8 +36,8 @@ static class PipelineStageProtocol
     }
 
     public static string NoSolutionMarker(StageResult stage)
-        => stage.Skipped ? "skipped (root probe)"
-            : stage.Incomplete ? "search incomplete (candidate cap reached)"
+                => stage.Skipped ? "skipped"
+              : stage.Incomplete ? "search incomplete (candidate cap reached)"
             : "no solution";
 
     public static string NextGreedyStageName(SolvedStrategy feasibleSolution, int incumbentMaxStep)

@@ -46,10 +46,10 @@ partial class MainForm
         ResetExplorerState(clearTreeNodes: true, clearOverviewNodes: true);
     }
 
-    // Renders the overview panel so it mirrors the tree one-to-one: a step section (named by mode --
+    // Builds the overview panel so it mirrors the tree one-to-one: a step section (named by mode --
     // "step-proof" / "greedy-feasible") and an edge-compact section ("search pending" placeholder until the edge-compact stage
     // finishes). Each section is an independent root, so the strategies' overviews can be browsed and
-    // collapsed separately. This is the full-rebuild path used for the initial render and theme switches.
+    // collapsed separately. This is the full-rebuild path used for the initial display and theme switches.
     private void RebuildOverview(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool compactImproved)
     {
         _overviewTree.BeginUpdate();
@@ -116,7 +116,7 @@ partial class MainForm
 
     private void ReplaceTrailingOverviewRoot(TreeNode replacement)
     {
-        // Drop the trailing edge-compact pending/running placeholder root.
+        // Drop the trailing edge-compact searching/building placeholder root.
         if (_overviewTree.Nodes.Count > 0)
             _overviewTree.Nodes.RemoveAt(_overviewTree.Nodes.Count - 1);
 
