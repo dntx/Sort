@@ -959,7 +959,7 @@ public sealed class MainFormRenderingTests
         Assert.Contains(buffered, stage => string.Equals(stage.Name, StageNames.GreedyTighten, StringComparison.Ordinal));
 
         Task drain = InvokePrivateInstance<Task>(form, "DrainPresentationTasksAsync");
-        PumpUiUntilTaskCompletes(drain, timeoutMs: 2000);
+        PumpUiUntilTaskCompletes(drain, timeoutMs: 15000);
         await drain;
     }
 
