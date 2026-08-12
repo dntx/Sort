@@ -1227,6 +1227,42 @@ public sealed class MainFormRenderingTests
             node.Text.StartsWith(StageNames.GreedyTighten, StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void ProvenInfeasibleSearchOnlyStage_ClosesRootSqueezeBeforeReturning()
+    {
+        using var form = new MainForm();
+        _ = form.Handle;
+
+        StrategyPlan feasiblePlan = new StrategyBuilder(8, 3, 3).ExecuteStepProofStage();
+        SolvedStrategy solution = CreateDeferredExactStepStage().Solution
+            ?? throw new InvalidOperationException("Expected deferred stage solution.");
+
+        TreeView tree = GetPrivateField<TreeView>(form, "_treeView");
+        tree.Nodes.Add(new TreeNode("root"));
+
+        SetPrivateField(form, "_feasiblePlan", feasiblePlan);
+        SetPrivateField(form, "_incumbentStage", new StageResult(
+            StageNames.GreedyFeasible,
+            feasiblePlan,
+            feasiblePlan.Elapsed,
+            StageOutcome.Completed,
+            solution,
+            StageTimings.Legacy(feasiblePlan.Elapsed)));
+
+        var stage = new StageResult(
+            "proof-tighten<=4",
+            materializedPlan: null,
+            elapsed: TimeSpan.FromMilliseconds(10),
+            outcome: StageOutcome.ProvenInfeasible,
+            solution: null,
+            timings: StageTimings.Legacy(TimeSpan.FromMilliseconds(10)),
+            presentationMode: StagePresentationMode.SearchOnlySummary);
+
+        InvokePrivateInstanceVoid(form, "OnProofTightenStage", stage);
+
+        Assert.Contains("proven optimal", tree.Nodes[0].Text, StringComparison.Ordinal);
+    }
+
     private static StageResult CreateDeferredExactStepStage()
     {
         StrategyBuilder builder = new(8, 3, 3);

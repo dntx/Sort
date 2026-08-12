@@ -858,6 +858,11 @@ partial class MainForm
             _greedyIncumbentImproved = true;
         }
 
+        // A proven-infeasible terminal closes the incumbent squeeze even when this stage is rendered
+        // as a search-only summary and returns before the normal tree-update path below.
+        if (stage.Outcome == StageOutcome.ProvenInfeasible)
+            MarkGreedyIncumbentProvenOptimal();
+
         bool needsDeferredMaterialization = ShouldMaterializeStageForDisplay(stage, improved);
 
         if (_feasiblePlan is null)
@@ -918,11 +923,6 @@ partial class MainForm
             _incumbentStage = stage;
             _greedyIncumbentImproved = true;
         }
-
-        // A proven-infeasible terminal (ProvenInfeasible, not a timeout) proves the incumbent is optimal:
-        // close its squeeze (opt = incumbent.MaxStep) so the progression detail reports proven optimal.
-        if (stage.Outcome == StageOutcome.ProvenInfeasible)
-            MarkGreedyIncumbentProvenOptimal();
 
         StrategyPlan shown = _compactPlan ?? _feasiblePlan;
         root.Text = BuildRootLabel(_feasiblePlan, _feasiblePlan, shown);
