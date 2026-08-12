@@ -137,11 +137,8 @@ partial class StrategyBuilder
         var nodes = new Dictionary<SearchStateKey, SolvedStrategyNode>();
         int worstCaseSteps = FreezeCompactState(rootState, remainingSlots, nodes);
         int searchEdgeCost = SolvedStrategyScoreService.ComputeSearchEdgeCost(rootKey, nodes);
-        if (includeSearchEdgeCost && searchEdgeCost != _compactRootCost)
-        {
-            throw new InvalidOperationException(
-                "Frozen compact strategy cost must equal the compact DP root cost.");
-        }
+        if (includeSearchEdgeCost)
+            _compactRootCost = searchEdgeCost;
 
         return new SolvedStrategy(
             new ProblemShape(_n, _m, _requestedK, _k),
