@@ -938,6 +938,47 @@ public sealed class MainFormRenderingTests
     }
 
     [Fact]
+    public void InitialTrees_UseActualCurrentStageForPendingCompactSlot()
+    {
+        using var form = new MainForm();
+        _ = form.Handle;
+
+        var request = CreateRunRequest(
+            n: 25,
+            m: 3,
+            k: 3,
+            feasibleMode: true,
+            builder: new StrategyBuilder(25, 3, 3),
+            cancellationToken: CancellationToken.None);
+        InvokePrivateInstanceVoid(form, "InitializeRunUi", request);
+        InvokePrivateInstanceVoid(form, "OnStageSearchStarted", StageNames.GreedyTighten);
+
+        StrategyPlan feasiblePlan = new StrategyBuilder(8, 3, 3).ExecuteStepProofStage();
+        SolvedStrategy solution = CreateDeferredExactStepStage().Solution
+            ?? throw new InvalidOperationException("Expected deferred exact step solution.");
+        InvokePrivateInstanceVoid(form, "DisplayInitialGreedyStageTree", new StageResult(
+            StageNames.GreedyFeasible,
+            feasiblePlan,
+            feasiblePlan.Elapsed,
+            StageOutcome.Completed,
+            solution,
+            StageTimings.Legacy(feasiblePlan.Elapsed)));
+
+        TreeView tree = GetPrivateField<TreeView>(form, "_treeView");
+        TreeNode root = tree.Nodes[0];
+        Assert.Contains(root.Nodes.Cast<TreeNode>(), node =>
+            node.Text == StageNames.GreedyTighten + " [searching]");
+        Assert.DoesNotContain(root.Nodes.Cast<TreeNode>(), node =>
+            node.Text.StartsWith(StageNames.ProofTightenPrefix, StringComparison.Ordinal));
+
+        TreeView overview = GetPrivateField<TreeView>(form, "_overviewTree");
+        Assert.Contains(overview.Nodes.Cast<TreeNode>(), node =>
+            node.Text == StageNames.GreedyTighten + " [searching]");
+        Assert.DoesNotContain(overview.Nodes.Cast<TreeNode>(), node =>
+            node.Text.StartsWith(StageNames.ProofTightenPrefix, StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void GreedyTighten_WithMaterializedPlan_RendersTreeInsteadOfSearchOnlySummary()
     {
         using var form = new MainForm();
