@@ -858,6 +858,14 @@ partial class MainForm
             _greedyIncumbentImproved = true;
         }
 
+        // A proven-infeasible terminal closes the incumbent squeeze even when this stage is rendered
+        // as a search-only summary and returns before the normal tree-update path below.
+        if (stage.Outcome == StageOutcome.ProvenInfeasible)
+        {
+            MarkGreedyIncumbentProvenOptimal();
+            RefreshGreedyRootAfterProvenOptimal();
+        }
+
         bool needsDeferredMaterialization = ShouldMaterializeStageForDisplay(stage, improved);
 
         if (_feasiblePlan is null)
@@ -919,17 +927,7 @@ partial class MainForm
             _greedyIncumbentImproved = true;
         }
 
-        // A proven-infeasible terminal (ProvenInfeasible, not a timeout) proves the incumbent is optimal:
-        // close its squeeze (opt = incumbent.MaxStep) so the progression detail reports proven optimal.
-        if (stage.Outcome == StageOutcome.ProvenInfeasible)
-            MarkGreedyIncumbentProvenOptimal();
-
-        StrategyPlan shown = _compactPlan ?? _feasiblePlan;
-        root.Text = BuildRootLabel(_feasiblePlan, _feasiblePlan, shown);
-        root.Tag = new LazyNodeDetails(() => BuildGreedyProgressionDetails(
-            _greedyFeasibleStage!.Value,
-            _greedyTightenStage,
-            _proofTightenStages));
+        RefreshGreedyRootAfterProvenOptimal();
         _treeView.EndUpdate();
 
         _overviewTree.BeginUpdate();
@@ -955,6 +953,23 @@ partial class MainForm
                 ? (!improved ? "no improvement" : null)
                 : NoSolutionMarker(stage);
             ShowStageModal(FormatStageRootLabel(stage.Name, stage.Elapsed, stage.MaterializedPlan, marker, stage.Timings), stage.HasPlan);
+        }
+    }
+
+    private void RefreshGreedyRootAfterProvenOptimal()
+    {
+        if (_feasiblePlan is null || _treeView.Nodes.Count == 0)
+            return;
+
+        TreeNode root = _treeView.Nodes[0];
+        StrategyPlan shown = _compactPlan ?? _feasiblePlan;
+        root.Text = BuildRootLabel(_feasiblePlan, _feasiblePlan, shown);
+        if (_greedyFeasibleStage.HasValue)
+        {
+            root.Tag = new LazyNodeDetails(() => BuildGreedyProgressionDetails(
+                _greedyFeasibleStage.Value,
+                _greedyTightenStage,
+                _proofTightenStages));
         }
     }
 
