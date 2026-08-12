@@ -68,6 +68,7 @@ public class GreedyTightenTests
     [InlineData(10, 2, 5, 17)]
     [InlineData(12, 4, 4, 6)]
     [InlineData(16, 4, 4, 7)]
+    [InlineData(17, 4, 4, 8)]
     [InlineData(25, 8, 3, 4)]
     public void GreedyTightenPlan_KnownValueCases_ReachThresholdOnlyWithGt(int n, int m, int k, int threshold)
     {
@@ -177,19 +178,6 @@ public class GreedyTightenTests
         Assert.True(plan.IsFeasibleUpperBound);
         Assert.Equal(1, builder.GreedyTightenRounds);
         Assert.Single(builder.GreedyTightenRoundTrace);
-    }
-
-    [Fact]
-    public void GreedyTightenPlan_SeventeenFourFour_FourRoundExperimentReachesEight()
-    {
-        var builder = new StrategyBuilder(17, 4, 4)
-        {
-            GreedyTightenMaxRoundsForTesting = 4,
-        };
-
-        StrategyPlan plan = builder.ExecuteGreedyTightenStage();
-
-        Assert.True(plan.MaxStep <= 8, $"expected additional rounds to reach 8, got {plan.MaxStep}");
     }
 
     // Root-only micro-probe gate: a conservative pre-check for running full single-round
