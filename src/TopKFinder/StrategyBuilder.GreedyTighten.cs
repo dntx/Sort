@@ -11,8 +11,7 @@ sealed record GreedyTightenStageArtifacts(
 
 partial class StrategyBuilder
 {
-    private const int DefaultGreedyTightenCandidateCap = 128;
-    private const int GreedyTightenFullEnumerationThreshold = 4096;
+    private const int GreedyTightenCandidateCap = 4096;
     // GreedyTighten (Phase 0) — local restructuring of the greedy-feasible tree to lower the longest
     // path. See docs/core-algorithm.md 4.7 for the full design/rationale. This is the FRAMEWORK slice
     // (阶段 A): multi-round + critical-path post-order + AND short-circuit + single-state edit +
@@ -22,22 +21,8 @@ partial class StrategyBuilder
     //
     // It is NOT wired into the production pipeline yet; ExecuteGreedyTightenStage is only exercised by
     // tests until the mechanism is validated.
-    internal int GreedyTightenCandidateCap = DefaultGreedyTightenCandidateCap;
-
-    private int GetGreedyTightenCandidateCap(int activeCount, int groupSize)
-    {
-        if (GreedyTightenCandidateCap != DefaultGreedyTightenCandidateCap)
-            return GreedyTightenCandidateCap;
-
-        long combinations = CountCombinationsUpTo(activeCount, groupSize, GreedyTightenFullEnumerationThreshold);
-        return combinations <= GreedyTightenFullEnumerationThreshold
-            ? (int)combinations
-            : ScaleDefaultCandidateCap(
-                GreedyTightenCandidateCap,
-                DefaultGreedyTightenCandidateCap,
-                activeCount,
-                groupSize);
-    }
+    private static int GetGreedyTightenCandidateCap(int activeCount, int groupSize)
+        => (int)CountCombinationsUpTo(activeCount, groupSize, GreedyTightenCandidateCap);
 
     private static long CountCombinationsUpTo(int itemCount, int groupSize, int limit)
     {
@@ -49,7 +34,7 @@ partial class StrategyBuilder
         {
             result = result * (itemCount - groupSize + index) / index;
             if (result > limit)
-                return result;
+                return limit;
         }
 
         return result;

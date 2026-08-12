@@ -191,21 +191,14 @@ public class GreedyTightenTests
 
     [Theory]
     [InlineData(12, 4, 495)]
-    [InlineData(25, 10, 256)]
-    [InlineData(30, 10, 384)]
-    public void GreedyTightenCandidateCap_DefaultCap_ScalesWithStateSurface(int activeCount, int groupSize, int expectedCap)
+    [InlineData(17, 4, 2380)]
+    [InlineData(20, 4, 4096)]
+    public void GreedyTightenCandidateCap_IsBoundedByCombinationCountAndLimit(
+        int activeCount, int groupSize, int expectedCap)
     {
         var builder = new StrategyBuilder(Math.Max(activeCount, groupSize), groupSize, 1);
 
         Assert.Equal(expectedCap, builder.GetGreedyTightenCandidateCapForTesting(activeCount, groupSize));
-    }
-
-    [Fact]
-    public void GreedyTightenCandidateCap_ExplicitOverride_DisablesAdaptiveScaling()
-    {
-        var builder = new StrategyBuilder(25, 10, 1) { GreedyTightenCandidateCap = 64 };
-
-        Assert.Equal(64, builder.GetGreedyTightenCandidateCapForTesting(25, 10));
     }
 
     // Root-only micro-probe gate: a conservative pre-check for running full single-round
