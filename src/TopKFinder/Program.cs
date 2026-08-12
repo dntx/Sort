@@ -251,6 +251,7 @@ class Program
             cancellation.Token,
             ReportProgress,
             reportCombinedRunProgress: true);
+        builder.GreedyTightenEnabledForTesting = mode == Mode.Greedy;
 
         try
         {
@@ -297,14 +298,14 @@ class Program
                 baseFeasibleSolution,
                 prep.GreedyFeasibleElapsed));
 
-            // Optional GT pre-step (root-probe gated): only run single-round GreedyTighten when the
-            // root micro-probe sees a possible root-height drop.
+            // Optional GT pre-step: CLI greedy mode explicitly enables the single-round
+            // GreedyTighten stage before proof-tighten.
             bool gtProbeRun = prep.GreedyTightenProbeRun;
             SolvedStrategy? gtSolution = prep.GreedyTightenSolution;
             bool gtImproved = prep.GreedyTightenImproved;
             if (gtProbeRun && gtSolution is not null)
             {
-                WriteStageStatus("stage greedy-tighten: started (root probe passed)");
+                WriteStageStatus("stage greedy-tighten: started");
                 WriteStageStatus(FormatStageStatus(
                     StageNames.GreedyTighten,
                     gtSolution,

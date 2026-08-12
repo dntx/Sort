@@ -42,9 +42,11 @@ public class GreedyPipelineTests
     public void GreedyPreparationDeferred_EmitsEverySolvedStageWithoutPlans()
     {
         var stages = new List<StageResult>();
+        var builder = new StrategyBuilder(9, 3, 3);
+        builder.GreedyTightenEnabledForTesting = true;
 
         GreedyPreparationResult preparation = PublicPipelineOrchestrator.RunGreedyPreparation(
-            new StrategyBuilder(9, 3, 3),
+            builder,
             onStageCompleted: stages.Add,
             emitStages: true,
             materialize: false);
@@ -208,6 +210,46 @@ public class GreedyPipelineTests
             }
         });
         Assert.Equal(SolvedStrategyStageKind.GreedyFeasible, completed[0].Solution!.Provenance.Kind);
+    }
+
+    [Fact]
+    public void GreedyPreparation_DisabledGt_DoesNotEmitGreedyTightenStage()
+    {
+        var builder = new StrategyBuilder(10, 2, 5);
+        builder.GreedyTightenEnabledForTesting = false;
+        var completed = new List<StageResult>();
+
+        GreedyPreparationResult preparation = PublicPipelineOrchestrator.RunGreedyPreparation(
+            builder,
+            onStageCompleted: completed.Add,
+            emitStages: true,
+            materialize: true);
+
+        Assert.Single(completed);
+        Assert.Equal(StageNames.GreedyFeasible, completed[0].Name);
+        Assert.False(preparation.GreedyTightenProbeRun);
+        Assert.False(preparation.GreedyTightenImproved);
+        Assert.Null(preparation.GreedyTightenSolution);
+    }
+
+    [Fact]
+    public void GreedyPreparation_EnabledGt_EmitsGreedyTightenStage()
+    {
+        var builder = new StrategyBuilder(10, 2, 5);
+        builder.GreedyTightenEnabledForTesting = true;
+        var completed = new List<StageResult>();
+
+        GreedyPreparationResult preparation = PublicPipelineOrchestrator.RunGreedyPreparation(
+            builder,
+            onStageCompleted: completed.Add,
+            emitStages: true,
+            materialize: true);
+
+        Assert.Equal(2, completed.Count);
+        Assert.Equal(StageNames.GreedyFeasible, completed[0].Name);
+        Assert.Equal(StageNames.GreedyTighten, completed[1].Name);
+        Assert.True(preparation.GreedyTightenProbeRun);
+        Assert.NotNull(preparation.GreedyTightenSolution);
     }
 
     [Theory]

@@ -38,6 +38,10 @@ partial class StrategyBuilder
     // run more rounds, or int.MaxValue for an effectively-unbounded full run.
     internal int? GreedyTightenMaxRoundsForTesting { get; set; }
 
+    // Default pipeline behaviour keeps GreedyTighten disabled. Tests and targeted experiments can opt in
+    // explicitly when they want to evaluate the stage's impact.
+    internal bool GreedyTightenEnabledForTesting { get; set; }
+
     // Accumulated local edits: canonical stateKey -> chosen comparison group. During solving, the
     // lean-depth DP uses the override instead of the constructive selector; absent keys fall back to
     // the same ChooseConstructiveGroup that the greedy-feasible baseline uses. The completed policy is

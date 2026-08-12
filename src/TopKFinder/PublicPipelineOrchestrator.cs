@@ -161,26 +161,22 @@ static class PublicPipelineOrchestrator
             feasibleArtifacts.Timings);
         onStageCompleted?.Invoke(greedyFeasibleStage);
 
-        onStageStart?.Invoke(StageNames.GreedyTighten);
-        var gtProbeStopwatch = Stopwatch.StartNew();
-        bool gtProbeRun = builder.ShouldRunGreedyTightenByRootProbe();
-        gtProbeStopwatch.Stop();
-        TimeSpan gtProbeElapsed = gtProbeStopwatch.Elapsed;
         StrategyPlan? gtPlan = null;
         SolvedStrategy? gtSolution = null;
         bool gtImproved = false;
-        TimeSpan gtElapsed = gtProbeElapsed;
-        StageTimings gtTimings = StageTimings.Legacy(gtProbeElapsed);
-        if (gtProbeRun)
+        TimeSpan gtElapsed = TimeSpan.Zero;
+        StageTimings gtTimings = StageTimings.Legacy(TimeSpan.Zero);
+        bool gtProbeRun = false;
+
+        if (builder.GreedyTightenEnabledForTesting)
         {
+            onStageStart?.Invoke(StageNames.GreedyTighten);
             GreedyTightenStageArtifacts gtArtifacts = builder.ExecuteGreedyTightenStageWithSolution(materialize);
             gtPlan = materialize ? gtArtifacts.Plan : null;
             gtSolution = gtArtifacts.Solution;
-            gtTimings = new StageTimings(
-                gtProbeElapsed + gtArtifacts.Timings.Solve,
-                gtArtifacts.Timings.Freeze,
-                gtArtifacts.Timings.Materialize);
+            gtTimings = gtArtifacts.Timings;
             gtElapsed = gtTimings.Total;
+            gtProbeRun = true;
             gtImproved = gtSolution.Score.IsStrictRefinementOver(baseFeasibleSolution.Score);
             if (gtImproved)
             {
@@ -188,17 +184,17 @@ static class PublicPipelineOrchestrator
                 effectiveFeasibleSolution = gtSolution;
                 builder.OverrideGreedyPipelineUpperBound(effectiveFeasibleSolution.Score.WorstCaseSteps);
             }
-        }
 
-        var greedyTightenStage = new StageResult(
-            StageNames.GreedyTighten,
-            gtPlan,
-            gtElapsed,
-            gtSolution is null ? StageOutcome.Skipped : StageOutcome.Completed,
-            gtSolution,
-            gtTimings,
-            gtPlan is null ? StagePresentationMode.SearchOnlySummary : StagePresentationMode.Auto);
-        onStageCompleted?.Invoke(greedyTightenStage);
+            var greedyTightenStage = new StageResult(
+                StageNames.GreedyTighten,
+                gtPlan,
+                gtElapsed,
+                gtSolution is null ? StageOutcome.Skipped : StageOutcome.Completed,
+                gtSolution,
+                gtTimings,
+                gtPlan is null ? StagePresentationMode.SearchOnlySummary : StagePresentationMode.Auto);
+            onStageCompleted?.Invoke(greedyTightenStage);
+        }
 
         return new GreedyPreparationResult(
             baseFeasiblePlan,

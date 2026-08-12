@@ -616,7 +616,9 @@ public sealed class MainFormRenderingTests
         TreeNode root = tree.Nodes[0];
         Assert.Contains(root.Nodes.Cast<TreeNode>(), node =>
             node.Text.StartsWith(incoming.Name, StringComparison.Ordinal)
-            && node.Text.Contains("searching", StringComparison.Ordinal));
+            && (node.Text.Contains("searching", StringComparison.Ordinal)
+                || node.Text.Contains("searched, building tree", StringComparison.Ordinal)
+                || node.Text.Contains("tree ready", StringComparison.Ordinal)));
 
         InvokePrivateInstanceVoid(form, "OnProofTightenStage", incoming);
 

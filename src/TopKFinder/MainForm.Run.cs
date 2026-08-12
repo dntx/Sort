@@ -80,6 +80,7 @@ partial class MainForm
             cancellationToken,
             snapshot => progress.Report(snapshot),
             reportCombinedRunProgress: true);
+        builder.GreedyTightenEnabledForTesting = _enableGtCheckBox.Checked;
 
         request = new RunRequest(n, m, k, feasibleMode, builder, cancellationToken);
         return true;
