@@ -90,5 +90,6 @@ public sealed class ProgressEstimationServiceTests
         Assert.Equal(2, (int)ProgressScope.CompactPrimaryInCombinedRun);
         Assert.Equal(4, (int)ProgressScope.FeasibleInCombinedRun);
         Assert.Equal(8, (int)ProgressScope.CompactFeasibleInCombinedRun);
+        Assert.Equal(16, (int)ProgressScope.GreedyTightenInCombinedRun);
     }
 }

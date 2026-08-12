@@ -76,6 +76,8 @@ partial class StrategyBuilder
         _lastReportedVisitedStatesCount = 0;
         _feasiblePhase2StartMs = -1;
         _feasiblePhaseSolved = false;
+        _greedyTightenStartMs = -1;
+        _greedyTightenSolved = false;
         _pendingStates = 0;
         _peakPendingStates = 0;
         _progressEstimateInitialized = false;

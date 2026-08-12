@@ -7,4 +7,5 @@ enum ProgressScope
     CompactPrimaryInCombinedRun = 2,
     FeasibleInCombinedRun = 4,
     CompactFeasibleInCombinedRun = 8,
+    GreedyTightenInCombinedRun = 16,
 }
