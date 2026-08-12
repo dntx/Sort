@@ -165,24 +165,27 @@ public class GreedyTightenTests
         Assert.Single(builder.GreedyTightenRoundTrace);
     }
 
-    // The production default allows a bounded number of critical-path rounds. A case that tightens
-    // across several commits must stay within that bound.
+    // The production default stays at one critical-path round until a broader cost/value measurement
+    // supports enabling more rounds.
     [Fact]
-    public void GreedyTightenPlan_DefaultsToBoundedRounds()
+    public void GreedyTightenPlan_DefaultsToSingleRound()
     {
         var builder = new StrategyBuilder(10, 2, 5);
 
         StrategyPlan plan = builder.ExecuteGreedyTightenStage();
 
         Assert.True(plan.IsFeasibleUpperBound);
-        Assert.InRange(builder.GreedyTightenRounds, 1, 4);
-        Assert.Equal(builder.GreedyTightenRounds, builder.GreedyTightenRoundTrace.Count);
+        Assert.Equal(1, builder.GreedyTightenRounds);
+        Assert.Single(builder.GreedyTightenRoundTrace);
     }
 
     [Fact]
-    public void GreedyTightenPlan_SeventeenFourFour_ProductionDefaultsReachEight()
+    public void GreedyTightenPlan_SeventeenFourFour_FourRoundExperimentReachesEight()
     {
-        var builder = new StrategyBuilder(17, 4, 4);
+        var builder = new StrategyBuilder(17, 4, 4)
+        {
+            GreedyTightenMaxRoundsForTesting = 4,
+        };
 
         StrategyPlan plan = builder.ExecuteGreedyTightenStage();
 

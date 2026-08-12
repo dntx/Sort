@@ -21,9 +21,9 @@ partial class StrategyBuilder
     //
     // It is NOT wired into the production pipeline yet; ExecuteGreedyTightenStage is only exercised by
     // tests until the mechanism is validated.
-    // Production default: allow a few critical-path rounds so a wider candidate window can propagate
-    // improvements through the policy. The cap keeps the pass bounded on larger shapes.
-    private const int DefaultGreedyTightenMaxRounds = 4;
+    // Production default: one critical-path round. Additional rounds remain available for targeted
+    // experiments until their cost/value is established across a representative workload.
+    private const int DefaultGreedyTightenMaxRounds = 1;
 
     // Test/eval override of the round cap (null = DefaultGreedyTightenMaxRounds). Set a larger value to
     // run more rounds, or int.MaxValue for an effectively-unbounded full run.
