@@ -1035,12 +1035,6 @@ partial class MainForm
     {
         UpsertReadyGreedyEdgeStage(stage);
         MarkStageTreeReady(stage);
-
-        if (_feasiblePlan is null)
-            return;
-
-        if (TryTakeReadyGreedyEdgeStage(stage.Name, out StageResult readyStage))
-            OnProofTightenStage(readyStage);
     }
 
     private void UpsertReadyGreedyEdgeStage(StageResult stage)

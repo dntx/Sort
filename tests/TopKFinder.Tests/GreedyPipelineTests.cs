@@ -145,6 +145,7 @@ public class GreedyPipelineTests
         Assert.True(edgeStage.Timings.Materialize > TimeSpan.Zero);
         Assert.True(plan.SearchStatistics.SearchTreeEdges.HasValue && plan.SearchStatistics.SearchTreeEdges.Value > 0,
             "expected edge-compact stage to report positive search-tree edge objective");
+        Assert.Equal(edgeStage.Solution.Score.SearchEdgeCost, plan.SearchStatistics.SearchTreeEdges);
         Assert.True(plan.SearchStatistics.CompactStatesSolved > 0,
             "expected edge-compact stage to solve compact states");
         Assert.True(plan.SearchStatistics.CompactGroupsEnumerated > 0,
