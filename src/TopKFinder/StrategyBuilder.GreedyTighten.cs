@@ -21,28 +21,6 @@ partial class StrategyBuilder
     //
     // It is NOT wired into the production pipeline yet; ExecuteGreedyTightenStage is only exercised by
     // tests until the mechanism is validated.
-    private static int GetGreedyTightenCandidateCap(int activeCount, int groupSize)
-        => (int)CountCombinationsUpTo(activeCount, groupSize, GreedyTightenCandidateCap);
-
-    private static long CountCombinationsUpTo(int itemCount, int groupSize, int limit)
-    {
-        if (groupSize < 0 || groupSize > itemCount)
-            return 0;
-
-        long result = 1;
-        for (int index = 1; index <= groupSize; index++)
-        {
-            result = result * (itemCount - groupSize + index) / index;
-            if (result > limit)
-                return limit;
-        }
-
-        return result;
-    }
-
-    internal int GetGreedyTightenCandidateCapForTesting(int activeCount, int groupSize)
-        => GetGreedyTightenCandidateCap(activeCount, groupSize);
-
     // Production default: allow a few critical-path rounds so a wider candidate window can propagate
     // improvements through the policy. The cap keeps the pass bounded on larger shapes.
     private const int DefaultGreedyTightenMaxRounds = 4;
@@ -101,8 +79,7 @@ partial class StrategyBuilder
 
         var candidates = root.GetActiveItemsOrdered();
         int groupSize = Math.Min(_m, candidates.Count);
-        int candidateCap = GetGreedyTightenCandidateCap(candidates.Count, groupSize);
-        foreach (List<int> candidate in EnumerateDistinctGroups(root, candidates, groupSize, candidateCap))
+        foreach (List<int> candidate in EnumerateDistinctGroups(root, candidates, groupSize, GreedyTightenCandidateCap))
         {
             if (!GroupHasUnresolvedPair(root, candidate))
                 continue;
@@ -546,12 +523,11 @@ partial class StrategyBuilder
         // tightening opportunity on a candidate that leaves a taller global subtree.
         var candidates = state.GetActiveItemsOrdered();
         int groupSize = Math.Min(_m, candidates.Count);
-        int candidateCap = GetGreedyTightenCandidateCap(candidates.Count, groupSize);
         int candidateRank = 0;
         int bestCandidateHeight = height;
         int bestCandidateRank = 0;
         List<int>? bestCandidate = null;
-        foreach (List<int> candidate in EnumerateDistinctGroups(state, candidates, groupSize, candidateCap))
+        foreach (List<int> candidate in EnumerateDistinctGroups(state, candidates, groupSize, GreedyTightenCandidateCap))
         {
             if (!GroupHasUnresolvedPair(state, candidate))
                 continue; // must make progress, else the subtree does not terminate

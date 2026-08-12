@@ -189,18 +189,6 @@ public class GreedyTightenTests
         Assert.True(plan.MaxStep <= 8, $"expected additional rounds to reach 8, got {plan.MaxStep}");
     }
 
-    [Theory]
-    [InlineData(12, 4, 495)]
-    [InlineData(17, 4, 2380)]
-    [InlineData(20, 4, 4096)]
-    public void GreedyTightenCandidateCap_IsBoundedByCombinationCountAndLimit(
-        int activeCount, int groupSize, int expectedCap)
-    {
-        var builder = new StrategyBuilder(Math.Max(activeCount, groupSize), groupSize, 1);
-
-        Assert.Equal(expectedCap, builder.GetGreedyTightenCandidateCapForTesting(activeCount, groupSize));
-    }
-
     // Root-only micro-probe gate: a conservative pre-check for running full single-round
     // GreedyTighten. It may skip some cases that a full round would eventually tighten.
     [Theory]
