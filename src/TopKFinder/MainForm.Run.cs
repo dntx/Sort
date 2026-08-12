@@ -599,8 +599,6 @@ partial class MainForm
         _greedyIncumbentImproved = stage.Solution is not null
             && _greedyFeasibleStage?.Solution is not null
             && stage.Solution.Score.IsStrictRefinementOver(_greedyFeasibleStage.Value.Solution!.Score);
-        if (_greedyIncumbentImproved)
-            _incumbentStage = stage;
 
         if (_frozenGreedyStageComparisonBaseline is null
             && _incumbentStage is { Solution: not null } incumbent)
