@@ -861,7 +861,10 @@ partial class MainForm
         // A proven-infeasible terminal closes the incumbent squeeze even when this stage is rendered
         // as a search-only summary and returns before the normal tree-update path below.
         if (stage.Outcome == StageOutcome.ProvenInfeasible)
+        {
             MarkGreedyIncumbentProvenOptimal();
+            RefreshGreedyRootAfterProvenOptimal();
+        }
 
         bool needsDeferredMaterialization = ShouldMaterializeStageForDisplay(stage, improved);
 
@@ -937,7 +940,6 @@ partial class MainForm
         _overviewTree.EndUpdate();
 
         RemoveStageStatusPlaceholder(stage.Name);
-
         if (stage.HasPlan)
         {
             _latestProgress = CreateSnapshotFromPlan(stage.MaterializedPlan!);
@@ -955,6 +957,23 @@ partial class MainForm
                 ? (!improved ? "no improvement" : null)
                 : NoSolutionMarker(stage);
             ShowStageModal(FormatStageRootLabel(stage.Name, stage.Elapsed, stage.MaterializedPlan, marker, stage.Timings), stage.HasPlan);
+        }
+    }
+
+    private void RefreshGreedyRootAfterProvenOptimal()
+    {
+        if (_feasiblePlan is null || _treeView.Nodes.Count == 0)
+            return;
+
+        TreeNode root = _treeView.Nodes[0];
+        StrategyPlan shown = _compactPlan ?? _feasiblePlan;
+        root.Text = BuildRootLabel(_feasiblePlan, _feasiblePlan, shown);
+        if (_greedyFeasibleStage.HasValue)
+        {
+            root.Tag = new LazyNodeDetails(() => BuildGreedyProgressionDetails(
+                _greedyFeasibleStage.Value,
+                _greedyTightenStage,
+                _proofTightenStages));
         }
     }
 
