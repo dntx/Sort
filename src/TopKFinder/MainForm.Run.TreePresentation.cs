@@ -524,7 +524,7 @@ partial class MainForm
     private TreeNode BuildCompactTreeSlotNode(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool compactImproved)
     {
         if (compactPlan is null)
-            return CreateSearchRunningPlaceholderNode(FirstCompactTreeStageName(feasiblePlan, defaultPlan));
+            return CreateSearchRunningPlaceholderNode(PendingCompactStageName(feasiblePlan, defaultPlan));
 
         string compactStageName = FormatCompactStageName(defaultPlan is null, compactPlan.MaxStep);
         StageTimings? timings = _materializedCompactDisplayStage?.Timings;
@@ -533,12 +533,22 @@ partial class MainForm
             : CreateNoSolutionTreeRoot(compactStageName, compactPlan.Elapsed, timings: timings);
     }
 
-    private string FirstCompactTreeStageName(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan)
-        => defaultPlan is null
+    private string PendingCompactStageName(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan)
+    {
+        string displayedStepStageName = defaultPlan is null
+            ? StageNames.GreedyFeasible
+            : StageNames.StepProof;
+
+        if (!string.Equals(_currentStageName, displayedStepStageName, StringComparison.Ordinal)
+            && !string.Equals(_currentStageName, "-", StringComparison.Ordinal))
+            return _currentStageName;
+
+        return defaultPlan is null
             ? NextProofTightenStageNameForPresentation(
                 feasiblePlan,
                 _incumbentStage?.Solution?.Score.WorstCaseSteps ?? feasiblePlan.MaxStep)
             : StageNames.FormatExactEdgeCompact(feasiblePlan.MaxStep);
+    }
 
     private static string FormatCompactStageName(bool greedyMode, int maxStep)
         => greedyMode
