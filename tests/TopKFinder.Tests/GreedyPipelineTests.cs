@@ -42,9 +42,11 @@ public class GreedyPipelineTests
     public void GreedyPreparationDeferred_EmitsEverySolvedStageWithoutPlans()
     {
         var stages = new List<StageResult>();
+        var builder = new StrategyBuilder(9, 3, 3);
+        builder.GreedyTightenEnabledForTesting = true;
 
         GreedyPreparationResult preparation = PublicPipelineOrchestrator.RunGreedyPreparation(
-            new StrategyBuilder(9, 3, 3),
+            builder,
             onStageCompleted: stages.Add,
             emitStages: true,
             materialize: false);
