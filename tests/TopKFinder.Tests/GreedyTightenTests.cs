@@ -165,29 +165,24 @@ public class GreedyTightenTests
         Assert.Single(builder.GreedyTightenRoundTrace);
     }
 
-    // The production default runs a single critical-path round (measurement showed extra rounds rarely
-    // change U' but roughly double the cost). A case that tightens across several commits must still
-    // stop after one round when no cap is configured.
+    // The production default allows a bounded number of critical-path rounds. A case that tightens
+    // across several commits must stay within that bound.
     [Fact]
-    public void GreedyTightenPlan_DefaultsToSingleRound()
+    public void GreedyTightenPlan_DefaultsToBoundedRounds()
     {
         var builder = new StrategyBuilder(10, 2, 5);
 
         StrategyPlan plan = builder.ExecuteGreedyTightenStage();
 
         Assert.True(plan.IsFeasibleUpperBound);
-        Assert.Equal(1, builder.GreedyTightenRounds);
-        Assert.Single(builder.GreedyTightenRoundTrace);
+        Assert.InRange(builder.GreedyTightenRounds, 1, 4);
+        Assert.Equal(builder.GreedyTightenRounds, builder.GreedyTightenRoundTrace.Count);
     }
 
     [Fact]
-    public void GreedyTightenPlan_SeventeenFourFour_UnboundedRoundsReachEight()
+    public void GreedyTightenPlan_SeventeenFourFour_ProductionDefaultsReachEight()
     {
-        var builder = new StrategyBuilder(17, 4, 4)
-        {
-            GreedyTightenMaxRoundsForTesting = int.MaxValue,
-            GreedyTightenCandidateCap = 4096,
-        };
+        var builder = new StrategyBuilder(17, 4, 4);
 
         StrategyPlan plan = builder.ExecuteGreedyTightenStage();
 
@@ -195,7 +190,7 @@ public class GreedyTightenTests
     }
 
     [Theory]
-    [InlineData(12, 4, 128)]
+    [InlineData(12, 4, 495)]
     [InlineData(25, 10, 256)]
     [InlineData(30, 10, 384)]
     public void GreedyTightenCandidateCap_DefaultCap_ScalesWithStateSurface(int activeCount, int groupSize, int expectedCap)

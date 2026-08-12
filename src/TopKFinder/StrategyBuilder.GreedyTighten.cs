@@ -12,6 +12,7 @@ sealed record GreedyTightenStageArtifacts(
 partial class StrategyBuilder
 {
     private const int DefaultGreedyTightenCandidateCap = 128;
+    private const int GreedyTightenFullEnumerationThreshold = 4096;
     // GreedyTighten (Phase 0) — local restructuring of the greedy-feasible tree to lower the longest
     // path. See docs/core-algorithm.md 4.7 for the full design/rationale. This is the FRAMEWORK slice
     // (阶段 A): multi-round + critical-path post-order + AND short-circuit + single-state edit +
@@ -24,15 +25,42 @@ partial class StrategyBuilder
     internal int GreedyTightenCandidateCap = DefaultGreedyTightenCandidateCap;
 
     private int GetGreedyTightenCandidateCap(int activeCount, int groupSize)
-        => ScaleDefaultCandidateCap(GreedyTightenCandidateCap, DefaultGreedyTightenCandidateCap, activeCount, groupSize);
+    {
+        if (GreedyTightenCandidateCap != DefaultGreedyTightenCandidateCap)
+            return GreedyTightenCandidateCap;
+
+        long combinations = CountCombinationsUpTo(activeCount, groupSize, GreedyTightenFullEnumerationThreshold);
+        return combinations <= GreedyTightenFullEnumerationThreshold
+            ? (int)combinations
+            : ScaleDefaultCandidateCap(
+                GreedyTightenCandidateCap,
+                DefaultGreedyTightenCandidateCap,
+                activeCount,
+                groupSize);
+    }
+
+    private static long CountCombinationsUpTo(int itemCount, int groupSize, int limit)
+    {
+        if (groupSize < 0 || groupSize > itemCount)
+            return 0;
+
+        long result = 1;
+        for (int index = 1; index <= groupSize; index++)
+        {
+            result = result * (itemCount - groupSize + index) / index;
+            if (result > limit)
+                return result;
+        }
+
+        return result;
+    }
 
     internal int GetGreedyTightenCandidateCapForTesting(int activeCount, int groupSize)
         => GetGreedyTightenCandidateCap(activeCount, groupSize);
 
-    // Production default: GreedyTighten runs a SINGLE critical-path round. Post-fix measurement (eval
-    // nMax=10) shows one round reaches the same tightened U' as unbounded rounds on 305/320 cases at
-    // ~0.47x the cost, so additional rounds are not worth their cost by default.
-    private const int DefaultGreedyTightenMaxRounds = 1;
+    // Production default: allow a few critical-path rounds so a wider candidate window can propagate
+    // improvements through the policy. The cap keeps the pass bounded on larger shapes.
+    private const int DefaultGreedyTightenMaxRounds = 4;
 
     // Test/eval override of the round cap (null = DefaultGreedyTightenMaxRounds). Set a larger value to
     // run more rounds, or int.MaxValue for an effectively-unbounded full run.
