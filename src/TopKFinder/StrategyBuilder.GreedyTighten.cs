@@ -11,7 +11,7 @@ sealed record GreedyTightenStageArtifacts(
 
 partial class StrategyBuilder
 {
-    private const int DefaultGreedyTightenCandidateCap = 128;
+    private const int GreedyTightenCandidateCap = 4096;
     // GreedyTighten (Phase 0) — local restructuring of the greedy-feasible tree to lower the longest
     // path. See docs/core-algorithm.md 4.7 for the full design/rationale. This is the FRAMEWORK slice
     // (阶段 A): multi-round + critical-path post-order + AND short-circuit + single-state edit +
@@ -21,17 +21,8 @@ partial class StrategyBuilder
     //
     // It is NOT wired into the production pipeline yet; ExecuteGreedyTightenStage is only exercised by
     // tests until the mechanism is validated.
-    internal int GreedyTightenCandidateCap = DefaultGreedyTightenCandidateCap;
-
-    private int GetGreedyTightenCandidateCap(int activeCount, int groupSize)
-        => ScaleDefaultCandidateCap(GreedyTightenCandidateCap, DefaultGreedyTightenCandidateCap, activeCount, groupSize);
-
-    internal int GetGreedyTightenCandidateCapForTesting(int activeCount, int groupSize)
-        => GetGreedyTightenCandidateCap(activeCount, groupSize);
-
-    // Production default: GreedyTighten runs a SINGLE critical-path round. Post-fix measurement (eval
-    // nMax=10) shows one round reaches the same tightened U' as unbounded rounds on 305/320 cases at
-    // ~0.47x the cost, so additional rounds are not worth their cost by default.
+    // Production default: one critical-path round. Additional rounds remain available for targeted
+    // experiments until their cost/value is established across a representative workload.
     private const int DefaultGreedyTightenMaxRounds = 1;
 
     // Test/eval override of the round cap (null = DefaultGreedyTightenMaxRounds). Set a larger value to
@@ -88,8 +79,7 @@ partial class StrategyBuilder
 
         var candidates = root.GetActiveItemsOrdered();
         int groupSize = Math.Min(_m, candidates.Count);
-        int candidateCap = GetGreedyTightenCandidateCap(candidates.Count, groupSize);
-        foreach (List<int> candidate in EnumerateDistinctGroups(root, candidates, groupSize, candidateCap))
+        foreach (List<int> candidate in EnumerateDistinctGroups(root, candidates, groupSize, GreedyTightenCandidateCap))
         {
             if (!GroupHasUnresolvedPair(root, candidate))
                 continue;
@@ -528,14 +518,16 @@ partial class StrategyBuilder
                 return true;
         }
 
-        // Option (b): replace this state's own group. v1 tries the existing distinct-group enumeration
-        // (capped) in canonical order and commits the first candidate that strictly lowers the subtree
-        // height (hit-once-and-move-on). Scoring/ordering is the deferred 阶段 B tuning.
+        // Option (b): replace this state's own group. Evaluate the whole capped candidate window and
+        // commit the best strict improvement; committing the first improvement can spend the local
+        // tightening opportunity on a candidate that leaves a taller global subtree.
         var candidates = state.GetActiveItemsOrdered();
         int groupSize = Math.Min(_m, candidates.Count);
-        int candidateCap = GetGreedyTightenCandidateCap(candidates.Count, groupSize);
         int candidateRank = 0;
-        foreach (List<int> candidate in EnumerateDistinctGroups(state, candidates, groupSize, candidateCap))
+        int bestCandidateHeight = height;
+        int bestCandidateRank = 0;
+        List<int>? bestCandidate = null;
+        foreach (List<int> candidate in EnumerateDistinctGroups(state, candidates, groupSize, GreedyTightenCandidateCap))
         {
             if (!GroupHasUnresolvedPair(state, candidate))
                 continue; // must make progress, else the subtree does not terminate
@@ -547,18 +539,25 @@ partial class StrategyBuilder
 
             int candidateHeight = GreedyTightenHeightUnderGroup(
                 state, remainingSlots, candidate, _greedyTightenSharedHeightMemo);
-            if (candidateHeight < height)
+            if (candidateHeight < bestCandidateHeight)
             {
-                _greedyTightenOverrides[key] = new List<int>(candidate);
-                _greedyTightenOverrideAnchors[key] = state.Clone();
-                _greedyTightenCommits++;
-                _greedyTightenCommitCandidateRankSum += candidateRank;
-                IncrementGreedyTightenDepthHistogram(_greedyTightenCommitDepthHistogram, depth);
-                // A committed override changes the effective policy for this state, so previously
-                // memoized heights may be stale under the new override map.
-                _greedyTightenSharedHeightMemo.Clear();
-                return true;
+                bestCandidateHeight = candidateHeight;
+                bestCandidateRank = candidateRank;
+                bestCandidate = candidate;
             }
+        }
+
+        if (bestCandidate is not null)
+        {
+            _greedyTightenOverrides[key] = new List<int>(bestCandidate);
+            _greedyTightenOverrideAnchors[key] = state.Clone();
+            _greedyTightenCommits++;
+            _greedyTightenCommitCandidateRankSum += bestCandidateRank;
+            IncrementGreedyTightenDepthHistogram(_greedyTightenCommitDepthHistogram, depth);
+            // A committed override changes the effective policy for this state, so previously
+            // memoized heights may be stale under the new override map.
+            _greedyTightenSharedHeightMemo.Clear();
+            return true;
         }
 
         return false;
