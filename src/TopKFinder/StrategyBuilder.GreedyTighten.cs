@@ -528,13 +528,16 @@ partial class StrategyBuilder
                 return true;
         }
 
-        // Option (b): replace this state's own group. v1 tries the existing distinct-group enumeration
-        // (capped) in canonical order and commits the first candidate that strictly lowers the subtree
-        // height (hit-once-and-move-on). Scoring/ordering is the deferred 阶段 B tuning.
+        // Option (b): replace this state's own group. Evaluate the whole capped candidate window and
+        // commit the best strict improvement; committing the first improvement can spend the local
+        // tightening opportunity on a candidate that leaves a taller global subtree.
         var candidates = state.GetActiveItemsOrdered();
         int groupSize = Math.Min(_m, candidates.Count);
         int candidateCap = GetGreedyTightenCandidateCap(candidates.Count, groupSize);
         int candidateRank = 0;
+        int bestCandidateHeight = height;
+        int bestCandidateRank = 0;
+        List<int>? bestCandidate = null;
         foreach (List<int> candidate in EnumerateDistinctGroups(state, candidates, groupSize, candidateCap))
         {
             if (!GroupHasUnresolvedPair(state, candidate))
@@ -547,18 +550,25 @@ partial class StrategyBuilder
 
             int candidateHeight = GreedyTightenHeightUnderGroup(
                 state, remainingSlots, candidate, _greedyTightenSharedHeightMemo);
-            if (candidateHeight < height)
+            if (candidateHeight < bestCandidateHeight)
             {
-                _greedyTightenOverrides[key] = new List<int>(candidate);
-                _greedyTightenOverrideAnchors[key] = state.Clone();
-                _greedyTightenCommits++;
-                _greedyTightenCommitCandidateRankSum += candidateRank;
-                IncrementGreedyTightenDepthHistogram(_greedyTightenCommitDepthHistogram, depth);
-                // A committed override changes the effective policy for this state, so previously
-                // memoized heights may be stale under the new override map.
-                _greedyTightenSharedHeightMemo.Clear();
-                return true;
+                bestCandidateHeight = candidateHeight;
+                bestCandidateRank = candidateRank;
+                bestCandidate = candidate;
             }
+        }
+
+        if (bestCandidate is not null)
+        {
+            _greedyTightenOverrides[key] = new List<int>(bestCandidate);
+            _greedyTightenOverrideAnchors[key] = state.Clone();
+            _greedyTightenCommits++;
+            _greedyTightenCommitCandidateRankSum += bestCandidateRank;
+            IncrementGreedyTightenDepthHistogram(_greedyTightenCommitDepthHistogram, depth);
+            // A committed override changes the effective policy for this state, so previously
+            // memoized heights may be stale under the new override map.
+            _greedyTightenSharedHeightMemo.Clear();
+            return true;
         }
 
         return false;

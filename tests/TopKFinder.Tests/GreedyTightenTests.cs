@@ -180,6 +180,20 @@ public class GreedyTightenTests
         Assert.Single(builder.GreedyTightenRoundTrace);
     }
 
+    [Fact]
+    public void GreedyTightenPlan_SeventeenFourFour_UnboundedRoundsReachEight()
+    {
+        var builder = new StrategyBuilder(17, 4, 4)
+        {
+            GreedyTightenMaxRoundsForTesting = int.MaxValue,
+            GreedyTightenCandidateCap = 4096,
+        };
+
+        StrategyPlan plan = builder.ExecuteGreedyTightenStage();
+
+        Assert.True(plan.MaxStep <= 8, $"expected additional rounds to reach 8, got {plan.MaxStep}");
+    }
+
     [Theory]
     [InlineData(12, 4, 128)]
     [InlineData(25, 10, 256)]
