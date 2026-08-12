@@ -927,12 +927,7 @@ partial class MainForm
             _greedyIncumbentImproved = true;
         }
 
-        StrategyPlan shown = _compactPlan ?? _feasiblePlan;
-        root.Text = BuildRootLabel(_feasiblePlan, _feasiblePlan, shown);
-        root.Tag = new LazyNodeDetails(() => BuildGreedyProgressionDetails(
-            _greedyFeasibleStage!.Value,
-            _greedyTightenStage,
-            _proofTightenStages));
+        RefreshGreedyRootAfterProvenOptimal();
         _treeView.EndUpdate();
 
         _overviewTree.BeginUpdate();
@@ -940,6 +935,7 @@ partial class MainForm
         _overviewTree.EndUpdate();
 
         RemoveStageStatusPlaceholder(stage.Name);
+
         if (stage.HasPlan)
         {
             _latestProgress = CreateSnapshotFromPlan(stage.MaterializedPlan!);
