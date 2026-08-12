@@ -555,7 +555,7 @@ partial class MainForm
             ? "skipped"
             : _greedyIncumbentImproved && stage.Solution is not null
                 ? $"search-only tightened to <= {stage.Solution.Score.WorstCaseSteps}"
-                : "search-only (no improvement)";
+                : "no improvement";
 
         // Reuse the same stage de-dup flow as the proof-tighten stages: remove transient
         // placeholders first, then insert/replace the concrete stage node.
@@ -603,7 +603,7 @@ partial class MainForm
     }
 
     private static string FormatStageStatusNoteLabel(string stageName, TimeSpan elapsed, string marker, StageTimings? timings = null)
-        => $"{stageName} [{FormatStageElapsedText(elapsed, timings)}, {marker}]";
+        => $"{stageName}: [{FormatStageElapsedText(elapsed, timings)}, {marker}]";
 
     private TreeNode CreateStageStatusNoteNode(string stageName, TimeSpan elapsed, string marker, StageTimings? timings = null)
         => new TreeNode(FormatStageStatusNoteLabel(stageName, elapsed, marker, timings))
@@ -692,7 +692,7 @@ partial class MainForm
             : stage.Skipped
                 ? CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, "skipped", stage.Timings)
             : stage.Solution is not null && !stage.HasPlan
-                ? CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, SkippedNoImprovementMarker, stage.Timings)
+                ? CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, SkippedNoImprovementMarker, stage.Timings, bold: false)
             : stage.HasPlan
                 ? CreateNoImprovementTreeRoot(stage.Name, stage.MaterializedPlan!, stage.Elapsed, stage.Timings)
                 : CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, NoSolutionMarker(stage), stage.Timings);

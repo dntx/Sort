@@ -185,16 +185,18 @@ partial class MainForm
         _backButton.Enabled = false;
     }
 
-    // A terminal stage that found no better strategy: a single bold leaf carrying the unified label with
+    // A terminal stage that found no better strategy: a single leaf carrying the unified label with
     // the given marker ("no solution" when proven infeasible, "search incomplete (candidate cap reached)"
     // when the greedy cap truncated the enumeration) and no child strategy subtree.
-    private TreeNode CreateNoSolutionTreeRoot(string stageName, TimeSpan elapsed, string? marker = null, StageTimings? timings = null)
+    private TreeNode CreateNoSolutionTreeRoot(string stageName, TimeSpan elapsed, string? marker = null, StageTimings? timings = null, bool bold = true)
     {
-        return new TreeNode(FormatStageRootLabel(stageName, elapsed, plan: null, marker, timings))
+        var node = new TreeNode(FormatStageRootLabel(stageName, elapsed, plan: null, marker, timings))
         {
-            NodeFont = new Font(_treeView.Font, FontStyle.Bold),
             ForeColor = _palette.MutedForeColor,
         };
+        if (bold)
+            node.NodeFont = new Font(_treeView.Font, FontStyle.Bold);
+        return node;
     }
 
     // A stage that produced a valid strategy that does NOT strictly improve on the incumbent (e.g. the
@@ -205,7 +207,6 @@ partial class MainForm
     {
         return new TreeNode(FormatStageRootLabel(stageName, elapsed, plan, "no improvement", timings))
         {
-            NodeFont = new Font(_treeView.Font, FontStyle.Bold),
             ForeColor = _palette.MutedForeColor,
         };
     }

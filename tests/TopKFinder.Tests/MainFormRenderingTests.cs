@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Drawing;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
@@ -582,6 +583,10 @@ public sealed class MainFormRenderingTests
         Assert.Contains(root.Nodes.Cast<TreeNode>(), node =>
             node.Text.StartsWith(nonImprovingStage.Name + ":", StringComparison.Ordinal)
             && node.Text.Contains("no improvement (tree skipped)", StringComparison.Ordinal));
+        TreeNode renderedNode = root.Nodes.Cast<TreeNode>().Single(node =>
+            node.Text.StartsWith(nonImprovingStage.Name + ":", StringComparison.Ordinal));
+        Assert.Contains(": [", renderedNode.Text, StringComparison.Ordinal);
+        Assert.True(renderedNode.NodeFont is null || renderedNode.NodeFont.Style == FontStyle.Regular);
     }
 
     [Fact]
