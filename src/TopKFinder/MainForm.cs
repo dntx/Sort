@@ -412,7 +412,7 @@ partial class MainForm : Form
     {
         return new CheckBox
         {
-            Text = "enable GT",
+            Text = "Enable Greedy Tighten",
             AutoSize = true,
             Margin = new Padding(0, 8, 0, 0),
         };

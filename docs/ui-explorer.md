@@ -8,7 +8,7 @@
 - 模式与 CLI 一致：
   - `exact`：`step-proof → exact-edge-compact@S`
   - `greedy`：`greedy-feasible → (optional) greedy-tighten → proof-tighten≤N (0..n 次) → greedy-edge-compact@S`
-- UI 右侧输入区新增 `enable GT` 复选框：勾选后会在 greedy 预处理阶段执行 `greedy-tighten`；未勾选时默认跳过 GT，直接进入常规 proof-tighten 流程。
+- UI 右侧输入区新增 `Enable Greedy Tighten` 复选框：勾选后会在 greedy 预处理阶段执行 `greedy-tighten`；未勾选时默认跳过 GT，直接进入常规 proof-tighten 流程。
 
 实现归属：
 
