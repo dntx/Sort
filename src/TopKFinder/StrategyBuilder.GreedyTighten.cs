@@ -104,11 +104,13 @@ partial class StrategyBuilder
         return RunWithComparisonStateCancellation(() =>
         {
             _progressScope = _reportCombinedRunProgress
-                ? ProgressScope.FeasibleInCombinedRun
+                ? ProgressScope.GreedyTightenInCombinedRun
                 : ProgressScope.DefaultStandalone;
 
             ResetPerBuildTransientState();
             var stopwatch = Stopwatch.StartNew();
+            _greedyTightenStartMs = _progressStopwatch.ElapsedMilliseconds;
+            ReportProgress(force: true);
 
             // L side of the squeeze: proven analytic lower bound (independent of the never-finishing exact
             // search), identical to the greedy-feasible path.
@@ -140,6 +142,8 @@ partial class StrategyBuilder
             }
 
             stopwatch.Stop();
+            _greedyTightenSolved = true;
+            ReportProgress(force: true);
             return new GreedyTightenStageArtifacts(
                 solution,
                 plan,
@@ -476,6 +480,7 @@ partial class StrategyBuilder
 
         _greedyTightenStatesVisited++;
         IncrementGreedyTightenDepthHistogram(_greedyTightenVisitedDepthHistogram, depth);
+        ReportProgress();
 
         SearchStateKey key = GetSearchStateKey(state, remainingSlots);
         int height = GreedyTightenHeight(state, remainingSlots, _greedyTightenSharedHeightMemo);
@@ -572,6 +577,7 @@ partial class StrategyBuilder
     private int GreedyTightenHeight(ComparisonState state, int remainingSlots, Dictionary<SearchStateKey, int> memo)
     {
         _greedyTightenHeightCalls++;
+        ReportProgress();
         ThrowIfCancellationRequested();
         ulong ignoredFixedTopMask = 0;
         NormalizeState(state, ref ignoredFixedTopMask, ref remainingSlots);

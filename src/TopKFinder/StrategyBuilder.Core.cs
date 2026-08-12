@@ -42,6 +42,7 @@ partial class StrategyBuilder
             public const int ElapsedDivisor = 2;
             public const double FeasibleSoftCap = 0.99;
             public const double CompactFeasibleSoftCap = 0.999;
+            public const double GreedyTightenSoftCap = 0.99;
             public const double RawProgressSoftCapWithPending = 0.995;
         }
 
@@ -117,6 +118,8 @@ partial class StrategyBuilder
     private int _lastReportedVisitedStatesCount = 0;
     private long _feasiblePhase2StartMs = -1;
     private bool _feasiblePhaseSolved = false;
+    private long _greedyTightenStartMs = -1;
+    private bool _greedyTightenSolved;
     private long _phase1Milliseconds;
     private long _phase1bMilliseconds;
     private long _phase2Milliseconds;

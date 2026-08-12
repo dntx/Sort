@@ -24,6 +24,7 @@ static class ProgressEstimationService
             ProgressScope.DefaultInCombinedRun => (0.0, defaultSpanPercent / 100.0),
             ProgressScope.CompactPrimaryInCombinedRun => (compactPrimaryBasePercent / 100.0, compactPrimarySpanPercent / 100.0),
             ProgressScope.CompactFeasibleInCombinedRun => (compactFeasibleBasePercent / 100.0, compactFeasibleSpanPercent / 100.0),
+            ProgressScope.GreedyTightenInCombinedRun => (0.0, feasibleSpanPercent / 100.0),
             _ => (0.0, 1.0),
         };
 

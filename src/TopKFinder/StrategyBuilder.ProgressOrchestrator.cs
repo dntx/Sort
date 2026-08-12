@@ -86,6 +86,22 @@ partial class StrategyBuilder
                     ProgressTuning.Asymptote.FeasibleSoftCap);
             }
 
+            if (_owner._greedyTightenStartMs >= 0)
+            {
+                if (_owner._greedyTightenSolved)
+                    return 1.0;
+
+                if (_owner._greedyTightenStartMs < 0)
+                    return 0.0;
+
+                return ProgressEstimationService.EstimateAsymptoticProgress(
+                    Math.Max(0L, elapsedMs - _owner._greedyTightenStartMs),
+                    ProgressTuning.Asymptote.MinimumRemainingMs,
+                    ProgressTuning.Asymptote.InitialRemainingMs,
+                    ProgressTuning.Asymptote.ElapsedDivisor,
+                    ProgressTuning.Asymptote.GreedyTightenSoftCap);
+            }
+
             if (_owner._progressScope == ProgressScope.CompactFeasibleInCombinedRun)
             {
                 if (_owner._phase1bSolved)
