@@ -654,19 +654,17 @@ public sealed class MainFormRenderingTests
 
         List<StageResult> buffered = GetPrivateField<List<StageResult>>(form, "_readyGreedyEdgeStages");
         List<StageResult> landed = GetPrivateField<List<StageResult>>(form, "_proofTightenStages");
+        List<Task> materializationTasks = GetPrivateField<List<Task>>(form, "_greedyEdgeTreeMaterializationTasks");
         Assert.Single(buffered);
         Assert.Empty(landed);
+        Assert.Single(materializationTasks);
 
         Assert.Contains(root.Nodes.Cast<TreeNode>(), node =>
             node.Text.StartsWith(incoming.Name, StringComparison.Ordinal)
             && (node.Text.Contains("searched, building tree", StringComparison.Ordinal)
                 || node.Text.Contains("tree ready", StringComparison.Ordinal)));
 
-        PumpUiUntil(
-            () => root.Nodes.Cast<TreeNode>().Any(node =>
-                node.Text.StartsWith(incoming.Name, StringComparison.Ordinal)
-                && node.Text.Contains("tree ready", StringComparison.Ordinal)),
-            timeoutMs: 2000);
+        PumpUiUntilTaskCompletes(materializationTasks[0], timeoutMs: 10_000);
         Assert.Contains(root.Nodes.Cast<TreeNode>(), node =>
             node.Text.StartsWith(incoming.Name, StringComparison.Ordinal)
             && node.Text.Contains("tree ready", StringComparison.Ordinal));
