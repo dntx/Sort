@@ -1134,6 +1134,59 @@ public sealed class MainFormRenderingTests
     }
 
     [Fact]
+    public void GreedyPreparation_ImprovingTightenStage_IsDisplayedAsImprovement()
+    {
+        var builder = new StrategyBuilder(25, 8, 3)
+        {
+            GreedyTightenEnabledForTesting = true,
+        };
+        GreedyPreparationResult preparation = PublicPipelineOrchestrator.RunGreedyPreparation(
+            builder,
+            emitStages: false,
+            materialize: true);
+
+        StrategyPlan feasiblePlan = preparation.BaseFeasiblePlan
+            ?? throw new InvalidOperationException("Expected greedy feasible plan.");
+        StrategyPlan tightenPlan = preparation.GreedyTightenPlan
+            ?? throw new InvalidOperationException("Expected improving greedy-tighten plan.");
+        SolvedStrategy tightenSolution = preparation.GreedyTightenSolution
+            ?? throw new InvalidOperationException("Expected greedy-tighten solution.");
+
+        Assert.True(tightenPlan.MaxStep < feasiblePlan.MaxStep);
+
+        using var form = new MainForm();
+        _ = form.Handle;
+        InvokePrivateInstanceVoid(form, "ShowInitialStagePlaceholder", 25, 8, 3, true);
+        SetPrivateField(form, "_feasibleMode", true);
+
+        var feasibleStage = new StageResult(
+            StageNames.GreedyFeasible,
+            feasiblePlan,
+            feasiblePlan.Elapsed,
+            StageOutcome.Completed,
+            preparation.BaseFeasibleSolution,
+            preparation.GreedyFeasibleTimings);
+        SetPrivateField(form, "_feasiblePlan", feasiblePlan);
+        SetPrivateField(form, "_greedyFeasibleStage", feasibleStage);
+        SetPrivateField(form, "_incumbentStage", feasibleStage);
+
+        var tightenStage = new StageResult(
+            StageNames.GreedyTighten,
+            tightenPlan,
+            tightenPlan.Elapsed,
+            StageOutcome.Completed,
+            tightenSolution,
+            preparation.GreedyTightenTimings,
+            StagePresentationMode.Auto);
+        InvokePrivateInstanceVoid(form, "OnGreedyPreparationStage", tightenStage);
+
+        TreeView tree = GetPrivateField<TreeView>(form, "_treeView");
+        Assert.Contains(tree.Nodes[0].Nodes.Cast<TreeNode>(), node =>
+            node.Text.StartsWith(StageNames.GreedyTighten + ":", StringComparison.Ordinal)
+            && !node.Text.Contains("no improvement", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void DisplayInitialGreedyStageTree_ReplaysBufferedSearchOnlyGreedyTighten()
     {
         using var form = new MainForm();

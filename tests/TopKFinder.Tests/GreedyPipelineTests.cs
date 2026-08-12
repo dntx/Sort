@@ -58,6 +58,7 @@ public class GreedyPipelineTests
         Assert.False(stages[1].HasPlan);
         Assert.NotNull(stages[0].Solution);
         Assert.Equal(TimeSpan.Zero, stages[0].Timings.Materialize);
+        Assert.Equal(StagePresentationMode.Auto, stages[1].PresentationMode);
         Assert.Equal(TimeSpan.Zero, stages[1].Timings.Materialize);
         if (stages[1].Skipped)
             Assert.Null(stages[1].Solution);
