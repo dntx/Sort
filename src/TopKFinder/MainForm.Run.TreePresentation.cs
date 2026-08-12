@@ -7,7 +7,7 @@ namespace TopKFinder;
 
 partial class MainForm
 {
-    private const string SkippedNoImprovementMarker = "no improvement (tree skipped)";
+    private const string SkippedNoImprovementMarker = "no improvement";
     private const string SearchRunningSuffix = " [searching]";
     private const string TreeBuildingSuffix = ", building tree]";
     private const string TreeReadySuffix = ", tree ready]";
@@ -692,7 +692,7 @@ partial class MainForm
             : stage.Skipped
                 ? CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, "skipped", stage.Timings)
             : stage.Solution is not null && !stage.HasPlan
-                ? CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, SkippedNoImprovementMarker, stage.Timings, bold: false)
+                ? CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, SkippedNoImprovementMarker, stage.Timings)
             : stage.HasPlan
                 ? CreateNoImprovementTreeRoot(stage.Name, stage.MaterializedPlan!, stage.Elapsed, stage.Timings)
                 : CreateNoSolutionTreeRoot(stage.Name, stage.Elapsed, NoSolutionMarker(stage), stage.Timings);
