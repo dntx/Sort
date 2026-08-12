@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Drawing;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
@@ -79,6 +80,30 @@ public sealed class MainFormRenderingTests
 
         Assert.Contains("no improvement", node.Text, StringComparison.Ordinal);
         Assert.DoesNotContain("no solution", node.Text, StringComparison.Ordinal);
+        Assert.True(node.NodeFont is null || node.NodeFont.Style == FontStyle.Regular);
+    }
+
+    [Fact]
+    public void InfeasibleStage_RendersNoSolutionWithoutBoldFont()
+    {
+        var stage = new StageResult(
+            "proof-tighten<=3",
+            materializedPlan: null,
+            elapsed: TimeSpan.FromMilliseconds(1),
+            outcome: StageOutcome.ProvenInfeasible,
+            solution: null,
+            timings: StageTimings.Legacy(TimeSpan.FromMilliseconds(1)));
+
+        using var form = new MainForm();
+        TreeNode node = InvokePrivateInstance<TreeNode>(
+            form,
+            "BuildStageTreeNode",
+            stage,
+            "edge0",
+            false);
+
+        Assert.Contains("no solution", node.Text, StringComparison.Ordinal);
+        Assert.True(node.NodeFont is null || node.NodeFont.Style == FontStyle.Regular);
     }
 
     [Fact]
@@ -581,7 +606,12 @@ public sealed class MainFormRenderingTests
         TreeNode root = tree.Nodes[0];
         Assert.Contains(root.Nodes.Cast<TreeNode>(), node =>
             node.Text.StartsWith(nonImprovingStage.Name + ":", StringComparison.Ordinal)
-            && node.Text.Contains("no improvement (tree skipped)", StringComparison.Ordinal));
+            && node.Text.Contains("no improvement", StringComparison.Ordinal)
+            && !node.Text.Contains("tree skipped", StringComparison.Ordinal));
+        TreeNode renderedNode = root.Nodes.Cast<TreeNode>().Single(node =>
+            node.Text.StartsWith(nonImprovingStage.Name + ":", StringComparison.Ordinal));
+        Assert.Contains(": [", renderedNode.Text, StringComparison.Ordinal);
+        Assert.True(renderedNode.NodeFont is null || renderedNode.NodeFont.Style == FontStyle.Regular);
     }
 
     [Fact]
