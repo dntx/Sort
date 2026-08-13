@@ -7,8 +7,7 @@ using Xunit.Sdk;
 // Nightly regression gates for historically sensitive proof-tighten shapes. Required PR tests
 // exclude the Nightly category; nightly/manual workflows select this class explicitly.
 //
-// Enable:
-//   $env:RUN_PROOF_TIGHTEN_GATE = "1"
+// Run explicitly:
 //   dotnet test tests\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter ProofTightenPerfGateTests
 //
 // Optional knobs:
@@ -71,9 +70,6 @@ public sealed class ProofTightenPerfGateTests
     [Fact]
     public void GreedyProofTighten_FirstProbe_20_2_6_CompletesWithinGate()
     {
-        if (Environment.GetEnvironmentVariable("RUN_PROOF_TIGHTEN_GATE") != "1")
-            return;
-
         int timeoutSeconds = ReadPositiveIntEnv("PROOF_TIGHTEN_TIMEOUT_SECONDS", 200);
         int outcomesCap = ReadNonNegativeIntEnv("PROOF_TIGHTEN_OUTCOMES_CAP", 0);
         int candidatesCap = ReadNonNegativeIntEnv("PROOF_TIGHTEN_CANDIDATES_CAP", 0);

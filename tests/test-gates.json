@@ -26,15 +26,6 @@
       "command": "$env:RUN_GAP_DUMP='1'; dotnet test tests/TopKFinder.PerfTests/TopKFinder.PerfTests.csproj --filter GapTreeDumpTests"
     },
     {
-      "name": "RUN_PROOF_TIGHTEN_GATE",
-      "category": "nightly",
-      "entrypoint": "tests/TopKFinder.PerfTests/ProofTightenPerfGateTests.cs",
-      "workflows": [
-        ".github/workflows/nightly-proof-tighten-gate.yml",
-        ".github/workflows/manual-proof-tighten-gate.yml"
-      ]
-    },
-    {
       "name": "RUN_STRATEGY_MATRIX",
       "category": "nightly",
       "entrypoint": "tests/TopKFinder.PerfTests/StrategyMatrixTests.cs",
