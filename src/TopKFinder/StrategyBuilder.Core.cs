@@ -407,6 +407,15 @@ partial class StrategyBuilder
         int generationCap = int.MaxValue)
         => GroupSelectionHelper.EnumerateDistinctGroups(this, state, candidates, groupSize, generationCap);
 
+    private IReadOnlyList<List<int>> EnumerateDistinctGroups(
+        ComparisonState state,
+        IReadOnlyList<int> candidates,
+        int groupSize,
+        int generationCap,
+        out bool wasTruncated)
+        => GroupSelectionHelper.EnumerateDistinctGroups(
+            this, state, candidates, groupSize, generationCap, out wasTruncated);
+
     private IEnumerable<List<int>> EnumeratePrioritizedGroups(
         ComparisonState state,
         int remainingSlots,

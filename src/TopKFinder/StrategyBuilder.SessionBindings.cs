@@ -28,6 +28,7 @@ partial class StrategyBuilder
     private Dictionary<SearchStateKey, int> _compactGroupPatternTightestBudget => _session.CompactGroupPatternTightestBudget;
     private Dictionary<(SearchStateKey Key, int Budget), int> _compactCostMemo => _session.CompactCostMemo;
     private Dictionary<SearchStateKey, int> _compactRealStepsMemo => _session.CompactRealStepsMemo;
+    private HashSet<(SearchStateKey Key, int Budget)> _compactProvenInfeasibleMemo => _session.CompactProvenInfeasibleMemo;
 
     private List<SearchMilestone> _rootIncumbents => _session.RootIncumbents;
 

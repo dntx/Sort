@@ -16,6 +16,13 @@ partial class StrategyBuilder
         }
 
         public int SolveCompact(ComparisonState state, int remainingSlots, int feasibleBudget = int.MaxValue)
+            => SolveCompact(state, remainingSlots, feasibleBudget, out _);
+
+        private int SolveCompact(
+            ComparisonState state,
+            int remainingSlots,
+            int feasibleBudget,
+            out SearchStateKey normalizedKey)
         {
             _owner.ThrowIfCancellationRequested();
             ulong ignoredFixedTopMask = 0;
@@ -30,8 +37,11 @@ partial class StrategyBuilder
                     out SearchStateKey key,
                     out (SearchStateKey, int) memoKey))
             {
+                normalizedKey = key;
                 return resolvedCost;
             }
+
+            normalizedKey = key;
 
             _owner._compactCostMemo[memoKey] = int.MaxValue;
             _owner._compactStatesSolved++;
@@ -77,7 +87,7 @@ partial class StrategyBuilder
                 groupSize,
                 branchBudget);
 
-            foreach (var (group, children) in fits)
+            foreach (var (group, children) in fits.Fits)
             {
                 if (!TrySumChildCostsWithinBudget(children, branchBudget, out int branchCostSum))
                     continue;
@@ -100,7 +110,7 @@ partial class StrategyBuilder
             int groupSize = Math.Min(_owner._m, candidates.Count);
             int branchBudget = budget - 1;
 
-            var fits = CollectBudgetFeasibleCandidates(
+            BudgetCandidateCollection collection = CollectBudgetFeasibleCandidates(
                 state,
                 remainingSlots,
                 key,
@@ -108,10 +118,18 @@ partial class StrategyBuilder
                 groupSize,
                 branchBudget);
 
-            foreach (var (group, children) in fits)
+            bool allGroupsProvenInfeasible = true;
+            foreach (var (group, children) in collection.Fits)
             {
-                if (!TryGetChildrenRealStepsWithinBudget(children, branchBudget, out int realSteps))
+                BudgetChildrenResult childrenResult = TryGetChildrenRealStepsWithinBudget(
+                    children, branchBudget, out int realSteps);
+                if (childrenResult == BudgetChildrenResult.ProvenInfeasible)
                     continue;
+                if (childrenResult == BudgetChildrenResult.Incomplete)
+                {
+                    allGroupsProvenInfeasible = false;
+                    continue;
+                }
 
                 _owner._compactGroupPatternCache[key] = MakeGroupPattern(state, group);
                 _owner._compactGroupPatternTightestBudget[key] = budget;
@@ -120,6 +138,9 @@ partial class StrategyBuilder
                 _owner._compactRealStepsMemo[key] = cost;
                 return cost;
             }
+
+            if (collection.EnumerationComplete && allGroupsProvenInfeasible)
+                _owner._compactProvenInfeasibleMemo.Add(memoKey);
 
             return int.MaxValue;
         }
@@ -295,7 +316,7 @@ partial class StrategyBuilder
             return rejected || !traversal.IsUseful ? null : children;
         }
 
-        private List<(List<int> Group, List<(ComparisonState State, int RemainingSlots)> Children)> CollectBudgetFeasibleCandidates(
+        private BudgetCandidateCollection CollectBudgetFeasibleCandidates(
             ComparisonState state,
             int remainingSlots,
             SearchStateKey key,
@@ -317,7 +338,9 @@ partial class StrategyBuilder
             }
 
             int candidateCap = _owner.GetCompactGreedyCandidateCap(candidates.Count, groupSize);
-            foreach (var group in _owner.EnumerateDistinctGroups(state, candidates, groupSize, candidateCap))
+            IReadOnlyList<List<int>> groups = _owner.EnumerateDistinctGroups(
+                state, candidates, groupSize, candidateCap, out bool wasTruncated);
+            foreach (var group in groups)
             {
                 if (!seen.Add(new IntSequenceKey(group.ToArray())))
                     continue;
@@ -334,7 +357,7 @@ partial class StrategyBuilder
             }
 
             fits.Sort((a, b) => a.Children.Count.CompareTo(b.Children.Count));
-            return fits;
+            return new BudgetCandidateCollection(fits, EnumerationComplete: !wasTruncated);
         }
 
         private bool TrySumChildCostsWithPruning(
@@ -376,7 +399,7 @@ partial class StrategyBuilder
             return true;
         }
 
-        private bool TryGetChildrenRealStepsWithinBudget(
+        private BudgetChildrenResult TryGetChildrenRealStepsWithinBudget(
             List<(ComparisonState State, int RemainingSlots)> children,
             int branchBudget,
             out int realSteps)
@@ -384,14 +407,36 @@ partial class StrategyBuilder
             realSteps = 0;
             foreach (var (childState, childRemaining) in children)
             {
-                int childCost = SolveCompact(childState, childRemaining, branchBudget);
+                int childCost = SolveCompact(
+                    childState,
+                    childRemaining,
+                    branchBudget,
+                    out SearchStateKey childKey);
                 if (childCost == int.MaxValue)
-                    return false;
+                {
+                    return IsProvenInfeasible(childKey, branchBudget)
+                        ? BudgetChildrenResult.ProvenInfeasible
+                        : BudgetChildrenResult.Incomplete;
+                }
 
                 realSteps = Math.Max(realSteps, GetCompactRealSteps(childState, childRemaining));
             }
 
-            return true;
+            return BudgetChildrenResult.Feasible;
+        }
+
+        private bool IsProvenInfeasible(SearchStateKey key, int budget)
+            => _owner._compactProvenInfeasibleMemo.Contains((key, budget));
+
+        private readonly record struct BudgetCandidateCollection(
+            List<(List<int> Group, List<(ComparisonState State, int RemainingSlots)> Children)> Fits,
+            bool EnumerationComplete);
+
+        private enum BudgetChildrenResult
+        {
+            Feasible,
+            ProvenInfeasible,
+            Incomplete,
         }
 
         private int FinalizeCompactSelection(
