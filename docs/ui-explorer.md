@@ -22,7 +22,7 @@ UI 使用与 CLI 相同的阶段名展示进度：
 
 - `step-proof`
 - `greedy-feasible`
-- `greedy-tighten`（可选，root-probe 通过才运行）
+- `greedy-tighten`（可选，由 `Enable Greedy Tighten` 控制）
 - `proof-tighten≤N`
 - `exact-edge-compact@S`（exact 终段）
 - `greedy-edge-compact@S`（greedy 终段）

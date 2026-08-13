@@ -606,24 +606,6 @@ public class GreedyPipelineTests
             $"gated pipeline should not end worse than baseline: baseline {baselinePlan.MaxStep}, gated {gatedPlan.MaxStep}");
     }
 
-    // Neutral lock: when root probe says "skip", not applying any GT pre-step must keep the same
-    // proof-tighten start ceiling and final result as the baseline path.
-    [Fact]
-    public void GreedyPipeline_RootProbeSkip_PathMatchesBaseline_12_4_4()
-    {
-        var baselineBuilder = new StrategyBuilder(12, 4, 4);
-        _ = baselineBuilder.ExecuteGreedyFeasibleStage();
-        int baselineFirstBudget = FirstProofTightenBudget(baselineBuilder, out StrategyPlan baselinePlan);
-
-        var gatedBuilder = new StrategyBuilder(12, 4, 4);
-        _ = gatedBuilder.ExecuteGreedyFeasibleStage();
-        Assert.False(gatedBuilder.ShouldRunGreedyTightenByRootProbe());
-        int gatedFirstBudget = FirstProofTightenBudget(gatedBuilder, out StrategyPlan gatedPlan);
-
-        Assert.Equal(baselineFirstBudget, gatedFirstBudget);
-        Assert.Equal(baselinePlan.MaxStep, gatedPlan.MaxStep);
-    }
-
     // Lightweight canary for the m=2 proof-tighten performance cliff: this shape used to complete
     // quickly in normal conditions but becomes much slower when the exact-feasibility prune path
     // regresses. Keep the budget short to avoid inflating the suite runtime. A single retry absorbs
