@@ -35,6 +35,7 @@ sealed class StrategyBuilderSession
     public Dictionary<SearchStateKey, int> CompactGroupPatternTightestBudget { get; } = new();
     public Dictionary<(SearchStateKey Key, int Budget), int> CompactCostMemo { get; } = new();
     public Dictionary<SearchStateKey, int> CompactRealStepsMemo { get; } = new();
+    public HashSet<(SearchStateKey Key, int Budget)> CompactProvenInfeasibleMemo { get; } = new();
 
     // Greedy feasible/tighten session state.
     public Dictionary<SearchStateKey, int>? ConstructiveDepthMemo;
@@ -84,6 +85,7 @@ sealed class StrategyBuilderSession
         CompactGroupPatternTightestBudget.Clear();
         CompactCostMemo.Clear();
         CompactRealStepsMemo.Clear();
+        CompactProvenInfeasibleMemo.Clear();
     }
 
     public void ResetCompactSelectionState()

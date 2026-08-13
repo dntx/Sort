@@ -321,6 +321,15 @@ public class GreedyPipelineTests
 
         Assert.Equal($"proof-tighten\u2264{budget}", stage.Name);
         Assert.NotEqual(StageOutcome.Incomplete, stage.Outcome);
+        Assert.NotEmpty(builder.ProofTightenAttemptTrace);
+        for (int i = 1; i < builder.ProofTightenAttemptTrace.Count; i++)
+        {
+            Assert.Equal(
+                builder.ProofTightenAttemptTrace[i - 1].CandidateCap * 4,
+                builder.ProofTightenAttemptTrace[i].CandidateCap);
+            Assert.True(builder.ProofTightenAttemptTrace[i - 1].EnumerationCapped);
+        }
+        Assert.False(builder.ProofTightenAttemptTrace[^1].EnumerationCapped);
         if (stage.Outcome == StageOutcome.Tightened)
         {
             Assert.True(stage.HasPlan);
@@ -346,6 +355,52 @@ public class GreedyPipelineTests
         _ = builder.ExecuteProofTightenStage(budget);
 
         Assert.Equal(originalCap, builder.CompactGreedyCandidateCap);
+    }
+
+    [Fact]
+    public void ProofTightenProbe_FeasibleRetryReuse_PreservesOutcomeAndPlan()
+    {
+        var reused = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 1 };
+        var baseline = new StrategyBuilder(12, 4, 4)
+        {
+            CompactGreedyCandidateCap = 1,
+            DisableProofTightenFeasibleReuseForTesting = true,
+        };
+        int budget = reused.ExecuteGreedyFeasibleStage().MaxStep - 1;
+        _ = baseline.ExecuteGreedyFeasibleStage();
+
+        StageResult reusedStage = reused.ExecuteProofTightenStage(budget);
+        StageResult baselineStage = baseline.ExecuteProofTightenStage(budget);
+
+        Assert.Equal(baselineStage.Outcome, reusedStage.Outcome);
+        Assert.Equal(baselineStage.MaterializedPlan?.MaxStep, reusedStage.MaterializedPlan?.MaxStep);
+        Assert.Equal(
+            baseline.ProofTightenAttemptTrace.Select(attempt => attempt.CandidateCap),
+            reused.ProofTightenAttemptTrace.Select(attempt => attempt.CandidateCap));
+        if (reused.ProofTightenAttemptTrace.Count > 1)
+            Assert.Contains(reused.ProofTightenAttemptTrace.Skip(1), attempt => attempt.ReusedFeasibleStates > 0);
+    }
+
+    [Fact]
+    public void ProofTightenProbe_InfeasibleRetryReuse_PreservesOutcomeAndPlan()
+    {
+        var reused = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 1 };
+        var baseline = new StrategyBuilder(12, 4, 4)
+        {
+            CompactGreedyCandidateCap = 1,
+            DisableProofTightenInfeasibleReuseForTesting = true,
+        };
+        int budget = reused.ExecuteGreedyFeasibleStage().MaxStep - 1;
+        _ = baseline.ExecuteGreedyFeasibleStage();
+
+        StageResult reusedStage = reused.ExecuteProofTightenStage(budget);
+        StageResult baselineStage = baseline.ExecuteProofTightenStage(budget);
+
+        Assert.Equal(baselineStage.Outcome, reusedStage.Outcome);
+        Assert.Equal(baselineStage.MaterializedPlan?.MaxStep, reusedStage.MaterializedPlan?.MaxStep);
+        Assert.Equal(
+            baseline.ProofTightenAttemptTrace.Select(attempt => attempt.CandidateCap),
+            reused.ProofTightenAttemptTrace.Select(attempt => attempt.CandidateCap));
     }
 
     // Pins the user-facing stage-name contract emitted by RunGreedyPipeline: each downward

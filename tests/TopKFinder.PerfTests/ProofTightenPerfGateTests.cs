@@ -31,6 +31,34 @@ public sealed class ProofTightenPerfGateTests
     }
 
     [Fact]
+    public void GreedyProofTighten_AttemptTrace_20_5_5()
+    {
+        if (Environment.GetEnvironmentVariable("RUN_PROOF_TIGHTEN_20_5_5_TRACE") != "1")
+            return;
+
+        var builder = new StrategyBuilder(20, 5, 5);
+        _ = builder.ExecuteGreedyFeasibleStage();
+
+        StageResult stage = builder.ExecuteProofTightenStage(budget: 6);
+
+        foreach (StrategyBuilder.ProofTightenAttemptDiagnostics attempt in builder.ProofTightenAttemptTrace)
+        {
+            _output.WriteLine(
+                $"attempt={attempt.Attempt}, cap={attempt.CandidateCap}, " +
+                $"elapsedMs={attempt.Elapsed.TotalMilliseconds:F1}, outcome={attempt.Outcome}, " +
+                $"capped={attempt.EnumerationCapped}, states={attempt.CompactStatesSolved}, " +
+                $"groups={attempt.CompactGroupsEnumerated}, fitGroups={attempt.CompactStepOptimalGroups}, " +
+                $"outcomes={attempt.OutcomesConstructed}, reusedFeasible={attempt.ReusedFeasibleStates}, " +
+                $"reusedInfeasible={attempt.ReusedInfeasibleStates}");
+        }
+
+        Assert.Equal(StageOutcome.ProvenInfeasible, stage.Outcome);
+        Assert.Contains(
+            builder.ProofTightenAttemptTrace.Skip(1),
+            attempt => attempt.ReusedInfeasibleStates > 0);
+    }
+
+    [Fact]
     public void GreedyProofTighten_FirstProbe_20_2_6_CompletesWithinGate()
     {
         if (Environment.GetEnvironmentVariable("RUN_PROOF_TIGHTEN_GATE") != "1")

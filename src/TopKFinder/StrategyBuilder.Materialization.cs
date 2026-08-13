@@ -309,7 +309,7 @@ partial class StrategyBuilder
 
     private sealed class GroupSelectionHelper
     {
-        private static void GenerateClassRepresentatives(
+        private static bool GenerateClassRepresentatives(
             StrategyBuilder owner,
             ComparisonState state,
             List<List<int>> classes,
@@ -323,7 +323,7 @@ partial class StrategyBuilder
             owner.ProbeCancellation();
 
             if (collected.Count >= generationCap)
-                return;
+                return generationCap != int.MaxValue;
 
             if (remaining == 0)
             {
@@ -332,12 +332,12 @@ partial class StrategyBuilder
                 var group = new List<int>(prefix);
                 group.Sort();
                 collected.Add(group);
-                return;
+                return false;
             }
 
             // Prune branches that can no longer reach the required group size.
             if (classIndex == classes.Count || suffixCapacity[classIndex] < remaining)
-                return;
+                return false;
 
             List<int> cls = classes[classIndex];
             int maxTake = Math.Min(cls.Count, remaining);
@@ -346,7 +346,7 @@ partial class StrategyBuilder
                 for (int j = 0; j < take; j++)
                     prefix.Add(cls[j]);
 
-                GenerateClassRepresentatives(
+                bool childTruncated = GenerateClassRepresentatives(
                     owner,
                     state,
                     classes,
@@ -359,17 +359,17 @@ partial class StrategyBuilder
 
                 prefix.RemoveRange(prefix.Count - take, take);
 
-                if (collected.Count >= generationCap)
+                if (childTruncated || collected.Count >= generationCap)
                 {
                     // Stopped short of trying the remaining (larger-`take`) siblings at this level
                     // because the cap filled up: the enumeration is genuinely truncated. Flag it so
                     // a probe that concludes infeasible under a finite cap is reported as incomplete,
                     // not a proof.
-                    if (generationCap != int.MaxValue)
-                        owner._compactEnumerationCapped = true;
-                    return;
+                    return generationCap != int.MaxValue;
                 }
             }
+
+            return false;
         }
 
         public static IntSequenceKey GetGroupPattern(ComparisonState state, IReadOnlyList<int> group)
@@ -398,6 +398,15 @@ partial class StrategyBuilder
             IReadOnlyList<int> candidates,
             int groupSize,
             int generationCap)
+            => EnumerateDistinctGroups(owner, state, candidates, groupSize, generationCap, out _);
+
+        public static IReadOnlyList<List<int>> EnumerateDistinctGroups(
+            StrategyBuilder owner,
+            ComparisonState state,
+            IReadOnlyList<int> candidates,
+            int groupSize,
+            int generationCap,
+            out bool wasTruncated)
         {
             // Exploit the active poset's automorphisms to avoid enumerating all C(active, groupSize)
             // combinations. Active items are partitioned into "free symmetry classes" (items with
@@ -422,7 +431,10 @@ partial class StrategyBuilder
 
             var collected = new List<List<int>>();
             var prefix = new List<int>(groupSize);
-            GenerateClassRepresentatives(owner, state, classes, suffixCapacity, 0, groupSize, prefix, collected, generationCap);
+            wasTruncated = GenerateClassRepresentatives(
+                owner, state, classes, suffixCapacity, 0, groupSize, prefix, collected, generationCap);
+            if (wasTruncated)
+                owner._compactEnumerationCapped = true;
 
             // Orbit de-duplication via a cheap pre-filter. The full group canonical key
             // (GetGroupPattern -> McKay) is the only sound way to merge two groups that lie in the same
