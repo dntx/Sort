@@ -30,6 +30,7 @@ using TopKFinder;
 //   CSV with one or more rows per matrix key. When multiple rows exist for a key, the comparison
 //   uses the median of the baseline rows, which makes the file behave like a rolling accepted
 //   history rather than a single noisy sample.
+[Trait("Category", "Nightly")]
 public sealed class StrategyMatrixTests
 {
     private sealed record MatrixEntry(

@@ -312,24 +312,20 @@ Lane 决策表（先选信号，再选车道）：
 | `DominanceReuseStatsTests.cs` | `RUN_DOMINANCE_STATS` | 统计 dominance floor 复用命中与覆盖率，定位下界复用退化 |
 | `GapTreeDumpTests.cs` | `RUN_GAP_DUMP` | 把 default 计划与 gap oracle 证明的边最优计划并排渲染，肉眼对比为何真最优边数更少 |
 | `OrderedBlockHonestyTests.cs` | `RUN_BLOCK_HONESTY` | 有序块置换检测器的诚实性 / 完整性扫描：确认 sibling 合并都由真实 parent-state automorphism 支撑 |
-| `ProofTightenPerfGateTests.cs` | `RUN_PROOF_TIGHTEN_GATE` | 针对历史敏感形状 `20,2,6` 的 greedy `proof-tighten<=U-1` 首探针 gate：默认只看超时（抓卡死/数量级爆炸），可选叠加 `OutcomesConstructed / CandidateGroupsEnumerated / SearchedStates` 的确定性上限（机器无关，便于 ratchet） |
+| `ProofTightenPerfGateTests.cs` | `Nightly` 类别 | 针对历史敏感形状的 greedy proof-tighten gate；由 nightly/manual workflow 显式选择，默认只看超时，可选叠加确定性 counter 上限 |
 
 `ProofTightenPerfGateTests` 使用说明：
 
 - 本地触发：
 
 ```powershell
-$env:RUN_PROOF_TIGHTEN_GATE = "1"
 dotnet test .\tests\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter ProofTightenPerfGateTests
 ```
 
 - 可选环境变量：
   - `PROOF_TIGHTEN_TIMEOUT_SECONDS`（默认 200）
-  - `PROOF_TIGHTEN_OUTCOMES_CAP`（默认 0，0=关闭）
-  - `PROOF_TIGHTEN_CANDIDATES_CAP`（默认 0，0=关闭）
-  - `PROOF_TIGHTEN_SEARCHED_STATES_CAP`（默认 0，0=关闭）
 
-- 建议流程：先用 timeout-only 观察稳定性，再在同机多次测量后把确定性 cap 锁进 CI（优先锁 `OutcomesConstructed`）。
+- 该参数用于 hosted runner 的粗粒度超时保护；确定性 candidate guardrail 直接写在对应 Nightly 测试中。
 - GitHub Actions 手动工作流：`.github/workflows/manual-proof-tighten-gate.yml`（`workflow_dispatch`）。
 
 夜间自动巡检（推荐）：

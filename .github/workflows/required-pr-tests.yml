@@ -26,6 +26,7 @@ jobs:
           $changed = git diff --name-only origin/main...HEAD
           $hasCode = $changed | Where-Object {
             $_ -match '\.(cs|csproj|sln)$' -or
+            $_ -eq 'tests/test-gates.json' -or
             $_ -match '^\.github/workflows/.*\.ya?ml$' -or
             $_ -match '^scripts/.*\.ps1$'
           }
@@ -38,6 +39,11 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
+      - name: Validate test gate registry
+        if: steps.changes.outputs.has_code == 'true'
+        shell: pwsh
+        run: ./scripts/check-test-gate-registry.ps1
+
       - name: Run required tests with hard fail timeout
         if: steps.changes.outputs.has_code == 'true'
         shell: pwsh
@@ -49,7 +55,8 @@ jobs:
           function Invoke-TestWithRemainingBudget {
             param(
               [Parameter(Mandatory = $true)][string]$ProjectPath,
-              [Parameter(Mandatory = $true)][string]$WorkingDirectory
+              [Parameter(Mandatory = $true)][string]$WorkingDirectory,
+              [string]$Filter = ''
             )
 
             $remainingSeconds = [int][Math]::Floor(($deadline - (Get-Date)).TotalSeconds)
@@ -58,7 +65,11 @@ jobs:
             }
 
             Write-Host "Running $ProjectPath with $remainingSeconds seconds remaining."
-            $process = Start-Process -FilePath 'dotnet' -ArgumentList @('test', $ProjectPath, '--configuration', 'Release', '--nologo') -WorkingDirectory $WorkingDirectory -NoNewWindow -PassThru
+            $arguments = @('test', $ProjectPath, '--configuration', 'Release', '--nologo')
+            if ($Filter) {
+              $arguments += @('--filter', $Filter)
+            }
+            $process = Start-Process -FilePath 'dotnet' -ArgumentList $arguments -WorkingDirectory $WorkingDirectory -NoNewWindow -PassThru
 
             if (-not $process.WaitForExit($remainingSeconds * 1000)) {
               try {
@@ -77,4 +88,4 @@ jobs:
           }
 
           Invoke-TestWithRemainingBudget -ProjectPath 'TopKFinder.Tests.csproj' -WorkingDirectory './tests/TopKFinder.Tests'
-          Invoke-TestWithRemainingBudget -ProjectPath 'TopKFinder.PerfTests.csproj' -WorkingDirectory './tests/TopKFinder.PerfTests'
+          Invoke-TestWithRemainingBudget -ProjectPath 'TopKFinder.PerfTests.csproj' -WorkingDirectory './tests/TopKFinder.PerfTests' -Filter 'Category!=Nightly&Category!=Manual'

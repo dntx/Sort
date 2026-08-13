@@ -4,23 +4,20 @@ using Xunit;
 using Xunit.Abstractions;
 using Xunit.Sdk;
 
-// On-demand regression gate for the greedy proof-tighten stage on the historically sensitive
-// (20,2,6) shape. This does NOT run in the default suite.
+// Nightly regression gates for historically sensitive proof-tighten shapes. Required PR tests
+// exclude the Nightly category; nightly/manual workflows select this class explicitly.
 //
-// Enable:
-//   $env:RUN_PROOF_TIGHTEN_GATE = "1"
+// Run explicitly:
 //   dotnet test tests\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter ProofTightenPerfGateTests
 //
-// Optional knobs:
+// Optional knob:
 //   PROOF_TIGHTEN_TIMEOUT_SECONDS       (default 200)
-//   PROOF_TIGHTEN_OUTCOMES_CAP          (default 0 = disabled)
-//   PROOF_TIGHTEN_CANDIDATES_CAP        (default 0 = disabled)
-//   PROOF_TIGHTEN_SEARCHED_STATES_CAP   (default 0 = disabled)
 //
 // Why this exists:
 // - Wall-clock-only gates are noisy across machines.
 // - This gate combines a coarse timeout sentinel (hang/explosion catcher) with optional deterministic
 //   work counters (machine-independent, ratchet-friendly).
+[Trait("Category", "Nightly")]
 public sealed class ProofTightenPerfGateTests
 {
     private readonly ITestOutputHelper _output;
@@ -33,9 +30,6 @@ public sealed class ProofTightenPerfGateTests
     [Fact]
     public void GreedyProofTighten_AttemptTrace_20_5_5()
     {
-        if (Environment.GetEnvironmentVariable("RUN_PROOF_TIGHTEN_20_5_5_TRACE") != "1")
-            return;
-
         var builder = new StrategyBuilder(20, 5, 5);
         _ = builder.ExecuteGreedyFeasibleStage();
 
@@ -62,18 +56,18 @@ public sealed class ProofTightenPerfGateTests
         Assert.Contains(
             builder.ProofTightenAttemptTrace,
             attempt => attempt.ReusedBudgetFitTransitions > 0);
+        Assert.Contains(
+            builder.ProofTightenAttemptTrace.Skip(1),
+            attempt => attempt.ReusedCandidateGenerationEntries > 0);
+        Assert.True(
+            builder.ProofTightenAttemptTrace.Sum(attempt => attempt.CandidateGroupsEnumerated) < 2_000_000,
+            "candidate-generation continuation should keep the 20/5/5 raw-candidate total below the nightly guardrail");
     }
 
     [Fact]
     public void GreedyProofTighten_FirstProbe_20_2_6_CompletesWithinGate()
     {
-        if (Environment.GetEnvironmentVariable("RUN_PROOF_TIGHTEN_GATE") != "1")
-            return;
-
         int timeoutSeconds = ReadPositiveIntEnv("PROOF_TIGHTEN_TIMEOUT_SECONDS", 200);
-        int outcomesCap = ReadNonNegativeIntEnv("PROOF_TIGHTEN_OUTCOMES_CAP", 0);
-        int candidatesCap = ReadNonNegativeIntEnv("PROOF_TIGHTEN_CANDIDATES_CAP", 0);
-        int searchedCap = ReadNonNegativeIntEnv("PROOF_TIGHTEN_SEARCHED_STATES_CAP", 0);
 
         int maxObservedSearched = 0;
         int lastPendingStates = -1;
@@ -172,29 +166,6 @@ public sealed class ProofTightenPerfGateTests
                 $"tightened plan step {result.PlanStep.Value} exceeded budget {result.Budget}");
         }
 
-        if (outcomesCap > 0)
-        {
-            Assert.True(result.Outcomes.HasValue,
-                "PROOF_TIGHTEN_OUTCOMES_CAP requires a materialized plan (Outcome=Tightened)");
-            Assert.True(result.Outcomes!.Value <= outcomesCap,
-                $"proof-tighten outcomes regressed to {result.Outcomes.Value} (cap {outcomesCap})");
-        }
-
-        if (candidatesCap > 0)
-        {
-            Assert.True(result.Candidates.HasValue,
-                "PROOF_TIGHTEN_CANDIDATES_CAP requires a materialized plan (Outcome=Tightened)");
-            Assert.True(result.Candidates!.Value <= candidatesCap,
-                $"proof-tighten candidate groups regressed to {result.Candidates.Value} (cap {candidatesCap})");
-        }
-
-        if (searchedCap > 0)
-        {
-            Assert.True(result.Searched.HasValue,
-                "PROOF_TIGHTEN_SEARCHED_STATES_CAP requires a materialized plan (Outcome=Tightened)");
-            Assert.True(result.Searched!.Value <= searchedCap,
-                $"proof-tighten searched states regressed to {result.Searched.Value} (cap {searchedCap})");
-        }
     }
 
     private static int ReadPositiveIntEnv(string name, int fallback)
@@ -205,11 +176,4 @@ public sealed class ProofTightenPerfGateTests
         return parsed;
     }
 
-    private static int ReadNonNegativeIntEnv(string name, int fallback)
-    {
-        string? raw = Environment.GetEnvironmentVariable(name);
-        if (!int.TryParse(raw, out int parsed) || parsed < 0)
-            return fallback;
-        return parsed;
-    }
 }

@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "gates": [
+    {
+      "name": "RUN_ANOMALY_SCAN",
+      "category": "manual-diagnostic",
+      "entrypoint": "tests/TopKFinder.PerfTests/AnomalyScanTests.cs",
+      "command": "$env:RUN_ANOMALY_SCAN='1'; dotnet test tests/TopKFinder.PerfTests/TopKFinder.PerfTests.csproj --filter AnomalyScanTests"
+    },
+    {
+      "name": "RUN_BLOCK_HONESTY",
+      "category": "manual-diagnostic",
+      "entrypoint": "tests/TopKFinder.PerfTests/OrderedBlockHonestyTests.cs",
+      "command": "$env:RUN_BLOCK_HONESTY='1'; dotnet test tests/TopKFinder.PerfTests/TopKFinder.PerfTests.csproj --filter OrderedBlockHonestyTests"
+    },
+    {
+      "name": "RUN_DOMINANCE_STATS",
+      "category": "manual-diagnostic",
+      "entrypoint": "tests/TopKFinder.PerfTests/DominanceReuseStatsTests.cs",
+      "command": "$env:RUN_DOMINANCE_STATS='1'; dotnet test tests/TopKFinder.PerfTests/TopKFinder.PerfTests.csproj --filter DominanceReuseStatsTests"
+    },
+    {
+      "name": "RUN_GAP_DUMP",
+      "category": "manual-diagnostic",
+      "entrypoint": "tests/TopKFinder.PerfTests/GapTreeDumpTests.cs",
+      "command": "$env:RUN_GAP_DUMP='1'; dotnet test tests/TopKFinder.PerfTests/TopKFinder.PerfTests.csproj --filter GapTreeDumpTests"
+    },
+    {
+      "name": "RUN_STRATEGY_MATRIX",
+      "category": "nightly",
+      "entrypoint": "tests/TopKFinder.PerfTests/StrategyMatrixTests.cs",
+      "workflows": [
+        ".github/workflows/nightly-full-strategy-matrix.yml",
+        ".github/workflows/nightly-proof-tighten-gate.yml",
+        ".github/workflows/manual-seed-full-strategy-baseline.yml"
+      ]
+    }
+  ]
+}

@@ -361,11 +361,8 @@ public class GreedyPipelineTests
     public void ProofTightenProbe_FeasibleRetryReuse_PreservesOutcomeAndPlan()
     {
         var reused = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 1 };
-        var baseline = new StrategyBuilder(12, 4, 4)
-        {
-            CompactGreedyCandidateCap = 1,
-            DisableProofTightenFeasibleReuseForTesting = true,
-        };
+        var baseline = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 1 };
+        baseline.TestHooks.DisableProofTightenFeasibleReuse = true;
         int budget = reused.ExecuteGreedyFeasibleStage().MaxStep - 1;
         _ = baseline.ExecuteGreedyFeasibleStage();
 
@@ -385,11 +382,8 @@ public class GreedyPipelineTests
     public void ProofTightenProbe_InfeasibleRetryReuse_PreservesOutcomeAndPlan()
     {
         var reused = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 1 };
-        var baseline = new StrategyBuilder(12, 4, 4)
-        {
-            CompactGreedyCandidateCap = 1,
-            DisableProofTightenInfeasibleReuseForTesting = true,
-        };
+        var baseline = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 1 };
+        baseline.TestHooks.DisableProofTightenInfeasibleReuse = true;
         int budget = reused.ExecuteGreedyFeasibleStage().MaxStep - 1;
         _ = baseline.ExecuteGreedyFeasibleStage();
 
@@ -407,11 +401,8 @@ public class GreedyPipelineTests
     public void ProofTightenProbe_BudgetFitRetryReuse_PreservesOutcomeAndPlan()
     {
         var reused = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 1 };
-        var baseline = new StrategyBuilder(12, 4, 4)
-        {
-            CompactGreedyCandidateCap = 1,
-            DisableProofTightenBudgetFitReuseForTesting = true,
-        };
+        var baseline = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 1 };
+        baseline.TestHooks.DisableProofTightenBudgetFitReuse = true;
         int budget = reused.ExecuteGreedyFeasibleStage().MaxStep - 1;
         _ = baseline.ExecuteGreedyFeasibleStage();
 
@@ -429,11 +420,8 @@ public class GreedyPipelineTests
     public void ProofTightenProbe_CandidateGenerationResume_PreservesOutcomeAndSkipsRawPrefix()
     {
         var resumed = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 1 };
-        var baseline = new StrategyBuilder(12, 4, 4)
-        {
-            CompactGreedyCandidateCap = 1,
-            DisableProofTightenCandidateGenerationReuseForTesting = true,
-        };
+        var baseline = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 1 };
+        baseline.TestHooks.DisableProofTightenCandidateGenerationReuse = true;
 
         StageResult resumedStage = resumed.ExecuteProofTightenStage(budget: 4);
         StageResult baselineStage = baseline.ExecuteProofTightenStage(budget: 4);

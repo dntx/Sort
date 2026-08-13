@@ -15,6 +15,7 @@ using Xunit;
 //   dotnet test tests\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter DominanceReuseStats
 // Optional knobs: STATS_CASE_TIMEOUT_SECONDS (default 25), STATS_REPORT_PATH
 //   (default <repo>\dominance-reuse-report.txt).
+[Trait("Category", "Manual")]
 public sealed class DominanceReuseStatsTests
 {
     // A curated grid of fast, representative shapes (kept off the slow m <= n/3 region).
