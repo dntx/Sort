@@ -4,8 +4,8 @@ using Xunit;
 using Xunit.Abstractions;
 using Xunit.Sdk;
 
-// On-demand regression gate for the greedy proof-tighten stage on the historically sensitive
-// (20,2,6) shape. This does NOT run in the default suite.
+// Nightly regression gates for historically sensitive proof-tighten shapes. Required PR tests
+// exclude the Nightly category; nightly/manual workflows select this class explicitly.
 //
 // Enable:
 //   $env:RUN_PROOF_TIGHTEN_GATE = "1"
@@ -21,6 +21,7 @@ using Xunit.Sdk;
 // - Wall-clock-only gates are noisy across machines.
 // - This gate combines a coarse timeout sentinel (hang/explosion catcher) with optional deterministic
 //   work counters (machine-independent, ratchet-friendly).
+[Trait("Category", "Nightly")]
 public sealed class ProofTightenPerfGateTests
 {
     private readonly ITestOutputHelper _output;
@@ -33,9 +34,6 @@ public sealed class ProofTightenPerfGateTests
     [Fact]
     public void GreedyProofTighten_AttemptTrace_20_5_5()
     {
-        if (Environment.GetEnvironmentVariable("RUN_PROOF_TIGHTEN_20_5_5_TRACE") != "1")
-            return;
-
         var builder = new StrategyBuilder(20, 5, 5);
         _ = builder.ExecuteGreedyFeasibleStage();
 
@@ -62,6 +60,12 @@ public sealed class ProofTightenPerfGateTests
         Assert.Contains(
             builder.ProofTightenAttemptTrace,
             attempt => attempt.ReusedBudgetFitTransitions > 0);
+        Assert.Contains(
+            builder.ProofTightenAttemptTrace.Skip(1),
+            attempt => attempt.ReusedCandidateGenerationEntries > 0);
+        Assert.True(
+            builder.ProofTightenAttemptTrace.Sum(attempt => attempt.CandidateGroupsEnumerated) < 2_000_000,
+            "candidate-generation continuation should keep the 20/5/5 raw-candidate total below the nightly guardrail");
     }
 
     [Fact]

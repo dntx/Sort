@@ -8,10 +8,6 @@ partial class StrategyBuilder
 {
     private readonly List<ProofTightenAttemptDiagnostics> _proofTightenAttemptTrace = new();
     internal IReadOnlyList<ProofTightenAttemptDiagnostics> ProofTightenAttemptTrace => _proofTightenAttemptTrace;
-    internal bool DisableProofTightenFeasibleReuseForTesting { get; set; }
-    internal bool DisableProofTightenInfeasibleReuseForTesting { get; set; }
-    internal bool DisableProofTightenBudgetFitReuseForTesting { get; set; }
-    internal bool DisableProofTightenCandidateGenerationReuseForTesting { get; set; }
 
     private Dictionary<BudgetFitRetryCacheKey, BudgetFitRetryCacheEntry>? _proofTightenBudgetFitRetryCache;
     private Dictionary<GroupSelectionHelper.CandidateGenerationRetryCacheKey,
@@ -241,18 +237,18 @@ partial class StrategyBuilder
             int configuredCap = _owner.CompactGreedyCandidateCap;
             int attemptCap = NormalizeGreedyCandidateCap(configuredCap);
             int attempt = 0;
-            _owner._proofTightenBudgetFitRetryCache = _owner.DisableProofTightenBudgetFitReuseForTesting
+            _owner._proofTightenBudgetFitRetryCache = _owner.TestHooks.DisableProofTightenBudgetFitReuse
                 ? null
                 : new Dictionary<BudgetFitRetryCacheKey, BudgetFitRetryCacheEntry>();
             _owner._proofTightenCandidateGenerationRetryCache =
-                _owner.DisableProofTightenCandidateGenerationReuseForTesting
+                _owner.TestHooks.DisableProofTightenCandidateGenerationReuse
                     ? null
                     : new Dictionary<GroupSelectionHelper.CandidateGenerationRetryCacheKey,
                         GroupSelectionHelper.CandidateGenerationRetryCacheEntry>();
-            ProofTightenRetryCache? retryCache = _owner.DisableProofTightenFeasibleReuseForTesting
+            ProofTightenRetryCache? retryCache = _owner.TestHooks.DisableProofTightenFeasibleReuse
                 ? null
                 : new ProofTightenRetryCache(
-                    reuseInfeasibilityProofs: !_owner.DisableProofTightenInfeasibleReuseForTesting);
+                    reuseInfeasibilityProofs: !_owner.TestHooks.DisableProofTightenInfeasibleReuse);
             _owner._proofTightenAttemptTrace.Clear();
             try
             {

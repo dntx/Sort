@@ -10,6 +10,7 @@ using Xunit;
 //   dotnet test tests\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter GapTreeDump
 // Knobs: GAP_DUMP_CASE (default "10,4,8"), GAP_DUMP_CAP (default 2000000),
 //   GAP_DUMP_PATH (default <repo>\compact-gap-dump.txt).
+[Trait("Category", "Manual")]
 public sealed class GapTreeDumpTests
 {
     [Fact]
