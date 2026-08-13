@@ -16,6 +16,13 @@ partial class StrategyBuilder
         }
 
         public int SolveCompact(ComparisonState state, int remainingSlots, int feasibleBudget = int.MaxValue)
+            => SolveCompact(state, remainingSlots, feasibleBudget, out _);
+
+        private int SolveCompact(
+            ComparisonState state,
+            int remainingSlots,
+            int feasibleBudget,
+            out SearchStateKey normalizedKey)
         {
             _owner.ThrowIfCancellationRequested();
             ulong ignoredFixedTopMask = 0;
@@ -30,8 +37,11 @@ partial class StrategyBuilder
                     out SearchStateKey key,
                     out (SearchStateKey, int) memoKey))
             {
+                normalizedKey = key;
                 return resolvedCost;
             }
+
+            normalizedKey = key;
 
             _owner._compactCostMemo[memoKey] = int.MaxValue;
             _owner._compactStatesSolved++;
@@ -397,10 +407,14 @@ partial class StrategyBuilder
             realSteps = 0;
             foreach (var (childState, childRemaining) in children)
             {
-                int childCost = SolveCompact(childState, childRemaining, branchBudget);
+                int childCost = SolveCompact(
+                    childState,
+                    childRemaining,
+                    branchBudget,
+                    out SearchStateKey childKey);
                 if (childCost == int.MaxValue)
                 {
-                    return IsProvenInfeasible(childState, childRemaining, branchBudget)
+                    return IsProvenInfeasible(childKey, branchBudget)
                         ? BudgetChildrenResult.ProvenInfeasible
                         : BudgetChildrenResult.Incomplete;
                 }
@@ -411,13 +425,8 @@ partial class StrategyBuilder
             return BudgetChildrenResult.Feasible;
         }
 
-        private bool IsProvenInfeasible(ComparisonState state, int remainingSlots, int budget)
-        {
-            ulong ignoredFixedTopMask = 0;
-            _owner.NormalizeState(state, ref ignoredFixedTopMask, ref remainingSlots);
-            SearchStateKey key = _owner.GetSearchStateKey(state, remainingSlots);
-            return _owner._compactProvenInfeasibleMemo.Contains((key, budget));
-        }
+        private bool IsProvenInfeasible(SearchStateKey key, int budget)
+            => _owner._compactProvenInfeasibleMemo.Contains((key, budget));
 
         private readonly record struct BudgetCandidateCollection(
             List<(List<int> Group, List<(ComparisonState State, int RemainingSlots)> Children)> Fits,
