@@ -45,6 +45,14 @@ EXCLUDED_REVIEW_PATHS = {".github/scripts/ai_review.py", ".github/workflows/ai-c
 
 COPILOT_CLI_PACKAGE = "@github/copilot"
 
+_LOG_STARTED_AT = time.monotonic()
+
+
+def log_event(message: str) -> None:
+    """Write a timestamped, immediately visible pipeline diagnostic."""
+    elapsed = time.monotonic() - _LOG_STARTED_AT
+    print(f"[ai-review +{elapsed:8.1f}s] {message}", flush=True)
+
 SYSTEM_PROMPT = """\
 You are a meticulous senior software engineer reviewing a GitHub pull request
 for a C#/.NET 8 project. You are given the unified diff plus the PR title and
@@ -262,12 +270,14 @@ def _is_transient_gh_api_failure(stderr: str, stdout: str) -> bool:
 def _run_gh_api_with_retry(args: list[str], *, description: str) -> str:
     last_error = ""
     for attempt in range(1, PR_METADATA_MAX_RETRIES + 1):
+        log_event(f"GitHub API start: {description} (attempt {attempt}/{PR_METADATA_MAX_RETRIES})")
         proc = subprocess.run(
             ["gh", "api", *args],
             text=True,
             capture_output=True,
         )
         if proc.returncode == 0:
+            log_event(f"GitHub API complete: {description}")
             return proc.stdout
 
         stderr = proc.stderr.strip()
@@ -300,6 +310,7 @@ def load_pr_metadata() -> dict[str, str]:
     if not pr_number:
         raise RuntimeError("PR_NUMBER is required.")
 
+    log_event(f"Loading PR metadata for {repo}#{pr_number}")
     payload = _run_gh_api_with_retry(
         [f"repos/{repo}/pulls/{pr_number}"],
         description=f"load PR metadata for {repo}#{pr_number}",
@@ -333,8 +344,10 @@ def ensure_diff_file(base_ref: str, base_sha: str, head_sha: str) -> str:
     """Build the review diff locally when the workflow did not provide one."""
     existing = (os.environ.get("DIFF_FILE") or "").strip()
     if existing and os.path.exists(existing):
+        log_event(f"Using existing diff file: {existing}")
         return existing
 
+    log_event(f"Fetching refs and building diff for {base_ref}...{head_sha[:12]}")
     fetch_proc = subprocess.run(
         ["git", "fetch", "--no-tags", "origin", base_ref, base_sha, head_sha],
         text=True,
@@ -362,6 +375,7 @@ def ensure_diff_file(base_ref: str, base_sha: str, head_sha: str) -> str:
     with open(path, "w", encoding="utf-8", errors="replace") as fh:
         fh.write(diff_proc.stdout)
     os.environ["DIFF_FILE"] = path
+    log_event(f"Diff file ready: {len(diff_proc.stdout)} characters")
     return path
 
 
@@ -1302,22 +1316,35 @@ def _build_copilot_command(prompt: str) -> list[str]:
 def request_chat_completion(messages: list[dict]) -> str:
     """Run the review prompt through GitHub Copilot CLI in programmatic mode."""
     prompt = _render_copilot_prompt(messages)
+    request_started_at = time.monotonic()
+    model = (os.environ.get("REVIEW_MODEL") or "default").strip()
+    log_event(f"Copilot request start: model={model}, prompt_chars={len(prompt)}")
     proc = subprocess.run(
         _build_copilot_command(prompt),
         text=True,
         capture_output=True,
     )
+    request_elapsed = time.monotonic() - request_started_at
     if proc.returncode != 0:
         stderr = (proc.stderr or "").strip()
         stdout = (proc.stdout or "").strip()
         details = stderr or stdout or f"copilot exited {proc.returncode}"
+        log_event(
+            f"Copilot request failed: elapsed={request_elapsed:.1f}s, "
+            f"exit_code={proc.returncode}"
+        )
         raise RuntimeError(
             "Copilot CLI review request failed. "
             f"Ensure {COPILOT_CLI_PACKAGE} is installed and the workflow grants "
             "copilot-requests: write. "
             f"Details: {details}"
         )
-    return (proc.stdout or "").strip()
+    response = (proc.stdout or "").strip()
+    log_event(
+        f"Copilot request complete: elapsed={request_elapsed:.1f}s, "
+        f"response_chars={len(response)}"
+    )
+    return response
 
 
 
@@ -1990,6 +2017,7 @@ def post_review(review_body: str, verdict: str) -> None:
         print(f"Skipping stale-comment hiding due to error: {err}")
 
 def main() -> int:
+    log_event("AI review started")
     metadata = load_pr_metadata()
     pr_title = metadata["title"]
     pr_body = metadata["body"]
@@ -2031,6 +2059,10 @@ def main() -> int:
     manifest = build_change_manifest(raw_diff)
 
     batches = build_diff_batches(diff)
+    log_event(
+        f"Review scope ready: diff_chars={len(diff)}, files={len(manifest)}, "
+        f"batches={len(batches)}"
+    )
     if not batches and (not manifest or _is_ai_review_infra_only_change(manifest)):
         review = (
             "## Summary\n"
@@ -2071,6 +2103,7 @@ def main() -> int:
         policy_findings.append(format_only_code_changes)
     if manifest:
         try:
+            log_event("Structural review start")
             structural_review = call_structural_model(
                 format_change_manifest(manifest),
                 format_new_identifiers(extract_new_identifiers(raw_diff)),
@@ -2078,19 +2111,24 @@ def main() -> int:
             )
             structural_verdict = parse_verdict(structural_review)
             print(f"Structural review verdict: {structural_verdict}")
+            log_event(f"Structural review complete: verdict={structural_verdict}")
             structural = (structural_verdict, structural_review)
         except Exception as err:  # noqa: BLE001
+            log_event(f"Structural review skipped: {err}")
             print(f"Structural review skipped due to error: {err}")
 
     for index, batch in enumerate(batches, start=1):
+        log_event(f"Batch {index}/{len(batches)} start: diff_chars={len(batch)}")
         try:
             review = call_model(batch, index, len(batches))
         except Exception as err:  # noqa: BLE001
+            log_event(f"Batch {index}/{len(batches)} failed: {err}")
             print(f"Review generation failed on batch {index}/{len(batches)}: {err}")
             return 1
 
         verdict = parse_verdict(review)
         print(f"Batch {index}/{len(batches)} verdict: {verdict}")
+        log_event(f"Batch {index}/{len(batches)} complete: verdict={verdict}")
         batch_reviews.append((index, len(batches), verdict, review))
 
     review = combine_batch_reviews(
@@ -2105,7 +2143,9 @@ def main() -> int:
     print("----- Review -----")
     print(review)
 
+    log_event(f"Publishing final review: verdict={verdict}, body_chars={len(review)}")
     post_review(review, verdict)
+    log_event("AI review completed")
 
     return 1 if verdict == "BLOCK" else 0
 
