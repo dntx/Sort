@@ -181,21 +181,6 @@ public sealed class StrategyMatrixTests
     {
         var builder = new StrategyBuilder(n, m, k, cancellationToken);
         StrategyPlan feasible = builder.ExecuteGreedyFeasibleStage();
-        bool shouldRun = builder.ShouldRunGreedyTightenByRootProbe();
-        if (!shouldRun)
-        {
-            return new MatrixObservation(
-                Outcome: "Skipped",
-                HasPlan: false,
-                MaxStep: feasible.MaxStep,
-                TotalBranchEdges: feasible.TotalBranchEdges,
-                SearchedStates: feasible.SearchStatistics.SearchedStates,
-                OutcomesConstructed: feasible.SearchStatistics.OutcomesConstructed,
-                CandidateGroupsEnumerated: feasible.SearchStatistics.CandidateGroupsEnumerated,
-                RootProvenLowerBound: feasible.SearchStatistics.RootProvenLowerBound,
-                ElapsedMilliseconds: feasible.Elapsed.TotalMilliseconds);
-        }
-
         StrategyPlan tightened = builder.ExecuteGreedyTightenStage();
         return new MatrixObservation(
             Outcome: tightened.IsStrictRefinementOver(feasible) ? "Tightened" : "NoImprovement",
