@@ -49,13 +49,17 @@ public sealed class ProofTightenPerfGateTests
                 $"capped={attempt.EnumerationCapped}, states={attempt.CompactStatesSolved}, " +
                 $"groups={attempt.CompactGroupsEnumerated}, fitGroups={attempt.CompactStepOptimalGroups}, " +
                 $"outcomes={attempt.OutcomesConstructed}, reusedFeasible={attempt.ReusedFeasibleStates}, " +
-                $"reusedInfeasible={attempt.ReusedInfeasibleStates}");
+                $"reusedInfeasible={attempt.ReusedInfeasibleStates}, " +
+                $"reusedTransitions={attempt.ReusedBudgetFitTransitions}");
         }
 
         Assert.Equal(StageOutcome.ProvenInfeasible, stage.Outcome);
         Assert.Contains(
             builder.ProofTightenAttemptTrace.Skip(1),
             attempt => attempt.ReusedInfeasibleStates > 0);
+        Assert.Contains(
+            builder.ProofTightenAttemptTrace,
+            attempt => attempt.ReusedBudgetFitTransitions > 0);
     }
 
     [Fact]

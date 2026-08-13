@@ -403,6 +403,28 @@ public class GreedyPipelineTests
             reused.ProofTightenAttemptTrace.Select(attempt => attempt.CandidateCap));
     }
 
+    [Fact]
+    public void ProofTightenProbe_BudgetFitRetryReuse_PreservesOutcomeAndPlan()
+    {
+        var reused = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 1 };
+        var baseline = new StrategyBuilder(12, 4, 4)
+        {
+            CompactGreedyCandidateCap = 1,
+            DisableProofTightenBudgetFitReuseForTesting = true,
+        };
+        int budget = reused.ExecuteGreedyFeasibleStage().MaxStep - 1;
+        _ = baseline.ExecuteGreedyFeasibleStage();
+
+        StageResult reusedStage = reused.ExecuteProofTightenStage(budget);
+        StageResult baselineStage = baseline.ExecuteProofTightenStage(budget);
+
+        Assert.Equal(baselineStage.Outcome, reusedStage.Outcome);
+        Assert.Equal(baselineStage.MaterializedPlan?.MaxStep, reusedStage.MaterializedPlan?.MaxStep);
+        Assert.Equal(
+            baseline.ProofTightenAttemptTrace.Select(attempt => attempt.CandidateCap),
+            reused.ProofTightenAttemptTrace.Select(attempt => attempt.CandidateCap));
+    }
+
     // Pins the user-facing stage-name contract emitted by RunGreedyPipeline: each downward
     // tightening ceiling is announced as "proof-tighten\u2264N" and the final edge pass as
     // "greedy-edge-compact@S". These labels are shared verbatim by the CLI
