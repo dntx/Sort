@@ -133,7 +133,7 @@ stage/output semantics are unchanged.
 ### Command-line arguments
 
 ```bash
-dotnet run -- <n> <m> <k> [--mode exact|greedy] [--stage <n>]
+dotnet run -- <n> <m> <k> [--mode exact|greedy] [--greedy-tighten] [--stage <n>]
 ```
 
 - Prints the strategy tree for `n`, `m`, `k` to **stdout**.
@@ -144,6 +144,8 @@ dotnet run -- <n> <m> <k> [--mode exact|greedy] [--stage <n>]
     refinement for edge.
   - **greedy**: a fast greedy feasible strategy for step, then a budget-bounded
     compact pass for edge. Fast and interruptible, but not proven optimal.
+- `--greedy-tighten` enables the optional `greedy-tighten` pre-step in greedy
+  mode. By default this pre-step is disabled in CLI/headless runs.
 - `--stage <n>` stops after stage `n` (1-based):
   - exact: `1` = step-proof, `2` = exact-edge-compact@S
   - greedy: `1` = greedy-feasible, `2+` continues along tightening progression
