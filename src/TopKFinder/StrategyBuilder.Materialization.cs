@@ -307,37 +307,128 @@ partial class StrategyBuilder
         }
     }
 
-    private sealed class GroupSelectionHelper
+    internal sealed class GroupSelectionHelper
     {
-        private static bool GenerateClassRepresentatives(
-            StrategyBuilder owner,
-            ComparisonState state,
+        internal readonly record struct CandidateGenerationRetryCacheKey(
+            RawStructureKey State,
+            IntSequenceKey Candidates,
+            int GroupSize);
+
+        internal sealed class CandidateGenerationRetryCacheEntry
+        {
+            private sealed class OrbitBucket
+            {
+                public List<int>? Single { get; set; }
+                public Dictionary<IntSequenceKey, List<int>>? Representatives { get; set; }
+            }
+
+            private readonly IEnumerator<List<int>> _rawGroups;
+            private readonly Dictionary<IntSequenceKey, OrbitBucket> _buckets = new();
+            private readonly int[] _labels;
+            private int _generatedCount;
+            private bool _complete;
+
+            internal CandidateGenerationRetryCacheEntry(
+                List<List<int>> classes,
+                int[] suffixCapacity,
+                int groupSize,
+                int[] labels)
+            {
+                _rawGroups = EnumerateClassRepresentatives(
+                    classes,
+                    suffixCapacity,
+                    classIndex: 0,
+                    remaining: groupSize,
+                    prefix: new List<int>(groupSize)).GetEnumerator();
+                _labels = labels;
+            }
+
+            internal IReadOnlyList<List<int>> ExtendTo(
+                StrategyBuilder owner,
+                ComparisonState state,
+                int generationCap,
+                out bool wasTruncated)
+            {
+                while (!_complete && _generatedCount < generationCap)
+                {
+                    owner.ProbeCancellation();
+                    if (!_rawGroups.MoveNext())
+                    {
+                        _complete = true;
+                        _rawGroups.Dispose();
+                        break;
+                    }
+
+                    owner.ThrowIfCancellationRequested();
+                    owner._candidateGroupsEnumerated++;
+                    _generatedCount++;
+                    AddGroup(state, _rawGroups.Current);
+                }
+
+                wasTruncated = !_complete && generationCap != int.MaxValue;
+                var ordered = new List<List<int>>(_buckets.Count);
+                foreach (OrbitBucket bucket in _buckets.Values)
+                {
+                    if (bucket.Representatives is null)
+                        ordered.Add(bucket.Single!);
+                    else
+                        ordered.AddRange(bucket.Representatives.Values);
+                }
+
+                ordered.Sort(GroupEnumerationService.CompareGroupsLexicographically);
+                return ordered;
+            }
+
+            private void AddGroup(ComparisonState state, List<int> group)
+            {
+                IntSequenceKey cheap = GroupEnumerationService.BuildCheapGroupSignature(_labels, group);
+                if (!_buckets.TryGetValue(cheap, out OrbitBucket? bucket))
+                {
+                    _buckets[cheap] = new OrbitBucket { Single = group };
+                    return;
+                }
+
+                if (bucket.Representatives is null)
+                {
+                    bucket.Representatives = new Dictionary<IntSequenceKey, List<int>>();
+                    AddRepresentative(state, bucket.Representatives, bucket.Single!);
+                    bucket.Single = null;
+                }
+
+                AddRepresentative(state, bucket.Representatives, group);
+            }
+
+            private static void AddRepresentative(
+                ComparisonState state,
+                Dictionary<IntSequenceKey, List<int>> representatives,
+                List<int> group)
+            {
+                IntSequenceKey pattern = GetGroupPattern(state, group);
+                if (!representatives.TryGetValue(pattern, out List<int>? existing) ||
+                    GroupEnumerationService.CompareGroupsLexicographically(group, existing) < 0)
+                {
+                    representatives[pattern] = group;
+                }
+            }
+        }
+
+        private static IEnumerable<List<int>> EnumerateClassRepresentatives(
             List<List<int>> classes,
             int[] suffixCapacity,
             int classIndex,
             int remaining,
-            List<int> prefix,
-            List<List<int>> collected,
-            int generationCap)
+            List<int> prefix)
         {
-            owner.ProbeCancellation();
-
-            if (collected.Count >= generationCap)
-                return generationCap != int.MaxValue;
-
             if (remaining == 0)
             {
-                owner.ThrowIfCancellationRequested();
-                owner._candidateGroupsEnumerated++;
                 var group = new List<int>(prefix);
                 group.Sort();
-                collected.Add(group);
-                return false;
+                yield return group;
+                yield break;
             }
 
-            // Prune branches that can no longer reach the required group size.
             if (classIndex == classes.Count || suffixCapacity[classIndex] < remaining)
-                return false;
+                yield break;
 
             List<int> cls = classes[classIndex];
             int maxTake = Math.Min(cls.Count, remaining);
@@ -346,30 +437,18 @@ partial class StrategyBuilder
                 for (int j = 0; j < take; j++)
                     prefix.Add(cls[j]);
 
-                bool childTruncated = GenerateClassRepresentatives(
-                    owner,
-                    state,
+                foreach (List<int> group in EnumerateClassRepresentatives(
                     classes,
                     suffixCapacity,
                     classIndex + 1,
                     remaining - take,
-                    prefix,
-                    collected,
-                    generationCap);
+                    prefix))
+                {
+                    yield return group;
+                }
 
                 prefix.RemoveRange(prefix.Count - take, take);
-
-                if (childTruncated || collected.Count >= generationCap)
-                {
-                    // Stopped short of trying the remaining (larger-`take`) siblings at this level
-                    // because the cap filled up: the enumeration is genuinely truncated. Flag it so
-                    // a probe that concludes infeasible under a finite cap is reported as incomplete,
-                    // not a proof.
-                    return generationCap != int.MaxValue;
-                }
             }
-
-            return false;
         }
 
         public static IntSequenceKey GetGroupPattern(ComparisonState state, IReadOnlyList<int> group)
@@ -429,10 +508,46 @@ partial class StrategyBuilder
             for (int c = classes.Count - 1; c >= 0; c--)
                 suffixCapacity[c] = suffixCapacity[c + 1] + classes[c].Count;
 
+            if (owner._proofTightenCandidateGenerationRetryCache is { } retryCache)
+            {
+                var retryKey = new CandidateGenerationRetryCacheKey(
+                    state.GetRawStructureKey(),
+                    new IntSequenceKey(candidates.ToArray()),
+                    groupSize);
+                if (!retryCache.TryGetValue(retryKey, out CandidateGenerationRetryCacheEntry? entry))
+                {
+                    entry = new CandidateGenerationRetryCacheEntry(
+                        classes,
+                        suffixCapacity,
+                        groupSize,
+                        state.GetStructuralLabels());
+                    retryCache[retryKey] = entry;
+                }
+                else
+                {
+                    owner._proofTightenCandidateGenerationRetryHits++;
+                }
+
+                IReadOnlyList<List<int>> resumed = entry.ExtendTo(
+                    owner, state, generationCap, out wasTruncated);
+                if (wasTruncated)
+                    owner._compactEnumerationCapped = true;
+                return resumed;
+            }
+
             var collected = new List<List<int>>();
             var prefix = new List<int>(groupSize);
-            wasTruncated = GenerateClassRepresentatives(
-                owner, state, classes, suffixCapacity, 0, groupSize, prefix, collected, generationCap);
+            using IEnumerator<List<int>> rawGroups = EnumerateClassRepresentatives(
+                classes, suffixCapacity, 0, groupSize, prefix).GetEnumerator();
+            while (collected.Count < generationCap && rawGroups.MoveNext())
+            {
+                owner.ProbeCancellation();
+                owner.ThrowIfCancellationRequested();
+                owner._candidateGroupsEnumerated++;
+                collected.Add(rawGroups.Current);
+            }
+
+            wasTruncated = collected.Count >= generationCap && generationCap != int.MaxValue;
             if (wasTruncated)
                 owner._compactEnumerationCapped = true;
 

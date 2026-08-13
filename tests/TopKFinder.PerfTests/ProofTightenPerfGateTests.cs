@@ -36,7 +36,11 @@ public sealed class ProofTightenPerfGateTests
         if (Environment.GetEnvironmentVariable("RUN_PROOF_TIGHTEN_20_5_5_TRACE") != "1")
             return;
 
-        var builder = new StrategyBuilder(20, 5, 5);
+        var builder = new StrategyBuilder(20, 5, 5)
+        {
+            DisableProofTightenCandidateGenerationReuseForTesting =
+                Environment.GetEnvironmentVariable("DISABLE_PROOF_TIGHTEN_CANDIDATE_GENERATION_REUSE") == "1",
+        };
         _ = builder.ExecuteGreedyFeasibleStage();
 
         StageResult stage = builder.ExecuteProofTightenStage(budget: 6);
@@ -48,9 +52,11 @@ public sealed class ProofTightenPerfGateTests
                 $"elapsedMs={attempt.Elapsed.TotalMilliseconds:F1}, outcome={attempt.Outcome}, " +
                 $"capped={attempt.EnumerationCapped}, states={attempt.CompactStatesSolved}, " +
                 $"groups={attempt.CompactGroupsEnumerated}, fitGroups={attempt.CompactStepOptimalGroups}, " +
-                $"outcomes={attempt.OutcomesConstructed}, reusedFeasible={attempt.ReusedFeasibleStates}, " +
+                $"outcomes={attempt.OutcomesConstructed}, rawCandidates={attempt.CandidateGroupsEnumerated}, " +
+                $"reusedFeasible={attempt.ReusedFeasibleStates}, " +
                 $"reusedInfeasible={attempt.ReusedInfeasibleStates}, " +
-                $"reusedTransitions={attempt.ReusedBudgetFitTransitions}");
+                $"reusedTransitions={attempt.ReusedBudgetFitTransitions}, " +
+                $"reusedCandidateGeneration={attempt.ReusedCandidateGenerationEntries}");
         }
 
         Assert.Equal(StageOutcome.ProvenInfeasible, stage.Outcome);

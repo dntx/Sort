@@ -64,7 +64,7 @@ partial class StrategyBuilder
         public bool IsUseful { get; }
     }
 
-    private readonly record struct HeuristicGroupScore(
+    internal readonly record struct HeuristicGroupScore(
         int GuaranteedTopHits,
         int FreshItems,
         int UnrelatedScore,
