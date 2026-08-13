@@ -67,10 +67,10 @@ public sealed class CliArgsTests
     }
 
     [Fact]
-    public void TryParseCliArgs_ParsesGreedyTightenFlag()
+    public void TryParseCliArgs_ParsesGreedyTightenOption()
     {
         bool ok = Program.TryParseCliArgs(
-            new[] { "9", "3", "3", "--mode", "greedy", "--gt" },
+            new[] { "9", "3", "3", "--mode", "greedy", "--greedy-tighten" },
             out _, out _, out _, out Program.Mode mode, out bool enableGt, out int? stageLimit, out string? error);
 
         Assert.True(ok);

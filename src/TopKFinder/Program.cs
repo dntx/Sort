@@ -32,7 +32,7 @@ class Program
         "  -h, --help      Show this help and exit.\n" +
         "  --mode <mode>   Search mode. exact (proven) = exact + compact (proven optimal).\n" +
         "                  greedy (fast) = feasible bound, then min-step tightening, then one min-edge pass (interruptible with Ctrl+C).\n" +
-        "  --gt            Enable the optional GreedyTighten pre-step in greedy mode.\n" +
+        "  --greedy-tighten Enable the optional GreedyTighten pre-step in greedy mode.\n" +
         "  --stage <n>     Stop after stage n (1-based).\n" +
         "                  exact: 1=step-proof, 2=exact-edge-compact@S.\n" +
         "                  greedy: 1=greedy-feasible, 2+=continue along proof-tighten progression.\n" +
@@ -167,7 +167,7 @@ class Program
 
                 stageLimit = parsed;
             }
-            else if (arg == "--gt")
+            else if (arg == "--greedy-tighten")
             {
                 enableGreedyTighten = true;
             }
