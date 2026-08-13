@@ -11,9 +11,13 @@ partial class StrategyBuilder
     internal bool DisableProofTightenFeasibleReuseForTesting { get; set; }
     internal bool DisableProofTightenInfeasibleReuseForTesting { get; set; }
     internal bool DisableProofTightenBudgetFitReuseForTesting { get; set; }
+    internal bool DisableProofTightenCandidateGenerationReuseForTesting { get; set; }
 
     private Dictionary<BudgetFitRetryCacheKey, BudgetFitRetryCacheEntry>? _proofTightenBudgetFitRetryCache;
+    private Dictionary<GroupSelectionHelper.CandidateGenerationRetryCacheKey,
+        GroupSelectionHelper.CandidateGenerationRetryCacheEntry>? _proofTightenCandidateGenerationRetryCache;
     private int _proofTightenBudgetFitRetryHits;
+    private int _proofTightenCandidateGenerationRetryHits;
 
     private readonly record struct BudgetFitRetryCacheKey(
         RawStructureKey State,
@@ -24,14 +28,45 @@ partial class StrategyBuilder
     private sealed class BudgetFitRetryCacheEntry
     {
         private readonly List<(ComparisonState State, int RemainingSlots)>? _children;
+        private readonly ChildResult[]? _childResults;
+
+        public enum ChildResult
+        {
+            Incomplete,
+            Feasible,
+            ProvenInfeasible,
+        }
 
         public BudgetFitRetryCacheEntry(List<(ComparisonState State, int RemainingSlots)>? children)
         {
             _children = CloneChildren(children);
+            _childResults = children is null ? null : new ChildResult[children.Count];
+            _childRealSteps = children is null ? null : new int[children.Count];
         }
 
-        public List<(ComparisonState State, int RemainingSlots)>? CreateChildren()
-            => CloneChildren(_children);
+        public bool HasChildren => _children is not null;
+        public int ChildCount => _children?.Count ?? 0;
+
+        public (ComparisonState State, int RemainingSlots) CreateChild(int index)
+        {
+            var child = _children![index];
+            return (child.State.Clone(), child.RemainingSlots);
+        }
+
+        public ChildResult GetChildResult(int index) => _childResults![index];
+
+        public void MarkChildFeasible(int index, int realSteps)
+        {
+            _childResults![index] = ChildResult.Feasible;
+            _childRealSteps![index] = realSteps;
+        }
+
+        public void MarkChildProvenInfeasible(int index)
+            => _childResults![index] = ChildResult.ProvenInfeasible;
+
+        public int GetChildRealSteps(int index) => _childRealSteps![index];
+
+        private readonly int[]? _childRealSteps;
 
         private static List<(ComparisonState State, int RemainingSlots)>? CloneChildren(
             List<(ComparisonState State, int RemainingSlots)>? children)
@@ -209,6 +244,11 @@ partial class StrategyBuilder
             _owner._proofTightenBudgetFitRetryCache = _owner.DisableProofTightenBudgetFitReuseForTesting
                 ? null
                 : new Dictionary<BudgetFitRetryCacheKey, BudgetFitRetryCacheEntry>();
+            _owner._proofTightenCandidateGenerationRetryCache =
+                _owner.DisableProofTightenCandidateGenerationReuseForTesting
+                    ? null
+                    : new Dictionary<GroupSelectionHelper.CandidateGenerationRetryCacheKey,
+                        GroupSelectionHelper.CandidateGenerationRetryCacheEntry>();
             ProofTightenRetryCache? retryCache = _owner.DisableProofTightenFeasibleReuseForTesting
                 ? null
                 : new ProofTightenRetryCache(
@@ -225,6 +265,7 @@ partial class StrategyBuilder
 
                     attempt++;
                     int budgetFitRetryHitsBefore = _owner._proofTightenBudgetFitRetryHits;
+                    int candidateGenerationRetryHitsBefore = _owner._proofTightenCandidateGenerationRetryHits;
                     var attemptStopwatch = Stopwatch.StartNew();
                     CompactStageArtifacts? candidate = ProbeFeasibleCompactCore(
                         budget,
@@ -250,19 +291,22 @@ partial class StrategyBuilder
                         _owner._compactGroupsEnumerated,
                         _owner._compactStepOptimalGroups,
                         _owner._outcomesConstructed,
+                        _owner._candidateGroupsEnumerated,
                         retryCache?.RestoredEntryCount ?? 0,
                         retryCache?.RestoredProofCount ?? 0,
-                        _owner._proofTightenBudgetFitRetryHits - budgetFitRetryHitsBefore);
+                        _owner._proofTightenBudgetFitRetryHits - budgetFitRetryHitsBefore,
+                        _owner._proofTightenCandidateGenerationRetryHits - candidateGenerationRetryHitsBefore);
                     _owner._proofTightenAttemptTrace.Add(diagnostics);
                     string logLine =
                         $"[proof-tighten] budget={budget}, attempt={attempt}, cap={attemptCap}, " +
                         $"elapsed={attemptStopwatch.Elapsed.TotalMilliseconds:F1}ms, outcome={outcome}, " +
                         $"capped={enumerationCapped}, states={_owner._compactStatesSolved}, " +
                         $"groups={_owner._compactGroupsEnumerated}, fit-groups={_owner._compactStepOptimalGroups}, " +
-                        $"outcomes={_owner._outcomesConstructed}, " +
+                        $"outcomes={_owner._outcomesConstructed}, raw-candidates={_owner._candidateGroupsEnumerated}, " +
                         $"reused-feasible={retryCache?.RestoredEntryCount ?? 0}, " +
                         $"reused-infeasible={retryCache?.RestoredProofCount ?? 0}, " +
-                        $"reused-transitions={_owner._proofTightenBudgetFitRetryHits - budgetFitRetryHitsBefore}";
+                        $"reused-transitions={_owner._proofTightenBudgetFitRetryHits - budgetFitRetryHitsBefore}, " +
+                        $"reused-candidate-generation={_owner._proofTightenCandidateGenerationRetryHits - candidateGenerationRetryHitsBefore}";
                     Debug.WriteLine(logLine);
                     if (Console.IsErrorRedirected)
                         Console.Error.WriteLine(logLine);
@@ -305,7 +349,9 @@ partial class StrategyBuilder
             {
                 _owner.CompactGreedyCandidateCap = configuredCap;
                 _owner._proofTightenBudgetFitRetryCache = null;
+                _owner._proofTightenCandidateGenerationRetryCache = null;
                 _owner._proofTightenBudgetFitRetryHits = 0;
+                _owner._proofTightenCandidateGenerationRetryHits = 0;
             }
         }
 
@@ -496,7 +542,9 @@ partial class StrategyBuilder
         int CompactGroupsEnumerated,
         int CompactStepOptimalGroups,
         int OutcomesConstructed,
+        int CandidateGroupsEnumerated,
         int ReusedFeasibleStates,
         int ReusedInfeasibleStates,
-        int ReusedBudgetFitTransitions);
+        int ReusedBudgetFitTransitions,
+        int ReusedCandidateGenerationEntries);
 }

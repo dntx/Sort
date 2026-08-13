@@ -425,6 +425,32 @@ public class GreedyPipelineTests
             reused.ProofTightenAttemptTrace.Select(attempt => attempt.CandidateCap));
     }
 
+    [Fact]
+    public void ProofTightenProbe_CandidateGenerationResume_PreservesOutcomeAndSkipsRawPrefix()
+    {
+        var resumed = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 1 };
+        var baseline = new StrategyBuilder(12, 4, 4)
+        {
+            CompactGreedyCandidateCap = 1,
+            DisableProofTightenCandidateGenerationReuseForTesting = true,
+        };
+
+        StageResult resumedStage = resumed.ExecuteProofTightenStage(budget: 4);
+        StageResult baselineStage = baseline.ExecuteProofTightenStage(budget: 4);
+
+        Assert.Equal(baselineStage.Outcome, resumedStage.Outcome);
+        Assert.Equal(baselineStage.MaterializedPlan?.MaxStep, resumedStage.MaterializedPlan?.MaxStep);
+        Assert.Equal(
+            baseline.ProofTightenAttemptTrace.Select(attempt => attempt.CandidateCap),
+            resumed.ProofTightenAttemptTrace.Select(attempt => attempt.CandidateCap));
+        Assert.Contains(
+            resumed.ProofTightenAttemptTrace.Skip(1),
+            attempt => attempt.ReusedCandidateGenerationEntries > 0);
+        Assert.True(
+            resumed.ProofTightenAttemptTrace.Sum(attempt => attempt.CandidateGroupsEnumerated) <
+            baseline.ProofTightenAttemptTrace.Sum(attempt => attempt.CandidateGroupsEnumerated));
+    }
+
     // Pins the user-facing stage-name contract emitted by RunGreedyPipeline: each downward
     // tightening ceiling is announced as "proof-tighten\u2264N" and the final edge pass as
     // "greedy-edge-compact@S". These labels are shared verbatim by the CLI

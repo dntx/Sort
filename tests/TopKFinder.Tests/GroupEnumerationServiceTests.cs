@@ -59,4 +59,64 @@ public sealed class GroupEnumerationServiceTests
         Assert.Equal(0, GroupEnumerationService.CountUnresolvedPairs(state, group));
         Assert.True(GroupEnumerationService.CalculateUnrelatedScore(state, group) < 0);
     }
+
+    [Fact]
+    public void CandidateGenerationRetryCache_ContinuationMatchesSingleLargerCap()
+    {
+        var state = new ComparisonState(8);
+        state.ApplyOrder(new[] { 0, 1, 2 });
+        List<List<int>> classes = state.GetFreeSymmetryClasses();
+        int[] suffixCapacity = BuildSuffixCapacity(classes);
+        var owner = new StrategyBuilder(8, 3, 3);
+
+        var resumed = new StrategyBuilder.GroupSelectionHelper.CandidateGenerationRetryCacheEntry(
+            classes, suffixCapacity, groupSize: 3, state.GetStructuralLabels());
+        IReadOnlyList<List<int>> first = resumed.ExtendTo(owner, state, generationCap: 1, out bool firstTruncated);
+        IReadOnlyList<List<int>> continued = resumed.ExtendTo(owner, state, generationCap: 4, out bool continuedTruncated);
+
+        var baseline = new StrategyBuilder.GroupSelectionHelper.CandidateGenerationRetryCacheEntry(
+            classes, suffixCapacity, groupSize: 3, state.GetStructuralLabels());
+        IReadOnlyList<List<int>> direct = baseline.ExtendTo(owner, state, generationCap: 4, out bool directTruncated);
+
+        Assert.True(firstTruncated);
+        Assert.NotEmpty(first);
+        Assert.Equal(directTruncated, continuedTruncated);
+        Assert.Equal(
+            direct.Select(group => string.Join(",", group)),
+            continued.Select(group => string.Join(",", group)));
+    }
+
+    [Fact]
+    public void CandidateGeneration_ExactCapCompletionIsNotTruncated()
+    {
+        var owner = new StrategyBuilder(8, 3, 3);
+        var state = new ComparisonState(8);
+        var candidates = Enumerable.Range(0, 8).ToList();
+
+        IReadOnlyList<List<int>> groups = StrategyBuilder.GroupSelectionHelper.EnumerateDistinctGroups(
+            owner, state, candidates, groupSize: 3, generationCap: 1, out bool wasTruncated);
+
+        Assert.Single(groups);
+        Assert.False(wasTruncated);
+
+        List<List<int>> classes = state.GetFreeSymmetryClasses();
+        var cursor = new StrategyBuilder.GroupSelectionHelper.CandidateGenerationRetryCacheEntry(
+            classes,
+            BuildSuffixCapacity(classes),
+            groupSize: 3,
+            state.GetStructuralLabels());
+        IReadOnlyList<List<int>> cursorGroups = cursor.ExtendTo(
+            owner, state, generationCap: 1, out bool cursorWasTruncated);
+
+        Assert.Single(cursorGroups);
+        Assert.False(cursorWasTruncated);
+    }
+
+    private static int[] BuildSuffixCapacity(List<List<int>> classes)
+    {
+        var suffixCapacity = new int[classes.Count + 1];
+        for (int i = classes.Count - 1; i >= 0; i--)
+            suffixCapacity[i] = suffixCapacity[i + 1] + classes[i].Count;
+        return suffixCapacity;
+    }
 }
