@@ -10,11 +10,8 @@ using Xunit.Sdk;
 // Run explicitly:
 //   dotnet test tests\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter ProofTightenPerfGateTests
 //
-// Optional knobs:
+// Optional knob:
 //   PROOF_TIGHTEN_TIMEOUT_SECONDS       (default 200)
-//   PROOF_TIGHTEN_OUTCOMES_CAP          (default 0 = disabled)
-//   PROOF_TIGHTEN_CANDIDATES_CAP        (default 0 = disabled)
-//   PROOF_TIGHTEN_SEARCHED_STATES_CAP   (default 0 = disabled)
 //
 // Why this exists:
 // - Wall-clock-only gates are noisy across machines.
@@ -71,9 +68,6 @@ public sealed class ProofTightenPerfGateTests
     public void GreedyProofTighten_FirstProbe_20_2_6_CompletesWithinGate()
     {
         int timeoutSeconds = ReadPositiveIntEnv("PROOF_TIGHTEN_TIMEOUT_SECONDS", 200);
-        int outcomesCap = ReadNonNegativeIntEnv("PROOF_TIGHTEN_OUTCOMES_CAP", 0);
-        int candidatesCap = ReadNonNegativeIntEnv("PROOF_TIGHTEN_CANDIDATES_CAP", 0);
-        int searchedCap = ReadNonNegativeIntEnv("PROOF_TIGHTEN_SEARCHED_STATES_CAP", 0);
 
         int maxObservedSearched = 0;
         int lastPendingStates = -1;
@@ -172,29 +166,6 @@ public sealed class ProofTightenPerfGateTests
                 $"tightened plan step {result.PlanStep.Value} exceeded budget {result.Budget}");
         }
 
-        if (outcomesCap > 0)
-        {
-            Assert.True(result.Outcomes.HasValue,
-                "PROOF_TIGHTEN_OUTCOMES_CAP requires a materialized plan (Outcome=Tightened)");
-            Assert.True(result.Outcomes!.Value <= outcomesCap,
-                $"proof-tighten outcomes regressed to {result.Outcomes.Value} (cap {outcomesCap})");
-        }
-
-        if (candidatesCap > 0)
-        {
-            Assert.True(result.Candidates.HasValue,
-                "PROOF_TIGHTEN_CANDIDATES_CAP requires a materialized plan (Outcome=Tightened)");
-            Assert.True(result.Candidates!.Value <= candidatesCap,
-                $"proof-tighten candidate groups regressed to {result.Candidates.Value} (cap {candidatesCap})");
-        }
-
-        if (searchedCap > 0)
-        {
-            Assert.True(result.Searched.HasValue,
-                "PROOF_TIGHTEN_SEARCHED_STATES_CAP requires a materialized plan (Outcome=Tightened)");
-            Assert.True(result.Searched!.Value <= searchedCap,
-                $"proof-tighten searched states regressed to {result.Searched.Value} (cap {searchedCap})");
-        }
     }
 
     private static int ReadPositiveIntEnv(string name, int fallback)
@@ -205,11 +176,4 @@ public sealed class ProofTightenPerfGateTests
         return parsed;
     }
 
-    private static int ReadNonNegativeIntEnv(string name, int fallback)
-    {
-        string? raw = Environment.GetEnvironmentVariable(name);
-        if (!int.TryParse(raw, out int parsed) || parsed < 0)
-            return fallback;
-        return parsed;
-    }
 }

@@ -324,11 +324,8 @@ dotnet test .\tests\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter Pr
 
 - 可选环境变量：
   - `PROOF_TIGHTEN_TIMEOUT_SECONDS`（默认 200）
-  - `PROOF_TIGHTEN_OUTCOMES_CAP`（默认 0，0=关闭）
-  - `PROOF_TIGHTEN_CANDIDATES_CAP`（默认 0，0=关闭）
-  - `PROOF_TIGHTEN_SEARCHED_STATES_CAP`（默认 0，0=关闭）
 
-- 建议流程：先用 timeout-only 观察稳定性，再在同机多次测量后把确定性 cap 锁进 CI（优先锁 `OutcomesConstructed`）。
+- 该参数用于 hosted runner 的粗粒度超时保护；确定性 candidate guardrail 直接写在对应 Nightly 测试中。
 - GitHub Actions 手动工作流：`.github/workflows/manual-proof-tighten-gate.yml`（`workflow_dispatch`）。
 
 夜间自动巡检（推荐）：
