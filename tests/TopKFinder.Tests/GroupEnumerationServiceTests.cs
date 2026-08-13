@@ -86,6 +86,32 @@ public sealed class GroupEnumerationServiceTests
             continued.Select(group => string.Join(",", group)));
     }
 
+    [Fact]
+    public void CandidateGeneration_ExactCapCompletionIsNotTruncated()
+    {
+        var owner = new StrategyBuilder(8, 3, 3);
+        var state = new ComparisonState(8);
+        var candidates = Enumerable.Range(0, 8).ToList();
+
+        IReadOnlyList<List<int>> groups = StrategyBuilder.GroupSelectionHelper.EnumerateDistinctGroups(
+            owner, state, candidates, groupSize: 3, generationCap: 1, out bool wasTruncated);
+
+        Assert.Single(groups);
+        Assert.False(wasTruncated);
+
+        List<List<int>> classes = state.GetFreeSymmetryClasses();
+        var cursor = new StrategyBuilder.GroupSelectionHelper.CandidateGenerationRetryCacheEntry(
+            classes,
+            BuildSuffixCapacity(classes),
+            groupSize: 3,
+            state.GetStructuralLabels());
+        IReadOnlyList<List<int>> cursorGroups = cursor.ExtendTo(
+            owner, state, generationCap: 1, out bool cursorWasTruncated);
+
+        Assert.Single(cursorGroups);
+        Assert.False(cursorWasTruncated);
+    }
+
     private static int[] BuildSuffixCapacity(List<List<int>> classes)
     {
         var suffixCapacity = new int[classes.Count + 1];

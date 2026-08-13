@@ -435,8 +435,8 @@ public class GreedyPipelineTests
             DisableProofTightenCandidateGenerationReuseForTesting = true,
         };
 
-        StageResult resumedStage = resumed.ExecuteProofTightenStage(budget: 2);
-        StageResult baselineStage = baseline.ExecuteProofTightenStage(budget: 2);
+        StageResult resumedStage = resumed.ExecuteProofTightenStage(budget: 4);
+        StageResult baselineStage = baseline.ExecuteProofTightenStage(budget: 4);
 
         Assert.Equal(baselineStage.Outcome, resumedStage.Outcome);
         Assert.Equal(baselineStage.MaterializedPlan?.MaxStep, resumedStage.MaterializedPlan?.MaxStep);

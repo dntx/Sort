@@ -325,6 +325,7 @@ partial class StrategyBuilder
             private readonly IEnumerator<List<int>> _rawGroups;
             private readonly Dictionary<IntSequenceKey, OrbitBucket> _buckets = new();
             private readonly int[] _labels;
+            private List<int>? _pendingGroup;
             private int _generatedCount;
             private bool _complete;
 
@@ -352,17 +353,33 @@ partial class StrategyBuilder
                 while (!_complete && _generatedCount < generationCap)
                 {
                     owner.ProbeCancellation();
-                    if (!_rawGroups.MoveNext())
+                    List<int>? group = _pendingGroup;
+                    _pendingGroup = null;
+                    if (group is null && !_rawGroups.MoveNext())
                     {
                         _complete = true;
                         _rawGroups.Dispose();
                         break;
                     }
 
+                    group ??= _rawGroups.Current;
                     owner.ThrowIfCancellationRequested();
                     owner._candidateGroupsEnumerated++;
                     _generatedCount++;
-                    AddGroup(state, _rawGroups.Current);
+                    AddGroup(state, group);
+                }
+
+                if (!_complete && _pendingGroup is null)
+                {
+                    if (_rawGroups.MoveNext())
+                    {
+                        _pendingGroup = _rawGroups.Current;
+                    }
+                    else
+                    {
+                        _complete = true;
+                        _rawGroups.Dispose();
+                    }
                 }
 
                 wasTruncated = !_complete && generationCap != int.MaxValue;
@@ -539,15 +556,28 @@ partial class StrategyBuilder
             var prefix = new List<int>(groupSize);
             using IEnumerator<List<int>> rawGroups = EnumerateClassRepresentatives(
                 classes, suffixCapacity, 0, groupSize, prefix).GetEnumerator();
-            while (collected.Count < generationCap && rawGroups.MoveNext())
+            bool enumerationComplete = false;
+            while (collected.Count < generationCap)
             {
+                if (!rawGroups.MoveNext())
+                {
+                    enumerationComplete = true;
+                    break;
+                }
+
                 owner.ProbeCancellation();
                 owner.ThrowIfCancellationRequested();
                 owner._candidateGroupsEnumerated++;
                 collected.Add(rawGroups.Current);
             }
 
-            wasTruncated = collected.Count >= generationCap && generationCap != int.MaxValue;
+            // Reaching the cap is not itself proof of truncation: the final representative may have
+            // landed exactly on the boundary. Probe once more so only genuinely skipped work turns an
+            // otherwise-complete infeasibility result into an incomplete one.
+            if (!enumerationComplete && !rawGroups.MoveNext())
+                enumerationComplete = true;
+
+            wasTruncated = !enumerationComplete && generationCap != int.MaxValue;
             if (wasTruncated)
                 owner._compactEnumerationCapped = true;
 
