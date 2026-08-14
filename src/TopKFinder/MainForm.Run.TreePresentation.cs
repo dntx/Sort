@@ -492,7 +492,7 @@ partial class MainForm
     {
         _treeView.BeginUpdate();
 
-        var root = new TreeNode(BuildRootLabel(feasiblePlan, defaultPlan, compactPlan))
+        var root = new TreeNode(BuildDisplayedRootLabel(feasiblePlan, defaultPlan, compactPlan))
         {
             Tag = new LazyNodeDetails(() => BuildRootDetails(feasiblePlan, defaultPlan, compactPlan, compactImproved)),
             NodeFont = new Font(_treeView.Font, FontStyle.Bold),
@@ -640,6 +640,21 @@ partial class MainForm
         return $"{head}, {FormatPlanSqueeze(compactPlan)}, total elapsed={FormatAdaptiveElapsed(TimeSpan.FromSeconds(totalSeconds))}";
     }
 
+    private string BuildDisplayedRootLabel(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan)
+    {
+        string head = FormatPlanInputs(feasiblePlan);
+        if (defaultPlan is null)
+            return $"{head}, {FormatPlanSqueeze(feasiblePlan)} (search step-proof stage...)";
+        if (compactPlan is null)
+        {
+            double seconds = ComputeDisplayedTotalElapsedSeconds(feasiblePlan, defaultPlan, compactPlan: null);
+            return $"{head}, max steps={defaultPlan.MaxStep}, elapsed={FormatAdaptiveElapsed(TimeSpan.FromSeconds(seconds))} (search {StageNames.ExactEdgeCompactPattern} stage...)";
+        }
+
+        double totalSeconds = ComputeDisplayedTotalElapsedSeconds(feasiblePlan, defaultPlan, compactPlan);
+        return $"{head}, {FormatPlanSqueeze(compactPlan)}, total elapsed={FormatAdaptiveElapsed(TimeSpan.FromSeconds(totalSeconds))}";
+    }
+
     private static string BuildRootDetails(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool compactImproved)
     {
         if (defaultPlan is null)
@@ -679,7 +694,7 @@ partial class MainForm
 
     private void UpdateTreeRootForFinalCompact(TreeNode root, StrategyPlan defaultPlan, StrategyPlan compactPlan, bool compactImproved)
     {
-        root.Text = BuildRootLabel(_feasiblePlan!, defaultPlan, compactPlan);
+        root.Text = BuildDisplayedRootLabel(_feasiblePlan!, defaultPlan, compactPlan);
         root.Tag = new LazyNodeDetails(() => BuildTwoPhaseDetails(defaultPlan, compactPlan, compactImproved));
     }
 
