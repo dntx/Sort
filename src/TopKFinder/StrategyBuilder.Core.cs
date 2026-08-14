@@ -511,7 +511,18 @@ partial class StrategyBuilder
             _compactStatesSolved,
             _compactGroupsEnumerated,
             _compactStepOptimalGroups,
-            _rootProvenLowerBound);
+            _rootProvenLowerBound,
+            _canonicalizationCalls,
+            _canonicalizationVerticesProcessed,
+            _canonicalizationElapsedTicks,
+            _lowerBoundCalls,
+            _lowerBoundElapsedTicks,
+            _feasibleTopSetCalls,
+            _feasibleTopSetElapsedTicks,
+            _antichainLowerBoundCalls,
+            _antichainLowerBoundElapsedTicks,
+            _dominanceLowerBoundCalls,
+            _dominanceLowerBoundElapsedTicks);
     }
 
     private void ReportProgress(bool force = false)
@@ -562,6 +573,12 @@ partial class StrategyBuilder
     private T RunWithComparisonStateCancellation<T>(Func<T> action)
     {
         ComparisonState.SetThreadCancellationToken(_cancellationToken);
+        ComparisonState.SetThreadCanonicalizationObserver((vertices, elapsedTicks) =>
+        {
+            _canonicalizationCalls++;
+            _canonicalizationVerticesProcessed += vertices;
+            _canonicalizationElapsedTicks += elapsedTicks;
+        });
         try
         {
             return action();
@@ -569,6 +586,7 @@ partial class StrategyBuilder
         finally
         {
             ComparisonState.SetThreadCancellationToken(default);
+            ComparisonState.SetThreadCanonicalizationObserver(null);
         }
     }
 

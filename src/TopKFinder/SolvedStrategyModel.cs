@@ -161,7 +161,18 @@ sealed class SolvedStrategy
             statistics.CompactStatesSolved,
             statistics.CompactGroupsEnumerated,
             statistics.CompactStepOptimalGroups,
-            statistics.RootProvenLowerBound);
+            statistics.RootProvenLowerBound,
+            statistics.CanonicalizationCalls,
+            statistics.CanonicalizationVerticesProcessed,
+            statistics.CanonicalizationElapsedTicks,
+            statistics.LowerBoundCalls,
+            statistics.LowerBoundElapsedTicks,
+            statistics.FeasibleTopSetCalls,
+            statistics.FeasibleTopSetElapsedTicks,
+            statistics.AntichainLowerBoundCalls,
+            statistics.AntichainLowerBoundElapsedTicks,
+            statistics.DominanceLowerBoundCalls,
+            statistics.DominanceLowerBoundElapsedTicks);
     }
 }
 

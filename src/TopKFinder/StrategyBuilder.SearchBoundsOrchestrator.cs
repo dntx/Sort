@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 
 namespace TopKFinder;
 
@@ -325,26 +326,35 @@ partial class StrategyBuilder
 
         public int GetMinWorstCaseLowerBound(ComparisonState state, int remainingSlots)
         {
-            if (TryPrepareAndResolveTerminal(state, ref remainingSlots, out int terminalSteps))
-                return terminalSteps;
-
-            SearchStateKey key = _owner.GetSearchStateKey(state, remainingSlots);
-            if (_owner._lowerBoundStepsCache.TryGetValue(key, out int cached))
+            long startTimestamp = Stopwatch.GetTimestamp();
+            _owner._lowerBoundCalls++;
+            try
             {
-                _owner._lowerBoundCacheHits++;
-                return cached;
+                if (TryPrepareAndResolveTerminal(state, ref remainingSlots, out int terminalSteps))
+                    return terminalSteps;
+
+                SearchStateKey key = _owner.GetSearchStateKey(state, remainingSlots);
+                if (_owner._lowerBoundStepsCache.TryGetValue(key, out int cached))
+                {
+                    _owner._lowerBoundCacheHits++;
+                    return cached;
+                }
+
+                FeasibleTopSetInfo info = _owner.GetFeasibleTopSetInfo(state, remainingSlots);
+                int steps = _owner.GetInformationLowerBoundSteps(info.Count, state.ActiveCount);
+
+                steps = Math.Max(steps, _owner.GetAntichainLowerBound(state));
+                steps = Math.Max(steps, 2);
+
+                steps = _owner.ApplyDominanceLowerBound(state, remainingSlots, steps);
+
+                _owner._lowerBoundStepsCache[key] = steps;
+                return steps;
             }
-
-            FeasibleTopSetInfo info = _owner.GetFeasibleTopSetInfo(state, remainingSlots);
-            int steps = _owner.GetInformationLowerBoundSteps(info.Count, state.ActiveCount);
-
-            steps = Math.Max(steps, _owner.GetAntichainLowerBound(state));
-            steps = Math.Max(steps, 2);
-
-            steps = _owner.ApplyDominanceLowerBound(state, remainingSlots, steps);
-
-            _owner._lowerBoundStepsCache[key] = steps;
-            return steps;
+            finally
+            {
+                _owner._lowerBoundElapsedTicks += Stopwatch.GetElapsedTime(startTimestamp).Ticks;
+            }
         }
     }
 }

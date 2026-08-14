@@ -18,6 +18,17 @@ sealed class StrategyBuilderSession
     public int BestGroupPatternCacheHits;
     public int OutcomesConstructed;
     public int CandidateGroupsEnumerated;
+    public int CanonicalizationCalls;
+    public int CanonicalizationVerticesProcessed;
+    public long CanonicalizationElapsedTicks;
+    public int LowerBoundCalls;
+    public long LowerBoundElapsedTicks;
+    public int FeasibleTopSetCalls;
+    public long FeasibleTopSetElapsedTicks;
+    public int AntichainLowerBoundCalls;
+    public long AntichainLowerBoundElapsedTicks;
+    public int DominanceLowerBoundCalls;
+    public long DominanceLowerBoundElapsedTicks;
 
     public int CompactStatesSolved;
     public int CompactGroupsEnumerated;
@@ -74,6 +85,17 @@ sealed class StrategyBuilderSession
         GreedyScoreLowerBoundCacheReuseHits = 0;
         OutcomesConstructed = 0;
         CandidateGroupsEnumerated = 0;
+        CanonicalizationCalls = 0;
+        CanonicalizationVerticesProcessed = 0;
+        CanonicalizationElapsedTicks = 0;
+        LowerBoundCalls = 0;
+        LowerBoundElapsedTicks = 0;
+        FeasibleTopSetCalls = 0;
+        FeasibleTopSetElapsedTicks = 0;
+        AntichainLowerBoundCalls = 0;
+        AntichainLowerBoundElapsedTicks = 0;
+        DominanceLowerBoundCalls = 0;
+        DominanceLowerBoundElapsedTicks = 0;
         CompactStatesSolved = 0;
         CompactGroupsEnumerated = 0;
         CompactStepOptimalGroups = 0;

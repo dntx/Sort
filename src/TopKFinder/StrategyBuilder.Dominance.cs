@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Numerics;
 
 namespace TopKFinder;
@@ -218,36 +219,45 @@ partial class StrategyBuilder
     // the result is always a sound lower bound; budget exhaustion only forgoes a tighter bound.
     private int ApplyDominanceLowerBound(ComparisonState state, int remainingSlots, int analyticLowerBound)
     {
-        if (state.ActiveCount <= _m || remainingSlots <= 0)
-            return analyticLowerBound;
-        if (!_dominanceBuckets.TryGetValue((remainingSlots, state.ActiveCount), out List<DominanceEntry>? bucket))
-            return analyticLowerBound;
-
-        LocalRelation current = BuildLocalRelation(state);
-        int best = analyticLowerBound;
-        _dominanceProbeBudgetRemaining = DominanceProbeBudget;
-
-        foreach (DominanceEntry entry in bucket)
+        long startTimestamp = Stopwatch.GetTimestamp();
+        _dominanceLowerBoundCalls++;
+        try
         {
-            if (entry.Cost <= best)
-                continue;                                       // cannot raise the bound
-            if (entry.Relation.EdgeCount < current.EdgeCount)
-                continue;                                       // current's relation cannot embed into a sparser one
-            if (!EmbedDegreeFeasible(current, entry.Relation))
-                continue;                                       // cheap degree-sequence necessary condition fails
-            if (TryEmbedRelation(current, entry.Relation))      // current <= entry in information
-                best = entry.Cost;                              // so cost(state) >= entry.Cost
-            if (_dominanceProbeBudgetRemaining <= 0)
-                break;
-        }
+            if (state.ActiveCount <= _m || remainingSlots <= 0)
+                return analyticLowerBound;
+            if (!_dominanceBuckets.TryGetValue((remainingSlots, state.ActiveCount), out List<DominanceEntry>? bucket))
+                return analyticLowerBound;
 
-        if (best > analyticLowerBound)
+            LocalRelation current = BuildLocalRelation(state);
+            int best = analyticLowerBound;
+            _dominanceProbeBudgetRemaining = DominanceProbeBudget;
+
+            foreach (DominanceEntry entry in bucket)
+            {
+                if (entry.Cost <= best)
+                    continue;                                       // cannot raise the bound
+                if (entry.Relation.EdgeCount < current.EdgeCount)
+                    continue;                                       // current's relation cannot embed into a sparser one
+                if (!EmbedDegreeFeasible(current, entry.Relation))
+                    continue;                                       // cheap degree-sequence necessary condition fails
+                if (TryEmbedRelation(current, entry.Relation))      // current <= entry in information
+                    best = entry.Cost;                              // so cost(state) >= entry.Cost
+                if (_dominanceProbeBudgetRemaining <= 0)
+                    break;
+            }
+
+            if (best > analyticLowerBound)
+            {
+                _dominanceBoundRaises++;
+                _dominanceBoundRaiseSlack += best - analyticLowerBound;
+            }
+
+            return best;
+        }
+        finally
         {
-            _dominanceBoundRaises++;
-            _dominanceBoundRaiseSlack += best - analyticLowerBound;
+            _dominanceLowerBoundElapsedTicks += Stopwatch.GetElapsedTime(startTimestamp).Ticks;
         }
-
-        return best;
     }
 
     private DominanceProbeResult ProbeDominance(ComparisonState state, int remainingSlots)

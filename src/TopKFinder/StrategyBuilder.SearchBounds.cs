@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Numerics;
 
 namespace TopKFinder;
@@ -75,14 +76,23 @@ partial class StrategyBuilder
     // branch and raise some case's MaxStep.
     private int GetAntichainLowerBound(ComparisonState state)
     {
-        if (_m <= 1)
-            return 0;
+        long startTimestamp = Stopwatch.GetTimestamp();
+        _antichainLowerBoundCalls++;
+        try
+        {
+            if (_m <= 1)
+                return 0;
 
-        int width = GetActivePosetWidth(state);
-        if (width <= 1)
-            return 0;
+            int width = GetActivePosetWidth(state);
+            if (width <= 1)
+                return 0;
 
-        return (width - 1 + (_m - 1) - 1) / (_m - 1);
+            return (width - 1 + (_m - 1) - 1) / (_m - 1);
+        }
+        finally
+        {
+            _antichainLowerBoundElapsedTicks += Stopwatch.GetElapsedTime(startTimestamp).Ticks;
+        }
     }
 
     // Maximum antichain width of the active poset, via Dilworth's theorem (max antichain = minimum
@@ -166,20 +176,29 @@ partial class StrategyBuilder
     // Feasible top-set counting chain used by both terminal determinability checks and lower bounds.
     private FeasibleTopSetInfo GetFeasibleTopSetInfo(ComparisonState state, int remainingSlots)
     {
-        ThrowIfCancellationRequested();
-        SearchStateKey key = GetSearchStateKey(state, remainingSlots);
-        _visitedSearchStates.Add(key);
-        if (_feasibleTopSetCache.TryGetValue(key, out FeasibleTopSetInfo cached))
+        long startTimestamp = Stopwatch.GetTimestamp();
+        _feasibleTopSetCalls++;
+        try
         {
-            _feasibleTopSetCacheHits++;
-            return cached;
+            ThrowIfCancellationRequested();
+            SearchStateKey key = GetSearchStateKey(state, remainingSlots);
+            _visitedSearchStates.Add(key);
+            if (_feasibleTopSetCache.TryGetValue(key, out FeasibleTopSetInfo cached))
+            {
+                _feasibleTopSetCacheHits++;
+                return cached;
+            }
+
+            var memo = new Dictionary<FeasibleTopSetSubproblemKey, FeasibleTopSetInfo>();
+            FeasibleTopSetInfo info = CountFeasibleTopSets(state, state.ActiveMask, remainingSlots, memo);
+
+            _feasibleTopSetCache[key] = info;
+            return info;
         }
-
-        var memo = new Dictionary<FeasibleTopSetSubproblemKey, FeasibleTopSetInfo>();
-        FeasibleTopSetInfo info = CountFeasibleTopSets(state, state.ActiveMask, remainingSlots, memo);
-
-        _feasibleTopSetCache[key] = info;
-        return info;
+        finally
+        {
+            _feasibleTopSetElapsedTicks += Stopwatch.GetElapsedTime(startTimestamp).Ticks;
+        }
     }
 
     private FeasibleTopSetInfo CountFeasibleTopSets(
