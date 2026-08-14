@@ -621,17 +621,17 @@ partial class MainForm
             ForeColor = _palette.MutedForeColor,
         };
 
-    private static string BuildRootLabel(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan)
+    private string BuildRootLabel(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan)
     {
         string head = FormatPlanInputs(feasiblePlan);
         if (defaultPlan is null)
             return $"{head}, {FormatPlanSqueeze(feasiblePlan)} (search step-proof stage...)";
         if (compactPlan is null)
         {
-            double seconds = ComputeFallbackTotalElapsedSeconds(feasiblePlan, defaultPlan, compactPlan: null);
+            double seconds = ComputeDisplayedTotalElapsedSeconds(feasiblePlan, defaultPlan, compactPlan: null);
             return $"{head}, max steps={defaultPlan.MaxStep}, elapsed={FormatAdaptiveElapsed(TimeSpan.FromSeconds(seconds))} (search {StageNames.ExactEdgeCompactPattern} stage...)";
         }
-        double totalSeconds = ComputeFallbackTotalElapsedSeconds(feasiblePlan, defaultPlan, compactPlan);
+        double totalSeconds = ComputeDisplayedTotalElapsedSeconds(feasiblePlan, defaultPlan, compactPlan);
         // Lead with the optimality squeeze on the best plan: once the final tightening proves the next
         // step ceiling infeasible (the no-solution terminal), the incumbent's lower bound is closed to
         // its max-step and this reads "max steps = N (proven optimal)" -- the headline signal that the
