@@ -492,7 +492,7 @@ partial class MainForm
     {
         _treeView.BeginUpdate();
 
-        var root = new TreeNode(BuildRootLabel(feasiblePlan, defaultPlan, compactPlan))
+        var root = new TreeNode(BuildDisplayedRootLabel(feasiblePlan, defaultPlan, compactPlan))
         {
             Tag = new LazyNodeDetails(() => BuildRootDetails(feasiblePlan, defaultPlan, compactPlan, compactImproved)),
             NodeFont = new Font(_treeView.Font, FontStyle.Bold),
@@ -621,7 +621,26 @@ partial class MainForm
             ForeColor = _palette.MutedForeColor,
         };
 
-    private string BuildRootLabel(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan)
+    private static string BuildRootLabel(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan)
+    {
+        string head = FormatPlanInputs(feasiblePlan);
+        if (defaultPlan is null)
+            return $"{head}, {FormatPlanSqueeze(feasiblePlan)} (search step-proof stage...)";
+        if (compactPlan is null)
+        {
+            double seconds = ComputeFallbackTotalElapsedSeconds(feasiblePlan, defaultPlan, compactPlan: null);
+            return $"{head}, max steps={defaultPlan.MaxStep}, elapsed={FormatAdaptiveElapsed(TimeSpan.FromSeconds(seconds))} (search {StageNames.ExactEdgeCompactPattern} stage...)";
+        }
+        double totalSeconds = ComputeFallbackTotalElapsedSeconds(feasiblePlan, defaultPlan, compactPlan);
+        // Lead with the optimality squeeze on the best plan: once the final tightening proves the next
+        // step ceiling infeasible (the no-solution terminal), the incumbent's lower bound is closed to
+        // its max-step and this reads "max steps = N (proven optimal)" -- the headline signal that the
+        // search is done and the step count is provably best. While still tightening it reads
+        // "L <= max steps <= U".
+        return $"{head}, {FormatPlanSqueeze(compactPlan)}, total elapsed={FormatAdaptiveElapsed(TimeSpan.FromSeconds(totalSeconds))}";
+    }
+
+    private string BuildDisplayedRootLabel(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan)
     {
         string head = FormatPlanInputs(feasiblePlan);
         if (defaultPlan is null)
@@ -631,12 +650,8 @@ partial class MainForm
             double seconds = ComputeDisplayedTotalElapsedSeconds(feasiblePlan, defaultPlan, compactPlan: null);
             return $"{head}, max steps={defaultPlan.MaxStep}, elapsed={FormatAdaptiveElapsed(TimeSpan.FromSeconds(seconds))} (search {StageNames.ExactEdgeCompactPattern} stage...)";
         }
+
         double totalSeconds = ComputeDisplayedTotalElapsedSeconds(feasiblePlan, defaultPlan, compactPlan);
-        // Lead with the optimality squeeze on the best plan: once the final tightening proves the next
-        // step ceiling infeasible (the no-solution terminal), the incumbent's lower bound is closed to
-        // its max-step and this reads "max steps = N (proven optimal)" -- the headline signal that the
-        // search is done and the step count is provably best. While still tightening it reads
-        // "L <= max steps <= U".
         return $"{head}, {FormatPlanSqueeze(compactPlan)}, total elapsed={FormatAdaptiveElapsed(TimeSpan.FromSeconds(totalSeconds))}";
     }
 
@@ -679,7 +694,7 @@ partial class MainForm
 
     private void UpdateTreeRootForFinalCompact(TreeNode root, StrategyPlan defaultPlan, StrategyPlan compactPlan, bool compactImproved)
     {
-        root.Text = BuildRootLabel(_feasiblePlan!, defaultPlan, compactPlan);
+        root.Text = BuildDisplayedRootLabel(_feasiblePlan!, defaultPlan, compactPlan);
         root.Tag = new LazyNodeDetails(() => BuildTwoPhaseDetails(defaultPlan, compactPlan, compactImproved));
     }
 

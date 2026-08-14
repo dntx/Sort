@@ -963,7 +963,7 @@ partial class MainForm
 
         TreeNode root = _treeView.Nodes[0];
         StrategyPlan shown = _compactPlan ?? _feasiblePlan;
-        root.Text = BuildRootLabel(_feasiblePlan, _feasiblePlan, shown);
+        root.Text = BuildDisplayedRootLabel(_feasiblePlan, _feasiblePlan, shown);
         if (_greedyFeasibleStage.HasValue)
         {
             root.Tag = new LazyNodeDetails(() => BuildGreedyProgressionDetails(
