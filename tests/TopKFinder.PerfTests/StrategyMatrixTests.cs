@@ -4,7 +4,8 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
-using System.Text;
+using CsvHelper;
+using CsvHelper.Configuration;
 using Xunit;
 using TopKFinder;
 
@@ -73,6 +74,28 @@ public sealed class StrategyMatrixTests
         double AverageMilliseconds,
         string Status,
         string Samples);
+
+    private sealed class StrategyMatrixCsvRow
+    {
+        public string Key { get; set; } = string.Empty;
+        public string Mode { get; set; } = string.Empty;
+        public string Stage { get; set; } = string.Empty;
+        public int N { get; set; }
+        public int M { get; set; }
+        public int K { get; set; }
+        public string Outcome { get; set; } = string.Empty;
+        public bool HasPlan { get; set; }
+        public int MaxStep { get; set; }
+        public int TotalBranchEdges { get; set; }
+        public int SearchedStates { get; set; }
+        public int OutcomesConstructed { get; set; }
+        public int CandidateGroupsEnumerated { get; set; }
+        public int RootProvenLowerBound { get; set; }
+        public double MedianMilliseconds { get; set; }
+        public double AverageMilliseconds { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public string Samples { get; set; } = string.Empty;
+    }
 
     [Fact]
     public void BaselineCsvRoundTripsQuotedKeyAndSamples()
@@ -346,40 +369,41 @@ public sealed class StrategyMatrixTests
 
     private static Dictionary<string, List<MatrixRow>> LoadBaselineRows(string baselinePath)
     {
-        var rows = File.ReadAllLines(baselinePath)
-            .Skip(1)
-            .Where(line => !string.IsNullOrWhiteSpace(line))
-            .Select(ParseRow)
+        var config = new CsvConfiguration(CultureInfo.InvariantCulture)
+        {
+            HasHeaderRecord = true,
+            IgnoreBlankLines = true,
+            MissingFieldFound = null,
+            HeaderValidated = null,
+            BadDataFound = null
+        };
+
+        using var reader = new StreamReader(baselinePath);
+        using var csv = new CsvReader(reader, config);
+
+        var rows = csv.GetRecords<StrategyMatrixCsvRow>()
+            .Select(row => new MatrixRow(
+                row.Key,
+                row.Mode,
+                row.Stage,
+                row.N,
+                row.M,
+                row.K,
+                row.Outcome,
+                row.HasPlan,
+                row.MaxStep,
+                row.TotalBranchEdges,
+                row.SearchedStates,
+                row.OutcomesConstructed,
+                row.CandidateGroupsEnumerated,
+                row.RootProvenLowerBound,
+                row.MedianMilliseconds,
+                row.AverageMilliseconds,
+                row.Status,
+                row.Samples))
             .GroupBy(row => row.Key)
             .ToDictionary(group => group.Key, group => group.ToList());
         return rows;
-    }
-
-    private static MatrixRow ParseRow(string line)
-    {
-        string[] parts = ParseCsvLine(line);
-        if (parts.Length < 17)
-            throw new InvalidDataException($"Invalid strategy matrix baseline row: {line}");
-
-        return new MatrixRow(
-            parts[0],
-            parts[1],
-            parts[2],
-            int.Parse(parts[3], CultureInfo.InvariantCulture),
-            int.Parse(parts[4], CultureInfo.InvariantCulture),
-            int.Parse(parts[5], CultureInfo.InvariantCulture),
-            parts[6],
-            bool.Parse(parts[7]),
-            int.Parse(parts[8], CultureInfo.InvariantCulture),
-            int.Parse(parts[9], CultureInfo.InvariantCulture),
-            int.Parse(parts[10], CultureInfo.InvariantCulture),
-            int.Parse(parts[11], CultureInfo.InvariantCulture),
-            int.Parse(parts[12], CultureInfo.InvariantCulture),
-            int.Parse(parts[13], CultureInfo.InvariantCulture),
-            double.Parse(parts[14], CultureInfo.InvariantCulture),
-            double.Parse(parts[15], CultureInfo.InvariantCulture),
-            parts.Length > 16 ? parts[16] : "PASS",
-            parts.Length > 17 ? string.Join(',', parts.Skip(17)) : string.Empty);
     }
 
     private static void WriteBaseline(string reportPath, string? baselinePath, List<MatrixRow> rows)
@@ -392,79 +416,29 @@ public sealed class StrategyMatrixTests
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path) ?? AppContext.BaseDirectory);
         using var writer = new StreamWriter(path, false);
-        writer.WriteLine(string.Join(",", SerializeCsvField("Key"), SerializeCsvField("Mode"), SerializeCsvField("Stage"),
-            SerializeCsvField("N"), SerializeCsvField("M"), SerializeCsvField("K"), SerializeCsvField("Outcome"),
-            SerializeCsvField("HasPlan"), SerializeCsvField("MaxStep"), SerializeCsvField("TotalBranchEdges"),
-            SerializeCsvField("SearchedStates"), SerializeCsvField("OutcomesConstructed"), SerializeCsvField("CandidateGroupsEnumerated"),
-            SerializeCsvField("RootProvenLowerBound"), SerializeCsvField("MedianMilliseconds"), SerializeCsvField("AverageMilliseconds"),
-            SerializeCsvField("Status"), SerializeCsvField("Samples")));
-        foreach (MatrixRow row in rows)
+        using var csv = new CsvWriter(writer, CultureInfo.InvariantCulture);
+
+        csv.WriteRecords(rows.Select(row => new StrategyMatrixCsvRow
         {
-            writer.WriteLine(string.Join(",",
-                SerializeCsvField(row.Key),
-                SerializeCsvField(row.Mode),
-                SerializeCsvField(row.Stage),
-                SerializeCsvField(row.N.ToString(CultureInfo.InvariantCulture)),
-                SerializeCsvField(row.M.ToString(CultureInfo.InvariantCulture)),
-                SerializeCsvField(row.K.ToString(CultureInfo.InvariantCulture)),
-                SerializeCsvField(row.Outcome),
-                SerializeCsvField(row.HasPlan.ToString()),
-                SerializeCsvField(row.MaxStep.ToString(CultureInfo.InvariantCulture)),
-                SerializeCsvField(row.TotalBranchEdges.ToString(CultureInfo.InvariantCulture)),
-                SerializeCsvField(row.SearchedStates.ToString(CultureInfo.InvariantCulture)),
-                SerializeCsvField(row.OutcomesConstructed.ToString(CultureInfo.InvariantCulture)),
-                SerializeCsvField(row.CandidateGroupsEnumerated.ToString(CultureInfo.InvariantCulture)),
-                SerializeCsvField(row.RootProvenLowerBound.ToString(CultureInfo.InvariantCulture)),
-                SerializeCsvField(row.MedianMilliseconds.ToString(CultureInfo.InvariantCulture)),
-                SerializeCsvField(row.AverageMilliseconds.ToString(CultureInfo.InvariantCulture)),
-                SerializeCsvField(row.Status),
-                SerializeCsvField(row.Samples)));
-        }
-    }
-
-    private static string[] ParseCsvLine(string line)
-    {
-        var fields = new List<string>();
-        var current = new StringBuilder();
-        bool inQuotes = false;
-
-        for (int i = 0; i < line.Length; i++)
-        {
-            char c = line[i];
-            if (c == '"')
-            {
-                if (inQuotes && i + 1 < line.Length && line[i + 1] == '"')
-                {
-                    current.Append('"');
-                    i++;
-                }
-                else
-                {
-                    inQuotes = !inQuotes;
-                }
-            }
-            else if (c == ',' && !inQuotes)
-            {
-                fields.Add(current.ToString());
-                current.Clear();
-            }
-            else
-            {
-                current.Append(c);
-            }
-        }
-
-        fields.Add(current.ToString());
-        return fields.ToArray();
-    }
-
-    private static string SerializeCsvField(string value)
-    {
-        if (string.IsNullOrEmpty(value))
-            return string.Empty;
-
-        bool requiresQuotes = value.Contains(',') || value.Contains('"') || value.Contains('\n') || value.Contains('\r');
-        return requiresQuotes ? $"\"{value.Replace("\"", "\"\"")}\"" : value;
+            Key = row.Key,
+            Mode = row.Mode,
+            Stage = row.Stage,
+            N = row.N,
+            M = row.M,
+            K = row.K,
+            Outcome = row.Outcome,
+            HasPlan = row.HasPlan,
+            MaxStep = row.MaxStep,
+            TotalBranchEdges = row.TotalBranchEdges,
+            SearchedStates = row.SearchedStates,
+            OutcomesConstructed = row.OutcomesConstructed,
+            CandidateGroupsEnumerated = row.CandidateGroupsEnumerated,
+            RootProvenLowerBound = row.RootProvenLowerBound,
+            MedianMilliseconds = row.MedianMilliseconds,
+            AverageMilliseconds = row.AverageMilliseconds,
+            Status = row.Status,
+            Samples = row.Samples
+        }));
     }
 
     private static MatrixObservation RunPlan(CancellationToken cancellationToken, int n, int m, int k, Func<StrategyBuilder, StrategyPlan> action)
