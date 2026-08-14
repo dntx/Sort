@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Reflection;
+using System.Text;
 using Xunit;
 using TopKFinder;
 
@@ -71,6 +73,38 @@ public sealed class StrategyMatrixTests
         double AverageMilliseconds,
         string Status,
         string Samples);
+
+    [Fact]
+    public void BaselineCsvRoundTripsQuotedKeyAndSamples()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"strategy-matrix-baseline-{Guid.NewGuid():N}.csv");
+
+        try
+        {
+            File.WriteAllText(path,
+                "Key,Mode,Stage,N,M,K,Outcome,HasPlan,MaxStep,TotalBranchEdges,SearchedStates,OutcomesConstructed,CandidateGroupsEnumerated,RootProvenLowerBound,MedianMilliseconds,AverageMilliseconds,Status,Samples\n" +
+                "\"exact-step:6,2,2\",exact,step-proof,6,2,2,Resolved,True,7,6,21,72,85,7,1.77,1.77,PASS,\"1.77,1.80,1.82\"\n");
+
+            MethodInfo? load = typeof(StrategyMatrixTests).GetMethod("LoadBaselineRows", BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.NotNull(load);
+
+            var rows = load.Invoke(null, new object[] { path });
+            Assert.NotNull(rows);
+
+            var dictionary = rows as System.Collections.IDictionary;
+            Assert.NotNull(dictionary);
+            Assert.True(dictionary!.Contains("exact-step:6,2,2"));
+
+            var items = dictionary["exact-step:6,2,2"];
+            Assert.NotNull(items);
+            Assert.Equal(1, (int)items.GetType().GetProperty("Count")!.GetValue(items)!);
+        }
+        finally
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+    }
 
     [Fact]
     public void NightlyStrategyMatrix()
@@ -323,7 +357,7 @@ public sealed class StrategyMatrixTests
 
     private static MatrixRow ParseRow(string line)
     {
-        string[] parts = line.Split(',');
+        string[] parts = ParseCsvLine(line);
         if (parts.Length < 17)
             throw new InvalidDataException($"Invalid strategy matrix baseline row: {line}");
 
@@ -358,29 +392,79 @@ public sealed class StrategyMatrixTests
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path) ?? AppContext.BaseDirectory);
         using var writer = new StreamWriter(path, false);
-        writer.WriteLine("Key,Mode,Stage,N,M,K,Outcome,HasPlan,MaxStep,TotalBranchEdges,SearchedStates,OutcomesConstructed,CandidateGroupsEnumerated,RootProvenLowerBound,MedianMilliseconds,AverageMilliseconds,Status,Samples");
+        writer.WriteLine(string.Join(",", SerializeCsvField("Key"), SerializeCsvField("Mode"), SerializeCsvField("Stage"),
+            SerializeCsvField("N"), SerializeCsvField("M"), SerializeCsvField("K"), SerializeCsvField("Outcome"),
+            SerializeCsvField("HasPlan"), SerializeCsvField("MaxStep"), SerializeCsvField("TotalBranchEdges"),
+            SerializeCsvField("SearchedStates"), SerializeCsvField("OutcomesConstructed"), SerializeCsvField("CandidateGroupsEnumerated"),
+            SerializeCsvField("RootProvenLowerBound"), SerializeCsvField("MedianMilliseconds"), SerializeCsvField("AverageMilliseconds"),
+            SerializeCsvField("Status"), SerializeCsvField("Samples")));
         foreach (MatrixRow row in rows)
         {
             writer.WriteLine(string.Join(",",
-                row.Key,
-                row.Mode,
-                row.Stage,
-                row.N.ToString(CultureInfo.InvariantCulture),
-                row.M.ToString(CultureInfo.InvariantCulture),
-                row.K.ToString(CultureInfo.InvariantCulture),
-                row.Outcome,
-                row.HasPlan,
-                row.MaxStep,
-                row.TotalBranchEdges,
-                row.SearchedStates,
-                row.OutcomesConstructed,
-                row.CandidateGroupsEnumerated,
-                row.RootProvenLowerBound,
-                row.MedianMilliseconds.ToString(CultureInfo.InvariantCulture),
-                row.AverageMilliseconds.ToString(CultureInfo.InvariantCulture),
-                row.Status,
-                row.Samples));
+                SerializeCsvField(row.Key),
+                SerializeCsvField(row.Mode),
+                SerializeCsvField(row.Stage),
+                SerializeCsvField(row.N.ToString(CultureInfo.InvariantCulture)),
+                SerializeCsvField(row.M.ToString(CultureInfo.InvariantCulture)),
+                SerializeCsvField(row.K.ToString(CultureInfo.InvariantCulture)),
+                SerializeCsvField(row.Outcome),
+                SerializeCsvField(row.HasPlan.ToString()),
+                SerializeCsvField(row.MaxStep.ToString(CultureInfo.InvariantCulture)),
+                SerializeCsvField(row.TotalBranchEdges.ToString(CultureInfo.InvariantCulture)),
+                SerializeCsvField(row.SearchedStates.ToString(CultureInfo.InvariantCulture)),
+                SerializeCsvField(row.OutcomesConstructed.ToString(CultureInfo.InvariantCulture)),
+                SerializeCsvField(row.CandidateGroupsEnumerated.ToString(CultureInfo.InvariantCulture)),
+                SerializeCsvField(row.RootProvenLowerBound.ToString(CultureInfo.InvariantCulture)),
+                SerializeCsvField(row.MedianMilliseconds.ToString(CultureInfo.InvariantCulture)),
+                SerializeCsvField(row.AverageMilliseconds.ToString(CultureInfo.InvariantCulture)),
+                SerializeCsvField(row.Status),
+                SerializeCsvField(row.Samples)));
         }
+    }
+
+    private static string[] ParseCsvLine(string line)
+    {
+        var fields = new List<string>();
+        var current = new StringBuilder();
+        bool inQuotes = false;
+
+        for (int i = 0; i < line.Length; i++)
+        {
+            char c = line[i];
+            if (c == '"')
+            {
+                if (inQuotes && i + 1 < line.Length && line[i + 1] == '"')
+                {
+                    current.Append('"');
+                    i++;
+                }
+                else
+                {
+                    inQuotes = !inQuotes;
+                }
+            }
+            else if (c == ',' && !inQuotes)
+            {
+                fields.Add(current.ToString());
+                current.Clear();
+            }
+            else
+            {
+                current.Append(c);
+            }
+        }
+
+        fields.Add(current.ToString());
+        return fields.ToArray();
+    }
+
+    private static string SerializeCsvField(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return string.Empty;
+
+        bool requiresQuotes = value.Contains(',') || value.Contains('"') || value.Contains('\n') || value.Contains('\r');
+        return requiresQuotes ? $"\"{value.Replace("\"", "\"\"")}\"" : value;
     }
 
     private static MatrixObservation RunPlan(CancellationToken cancellationToken, int n, int m, int k, Func<StrategyBuilder, StrategyPlan> action)
