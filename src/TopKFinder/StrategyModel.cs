@@ -454,7 +454,18 @@ sealed class SearchStatistics
         int compactStatesSolved,
         int compactGroupsEnumerated,
         int compactStepOptimalGroups,
-        int rootProvenLowerBound)
+        int rootProvenLowerBound,
+        int canonicalizationCalls = 0,
+        int canonicalizationVerticesProcessed = 0,
+        long canonicalizationElapsedTicks = 0,
+        int lowerBoundCalls = 0,
+        long lowerBoundElapsedTicks = 0,
+        int feasibleTopSetCalls = 0,
+        long feasibleTopSetElapsedTicks = 0,
+        int antichainLowerBoundCalls = 0,
+        long antichainLowerBoundElapsedTicks = 0,
+        int dominanceLowerBoundCalls = 0,
+        long dominanceLowerBoundElapsedTicks = 0)
     {
         SearchedStates = searchedStates;
         PendingStates = pendingStates;
@@ -474,6 +485,17 @@ sealed class SearchStatistics
         CompactGroupsEnumerated = compactGroupsEnumerated;
         CompactStepOptimalGroups = compactStepOptimalGroups;
         RootProvenLowerBound = rootProvenLowerBound;
+        CanonicalizationCalls = canonicalizationCalls;
+        CanonicalizationVerticesProcessed = canonicalizationVerticesProcessed;
+        CanonicalizationElapsedTicks = canonicalizationElapsedTicks;
+        LowerBoundCalls = lowerBoundCalls;
+        LowerBoundElapsedTicks = lowerBoundElapsedTicks;
+        FeasibleTopSetCalls = feasibleTopSetCalls;
+        FeasibleTopSetElapsedTicks = feasibleTopSetElapsedTicks;
+        AntichainLowerBoundCalls = antichainLowerBoundCalls;
+        AntichainLowerBoundElapsedTicks = antichainLowerBoundElapsedTicks;
+        DominanceLowerBoundCalls = dominanceLowerBoundCalls;
+        DominanceLowerBoundElapsedTicks = dominanceLowerBoundElapsedTicks;
     }
 
     public int SearchedStates { get; }
@@ -515,6 +537,17 @@ sealed class SearchStatistics
     public int CompactStatesSolved { get; }
     public int CompactGroupsEnumerated { get; }
     public int CompactStepOptimalGroups { get; }
+    public int CanonicalizationCalls { get; }
+    public int CanonicalizationVerticesProcessed { get; }
+    public long CanonicalizationElapsedTicks { get; }
+    public int LowerBoundCalls { get; }
+    public long LowerBoundElapsedTicks { get; }
+    public int FeasibleTopSetCalls { get; }
+    public long FeasibleTopSetElapsedTicks { get; }
+    public int AntichainLowerBoundCalls { get; }
+    public long AntichainLowerBoundElapsedTicks { get; }
+    public int DominanceLowerBoundCalls { get; }
+    public long DominanceLowerBoundElapsedTicks { get; }
 
     // Best PROVEN lower bound on the root optimum (opt >= this). The L side of the L <= opt <= U
     // squeeze report; for a fully resolved build it equals MaxStep. See SearchProgressSnapshot.
@@ -541,7 +574,18 @@ sealed class SearchStatistics
             CompactStatesSolved,
             CompactGroupsEnumerated,
             CompactStepOptimalGroups,
-            rootProvenLowerBound);
+            rootProvenLowerBound,
+            CanonicalizationCalls,
+            CanonicalizationVerticesProcessed,
+            CanonicalizationElapsedTicks,
+            LowerBoundCalls,
+            LowerBoundElapsedTicks,
+            FeasibleTopSetCalls,
+            FeasibleTopSetElapsedTicks,
+            AntichainLowerBoundCalls,
+            AntichainLowerBoundElapsedTicks,
+            DominanceLowerBoundCalls,
+            DominanceLowerBoundElapsedTicks);
 }
 
 sealed class StrategyNode

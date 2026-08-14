@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Numerics;
 using System.Threading;
 using System.Collections.Generic;
@@ -8,6 +9,7 @@ namespace TopKFinder;
 class ComparisonState
 {
     [ThreadStatic] private static CancellationToken _threadCancellationToken;
+    [ThreadStatic] private static Action<int, long>? _threadCanonicalizationObserver;
 
     private readonly int _n;
     private readonly ulong _allMask;
@@ -23,6 +25,11 @@ class ComparisonState
     internal static void SetThreadCancellationToken(CancellationToken cancellationToken)
     {
         _threadCancellationToken = cancellationToken;
+    }
+
+    internal static void SetThreadCanonicalizationObserver(Action<int, long>? observer)
+    {
+        _threadCanonicalizationObserver = observer;
     }
 
     private static void ThrowIfThreadCancellationRequested()
@@ -78,14 +85,100 @@ class ComparisonState
 
     private IntSequenceKey ComputeCanonicalKeyForMasks(ulong includedMask, ulong fixedTopMask, ulong highlightMask)
     {
-        return ComparisonStateAlgorithms.ComputeCanonicalForm(
-            _n,
-            includedMask,
-            fixedTopMask,
-            highlightMask,
-            _ancestors,
-            _descendants,
-            ThrowIfThreadCancellationRequested);
+        List<ulong> components = GetConnectedComponentMasks(includedMask);
+        if (components.Count > 1)
+        {
+            var componentKeys = new List<IntSequenceKey>(components.Count);
+            foreach (ulong componentMask in components)
+            {
+                if (BitOperations.PopCount(componentMask) == 1)
+                {
+                    int color = ((fixedTopMask & componentMask) != 0 ? 1 : 0) +
+                        ((highlightMask & componentMask) != 0 ? 2 : 0);
+                    componentKeys.Add(new IntSequenceKey(new[] { 0, color }));
+                    continue;
+                }
+
+                componentKeys.Add(ComputeCanonicalCore(
+                    componentMask,
+                    fixedTopMask & componentMask,
+                    highlightMask & componentMask));
+            }
+
+            componentKeys.Sort();
+            return CreateDisconnectedComponentKey(componentKeys);
+        }
+
+        return ComputeCanonicalCore(includedMask, fixedTopMask, highlightMask);
+    }
+
+    private IntSequenceKey ComputeCanonicalCore(ulong includedMask, ulong fixedTopMask, ulong highlightMask)
+    {
+        long startTimestamp = Stopwatch.GetTimestamp();
+        try
+        {
+            return ComparisonStateAlgorithms.ComputeCanonicalForm(
+                _n,
+                includedMask,
+                fixedTopMask,
+                highlightMask,
+                _ancestors,
+                _descendants,
+                ThrowIfThreadCancellationRequested);
+        }
+        finally
+        {
+            _threadCanonicalizationObserver?.Invoke(
+                BitOperations.PopCount(includedMask),
+                Stopwatch.GetElapsedTime(startTimestamp).Ticks);
+        }
+    }
+
+    private List<ulong> GetConnectedComponentMasks(ulong includedMask)
+    {
+        var components = new List<ulong>();
+        ulong remaining = includedMask;
+        while (remaining != 0)
+        {
+            ulong componentMask = 0;
+            ulong frontier = remaining & (0UL - remaining);
+            remaining &= ~frontier;
+            while (frontier != 0)
+            {
+                int item = BitOperations.TrailingZeroCount(frontier);
+                frontier &= ~(1UL << item);
+                componentMask |= 1UL << item;
+
+                ulong neighbours = (_ancestors[item] | _descendants[item]) & remaining;
+                frontier |= neighbours;
+                remaining &= ~neighbours;
+            }
+
+            components.Add(componentMask);
+        }
+
+        return components;
+    }
+
+    private static IntSequenceKey CreateDisconnectedComponentKey(IReadOnlyList<IntSequenceKey> componentKeys)
+    {
+        int length = 2;
+        foreach (IntSequenceKey key in componentKeys)
+            length += 1 + key.ToArray().Length;
+
+        var parts = new int[length];
+        parts[0] = -2;
+        parts[1] = componentKeys.Count;
+        int offset = 2;
+        foreach (IntSequenceKey key in componentKeys)
+        {
+            int[] componentParts = key.ToArray();
+            parts[offset++] = componentParts.Length;
+            Array.Copy(componentParts, 0, parts, offset, componentParts.Length);
+            offset += componentParts.Length;
+        }
+
+        return new IntSequenceKey(parts);
     }
 
     private IntSequenceKey GetMaskedCanonicalKey(

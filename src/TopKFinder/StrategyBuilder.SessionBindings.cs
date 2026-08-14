@@ -41,6 +41,17 @@ partial class StrategyBuilder
     private int _bestGroupPatternCacheHits { get => _session.BestGroupPatternCacheHits; set => _session.BestGroupPatternCacheHits = value; }
     private int _outcomesConstructed { get => _session.OutcomesConstructed; set => _session.OutcomesConstructed = value; }
     private int _candidateGroupsEnumerated { get => _session.CandidateGroupsEnumerated; set => _session.CandidateGroupsEnumerated = value; }
+    private int _canonicalizationCalls { get => _session.CanonicalizationCalls; set => _session.CanonicalizationCalls = value; }
+    private int _canonicalizationVerticesProcessed { get => _session.CanonicalizationVerticesProcessed; set => _session.CanonicalizationVerticesProcessed = value; }
+    private long _canonicalizationElapsedTicks { get => _session.CanonicalizationElapsedTicks; set => _session.CanonicalizationElapsedTicks = value; }
+    private int _lowerBoundCalls { get => _session.LowerBoundCalls; set => _session.LowerBoundCalls = value; }
+    private long _lowerBoundElapsedTicks { get => _session.LowerBoundElapsedTicks; set => _session.LowerBoundElapsedTicks = value; }
+    private int _feasibleTopSetCalls { get => _session.FeasibleTopSetCalls; set => _session.FeasibleTopSetCalls = value; }
+    private long _feasibleTopSetElapsedTicks { get => _session.FeasibleTopSetElapsedTicks; set => _session.FeasibleTopSetElapsedTicks = value; }
+    private int _antichainLowerBoundCalls { get => _session.AntichainLowerBoundCalls; set => _session.AntichainLowerBoundCalls = value; }
+    private long _antichainLowerBoundElapsedTicks { get => _session.AntichainLowerBoundElapsedTicks; set => _session.AntichainLowerBoundElapsedTicks = value; }
+    private int _dominanceLowerBoundCalls { get => _session.DominanceLowerBoundCalls; set => _session.DominanceLowerBoundCalls = value; }
+    private long _dominanceLowerBoundElapsedTicks { get => _session.DominanceLowerBoundElapsedTicks; set => _session.DominanceLowerBoundElapsedTicks = value; }
     private int _compactStatesSolved { get => _session.CompactStatesSolved; set => _session.CompactStatesSolved = value; }
     private int _compactGroupsEnumerated { get => _session.CompactGroupsEnumerated; set => _session.CompactGroupsEnumerated = value; }
     private int _compactStepOptimalGroups { get => _session.CompactStepOptimalGroups; set => _session.CompactStepOptimalGroups = value; }

@@ -533,9 +533,22 @@ class Program
         string name,
         SolvedStrategy solution,
         TimeSpan elapsed)
-        => $"stage {name}: steps={solution.Score.WorstCaseSteps}, " +
+    {
+        SearchStatistics stats = solution.SearchStatistics;
+        return $"stage {name}: steps={solution.Score.WorstCaseSteps}, " +
             $"search edges={FormatSearchEdges(solution.Score.SearchEdgeCost)} " +
-            $"({elapsed.TotalSeconds:F2}s)";
+            $"({elapsed.TotalSeconds:F2}s; root-lb={stats.Phase1bMilliseconds}ms, " +
+            $"policy={stats.Phase1Milliseconds}ms, materialize={stats.Phase2Milliseconds}ms; " +
+            $"lb={stats.LowerBoundCalls}/{FormatTicksAsMilliseconds(stats.LowerBoundElapsedTicks)}ms, " +
+            $"topsets={stats.FeasibleTopSetCalls}/{FormatTicksAsMilliseconds(stats.FeasibleTopSetElapsedTicks)}ms, " +
+            $"antichain={stats.AntichainLowerBoundCalls}/{FormatTicksAsMilliseconds(stats.AntichainLowerBoundElapsedTicks)}ms, " +
+            $"dominance={stats.DominanceLowerBoundCalls}/{FormatTicksAsMilliseconds(stats.DominanceLowerBoundElapsedTicks)}ms; " +
+            $"canonical={stats.CanonicalizationCalls}/{stats.CanonicalizationVerticesProcessed} vertices/" +
+            $"{FormatTicksAsMilliseconds(stats.CanonicalizationElapsedTicks)}ms)";
+    }
+
+    private static string FormatTicksAsMilliseconds(long ticks)
+        => TimeSpan.FromTicks(ticks).TotalMilliseconds.ToString("F1");
 
     private static string FormatSearchEdges(int? searchEdgeCost)
         => searchEdgeCost?.ToString() ?? "n/a";

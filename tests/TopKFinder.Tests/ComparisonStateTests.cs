@@ -83,6 +83,24 @@ public sealed class ComparisonStateTests
     }
 
     [Fact]
+    public void CanonicalKey_FactorsDisconnectedComparisonComponents()
+    {
+        var first = new ComparisonState(6);
+        first.ApplyOrder(new[] { 0, 1, 2 });
+        first.ApplyOrder(new[] { 3, 4, 5 });
+
+        var relabeled = new ComparisonState(6);
+        relabeled.ApplyOrder(new[] { 4, 0, 5 });
+        relabeled.ApplyOrder(new[] { 3, 1, 2 });
+
+        var connected = new ComparisonState(6);
+        connected.ApplyOrder(new[] { 0, 1, 2, 3, 4, 5 });
+
+        Assert.Equal(first.GetCanonicalKey(), relabeled.GetCanonicalKey());
+        Assert.NotEqual(first.GetCanonicalKey(), connected.GetCanonicalKey());
+    }
+
+    [Fact]
     public void CanonicalKey_RepeatedCallsStayStable_OnHighlySymmetricState()
     {
         var first = new ComparisonState(8);
@@ -174,6 +192,23 @@ public sealed class ComparisonStateTests
         state.AddRelation(0, 1);
         IntSequenceKey after = state.GetGroupCanonicalKey(groupMask);
         Assert.NotEqual(before, after);
+    }
+
+    [Fact]
+    public void GroupCanonicalKey_FactorsColoredIsolatedVertices()
+    {
+        var first = new ComparisonState(8);
+        first.AddRelation(0, 1);
+
+        var second = new ComparisonState(8);
+        second.AddRelation(6, 3);
+
+        Assert.Equal(
+            first.GetGroupCanonicalKey(CreateMask(0, 2, 4)),
+            second.GetGroupCanonicalKey(CreateMask(6, 1, 7)));
+        Assert.NotEqual(
+            first.GetGroupCanonicalKey(CreateMask(0, 2, 4)),
+            first.GetGroupCanonicalKey(CreateMask(1, 2, 4)));
     }
 
     [Fact]

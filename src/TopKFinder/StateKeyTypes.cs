@@ -58,6 +58,11 @@ readonly struct IntSequenceKey : IEquatable<IntSequenceKey>, IComparable<IntSequ
         return new IntSequenceKey((int[])_parts.Clone());
     }
 
+    public int[] ToArray()
+    {
+        return (int[])_parts.Clone();
+    }
+
     public static bool operator ==(IntSequenceKey left, IntSequenceKey right)
     {
         return left.Equals(right);
