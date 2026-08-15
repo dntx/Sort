@@ -160,10 +160,7 @@ partial class MainForm
         SearchProgressSnapshot snapshot = _latestProgress;
 
         bool edgePhase = Volatile.Read(ref _activePhase) == 2;
-        int initialLowerBound = _initialRootProvenLowerBound > 0
-            ? _initialRootProvenLowerBound
-            : snapshot.RootProvenLowerBound;
-        SetStatText(_statesTextBox, BuildStatesPanelText(snapshot, edgePhase, initialLowerBound));
+        SetStatText(_statesTextBox, BuildStatesPanelText(snapshot, edgePhase, _initialRootProvenLowerBound));
         SetStatText(_workTextBox, BuildWorkPanelText(snapshot, _currentStageName));
     }
 
