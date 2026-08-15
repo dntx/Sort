@@ -176,13 +176,7 @@ partial class MainForm
         if (edgePhase)
             return BuildEdgePhaseStatesPanelText(snapshot, initialLowerBound);
 
-        return
-            $"initial proven lower bound: {initialLowerBound}\n" +
-            $"searched: {snapshot.SearchedStates}\n" +
-            $"pending: {snapshot.PendingStates} (peak {snapshot.PeakPendingStates})\n" +
-            $"output: {snapshot.OutputStates}\n" +
-            $"lower-bound cache states: {snapshot.LowerBoundStates}\n" +
-            $"top-set: {snapshot.FeasibleTopSetStates}";
+        return BuildStepStatesText(snapshot, initialLowerBound, prefix: string.Empty, includeSearchCounts: true);
     }
 
     private static string BuildEdgePhaseStatesPanelText(SearchProgressSnapshot snapshot, int initialLowerBound)
@@ -191,12 +185,31 @@ partial class MainForm
             ? $"compact solved: {snapshot.CompactStatesSolved} ({ComputeEdgeLocalProgressFraction(snapshot) * 100.0:F1}%)"
             : $"compact solved: {snapshot.CompactStatesSolved}";
 
+        string compactGroupsLine = $"compact groups: {snapshot.CompactGroupsEnumerated} ({snapshot.CompactStepOptimalGroups} opt)";
         return solvedLine + "\n" +
-            $"(step) initial proven lower bound: {initialLowerBound}\n" +
-            $"compact groups: {snapshot.CompactGroupsEnumerated} ({snapshot.CompactStepOptimalGroups} opt)\n" +
-            $"(step) output: {snapshot.OutputStates}\n" +
-            $"(step) lower-bound cache states: {snapshot.LowerBoundStates}\n" +
-            $"(step) top-set: {snapshot.FeasibleTopSetStates}";
+            BuildStepStatesText(snapshot, initialLowerBound, prefix: "(step) ", compactGroupsLine);
+    }
+
+    private static string BuildStepStatesText(
+        SearchProgressSnapshot snapshot,
+        int initialLowerBound,
+        string prefix,
+        string? intermediateLine = null,
+        bool includeSearchCounts = false)
+    {
+        string searchCounts = includeSearchCounts
+            ? $"searched: {snapshot.SearchedStates}\n" +
+              $"pending: {snapshot.PendingStates} (peak {snapshot.PeakPendingStates})\n"
+            : string.Empty;
+        string intermediate = intermediateLine is null ? string.Empty : intermediateLine + "\n";
+
+        return
+            $"{prefix}initial proven lower bound: {initialLowerBound}\n" +
+            searchCounts +
+            intermediate +
+            $"{prefix}output: {snapshot.OutputStates}\n" +
+            $"{prefix}lower-bound cache states: {snapshot.LowerBoundStates}\n" +
+            $"{prefix}top-set: {snapshot.FeasibleTopSetStates}";
     }
 
     private static string BuildWorkPanelText(SearchProgressSnapshot snapshot, string currentStageName)
