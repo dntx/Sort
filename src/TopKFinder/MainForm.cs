@@ -178,6 +178,7 @@ partial class MainForm : Form
     private static readonly DisplayRenderEngine DisplayEngine = new();
     private int _detailsRequestVersion;
     private SearchProgressSnapshot _latestProgress;
+    private int _initialRootProvenLowerBound;
     private SearchStatistics? _completedDefaultStats;
     private SearchStatistics? _completedCompactStats;
     private SearchStatistics? _completedFeasibleStats;
