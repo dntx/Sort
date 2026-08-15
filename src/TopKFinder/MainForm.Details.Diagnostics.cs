@@ -35,6 +35,8 @@ partial class MainForm
     private void UpdateSearchProgress(SearchProgressSnapshot snapshot)
     {
         _latestProgress = snapshot;
+        if (_initialRootProvenLowerBound <= 0 && snapshot.RootProvenLowerBound > 0)
+            _initialRootProvenLowerBound = snapshot.RootProvenLowerBound;
         UpdateStatsPanels();
         string incumbent = snapshot.LatestRootIncumbent is null
             ? "incumbent: -"
@@ -158,37 +160,42 @@ partial class MainForm
         SearchProgressSnapshot snapshot = _latestProgress;
 
         bool edgePhase = Volatile.Read(ref _activePhase) == 2;
-        SetStatText(_statesTextBox, BuildStatesPanelText(snapshot, edgePhase));
+        int initialLowerBound = _initialRootProvenLowerBound > 0
+            ? _initialRootProvenLowerBound
+            : snapshot.RootProvenLowerBound;
+        SetStatText(_statesTextBox, BuildStatesPanelText(snapshot, edgePhase, initialLowerBound));
         SetStatText(_workTextBox, BuildWorkPanelText(snapshot, _currentStageName));
     }
 
-    private static string BuildStatesPanelText(SearchProgressSnapshot snapshot, bool edgePhase)
+    private static string BuildStatesPanelText(SearchProgressSnapshot snapshot, bool edgePhase, int initialLowerBound)
     {
         // During the edge phase the step counters (searched/pending/output/...) are frozen at 0, so
         // repurpose the States panel to surface the compact solve's live progress instead of a dead
         // all-zero block. The "solved / ~estimate (pct%)" denominator comes from the step phase's
         // distinct-state count (CompactStateEstimate); when unknown (-1) we just show the raw count.
         if (edgePhase)
-            return BuildEdgePhaseStatesPanelText(snapshot);
+            return BuildEdgePhaseStatesPanelText(snapshot, initialLowerBound);
 
         return
+            $"initial proven lower bound: {initialLowerBound}\n" +
             $"searched: {snapshot.SearchedStates}\n" +
             $"pending: {snapshot.PendingStates} (peak {snapshot.PeakPendingStates})\n" +
             $"output: {snapshot.OutputStates}\n" +
-            $"lower-bound: {snapshot.LowerBoundStates}\n" +
+            $"lower-bound cache states: {snapshot.LowerBoundStates}\n" +
             $"top-set: {snapshot.FeasibleTopSetStates}";
     }
 
-    private static string BuildEdgePhaseStatesPanelText(SearchProgressSnapshot snapshot)
+    private static string BuildEdgePhaseStatesPanelText(SearchProgressSnapshot snapshot, int initialLowerBound)
     {
         string solvedLine = snapshot.CompactStateEstimate > 0
             ? $"compact solved: {snapshot.CompactStatesSolved} ({ComputeEdgeLocalProgressFraction(snapshot) * 100.0:F1}%)"
             : $"compact solved: {snapshot.CompactStatesSolved}";
 
         return solvedLine + "\n" +
+            $"(step) initial proven lower bound: {initialLowerBound}\n" +
             $"compact groups: {snapshot.CompactGroupsEnumerated} ({snapshot.CompactStepOptimalGroups} opt)\n" +
             $"(step) output: {snapshot.OutputStates}\n" +
-            $"(step) lower-bound: {snapshot.LowerBoundStates}\n" +
+            $"(step) lower-bound cache states: {snapshot.LowerBoundStates}\n" +
             $"(step) top-set: {snapshot.FeasibleTopSetStates}";
     }
 
