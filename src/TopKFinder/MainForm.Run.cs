@@ -124,6 +124,9 @@ partial class MainForm
         _stageDisplayOrder.Clear();
         _nextStageDisplayOrder = 0;
         _solverWorkStopped = false;
+        _stagePauseCompletion = null;
+        _pausedStageName = null;
+        _stagePausePresentationReady = false;
         ResetPresentationInfrastructure();
         _pauseEachStageForRun = _pauseEachStageCheckBox.Checked;
         _currentStageName = request.FeasibleMode ? StageNames.GreedyFeasible : StageNames.StepProof;
@@ -518,6 +521,10 @@ partial class MainForm
         _activePresentationRequestSource = null;
 
         _activePresentationTask = null;
+        _stagePauseCompletion?.TrySetCanceled();
+        _stagePauseCompletion = null;
+        _pausedStageName = null;
+        _stagePausePresentationReady = false;
         _materializingGreedyEdgeStageNames.Clear();
         _greedyEdgeTreeMaterializationTasks.Clear();
         ClearPresentationStageCache();
@@ -551,14 +558,7 @@ partial class MainForm
 
         try
         {
-            if (_pauseEachStageForRun)
-            {
-                Invoke((MethodInvoker)apply);
-            }
-            else
-            {
-                BeginInvoke((MethodInvoker)apply);
-            }
+            BeginInvoke((MethodInvoker)apply);
         }
         catch (ObjectDisposedException)
         {
@@ -634,20 +634,24 @@ partial class MainForm
             return;
 
         int expectedGeneration = _presentationGeneration;
+        TaskCompletionSource<object?>? pauseCompletion = null;
         void apply()
         {
             if (expectedGeneration != _presentationGeneration)
                 return;
 
+            BeginStagePause(stage);
             onStage(stage);
+            pauseCompletion = _stagePauseCompletion;
         }
 
         try
         {
             if (_pauseEachStageForRun)
             {
-                // In pause mode we preserve strict stage-by-stage blocking semantics.
                 Invoke((MethodInvoker)apply);
+                if (pauseCompletion is not null && _runCancellationSource is { } cancellationSource)
+                    pauseCompletion.Task.WaitAsync(cancellationSource.Token).GetAwaiter().GetResult();
             }
             else
             {
@@ -667,6 +671,61 @@ partial class MainForm
 
     private bool CanAcceptStageCallback()
         => IsHandleCreated && !IsDisposed;
+
+    private void BeginStagePause(StageResult stage)
+    {
+        if (!_pauseEachStageForRun)
+            return;
+
+        _stagePauseCompletion = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _pausedStageName = stage.Name;
+        _stagePausePresentationReady = false;
+        SetRunUiState(RunUiState.StagePaused);
+        _statusLabel.Text = FormatStagePauseSummary(stage, presentationReady: false);
+    }
+
+    private void MarkStagePausePresentationReady(StageResult stage)
+    {
+        if (!_pauseEachStageForRun
+            || !string.Equals(_pausedStageName, stage.Name, StringComparison.Ordinal))
+            return;
+
+        _stagePausePresentationReady = true;
+        _runStopwatch?.Stop();
+        SetRunUiState(RunUiState.StagePaused);
+        _statusLabel.Text = FormatStagePauseSummary(stage, presentationReady: true);
+    }
+
+    private void ContinuePausedStage()
+    {
+        if (!_stagePausePresentationReady || _stagePauseCompletion is null)
+            return;
+
+        TaskCompletionSource<object?> completion = _stagePauseCompletion;
+        _stagePauseCompletion = null;
+        _pausedStageName = null;
+        _stagePausePresentationReady = false;
+        _continueStageButton.Enabled = false;
+        _runStopwatch?.Start();
+        SetRunUiState(RunUiState.Running);
+        completion.TrySetResult(null);
+    }
+
+    private static string FormatStagePauseSummary(StageResult stage, bool presentationReady)
+    {
+        SolvedStrategy? solution = stage.Solution;
+        StrategyPlan? plan = stage.MaterializedPlan;
+        string maxSteps = solution is null ? "N/A" : solution.Score.WorstCaseSteps.ToString();
+        int? edges = plan?.TotalBranchEdges
+            ?? solution?.Score.SearchEdgeCost
+            ?? solution?.SearchStatistics.SearchTreeEdges;
+        string edgeText = edges?.ToString() ?? (presentationReady ? "N/A" : "pending");
+        string stateText = solution is null
+            ? "N/A"
+            : $"searched {solution.SearchStatistics.SearchedStates}, output {solution.SearchStatistics.OutputStates}";
+        string phase = presentationReady ? "rendered; review the result, then Continue" : "search complete; rendering result";
+        return $"{stage.Name}: {phase}. max steps={maxSteps}, edges={edgeText}, states={stateText}, result={stage.Outcome}.";
+    }
 
     private void OnExactStage(StageResult stage)
     {
@@ -755,6 +814,7 @@ partial class MainForm
                         return;
 
                     apply(materialized);
+                    MarkStagePausePresentationReady(materialized);
                 }
                 finally
                 {
@@ -944,16 +1004,7 @@ partial class MainForm
         }
         UpdateStatsPanels();
         UpdateElapsedLabel();
-
-        // Optional pause-on-each-stage: a modal blocks this UI-thread handler (and therefore the worker
-        // thread waiting in Invoke) until the user acknowledges the stage.
-        if (_pauseEachStageCheckBox.Checked)
-        {
-            string? marker = stage.HasPlan
-                ? (!improved ? "no improvement" : null)
-                : NoSolutionMarker(stage);
-            ShowStageModal(FormatStageRootLabel(stage.Name, stage.Elapsed, stage.MaterializedPlan, marker, stage.Timings), stage.HasPlan);
-        }
+        MarkStagePausePresentationReady(stage);
     }
 
     private void RefreshGreedyRootAfterProvenOptimal()
@@ -981,6 +1032,7 @@ partial class MainForm
         ShowSearchOnlySummaryStage(stage);
         RemoveStageStatusPlaceholder(stage.Name);
         UpdateElapsedLabel();
+        MarkStagePausePresentationReady(stage);
         return true;
     }
 
@@ -1149,32 +1201,6 @@ partial class MainForm
 
         _incumbentStage = provenStage;
         _frozenGreedyStageComparisonBaseline = provenStage;
-    }
-
-    private void ShowStageModal(string message, bool hasPlan)
-    {
-        // Pause the run clock while the modal is up: the time the user spends in the dialog must
-        // count toward neither the total elapsed nor the current stage's clock. Stopwatch.Start()
-        // resumes (does not reset), so accumulated time is preserved and the next stage still times
-        // from zero. The 100ms elapsed-timer keeps ticking inside the modal's message loop, but with
-        // the stopwatch stopped it simply renders a frozen value.
-        bool wasRunning = _runStopwatch?.IsRunning ?? false;
-        if (wasRunning)
-            _runStopwatch!.Stop();
-        try
-        {
-            MessageBox.Show(
-                this,
-                message,
-                "Stage complete",
-                MessageBoxButtons.OK,
-                hasPlan ? MessageBoxIcon.Information : MessageBoxIcon.None);
-        }
-        finally
-        {
-            if (wasRunning)
-                _runStopwatch!.Start();
-        }
     }
 
 }

@@ -175,6 +175,7 @@ partial class MainForm
     {
         Idle,
         Running,
+        StagePaused,
         CompactComputingInteractive,
     }
 
@@ -196,6 +197,7 @@ partial class MainForm
         UseWaitCursor = state == RunUiState.Running;
         _runButton.Enabled = !running;
         _stopButton.Enabled = running;
+        _continueStageButton.Enabled = state == RunUiState.StagePaused && _stagePausePresentationReady;
         _modeComboBox.Enabled = !running;
         _treeExpandButton.Enabled = interactive;
         _treeCollapseButton.Enabled = interactive;

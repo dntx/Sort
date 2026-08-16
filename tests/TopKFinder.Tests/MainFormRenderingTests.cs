@@ -154,28 +154,77 @@ public sealed class MainFormRenderingTests
     }
 
     [Fact]
-    public void MarshalStageToUiThread_PauseEnabled_BlocksWorkerCallback()
+    public void MarshalStageToUiThread_PauseEnabled_WaitsForRenderAndContinue()
     {
         using var form = new MainForm();
         _ = form.Handle;
         SetPrivateField(form, "_pauseEachStageForRun", true);
+        SetPrivateField(form, "_runCancellationSource", new CancellationTokenSource());
 
         bool callbackRan = false;
         var stage = new StageResult("proof-tighten<=3", materializedPlan: null, TimeSpan.Zero, StageOutcome.Tightened, CreateDeferredExactStepStage().Solution);
-        var stopwatch = Stopwatch.StartNew();
-        InvokePrivateInstanceVoid(
+        Task worker = Task.Run(() => InvokePrivateInstanceVoid(
             form,
             "MarshalStageToUiThread",
             stage,
-            (Action<StageResult>)(_ =>
-            {
-                Thread.Sleep(120);
-                callbackRan = true;
-            }));
-        stopwatch.Stop();
+            (Action<StageResult>)(_ => callbackRan = true)));
 
-        Assert.True(stopwatch.ElapsedMilliseconds >= 100);
-        Assert.True(callbackRan);
+        Assert.True(PumpMessagesUntil(() => callbackRan, TimeSpan.FromSeconds(2)));
+        Assert.False(worker.IsCompleted);
+        Button continueButton = GetPrivateField<Button>(form, "_continueStageButton");
+        Assert.False(continueButton.Enabled);
+
+        InvokePrivateInstanceVoid(form, "MarkStagePausePresentationReady", stage);
+        Assert.True(continueButton.Enabled);
+        Assert.False(worker.IsCompleted);
+
+        InvokePrivateInstanceVoid(form, "ContinuePausedStage");
+        Assert.True(PumpMessagesUntil(() => worker.IsCompleted, TimeSpan.FromSeconds(2)));
+    }
+
+    [Fact]
+    public void MarshalStageToUiThread_PauseEnabled_StopReleasesWorker()
+    {
+        using var form = new MainForm();
+        _ = form.Handle;
+        SetPrivateField(form, "_pauseEachStageForRun", true);
+        var cancellationSource = new CancellationTokenSource();
+        SetPrivateField(form, "_runCancellationSource", cancellationSource);
+
+        bool callbackRan = false;
+        var stage = new StageResult("proof-tighten<=3", materializedPlan: null, TimeSpan.Zero, StageOutcome.Tightened, CreateDeferredExactStepStage().Solution);
+        Task worker = Task.Run(() =>
+        {
+            try
+            {
+                InvokePrivateInstanceVoid(
+                    form,
+                    "MarshalStageToUiThread",
+                    stage,
+                    (Action<StageResult>)(_ => callbackRan = true));
+            }
+            catch (TargetInvocationException ex) when (ex.InnerException is OperationCanceledException)
+            {
+            }
+        });
+
+        Assert.True(PumpMessagesUntil(() => callbackRan, TimeSpan.FromSeconds(2)));
+        cancellationSource.Cancel();
+        Assert.True(PumpMessagesUntil(() => worker.IsCompleted, TimeSpan.FromSeconds(2)));
+        Assert.Equal(TaskStatus.RanToCompletion, worker.Status);
+    }
+
+    private static bool PumpMessagesUntil(Func<bool> condition, TimeSpan timeout)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        while (!condition() && stopwatch.Elapsed < timeout)
+        {
+            Application.DoEvents();
+            Thread.Yield();
+        }
+
+        Application.DoEvents();
+        return condition();
     }
 
     [Fact]
