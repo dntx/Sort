@@ -101,6 +101,7 @@ partial class MainForm
         ResetRunTimeline();
         RecordRunTimeline("run/start", $"mode={(request.FeasibleMode ? "greedy" : "exact")}, n={request.N}, m={request.M}, k={request.K}");
         _feasibleMode = request.FeasibleMode;
+        _initialRootProvenLowerBound = 0;
         _latestProgress = CreateInitialProgressSnapshot();
         _completedDefaultStats = null;
         _completedCompactStats = null;

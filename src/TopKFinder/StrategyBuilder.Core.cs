@@ -89,6 +89,8 @@ partial class StrategyBuilder
     // paths and assert they reach the same MaxStep optimum while iterative deepening constructs
     // strictly fewer outcomes. Null in production.
     internal bool? ForceIterativeDeepeningForTesting { get; set; }
+    internal bool EnableWidthLimitedInformationBoundForTesting { get; set; } = true;
+    internal int OutcomesConstructedForTesting => _outcomesConstructed;
     private CompactSolver? _compactSolver;
     private CompactSolver CompactSolverInstance => _compactSolver ??= new CompactSolver(this);
     private GreedyPipelineOrchestrator? _greedyPipelineOrchestrator;

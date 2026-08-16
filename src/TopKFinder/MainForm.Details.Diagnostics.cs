@@ -35,6 +35,8 @@ partial class MainForm
     private void UpdateSearchProgress(SearchProgressSnapshot snapshot)
     {
         _latestProgress = snapshot;
+        if (_initialRootProvenLowerBound <= 0 && snapshot.RootProvenLowerBound > 0)
+            _initialRootProvenLowerBound = snapshot.RootProvenLowerBound;
         UpdateStatsPanels();
         string incumbent = snapshot.LatestRootIncumbent is null
             ? "incumbent: -"
@@ -158,38 +160,53 @@ partial class MainForm
         SearchProgressSnapshot snapshot = _latestProgress;
 
         bool edgePhase = Volatile.Read(ref _activePhase) == 2;
-        SetStatText(_statesTextBox, BuildStatesPanelText(snapshot, edgePhase));
+        SetStatText(_statesTextBox, BuildStatesPanelText(snapshot, edgePhase, _initialRootProvenLowerBound));
         SetStatText(_workTextBox, BuildWorkPanelText(snapshot, _currentStageName));
     }
 
-    private static string BuildStatesPanelText(SearchProgressSnapshot snapshot, bool edgePhase)
+    private static string BuildStatesPanelText(SearchProgressSnapshot snapshot, bool edgePhase, int initialLowerBound)
     {
         // During the edge phase the step counters (searched/pending/output/...) are frozen at 0, so
         // repurpose the States panel to surface the compact solve's live progress instead of a dead
         // all-zero block. The "solved / ~estimate (pct%)" denominator comes from the step phase's
         // distinct-state count (CompactStateEstimate); when unknown (-1) we just show the raw count.
         if (edgePhase)
-            return BuildEdgePhaseStatesPanelText(snapshot);
+            return BuildEdgePhaseStatesPanelText(snapshot, initialLowerBound);
 
-        return
-            $"searched: {snapshot.SearchedStates}\n" +
-            $"pending: {snapshot.PendingStates} (peak {snapshot.PeakPendingStates})\n" +
-            $"output: {snapshot.OutputStates}\n" +
-            $"lower-bound: {snapshot.LowerBoundStates}\n" +
-            $"top-set: {snapshot.FeasibleTopSetStates}";
+        return BuildStepStatesText(snapshot, initialLowerBound, prefix: string.Empty, includeSearchCounts: true);
     }
 
-    private static string BuildEdgePhaseStatesPanelText(SearchProgressSnapshot snapshot)
+    private static string BuildEdgePhaseStatesPanelText(SearchProgressSnapshot snapshot, int initialLowerBound)
     {
         string solvedLine = snapshot.CompactStateEstimate > 0
             ? $"compact solved: {snapshot.CompactStatesSolved} ({ComputeEdgeLocalProgressFraction(snapshot) * 100.0:F1}%)"
             : $"compact solved: {snapshot.CompactStatesSolved}";
 
+        string compactGroupsLine = $"compact groups: {snapshot.CompactGroupsEnumerated} ({snapshot.CompactStepOptimalGroups} opt)";
         return solvedLine + "\n" +
-            $"compact groups: {snapshot.CompactGroupsEnumerated} ({snapshot.CompactStepOptimalGroups} opt)\n" +
-            $"(step) output: {snapshot.OutputStates}\n" +
-            $"(step) lower-bound: {snapshot.LowerBoundStates}\n" +
-            $"(step) top-set: {snapshot.FeasibleTopSetStates}";
+            BuildStepStatesText(snapshot, initialLowerBound, prefix: "(step) ", compactGroupsLine);
+    }
+
+    private static string BuildStepStatesText(
+        SearchProgressSnapshot snapshot,
+        int initialLowerBound,
+        string prefix,
+        string? intermediateLine = null,
+        bool includeSearchCounts = false)
+    {
+        string searchCounts = includeSearchCounts
+            ? $"searched: {snapshot.SearchedStates}\n" +
+              $"pending: {snapshot.PendingStates} (peak {snapshot.PeakPendingStates})\n"
+            : string.Empty;
+        string intermediate = intermediateLine is null ? string.Empty : intermediateLine + "\n";
+
+        return
+            $"{prefix}initial proven lower bound: {initialLowerBound}\n" +
+            searchCounts +
+            intermediate +
+            $"{prefix}output: {snapshot.OutputStates}\n" +
+            $"{prefix}lower-bound cache states: {snapshot.LowerBoundStates}\n" +
+            $"{prefix}top-set: {snapshot.FeasibleTopSetStates}";
     }
 
     private static string BuildWorkPanelText(SearchProgressSnapshot snapshot, string currentStageName)

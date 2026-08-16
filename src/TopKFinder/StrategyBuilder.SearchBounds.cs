@@ -5,6 +5,12 @@ using System.Numerics;
 
 namespace TopKFinder;
 
+internal readonly record struct LowerBoundBreakdown(
+    int Information,
+    int Antichain,
+    int WidthLimitedInformation,
+    int Baseline);
+
 partial class StrategyBuilder
 {
     private ulong GetGuaranteedTopMask(ComparisonState state, int remainingSlots)
@@ -74,16 +80,19 @@ partial class StrategyBuilder
     // form an antichain, so this dominates coverage. Soundness is validated empirically by the
     // 229-case MaxStep/edge-invariance regression oracle: an unsound bound would prune an optimal
     // branch and raise some case's MaxStep.
-    private int GetAntichainLowerBound(ComparisonState state)
+    private int GetAntichainLowerBound(ComparisonState state, out int width)
     {
         long startTimestamp = Stopwatch.GetTimestamp();
         _antichainLowerBoundCalls++;
         try
         {
             if (_m <= 1)
+            {
+                width = 0;
                 return 0;
+            }
 
-            int width = GetActivePosetWidth(state);
+            width = GetActivePosetWidth(state);
             if (width <= 1)
                 return 0;
 
@@ -93,6 +102,55 @@ partial class StrategyBuilder
         {
             _antichainLowerBoundElapsedTicks += Stopwatch.GetElapsedTime(startTimestamp).Ticks;
         }
+    }
+
+    private int GetWidthLimitedInformationLowerBoundSteps(
+        int feasibleTopSetCount,
+        int activeCount,
+        int width)
+    {
+        if (feasibleTopSetCount <= 1)
+            return 0;
+
+        int groupSize = Math.Min(_m, activeCount);
+        int chainCount = Math.Min(width, groupSize);
+        if (chainCount <= 1)
+            return 0;
+
+        int shortChainLength = groupSize / chainCount;
+        int longChainCount = groupSize % chainCount;
+        double logMaxOutcomesPerStep = LogFactorial(groupSize)
+            - ((chainCount - longChainCount) * LogFactorial(shortChainLength))
+            - (longChainCount * LogFactorial(shortChainLength + 1));
+
+        return GetLogCapacityLowerBoundSteps(feasibleTopSetCount, logMaxOutcomesPerStep);
+    }
+
+    private double LogFactorial(int value)
+    {
+        double result = 0d;
+        for (int i = 2; i <= value; i++)
+        {
+            ThrowIfCancellationRequested();
+            result += Math.Log(i);
+        }
+
+        return result;
+    }
+
+    private static int GetLogCapacityLowerBoundSteps(int feasibleTopSetCount, double logMaxOutcomesPerStep)
+    {
+        if (logMaxOutcomesPerStep <= 0d)
+            return int.MaxValue;
+
+        double logFeasibleCount = Math.Log(feasibleTopSetCount);
+        int steps = Math.Max(0, (int)Math.Floor(logFeasibleCount / logMaxOutcomesPerStep));
+        while ((steps * logMaxOutcomesPerStep) < logFeasibleCount)
+            steps++;
+        while (steps > 0 && ((steps - 1) * logMaxOutcomesPerStep) >= logFeasibleCount)
+            steps--;
+
+        return steps;
     }
 
     // Maximum antichain width of the active poset, via Dilworth's theorem (max antichain = minimum
@@ -294,21 +352,7 @@ partial class StrategyBuilder
         if (logMaxOutcomesPerStep <= 0d)
             return int.MaxValue;
 
-        double logFeasibleCount = Math.Log(feasibleTopSetCount);
-        int steps = (int)Math.Floor(logFeasibleCount / logMaxOutcomesPerStep);
-        if (steps < 0)
-            steps = 0;
-
-        // Advance until the threshold is reached. This stays conservative in edge cases and avoids
-        // underestimating by one because of floating rounding noise.
-        while ((steps * logMaxOutcomesPerStep) < logFeasibleCount)
-            steps++;
-
-        // Guard against tiny upward rounding at exact boundaries.
-        while (steps > 0 && ((steps - 1) * logMaxOutcomesPerStep) >= logFeasibleCount)
-            steps--;
-
-        return steps;
+        return GetLogCapacityLowerBoundSteps(feasibleTopSetCount, logMaxOutcomesPerStep);
     }
 
     internal ulong GetGuaranteedTopMaskForTesting(ComparisonState state, int remainingSlots)
@@ -319,6 +363,46 @@ partial class StrategyBuilder
     internal int GetMinWorstCaseLowerBoundForTesting(ComparisonState state, int remainingSlots)
     {
         return GetMinWorstCaseLowerBound(state, remainingSlots);
+    }
+
+    internal int GetMinWorstCaseStepsExactForTesting(ComparisonState state, int remainingSlots)
+    {
+        return SearchBounds.GetMinWorstCaseStepsExact(state, remainingSlots);
+    }
+
+    internal int GetMinWorstCaseStepsBoundedForTesting(
+        ComparisonState state,
+        int remainingSlots,
+        int budget)
+    {
+        return SearchBounds.GetMinWorstCaseStepsBounded(state, remainingSlots, budget, depth: 0);
+    }
+
+    internal LowerBoundBreakdown GetLowerBoundBreakdownForTesting(ComparisonState originalState, int remainingSlots)
+    {
+        ComparisonState state = originalState.Clone();
+        ulong ignoredFixedTopMask = 0;
+        NormalizeState(state, ref ignoredFixedTopMask, ref remainingSlots);
+
+        if (remainingSlots == 0 || state.ActiveCount <= remainingSlots)
+            return new LowerBoundBreakdown(0, 0, 0, 0);
+
+        FeasibleTopSetInfo info = GetFeasibleTopSetInfo(state, remainingSlots);
+        int information = GetInformationLowerBoundSteps(info.Count, state.ActiveCount);
+        int width = GetActivePosetWidth(state);
+        int antichain = _m <= 1 || width <= 1
+            ? 0
+            : (width - 1 + (_m - 1) - 1) / (_m - 1);
+        int widthLimitedInformation = GetWidthLimitedInformationLowerBoundSteps(
+            info.Count,
+            state.ActiveCount,
+            width);
+        int baseline = Math.Max(information, Math.Max(antichain, 2));
+        return new LowerBoundBreakdown(
+            information,
+            antichain,
+            widthLimitedInformation,
+            baseline);
     }
 
     internal FeasibleTopSetInfo GetFeasibleTopSetInfoForTesting(ComparisonState state, int remainingSlots)

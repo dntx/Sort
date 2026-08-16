@@ -276,14 +276,16 @@ alpha-beta 剪枝使用。它取多个下界的**最大值**（谁更紧用谁�
 //    while (distinguishable < info.Count) { steps++; distinguishable *= maxOutcomesPerStep; }
 // 2) 反链宽度下界
 steps = Math.Max(steps, GetAntichainLowerBound(state));
-// 3) 可判定性下界（determinability floor，见 7.7）
+// 3) 宽度约束的信息论下界（复用反链计算得到的 width）
+steps = Math.Max(steps, GetWidthLimitedInformationLowerBoundSteps(info.Count, state.ActiveCount, width));
+// 4) 可判定性下界（determinability floor，见 7.7）
 steps = Math.Max(steps, 2);
-// 4) 支配下界（放最后：它最贵，且能吃到前几步抬高的 seed 做便宜预筛）
+// 5) 支配下界（放最后：它最贵，且能吃到前几步抬高的 seed 做便宜预筛）
 steps = ApplyDominanceLowerBound(state, remainingSlots, steps);
 
 ```
 
-**计算顺序**：`max` 与顺序无关，返回值恒等；但把便宜的下界排在**贵的支配下界之前**能省计算——`ApplyDominanceLowerBound` 会跳过「cost ≤ 当前 best」的库条目（见 6.3），所以先让 floor 把 best 抬到 2，可令所有 `cost ≤ 2` 的条目在跑昂贵的回溯嵌入之前就被丢弃。这一重排是保值的（`maxStep`/边数/缓存值都不变），支配抬界次数相应下降（少做了 floor 已能免费覆盖的那部分）。
+**计算顺序**：`max` 与顺序无关，返回值恒等；但把便宜的下界排在**贵的支配下界之前**能省计算——`ApplyDominanceLowerBound` 会跳过「cost ≤ 当前 best」的库条目（见 6.4），所以先让 floor 把 best 抬到 2，可令所有 `cost ≤ 2` 的条目在跑昂贵的回溯嵌入之前就被丢弃。这一重排是保值的（`maxStep`/边数/缓存值都不变），支配抬界次数相应下降（少做了 floor 已能免费覆盖的那部分）。
 
 ### 6.1 信息论下界
 
@@ -296,7 +298,23 @@ steps = ApplyDominanceLowerBound(state, remainingSlots, steps);
 
 这是与信息论下界**互补**的解析下界，在**根附近最强**。下面详细讲。
 
-### 6.3 支配下界（dominance）
+### 6.3 宽度约束的信息论下界
+
+通用信息论界假设一次 `g=min(m, activeCount)` 元比较最多有 `g!` 种排列结果。若当前 active
+偏序宽度为 `w<g`，任何当前或未来的 `g` 元诱导偏序宽度也不超过 `w`，不可能产生 `g!` 种结果。
+令 `c=min(w,g)`，把 `g` 个元素尽量平均地分到 `c` 条链上；忽略链间关系后得到一个对所有未来
+比较都成立的结果数上界：
+
+```text
+B_width = g! / product(chainLength_i!)
+```
+
+因此可将信息论下界加强为 `ceil(log(info.Count) / log(B_width))`。计算使用 log-domain，且复用
+反链下界已经算出的 width，不展开比较组或 outcome。实测状态“两条各 10 个元素的已知链，m=3，
+k=10”中，可行 top-k 集合数为 11：通用信息论界和现有综合静态界均为 2，宽度约束后每步最多
+3 种结果，新界为 3，而 exact optimum 为 4。
+
+### 6.4 支配下界（dominance）
 
 如果当前状态能**嵌入**到一个**已解出**的状态中（结构上「更难或相当」），就可以继承那个状态的步数
 作为下界。见 `StrategyBuilder.Dominance.cs` 与 `ApplyDominanceLowerBound`。
@@ -321,13 +339,16 @@ steps = ApplyDominanceLowerBound(state, remainingSlots, steps);
 > **必要条件**的松弛。真正终止是 active 清空（width = 0）。我们用一个**松弛过的必要条件**来凑
 > 一个**合法（可能偏松）的下界**，这对剪枝是安全的。
 
-### 7.2 一次比较最多让宽度减少 `m - 1`
+### 7.2 对手能保留至少 `w - (m - 1)` 的宽度
 
 一次比较把最多 `m` 个元素排成一条链，这 `m` 个元素**两两变得可比**。
 
-**关键观察**：任何一条反链与一条链**最多共享 1 个元素**（反链内两两不可比，链内两两可比，交集
-不超过 1）。于是原本反链里落入这 `m` 个的元素，比较后最多只能保留 1 个 → **反链最多缩小
-`m - 1`**。
+取当前一条大小为 `w` 的最大反链。对任意待比较组，都存在一个与当前偏序相容的线性扩展；对手选择
+该线性扩展在比较组上诱导出的结果。删除反链中落入比较组的至多 `m-1` 个元素后，其余元素在新偏序
+中仍可保持为反链。因此总存在一个合法结果，其宽度至少为 `w-(m-1)`。
+
+注意，这不是说每个 outcome 的宽度都只能下降 `m-1`；传递闭包可能让某些 outcome 一次新增很多
+关系。下界成立依赖 minimax 中对手能够选择上述保留大反链的结果。
 
 ### 7.3 下界公式
 
@@ -539,6 +560,7 @@ width = ActiveCount - maxBipartiteMatching;   // GetActivePosetWidth
 | 综合下界 | `StrategyBuilder.SearchBounds.cs` → `GetMinWorstCaseLowerBound` |
 | 夹逼报告（已证明下界 L） | `StrategyBuilder.SearchBounds.cs` → `RecordRootProvenLowerBound`；`SearchStatistics.RootProvenLowerBound` / `SearchProgressSnapshot.RootProvenLowerBound`；GUI `MainForm.FormatSqueeze` |
 | 反链下界 / 宽度 / 匹配 | `GetAntichainLowerBound`、`GetActivePosetWidth`、`TryAugmentMatching` |
+| 宽度约束的信息论下界 | `GetWidthLimitedInformationLowerBoundSteps`、`GetLogCapacityLowerBoundSteps` |
 | 状态 / 偏序 / 归一化 | `ComparisonState.cs`（`Eliminate`、`Deactivate`、`ActiveMask`、`GetDescendantMask`） |
 | 规范形 / 对称约减 | `ComparisonState.Algorithms.cs`（`ComputeCanonicalForm`、`RefineCanonicalColoring`、`CanonicalizeRecursive`、`TryFindOrderAutomorphism`）+ `ComparisonState.cs` 入口（`GetCanonicalKey`、`GetDisplayCanonicalKey`、`GetGroupCanonicalKey`、`TryMapOrderByAutomorphism`） |
 | 支配下界 | `StrategyBuilder.Dominance.cs`、`ApplyDominanceLowerBound` |
