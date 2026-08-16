@@ -279,6 +279,22 @@ partial class MainForm
         _overviewTree.EndUpdate();
     }
 
+    private void EnsureNextStageWaitingPlaceholder(string stageName)
+    {
+        if (_treeView.Nodes.Count == 0)
+            return;
+
+        string placeholderText = FormatSearchWaitingPlaceholderText(stageName);
+        TreeNode root = _treeView.Nodes[0];
+        _treeView.BeginUpdate();
+        UpsertStagePlaceholder(root.Nodes, stageName, placeholderText);
+        _treeView.EndUpdate();
+
+        _overviewTree.BeginUpdate();
+        UpsertStagePlaceholder(_overviewTree.Nodes, stageName, placeholderText);
+        _overviewTree.EndUpdate();
+    }
+
     private void MarkStageTreeBuilding(StageResult stage)
     {
         MarkStageTreeBuilding(stage.Name, stage.Timings.Solve + stage.Timings.Freeze);

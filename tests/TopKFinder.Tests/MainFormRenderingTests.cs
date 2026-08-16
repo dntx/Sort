@@ -1337,6 +1337,47 @@ public sealed class MainFormRenderingTests
         Assert.Contains("proven optimal", tree.Nodes[0].Text, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ProvenInfeasibleSearchOnlyStage_WhenPaused_ShowsEdgeCompactWaitingPlaceholder()
+    {
+        using var form = new MainForm();
+        _ = form.Handle;
+
+        StrategyPlan feasiblePlan = new StrategyBuilder(8, 3, 3).ExecuteStepProofStage();
+        SolvedStrategy solution = CreateDeferredExactStepStage().Solution
+            ?? throw new InvalidOperationException("Expected deferred stage solution.");
+        var incumbent = new StageResult(
+            StageNames.GreedyFeasible,
+            feasiblePlan,
+            feasiblePlan.Elapsed,
+            StageOutcome.Completed,
+            solution,
+            StageTimings.Legacy(feasiblePlan.Elapsed));
+        var stage = new StageResult(
+            StageNames.FormatProofTighten(feasiblePlan.MaxStep - 1),
+            materializedPlan: null,
+            elapsed: TimeSpan.FromMilliseconds(10),
+            outcome: StageOutcome.ProvenInfeasible,
+            solution: null,
+            timings: StageTimings.Legacy(TimeSpan.FromMilliseconds(10)),
+            presentationMode: StagePresentationMode.SearchOnlySummary);
+
+        InvokePrivateInstanceVoid(form, "ShowInitialStagePlaceholder", 8, 3, 3, true);
+        SetPrivateField(form, "_feasibleMode", true);
+        SetPrivateField(form, "_pauseEachStageForRun", true);
+        SetPrivateField(form, "_feasiblePlan", feasiblePlan);
+        SetPrivateField(form, "_incumbentStage", incumbent);
+        InvokePrivateInstanceVoid(form, "BeginStagePause", stage);
+        InvokePrivateInstanceVoid(form, "OnProofTightenStage", stage);
+
+        string expected = StageNames.FormatGreedyEdgeCompact(feasiblePlan.MaxStep) + " [waiting to continue]";
+        TreeView tree = GetPrivateField<TreeView>(form, "_treeView");
+        Assert.Contains(tree.Nodes[0].Nodes.Cast<TreeNode>(), node => node.Text == expected);
+
+        TreeView overview = GetPrivateField<TreeView>(form, "_overviewTree");
+        Assert.Contains(overview.Nodes.Cast<TreeNode>(), node => node.Text == expected);
+    }
+
     private static StageResult CreateDeferredExactStepStage()
     {
         StrategyBuilder builder = new(8, 3, 3);

@@ -691,10 +691,27 @@ partial class MainForm
             || !string.Equals(_pausedStageName, stage.Name, StringComparison.Ordinal))
             return;
 
+        EnsureNextGreedyStageWaitingPlaceholder(stage);
         _stagePausePresentationReady = true;
         _runStopwatch?.Stop();
         SetRunUiState(RunUiState.StagePaused);
         _statusLabel.Text = FormatStagePauseSummary(stage, presentationReady: true);
+    }
+
+    private void EnsureNextGreedyStageWaitingPlaceholder(StageResult stage)
+    {
+        if (!_feasibleMode
+            || !stage.Name.StartsWith(StageNames.ProofTightenPrefix, StringComparison.Ordinal)
+            || _feasiblePlan is null)
+            return;
+
+        int incumbentMaxStep = _incumbentStage?.Solution?.Score.WorstCaseSteps
+            ?? _compactPlan?.MaxStep
+            ?? _feasiblePlan.MaxStep;
+        string nextStageName = stage.Outcome == StageOutcome.Tightened
+            ? NextProofTightenStageNameForPresentation(_feasiblePlan, incumbentMaxStep)
+            : StageNames.FormatGreedyEdgeCompact(incumbentMaxStep);
+        EnsureNextStageWaitingPlaceholder(nextStageName);
     }
 
     private void ContinuePausedStage()
