@@ -6,7 +6,7 @@ Key,Mode,Stage,N,M,K,Outcome,HasPlan,MaxStep,TotalBranchEdges,SearchedStates,Out
 "exact-step:12,4,4",exact,step-proof,12,4,4,Resolved,True,5,41,210,3052,4636,5,13.817,13.817,PASS,13.817
 "exact-edge:12,4,4",exact,edge-compact,12,4,4,Resolved,True,5,33,471,17636,18869,5,66.553,66.553,PASS,66.553
 "greedy-feasible:10,2,5",greedy,greedy-feasible,10,2,5,Feasible,True,18,115,59,115,0,9,1.042,1.042,PASS,1.042
-"greedy-tighten:10,2,5",greedy,greedy-tighten,10,2,5,Skipped,False,18,115,59,115,0,9,1.054,1.054,PASS,1.054
+"greedy-tighten:10,2,5",greedy,greedy-tighten,10,2,5,Tightened,True,17,71,220,808,191,9,5.5,5.5,PASS,5.5
 "proof-tighten-first:10,2,5",greedy,proof-tighten,10,2,5,Tightened,True,17,50,258,927,740,9,4.432,4.432,PASS,4.432
 "greedy-full:10,2,5",greedy,greedy-full,10,2,5,Feasible,True,15,16,2120,58073,44311,15,132.146,132.146,PASS,132.146
 "greedy-feasible:12,4,4",greedy,greedy-feasible,12,4,4,Feasible,True,6,154,116,1187,0,4,12.37,12.37,PASS,12.37
