@@ -37,6 +37,7 @@ UI 使用与 CLI 相同的阶段名展示进度：
 当前占位文案格式如下（`<stage>` 为阶段名，`X.Xs` 为秒级耗时，保留 1 位小数）：
 
 - 搜索中：`<stage> [searching]`
+- 前一阶段暂停、等待用户放行：`<stage> [waiting to continue]`
 - 构建中：`<stage> [X.Xs searched, building tree]`
 - 树已就绪：`<stage> [X.Xs searched, Y.Ys built, tree ready]`
 - 搜索占位被停止：`<stage> [X.Xs searched, stopped]`

@@ -8,6 +8,7 @@ namespace TopKFinder;
 partial class MainForm
 {
     private const string SkippedNoImprovementMarker = "no improvement";
+    private const string SearchWaitingSuffix = " [waiting to continue]";
     private const string SearchRunningSuffix = " [searching]";
     private const string TreeBuildingSuffix = ", building tree]";
     private const string TreeReadySuffix = ", tree ready]";
@@ -15,6 +16,9 @@ partial class MainForm
 
     private static string FormatSearchRunningPlaceholderText(string stageName)
         => stageName + SearchRunningSuffix;
+
+    private static string FormatSearchWaitingPlaceholderText(string stageName)
+        => stageName + SearchWaitingSuffix;
 
     private static string FormatTreeBuildingPlaceholderText(string stageName, StageTimings timings)
         => $"{stageName} [{FormatShortSeconds(timings.Solve + timings.Freeze)} searched{TreeBuildingSuffix}";
@@ -34,6 +38,20 @@ partial class MainForm
     private TreeNode CreateSearchRunningPlaceholderNode(string stageName)
         => new(FormatSearchRunningPlaceholderText(stageName)) { ForeColor = _palette.MutedForeColor };
 
+    private string FormatPendingStagePlaceholderText(string stageName)
+        => _pauseEachStageForRun && _stagePauseCompletion is not null
+            ? FormatSearchWaitingPlaceholderText(stageName)
+            : FormatSearchRunningPlaceholderText(stageName);
+
+    private TreeNode CreatePendingStagePlaceholderNode(string stageName)
+        => new(FormatPendingStagePlaceholderText(stageName))
+        {
+            ForeColor = _palette.MutedForeColor,
+        };
+
+    private static bool IsSearchWaitingPlaceholderText(string text)
+        => text.EndsWith(SearchWaitingSuffix, StringComparison.Ordinal);
+
     private static bool IsSearchRunningPlaceholderText(string text)
         => text.EndsWith(SearchRunningSuffix, StringComparison.Ordinal);
 
@@ -44,7 +62,8 @@ partial class MainForm
         => text.EndsWith(TreeReadySuffix, StringComparison.Ordinal);
 
     private static bool IsAnyStageStatusPlaceholderText(string text)
-        => IsSearchRunningPlaceholderText(text)
+        => IsSearchWaitingPlaceholderText(text)
+            || IsSearchRunningPlaceholderText(text)
             || IsTreeBuildingPlaceholderText(text)
             || IsTreeReadyPlaceholderText(text)
             || text.EndsWith(StoppedSuffix, StringComparison.Ordinal);
@@ -142,14 +161,16 @@ partial class MainForm
 
     private static int StageStatusRank(string text)
     {
-        if (IsSearchRunningPlaceholderText(text))
+        if (IsSearchWaitingPlaceholderText(text))
             return 1;
-        if (IsTreeBuildingPlaceholderText(text))
+        if (IsSearchRunningPlaceholderText(text))
             return 2;
-        if (IsTreeReadyPlaceholderText(text))
+        if (IsTreeBuildingPlaceholderText(text))
             return 3;
-        if (text.EndsWith(StoppedSuffix, StringComparison.Ordinal))
+        if (IsTreeReadyPlaceholderText(text))
             return 4;
+        if (text.EndsWith(StoppedSuffix, StringComparison.Ordinal))
+            return 5;
         return 0;
     }
 
@@ -524,7 +545,7 @@ partial class MainForm
     private TreeNode BuildCompactTreeSlotNode(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan, StrategyPlan? compactPlan, bool compactImproved)
     {
         if (compactPlan is null)
-            return CreateSearchRunningPlaceholderNode(PendingCompactStageName(feasiblePlan, defaultPlan));
+            return CreatePendingStagePlaceholderNode(PendingCompactStageName(feasiblePlan, defaultPlan));
 
         string compactStageName = FormatCompactStageName(defaultPlan is null, compactPlan.MaxStep);
         StageTimings? timings = _materializedCompactDisplayStage?.Timings;

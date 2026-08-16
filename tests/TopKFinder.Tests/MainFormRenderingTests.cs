@@ -1026,6 +1026,33 @@ public sealed class MainFormRenderingTests
     }
 
     [Fact]
+    public void InitialTrees_PausedBeforeNextStage_ShowWaitingPlaceholder()
+    {
+        using var form = new MainForm();
+        _ = form.Handle;
+        SetPrivateField(form, "_pauseEachStageForRun", true);
+
+        StrategyPlan feasiblePlan = new StrategyBuilder(8, 3, 3).ExecuteStepProofStage();
+        StageResult stage = new(
+            StageNames.GreedyFeasible,
+            feasiblePlan,
+            feasiblePlan.Elapsed,
+            StageOutcome.Completed,
+            CreateDeferredExactStepStage().Solution,
+            StageTimings.Legacy(feasiblePlan.Elapsed));
+        InvokePrivateInstanceVoid(form, "BeginStagePause", stage);
+        string nextStageName = InvokePrivateInstance<string>(form, "PendingCompactStageName", feasiblePlan, null);
+        InvokePrivateInstanceVoid(form, "DisplayInitialGreedyStageTree", stage);
+
+        string expected = nextStageName + " [waiting to continue]";
+        TreeView tree = GetPrivateField<TreeView>(form, "_treeView");
+        Assert.Contains(tree.Nodes[0].Nodes.Cast<TreeNode>(), node => node.Text == expected);
+
+        TreeView overview = GetPrivateField<TreeView>(form, "_overviewTree");
+        Assert.Contains(overview.Nodes.Cast<TreeNode>(), node => node.Text == expected);
+    }
+
+    [Fact]
     public void GreedyTighten_WithMaterializedPlan_RendersTreeInsteadOfSearchOnlySummary()
     {
         using var form = new MainForm();
