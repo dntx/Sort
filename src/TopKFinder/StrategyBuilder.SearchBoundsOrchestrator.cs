@@ -343,7 +343,15 @@ partial class StrategyBuilder
                 FeasibleTopSetInfo info = _owner.GetFeasibleTopSetInfo(state, remainingSlots);
                 int steps = _owner.GetInformationLowerBoundSteps(info.Count, state.ActiveCount);
 
-                steps = Math.Max(steps, _owner.GetAntichainLowerBound(state));
+                int antichain = _owner.GetAntichainLowerBound(state, out int width);
+                steps = Math.Max(steps, antichain);
+                int groupSize = Math.Min(_owner._m, state.ActiveCount);
+                if (_owner.EnableWidthLimitedInformationBoundForTesting && width < groupSize)
+                {
+                    steps = Math.Max(
+                        steps,
+                        _owner.GetWidthLimitedInformationLowerBoundSteps(info.Count, state.ActiveCount, width));
+                }
                 steps = Math.Max(steps, 2);
 
                 steps = _owner.ApplyDominanceLowerBound(state, remainingSlots, steps);
