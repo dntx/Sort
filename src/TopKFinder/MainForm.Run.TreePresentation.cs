@@ -580,6 +580,9 @@ partial class MainForm
             && !string.Equals(_currentStageName, "-", StringComparison.Ordinal))
             return _currentStageName;
 
+        if (defaultPlan is null && _greedyTightenForRun && _greedyTightenStage is null)
+            return StageNames.GreedyTighten;
+
         return defaultPlan is null
             ? NextProofTightenStageNameForPresentation(
                 feasiblePlan,

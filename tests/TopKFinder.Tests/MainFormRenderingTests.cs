@@ -1026,11 +1026,12 @@ public sealed class MainFormRenderingTests
     }
 
     [Fact]
-    public void InitialTrees_PausedBeforeNextStage_ShowWaitingPlaceholder()
+    public void InitialTrees_PausedWithGreedyTightenEnabled_ShowGreedyTightenWaitingPlaceholder()
     {
         using var form = new MainForm();
         _ = form.Handle;
         SetPrivateField(form, "_pauseEachStageForRun", true);
+        SetPrivateField(form, "_greedyTightenForRun", true);
 
         StrategyPlan feasiblePlan = new StrategyBuilder(8, 3, 3).ExecuteStepProofStage();
         StageResult stage = new(
@@ -1041,15 +1042,38 @@ public sealed class MainFormRenderingTests
             CreateDeferredExactStepStage().Solution,
             StageTimings.Legacy(feasiblePlan.Elapsed));
         InvokePrivateInstanceVoid(form, "BeginStagePause", stage);
-        string nextStageName = InvokePrivateInstance<string>(form, "PendingCompactStageName", feasiblePlan, null);
         InvokePrivateInstanceVoid(form, "DisplayInitialGreedyStageTree", stage);
 
-        string expected = nextStageName + " [waiting to continue]";
+        string expected = StageNames.GreedyTighten + " [waiting to continue]";
         TreeView tree = GetPrivateField<TreeView>(form, "_treeView");
         Assert.Contains(tree.Nodes[0].Nodes.Cast<TreeNode>(), node => node.Text == expected);
 
         TreeView overview = GetPrivateField<TreeView>(form, "_overviewTree");
         Assert.Contains(overview.Nodes.Cast<TreeNode>(), node => node.Text == expected);
+    }
+
+    [Fact]
+    public void InitialTrees_PausedWithGreedyTightenDisabled_DoNotShowGreedyTightenPlaceholder()
+    {
+        using var form = new MainForm();
+        _ = form.Handle;
+        SetPrivateField(form, "_pauseEachStageForRun", true);
+        SetPrivateField(form, "_greedyTightenForRun", false);
+
+        StrategyPlan feasiblePlan = new StrategyBuilder(8, 3, 3).ExecuteStepProofStage();
+        StageResult stage = new(
+            StageNames.GreedyFeasible,
+            feasiblePlan,
+            feasiblePlan.Elapsed,
+            StageOutcome.Completed,
+            CreateDeferredExactStepStage().Solution,
+            StageTimings.Legacy(feasiblePlan.Elapsed));
+        InvokePrivateInstanceVoid(form, "BeginStagePause", stage);
+        InvokePrivateInstanceVoid(form, "DisplayInitialGreedyStageTree", stage);
+
+        TreeView tree = GetPrivateField<TreeView>(form, "_treeView");
+        Assert.DoesNotContain(tree.Nodes[0].Nodes.Cast<TreeNode>(), node =>
+            node.Text.StartsWith(StageNames.GreedyTighten, StringComparison.Ordinal));
     }
 
     [Fact]

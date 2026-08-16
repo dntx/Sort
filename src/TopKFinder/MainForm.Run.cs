@@ -130,6 +130,7 @@ partial class MainForm
         _stagePausePresentationReady = false;
         ResetPresentationInfrastructure();
         _pauseEachStageForRun = _pauseEachStageCheckBox.Checked;
+        _greedyTightenForRun = request.FeasibleMode && request.Builder.GreedyTightenEnabledForTesting;
         _currentStageName = request.FeasibleMode ? StageNames.GreedyFeasible : StageNames.StepProof;
         EnsureStageDisplayOrder(_currentStageName);
         _stageStartMs = 0;

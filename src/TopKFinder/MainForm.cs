@@ -185,6 +185,7 @@ partial class MainForm : Form
     private SearchStatistics? _completedFeasibleStats;
     private int _activePhase;
     private bool _pauseEachStageForRun;
+    private bool _greedyTightenForRun;
     private TaskCompletionSource<object?>? _stagePauseCompletion;
     private string? _pausedStageName;
     private bool _stagePausePresentationReady;
