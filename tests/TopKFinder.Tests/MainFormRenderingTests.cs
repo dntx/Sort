@@ -1077,6 +1077,28 @@ public sealed class MainFormRenderingTests
     }
 
     [Fact]
+    public void FinalStageWithoutNextStage_DoesNotPauseForContinue()
+    {
+        using var form = new MainForm();
+        _ = form.Handle;
+        SetPrivateField(form, "_pauseEachStageForRun", true);
+        SetPrivateField(form, "_nextStageName", null);
+
+        var stage = new StageResult(
+            StageNames.FormatGreedyEdgeCompact(4),
+            materializedPlan: null,
+            elapsed: TimeSpan.FromMilliseconds(10),
+            outcome: StageOutcome.Completed,
+            solution: null,
+            timings: StageTimings.Legacy(TimeSpan.FromMilliseconds(10)));
+
+        InvokePrivateInstanceVoid(form, "BeginStagePause", stage);
+
+        Assert.Null(GetPrivateField<TaskCompletionSource<object?>?>(form, "_stagePauseCompletion"));
+        Assert.Null(GetPrivateField<string?>(form, "_pausedStageName"));
+    }
+
+    [Fact]
     public void GreedyTighten_WithMaterializedPlan_RendersTreeInsteadOfSearchOnlySummary()
     {
         using var form = new MainForm();

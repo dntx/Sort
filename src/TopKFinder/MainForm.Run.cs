@@ -687,7 +687,7 @@ partial class MainForm
 
     private void BeginStagePause(StageResult stage)
     {
-        if (!_pauseEachStageForRun)
+        if (!_pauseEachStageForRun || _nextStageName is null)
             return;
 
         _stagePauseCompletion = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -720,6 +720,7 @@ partial class MainForm
         _stagePauseCompletion = null;
         _pausedStageName = null;
         _stagePausePresentationReady = false;
+        _nextStageName = null;
         _continueStageButton.Enabled = false;
         _runStopwatch?.Start();
         SetRunUiState(RunUiState.Running);
