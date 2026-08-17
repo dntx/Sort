@@ -154,29 +154,31 @@ public sealed class MainFormRenderingTests
     }
 
     [Fact]
-    public void MarshalStageToUiThread_PauseEnabled_WaitsForRenderAndContinue()
+    public void MarshalStageCompletionToUiThread_PauseEnabled_WaitsForRenderAndContinue()
     {
         using var form = new MainForm();
         _ = form.Handle;
         SetPrivateField(form, "_pauseEachStageForRun", true);
         SetPrivateField(form, "_runCancellationSource", new CancellationTokenSource());
-        SetPrivateField(form, "_nextStageName", StageNames.FormatProofTighten(3));
 
         bool callbackRan = false;
         var stage = new StageResult("proof-tighten<=3", materializedPlan: null, TimeSpan.Zero, StageOutcome.Tightened, CreateDeferredExactStepStage().Solution);
+        var completion = new StageCompletion(stage, StageNames.FormatProofTighten(2));
         Task worker = Task.Run(() => InvokePrivateInstanceVoid(
             form,
-            "MarshalStageToUiThread",
-            stage,
+            "MarshalStageCompletionToUiThread",
+            completion,
             (Action<StageResult>)(_ => callbackRan = true)));
 
         Assert.True(PumpMessagesUntil(() => callbackRan, TimeSpan.FromSeconds(2)));
         Assert.False(worker.IsCompleted);
-        Button continueButton = GetPrivateField<Button>(form, "_continueStageButton");
-        Assert.False(continueButton.Enabled);
+        Button runButton = GetPrivateField<Button>(form, "_runButton");
+        Assert.Equal("Continue", runButton.Text);
+        Assert.False(runButton.Enabled);
 
         InvokePrivateInstanceVoid(form, "MarkStagePausePresentationReady", stage);
-        Assert.True(continueButton.Enabled);
+        Assert.Equal("Continue", runButton.Text);
+        Assert.True(runButton.Enabled);
         Assert.False(worker.IsCompleted);
 
         InvokePrivateInstanceVoid(form, "ContinuePausedStage");
