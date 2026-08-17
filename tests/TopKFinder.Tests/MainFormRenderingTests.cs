@@ -160,6 +160,7 @@ public sealed class MainFormRenderingTests
         _ = form.Handle;
         SetPrivateField(form, "_pauseEachStageForRun", true);
         SetPrivateField(form, "_runCancellationSource", new CancellationTokenSource());
+        SetPrivateField(form, "_nextStageName", StageNames.FormatProofTighten(3));
 
         bool callbackRan = false;
         var stage = new StageResult("proof-tighten<=3", materializedPlan: null, TimeSpan.Zero, StageOutcome.Tightened, CreateDeferredExactStepStage().Solution);

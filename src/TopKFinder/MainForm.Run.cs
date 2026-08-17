@@ -639,6 +639,10 @@ partial class MainForm
     private void MarshalStageToUiThread(StageResult stage, Action<StageResult> onStage)
         => MarshalStageCompletionToUiThread(new StageCompletion(stage, NextStageName: null), onStage);
 
+    private static bool IsTerminalCompactStageName(string stageName)
+        => stageName.StartsWith(StageNames.GreedyEdgeCompactPrefix, StringComparison.Ordinal)
+            || stageName.StartsWith(StageNames.ExactEdgeCompactPrefix, StringComparison.Ordinal);
+
     private void MarshalStageCompletionToUiThread(StageCompletion completion, Action<StageResult> onStage)
     {
         if (!CanAcceptStageCallback())
@@ -653,6 +657,8 @@ partial class MainForm
                 return;
 
             _nextStageName = completion.NextStageName;
+            if (IsTerminalCompactStageName(stage.Name))
+                _nextStageName = null;
             BeginStagePause(stage);
             onStage(stage);
             pauseCompletion = _stagePauseCompletion;
@@ -687,7 +693,19 @@ partial class MainForm
 
     private void BeginStagePause(StageResult stage)
     {
-        if (!_pauseEachStageForRun || _nextStageName is null)
+        if (!_pauseEachStageForRun)
+            return;
+
+        if (IsTerminalCompactStageName(stage.Name))
+        {
+            _nextStageName = null;
+            _stagePauseCompletion = null;
+            _pausedStageName = null;
+            _stagePausePresentationReady = false;
+            return;
+        }
+
+        if (_nextStageName is null)
             return;
 
         _stagePauseCompletion = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
