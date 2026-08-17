@@ -13,7 +13,7 @@ on:
       exclude_keys:
         description: Optional semicolon-separated matrix keys to exclude
         type: string
-        default: greedy-full:20,2,6
+        default: greedy-full:20,2,6;proof-tighten-first:20,2,6
       timeout_seconds:
         description: Per-row timeout for StrategyMatrixTests full baseline seed
         type: number
