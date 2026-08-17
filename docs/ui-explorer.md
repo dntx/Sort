@@ -37,6 +37,7 @@ UI 使用与 CLI 相同的阶段名展示进度：
 当前占位文案格式如下（`<stage>` 为阶段名，`X.Xs` 为秒级耗时，保留 1 位小数）：
 
 - 搜索中：`<stage> [searching]`
+- 前一阶段暂停、等待用户放行：`<stage> [waiting to continue]`
 - 构建中：`<stage> [X.Xs searched, building tree]`
 - 树已就绪：`<stage> [X.Xs searched, Y.Ys built, tree ready]`
 - 搜索占位被停止：`<stage> [X.Xs searched, stopped]`
@@ -62,6 +63,12 @@ UI 使用与 CLI 相同的阶段名展示进度：
 
 补充说明：CLI summary 已统一使用 `solve / freeze / materialize` timing 口径；UI 运行中面板仍以
 当前 stage elapsed 与 compact solve 进度为主，因为它们用于 live 反馈而不是最终结果摘要。
+
+### Pause each stage
+
+勾选 `pause each stage` 后，每个 stage 的 search 完成时会阻止下一个 stage 启动，并立即在状态栏显示该 stage 的结果摘要。当前 stage 的 tree rendering 仍会继续；rendering 完成前 `Continue` 不可用，完成后用户可以浏览 tree、overview 与 details，再点击 `Continue` 启动下一个 stage。
+
+暂停摘要包含 stage outcome、max steps，以及可用时的 edge、searched state 和 output state 数量；尚未可用的值显示为 `pending` 或 `N/A`。等待用户继续的时间不计入运行 elapsed。`Stop` 在 search、rendering 和等待 `Continue` 时均可用，并会解除 stage 等待。
 
 ### 大规模策略树下的惰性加载
 

@@ -92,7 +92,7 @@ partial class MainForm
     private TreeNode BuildCompactOverviewPlaceholderNode(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan)
     {
         string stageName = PendingCompactStageName(feasiblePlan, defaultPlan);
-        return BuildOverviewNoteNode(FormatSearchRunningPlaceholderText(stageName));
+        return BuildOverviewNoteNode(FormatPendingStagePlaceholderText(stageName));
     }
 
     private TreeNode BuildFinalCompactOverviewNode(StrategyPlan compactPlan, bool compactImproved)

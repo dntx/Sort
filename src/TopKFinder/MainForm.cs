@@ -116,6 +116,7 @@ partial class MainForm : Form
     private readonly CheckBox _enableGtCheckBox;
     private readonly Button _runButton;
     private readonly Button _stopButton;
+    private readonly Button _continueStageButton;
     private readonly Button _treeExpandButton;
     private readonly Button _treeCollapseButton;
     private readonly Button _overviewExpandButton;
@@ -184,6 +185,10 @@ partial class MainForm : Form
     private SearchStatistics? _completedFeasibleStats;
     private int _activePhase;
     private bool _pauseEachStageForRun;
+    private TaskCompletionSource<object?>? _stagePauseCompletion;
+    private string? _pausedStageName;
+    private string? _nextStageName;
+    private bool _stagePausePresentationReady;
     // Anytime greedy edge state (UI thread only): every edge stage as it arrives (baseline compact,
     // each tightening, plus a terminal no-solution stage). The current-stage name and the run-clock ms
     // at which the current stage began drive the per-stage timing/labels in the progress panel.
@@ -214,13 +219,13 @@ partial class MainForm : Form
         // Search mode matches the UI labels: exact (proven) and greedy (fast).
         _modeComboBox = CreateModeComboBox();
 
-        // When checked, the run pauses after each new stage tree appears (a modal shows that stage's
-        // summary and the search blocks until OK). Default off so runs are uninterrupted.
+        // When checked, each completed search waits for its rendered result and explicit continuation.
         _pauseEachStageCheckBox = CreatePauseEachStageCheckBox();
         _enableGtCheckBox = CreateEnableGtCheckBox();
 
         _runButton = CreateRunButton();
         _stopButton = CreateStopButton();
+        _continueStageButton = CreateContinueStageButton();
         _treeExpandButton = CreateExpandButton();
         _treeCollapseButton = CreateCollapseButton();
         _overviewExpandButton = CreateExpandButton();
@@ -247,6 +252,7 @@ partial class MainForm : Form
         var actionsPanel = CreatePanelRow();
         actionsPanel.Controls.Add(_runButton);
         actionsPanel.Controls.Add(_stopButton);
+        actionsPanel.Controls.Add(_continueStageButton);
         actionsPanel.Controls.Add(_toggleDetailsButton);
 
         var controlsLayout = CreateControlsLayout();
@@ -428,8 +434,19 @@ partial class MainForm : Form
             Height = 30,
             Margin = new Padding(0, 4, 8, 0),
         };
-        button.Click += (_, _) => RunStrategy();
+        button.Click += (_, _) => RunOrContinueStrategy();
         return button;
+    }
+
+    private void RunOrContinueStrategy()
+    {
+        if (_stagePausePresentationReady && _stagePauseCompletion is not null)
+        {
+            ContinuePausedStage();
+            return;
+        }
+
+        RunStrategy();
     }
 
     private Button CreateStopButton()
@@ -443,6 +460,21 @@ partial class MainForm : Form
             Enabled = false,
         };
         button.Click += (_, _) => StopStrategy();
+        return button;
+    }
+
+    private Button CreateContinueStageButton()
+    {
+        var button = new Button
+        {
+            Text = "Continue",
+            AutoSize = true,
+            Height = 30,
+            Margin = new Padding(0, 4, 8, 0),
+            Enabled = false,
+            Visible = false,
+        };
+        button.Click += (_, _) => ContinuePausedStage();
         return button;
     }
 

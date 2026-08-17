@@ -26,6 +26,21 @@ public sealed class ExactPipelineTests
     }
 
     [Fact]
+    public void RunExactPipelineDeferred_BoundariesNameFollowingStage()
+    {
+        var boundaries = new List<StageCompletion>();
+
+        PublicPipelineOrchestrator.RunExactPipelineDeferred(
+            new StrategyBuilder(9, 3, 3),
+            onStageCompleted: static _ => { },
+            onStageBoundary: boundaries.Add);
+
+        Assert.Equal(2, boundaries.Count);
+        Assert.Equal(boundaries[1].Stage.Name, boundaries[0].NextStageName);
+        Assert.Null(boundaries[1].NextStageName);
+    }
+
+    [Fact]
     public void RunExactPipeline_EmitsCanonicalStages_AndReturnsLastStagePlan()
     {
         var started = new List<string>();

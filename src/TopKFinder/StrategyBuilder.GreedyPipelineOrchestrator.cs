@@ -93,9 +93,10 @@ partial class StrategyBuilder
         public StrategyPlan RunGreedyPipelineCore(
             Action<StageResult>? onStageCompleted = null,
             Action<string>? onStageStart = null,
-            bool materializeStages = true)
+            bool materializeStages = true,
+            Action<StageCompletion>? onStageBoundary = null)
         {
-            var callbacks = new PipelineCallbacks(onStageCompleted, onStageStart);
+            var callbacks = new PipelineCallbacks(onStageCompleted, onStageStart, onStageBoundary);
             _owner._progressScope = _owner._reportCombinedRunProgress
                 ? ProgressScope.CompactFeasibleInCombinedRun
                 : ProgressScope.DefaultStandalone;
@@ -130,7 +131,13 @@ partial class StrategyBuilder
                     callbacks.Start(stageName);
                     ProofTightenStageArtifacts artifacts = ExecuteProofTightenStageWithSolution(budget, materializeStages);
                     StageResult stage = artifacts.Result;
-                    PipelineStageProtocol.EmitStage(stage, callbacks);
+                    string nextStageName = stage.Outcome == StageOutcome.Tightened
+                        && artifacts.Solution is not null
+                        && artifacts.Solution.Score.WorstCaseSteps - 1 >= provenLowerBound
+                            ? StageNames.FormatProofTighten(artifacts.Solution.Score.WorstCaseSteps - 1)
+                            : StageNames.FormatGreedyEdgeCompact(
+                                artifacts.Solution?.Score.WorstCaseSteps ?? bestStep);
+                    PipelineStageProtocol.EmitStage(stage, callbacks, nextStageName);
 
                     if (stage.Outcome == StageOutcome.Tightened)
                     {

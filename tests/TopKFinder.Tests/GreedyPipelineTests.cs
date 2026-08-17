@@ -66,6 +66,67 @@ public class GreedyPipelineTests
             Assert.NotNull(stages[1].Solution);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void GreedyPreparationDeferred_ReportsOrchestratedNextStages(bool enableGreedyTighten)
+    {
+        var boundaries = new List<StageCompletion>();
+        var builder = new StrategyBuilder(9, 3, 3)
+        {
+            GreedyTightenEnabledForTesting = enableGreedyTighten,
+        };
+
+        GreedyPreparationResult preparation = PublicPipelineOrchestrator.RunGreedyPreparation(
+            builder,
+            emitStages: true,
+            materialize: false,
+            onStageBoundary: boundaries.Add);
+
+        StageCompletion feasibleBoundary = boundaries[0];
+        Assert.Equal(StageNames.GreedyFeasible, feasibleBoundary.Stage.Name);
+        Assert.Equal(
+            enableGreedyTighten
+                ? StageNames.GreedyTighten
+                : PipelineStageProtocol.NextGreedyStageName(
+                    preparation.BaseFeasibleSolution,
+                    preparation.BaseFeasibleSolution.Score.WorstCaseSteps),
+            feasibleBoundary.NextStageName);
+
+        if (enableGreedyTighten)
+        {
+            StageCompletion tightenBoundary = Assert.Single(boundaries.Skip(1));
+            Assert.Equal(StageNames.GreedyTighten, tightenBoundary.Stage.Name);
+            Assert.Equal(
+                PipelineStageProtocol.NextGreedyStageName(
+                    preparation.EffectiveFeasibleSolution,
+                    preparation.EffectiveFeasibleSolution.Score.WorstCaseSteps),
+                tightenBoundary.NextStageName);
+        }
+    }
+
+    [Fact]
+    public void GreedyPipelineDeferred_BoundariesNameFollowingStage()
+    {
+        var builder = new StrategyBuilder(9, 3, 3);
+        _ = PublicPipelineOrchestrator.RunGreedyPreparation(
+            builder,
+            emitStages: false,
+            materialize: false);
+        var boundaries = new List<StageCompletion>();
+
+        PublicPipelineOrchestrator.RunGreedyPipelineDeferred(
+            builder,
+            onStageCompleted: static _ => { },
+            preparationAlreadyApplied: true,
+            onStageBoundary: boundaries.Add);
+
+        Assert.NotEmpty(boundaries);
+        for (int index = 0; index < boundaries.Count - 1; index++)
+            Assert.Equal(boundaries[index + 1].Stage.Name, boundaries[index].NextStageName);
+        Assert.Null(boundaries[^1].NextStageName);
+    }
+
     // The edge pass must always produce a valid, fully-grouped strategy under the constructive U
     // budget -- never throw "no group fits the budget" -- and stay a feasible plan.
     //

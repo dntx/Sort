@@ -154,28 +154,80 @@ public sealed class MainFormRenderingTests
     }
 
     [Fact]
-    public void MarshalStageToUiThread_PauseEnabled_BlocksWorkerCallback()
+    public void MarshalStageCompletionToUiThread_PauseEnabled_WaitsForRenderAndContinue()
     {
         using var form = new MainForm();
         _ = form.Handle;
         SetPrivateField(form, "_pauseEachStageForRun", true);
+        SetPrivateField(form, "_runCancellationSource", new CancellationTokenSource());
 
         bool callbackRan = false;
         var stage = new StageResult("proof-tighten<=3", materializedPlan: null, TimeSpan.Zero, StageOutcome.Tightened, CreateDeferredExactStepStage().Solution);
-        var stopwatch = Stopwatch.StartNew();
-        InvokePrivateInstanceVoid(
+        var completion = new StageCompletion(stage, StageNames.FormatProofTighten(2));
+        Task worker = Task.Run(() => InvokePrivateInstanceVoid(
             form,
-            "MarshalStageToUiThread",
-            stage,
-            (Action<StageResult>)(_ =>
-            {
-                Thread.Sleep(120);
-                callbackRan = true;
-            }));
-        stopwatch.Stop();
+            "MarshalStageCompletionToUiThread",
+            completion,
+            (Action<StageResult>)(_ => callbackRan = true)));
 
-        Assert.True(stopwatch.ElapsedMilliseconds >= 100);
-        Assert.True(callbackRan);
+        Assert.True(PumpMessagesUntil(() => callbackRan, TimeSpan.FromSeconds(2)));
+        Assert.False(worker.IsCompleted);
+        Button runButton = GetPrivateField<Button>(form, "_runButton");
+        Assert.Equal("Continue", runButton.Text);
+        Assert.False(runButton.Enabled);
+
+        InvokePrivateInstanceVoid(form, "MarkStagePausePresentationReady", stage);
+        Assert.Equal("Continue", runButton.Text);
+        Assert.True(runButton.Enabled);
+        Assert.False(worker.IsCompleted);
+
+        InvokePrivateInstanceVoid(form, "ContinuePausedStage");
+        Assert.True(PumpMessagesUntil(() => worker.IsCompleted, TimeSpan.FromSeconds(2)));
+    }
+
+    [Fact]
+    public void MarshalStageToUiThread_PauseEnabled_StopReleasesWorker()
+    {
+        using var form = new MainForm();
+        _ = form.Handle;
+        SetPrivateField(form, "_pauseEachStageForRun", true);
+        var cancellationSource = new CancellationTokenSource();
+        SetPrivateField(form, "_runCancellationSource", cancellationSource);
+
+        bool callbackRan = false;
+        var stage = new StageResult("proof-tighten<=3", materializedPlan: null, TimeSpan.Zero, StageOutcome.Tightened, CreateDeferredExactStepStage().Solution);
+        Task worker = Task.Run(() =>
+        {
+            try
+            {
+                InvokePrivateInstanceVoid(
+                    form,
+                    "MarshalStageToUiThread",
+                    stage,
+                    (Action<StageResult>)(_ => callbackRan = true));
+            }
+            catch (TargetInvocationException ex) when (ex.InnerException is OperationCanceledException)
+            {
+            }
+        });
+
+        Assert.True(PumpMessagesUntil(() => callbackRan, TimeSpan.FromSeconds(2)));
+        cancellationSource.Cancel();
+        Assert.True(PumpMessagesUntil(() => worker.IsCompleted, TimeSpan.FromSeconds(2)));
+        Assert.Equal(TaskStatus.RanToCompletion, worker.Status);
+    }
+
+    private static bool PumpMessagesUntil(Func<bool> condition, TimeSpan timeout)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        while (!condition() && stopwatch.Elapsed < timeout)
+        {
+            Application.DoEvents();
+            Thread.Yield();
+        }
+
+        Application.DoEvents();
+        return condition();
     }
 
     [Fact]
@@ -977,6 +1029,79 @@ public sealed class MainFormRenderingTests
     }
 
     [Fact]
+    public void InitialTrees_PausedWithNextStageMetadata_ShowWaitingPlaceholder()
+    {
+        using var form = new MainForm();
+        _ = form.Handle;
+        SetPrivateField(form, "_pauseEachStageForRun", true);
+        SetPrivateField(form, "_nextStageName", StageNames.GreedyTighten);
+
+        StrategyPlan feasiblePlan = new StrategyBuilder(8, 3, 3).ExecuteStepProofStage();
+        StageResult stage = new(
+            StageNames.GreedyFeasible,
+            feasiblePlan,
+            feasiblePlan.Elapsed,
+            StageOutcome.Completed,
+            CreateDeferredExactStepStage().Solution,
+            StageTimings.Legacy(feasiblePlan.Elapsed));
+        InvokePrivateInstanceVoid(form, "BeginStagePause", stage);
+        InvokePrivateInstanceVoid(form, "DisplayInitialGreedyStageTree", stage);
+
+        string expected = StageNames.GreedyTighten + " [waiting to continue]";
+        TreeView tree = GetPrivateField<TreeView>(form, "_treeView");
+        Assert.Contains(tree.Nodes[0].Nodes.Cast<TreeNode>(), node => node.Text == expected);
+
+        TreeView overview = GetPrivateField<TreeView>(form, "_overviewTree");
+        Assert.Contains(overview.Nodes.Cast<TreeNode>(), node => node.Text == expected);
+    }
+
+    [Fact]
+    public void InitialTrees_PausedWithoutGreedyTightenMetadata_DoNotShowGreedyTightenPlaceholder()
+    {
+        using var form = new MainForm();
+        _ = form.Handle;
+        SetPrivateField(form, "_pauseEachStageForRun", true);
+        SetPrivateField(form, "_nextStageName", StageNames.FormatProofTighten(4));
+
+        StrategyPlan feasiblePlan = new StrategyBuilder(8, 3, 3).ExecuteStepProofStage();
+        StageResult stage = new(
+            StageNames.GreedyFeasible,
+            feasiblePlan,
+            feasiblePlan.Elapsed,
+            StageOutcome.Completed,
+            CreateDeferredExactStepStage().Solution,
+            StageTimings.Legacy(feasiblePlan.Elapsed));
+        InvokePrivateInstanceVoid(form, "BeginStagePause", stage);
+        InvokePrivateInstanceVoid(form, "DisplayInitialGreedyStageTree", stage);
+
+        TreeView tree = GetPrivateField<TreeView>(form, "_treeView");
+        Assert.DoesNotContain(tree.Nodes[0].Nodes.Cast<TreeNode>(), node =>
+            node.Text.StartsWith(StageNames.GreedyTighten, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void FinalStageWithoutNextStage_DoesNotPauseForContinue()
+    {
+        using var form = new MainForm();
+        _ = form.Handle;
+        SetPrivateField(form, "_pauseEachStageForRun", true);
+        SetPrivateField(form, "_nextStageName", null);
+
+        var stage = new StageResult(
+            StageNames.FormatGreedyEdgeCompact(4),
+            materializedPlan: null,
+            elapsed: TimeSpan.FromMilliseconds(10),
+            outcome: StageOutcome.Completed,
+            solution: null,
+            timings: StageTimings.Legacy(TimeSpan.FromMilliseconds(10)));
+
+        InvokePrivateInstanceVoid(form, "BeginStagePause", stage);
+
+        Assert.Null(GetPrivateFieldValue(form, "_stagePauseCompletion"));
+        Assert.Null(GetPrivateFieldValue(form, "_pausedStageName"));
+    }
+
+    [Fact]
     public void GreedyTighten_WithMaterializedPlan_RendersTreeInsteadOfSearchOnlySummary()
     {
         using var form = new MainForm();
@@ -1261,6 +1386,48 @@ public sealed class MainFormRenderingTests
         Assert.Contains("proven optimal", tree.Nodes[0].Text, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ProvenInfeasibleSearchOnlyStage_WhenPaused_ShowsEdgeCompactWaitingPlaceholder()
+    {
+        using var form = new MainForm();
+        _ = form.Handle;
+
+        StrategyPlan feasiblePlan = new StrategyBuilder(8, 3, 3).ExecuteStepProofStage();
+        SolvedStrategy solution = CreateDeferredExactStepStage().Solution
+            ?? throw new InvalidOperationException("Expected deferred stage solution.");
+        var incumbent = new StageResult(
+            StageNames.GreedyFeasible,
+            feasiblePlan,
+            feasiblePlan.Elapsed,
+            StageOutcome.Completed,
+            solution,
+            StageTimings.Legacy(feasiblePlan.Elapsed));
+        var stage = new StageResult(
+            StageNames.FormatProofTighten(feasiblePlan.MaxStep - 1),
+            materializedPlan: null,
+            elapsed: TimeSpan.FromMilliseconds(10),
+            outcome: StageOutcome.ProvenInfeasible,
+            solution: null,
+            timings: StageTimings.Legacy(TimeSpan.FromMilliseconds(10)),
+            presentationMode: StagePresentationMode.SearchOnlySummary);
+
+        InvokePrivateInstanceVoid(form, "ShowInitialStagePlaceholder", 8, 3, 3, true);
+        SetPrivateField(form, "_feasibleMode", true);
+        SetPrivateField(form, "_pauseEachStageForRun", true);
+        SetPrivateField(form, "_feasiblePlan", feasiblePlan);
+        SetPrivateField(form, "_incumbentStage", incumbent);
+        SetPrivateField(form, "_nextStageName", StageNames.FormatGreedyEdgeCompact(feasiblePlan.MaxStep));
+        InvokePrivateInstanceVoid(form, "BeginStagePause", stage);
+        InvokePrivateInstanceVoid(form, "OnProofTightenStage", stage);
+
+        string expected = StageNames.FormatGreedyEdgeCompact(feasiblePlan.MaxStep) + " [waiting to continue]";
+        TreeView tree = GetPrivateField<TreeView>(form, "_treeView");
+        Assert.Contains(tree.Nodes[0].Nodes.Cast<TreeNode>(), node => node.Text == expected);
+
+        TreeView overview = GetPrivateField<TreeView>(form, "_overviewTree");
+        Assert.Contains(overview.Nodes.Cast<TreeNode>(), node => node.Text == expected);
+    }
+
     private static StageResult CreateDeferredExactStepStage()
     {
         StrategyBuilder builder = new(8, 3, 3);
@@ -1372,6 +1539,14 @@ public sealed class MainFormRenderingTests
         FieldInfo field = type.GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Instance)
             ?? throw new InvalidOperationException($"Missing private field {type.Name}.{fieldName}");
         object? value = field.GetValue(instance);
+        if (value is null)
+        {
+            if (default(T) is null)
+                return default!;
+
+            throw new InvalidOperationException($"{type.Name}.{fieldName} returned unexpected null value");
+        }
+
         return value is T typed
             ? typed
             : throw new InvalidOperationException($"{type.Name}.{fieldName} returned unexpected value");

@@ -21,10 +21,11 @@ static class PublicPipelineOrchestrator
 {
     internal static void RunExactPipelineDeferred(
         StrategyBuilder builder,
-        Action<StageResult> onStageCompleted,
-        Action<string>? onStageStart = null)
+        Action<StageResult>? onStageCompleted,
+        Action<string>? onStageStart = null,
+        Action<StageCompletion>? onStageBoundary = null)
     {
-        var callbacks = new PipelineCallbacks(onStageCompleted, onStageStart);
+        var callbacks = new PipelineCallbacks(onStageCompleted, onStageStart, onStageBoundary);
 
         callbacks.Start(StageNames.StepProof);
         ExactStepProofStageArtifacts stepArtifacts = builder.BuildExactStepProofStageArtifacts(materialize: false);
@@ -36,7 +37,8 @@ static class PublicPipelineOrchestrator
                 StageOutcome.Completed,
                 stepArtifacts.Solution,
                 stepArtifacts.Timings),
-            callbacks);
+            callbacks,
+            StageNames.FormatExactEdgeCompact(stepArtifacts.Solution.Score.WorstCaseSteps));
 
         string compactStageName = StageNames.FormatExactEdgeCompact(
             stepArtifacts.Solution.Score.WorstCaseSteps);
@@ -108,9 +110,10 @@ static class PublicPipelineOrchestrator
 
     internal static void RunGreedyPipelineDeferred(
         StrategyBuilder builder,
-        Action<StageResult> onStageCompleted,
+        Action<StageResult>? onStageCompleted,
         Action<string>? onStageStart = null,
-        bool preparationAlreadyApplied = false)
+        bool preparationAlreadyApplied = false,
+        Action<StageCompletion>? onStageBoundary = null)
     {
         if (!preparationAlreadyApplied)
             RunGreedyPreparation(builder, emitStages: false, materialize: false);
@@ -118,7 +121,8 @@ static class PublicPipelineOrchestrator
         builder.RunGreedyPipelineCore(
             onStageCompleted,
             onStageStart,
-            materializeStages: false);
+            materializeStages: false,
+            onStageBoundary);
     }
 
     public static GreedyPreparationResult RunGreedyPreparation(
@@ -126,14 +130,16 @@ static class PublicPipelineOrchestrator
         Action<StageResult>? onStageCompleted = null,
         Action<string>? onStageStart = null,
         bool emitStages = true,
-        bool materialize = true)
+        bool materialize = true,
+        Action<StageCompletion>? onStageBoundary = null)
     {
         var callbacks = new PipelineCallbacks(onStageCompleted, onStageStart);
         return PrepareGreedyUpperBound(
             builder,
             materialize,
             callbacks.Start,
-            emitStages ? callbacks.Complete : null);
+            emitStages ? stage => callbacks.Complete(stage) : null,
+            emitStages ? onStageBoundary : null);
     }
 
     // Shared greedy pre-stage orchestration used by public callers (CLI/UI): build a feasible upper
@@ -143,7 +149,8 @@ static class PublicPipelineOrchestrator
         StrategyBuilder builder,
         bool materialize = true,
         Action<string>? onStageStart = null,
-        Action<StageResult>? onStageCompleted = null)
+        Action<StageResult>? onStageCompleted = null,
+        Action<StageCompletion>? onStageBoundary = null)
     {
         onStageStart?.Invoke(StageNames.GreedyFeasible);
         GreedyFeasibleStageArtifacts feasibleArtifacts = builder.ExecuteGreedyFeasibleStageWithSolution(materialize);
@@ -159,7 +166,11 @@ static class PublicPipelineOrchestrator
             StageOutcome.Completed,
             baseFeasibleSolution,
             feasibleArtifacts.Timings);
+        string nextAfterFeasible = builder.GreedyTightenEnabledForTesting
+            ? StageNames.GreedyTighten
+            : PipelineStageProtocol.NextGreedyStageName(baseFeasibleSolution, baseFeasibleSolution.Score.WorstCaseSteps);
         onStageCompleted?.Invoke(greedyFeasibleStage);
+        onStageBoundary?.Invoke(new StageCompletion(greedyFeasibleStage, nextAfterFeasible));
 
         StrategyPlan? gtPlan = null;
         SolvedStrategy? gtSolution = null;
@@ -194,6 +205,10 @@ static class PublicPipelineOrchestrator
                 gtTimings,
                 gtSolution is null ? StagePresentationMode.SearchOnlySummary : StagePresentationMode.Auto);
             onStageCompleted?.Invoke(greedyTightenStage);
+            string nextAfterTighten = PipelineStageProtocol.NextGreedyStageName(
+                effectiveFeasibleSolution,
+                effectiveFeasibleSolution.Score.WorstCaseSteps);
+            onStageBoundary?.Invoke(new StageCompletion(greedyTightenStage, nextAfterTighten));
         }
 
         return new GreedyPreparationResult(
