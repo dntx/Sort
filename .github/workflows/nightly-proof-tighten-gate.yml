@@ -54,7 +54,7 @@ jobs:
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
-            const title = "[perf-gate] nightly performance gates failed";
+            const title = "[perf-gate] nightly strategy matrix smoke failing";
             const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
             const body = [
               "Nightly strategy matrix smoke run failed.",
@@ -64,35 +64,55 @@ jobs:
               `- Commit: ${context.sha}`,
               `- Trigger: ${context.eventName}`,
               "",
-              "Please inspect the matrix output from StrategyMatrixTests and compare with the baseline CSV."
+              "Please inspect the matrix output and baseline comparison."
             ].join("\n");
-
             const { data: issues } = await github.rest.issues.listForRepo({
               owner,
               repo,
               state: "open",
               per_page: 100,
-                labels: "perf-gate,nightly-performance-gates"
+              labels: "perf-gate,nightly-strategy-smoke"
             });
-
-            const existing = issues.find(i => i.title === title);
+            const existing = issues.find(issue => issue.title === title);
             if (existing) {
-              await github.rest.issues.createComment({
-                owner,
-                repo,
-                issue_number: existing.number,
-                body
-              });
+              await github.rest.issues.createComment({ owner, repo, issue_number: existing.number, body });
             } else {
               await github.rest.issues.create({
                 owner,
                 repo,
                 title,
                 body,
-                  labels: ["perf-gate", "nightly-performance-gates", "regression"]
+                labels: ["perf-gate", "nightly-strategy-smoke", "regression"]
               });
             }
-  
+
+      - name: Resolve failure episode
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const title = "[perf-gate] nightly strategy matrix smoke failing";
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner,
+              repo,
+              state: "open",
+              per_page: 100,
+              labels: "perf-gate,nightly-strategy-smoke"
+            });
+            const existing = issues.find(issue => issue.title === title);
+            if (existing) {
+              const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: existing.number,
+                body: `Nightly strategy matrix smoke recovered.\n\n- Workflow run: ${runUrl}\n- Commit: ${context.sha}`
+              });
+              await github.rest.issues.update({ owner, repo, issue_number: existing.number, state: "closed" });
+            }
+
   proof-tighten-gate:
     runs-on: windows-latest
     timeout-minutes: 20
@@ -122,7 +142,7 @@ jobs:
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
-            const title = "[perf-gate] nightly performance gates failed";
+            const title = "[perf-gate] nightly proof-tighten gate failing";
             const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
             const body = [
               "Nightly proof-tighten gate failed.",
@@ -132,31 +152,51 @@ jobs:
               `- Commit: ${context.sha}`,
               `- Trigger: ${context.eventName}`,
               "",
-              "Please inspect the proof-tighten gate output and compare with the current timeout baseline."
+              "Please inspect the proof-tighten gate output and current watchdog baseline."
             ].join("\n");
-
             const { data: issues } = await github.rest.issues.listForRepo({
               owner,
               repo,
               state: "open",
               per_page: 100,
-              labels: "perf-gate,nightly-performance-gates"
+              labels: "perf-gate,nightly-proof-tighten"
             });
-
-            const existing = issues.find(i => i.title === title);
+            const existing = issues.find(issue => issue.title === title);
             if (existing) {
-              await github.rest.issues.createComment({
-                owner,
-                repo,
-                issue_number: existing.number,
-                body
-              });
+              await github.rest.issues.createComment({ owner, repo, issue_number: existing.number, body });
             } else {
               await github.rest.issues.create({
                 owner,
                 repo,
                 title,
                 body,
-                labels: ["perf-gate", "nightly-performance-gates", "regression"]
+                labels: ["perf-gate", "nightly-proof-tighten", "regression"]
               });
+            }
+
+      - name: Resolve failure episode
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const title = "[perf-gate] nightly proof-tighten gate failing";
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner,
+              repo,
+              state: "open",
+              per_page: 100,
+              labels: "perf-gate,nightly-proof-tighten"
+            });
+            const existing = issues.find(issue => issue.title === title);
+            if (existing) {
+              const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: existing.number,
+                body: `Nightly proof-tighten gate recovered.\n\n- Workflow run: ${runUrl}\n- Commit: ${context.sha}`
+              });
+              await github.rest.issues.update({ owner, repo, issue_number: existing.number, state: "closed" });
             }

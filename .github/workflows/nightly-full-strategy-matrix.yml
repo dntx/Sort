@@ -21,7 +21,7 @@ jobs:
     env:
       RUN_STRATEGY_MATRIX: "1"
       STRATEGY_MATRIX_CASE_SET: "full"
-      STRATEGY_MATRIX_EXCLUDE_KEYS: "greedy-full:20,2,6"
+      STRATEGY_MATRIX_EXCLUDE_KEYS: "greedy-full:20,2,6;proof-tighten-first:20,2,6"
       STRATEGY_MATRIX_BASELINE_PATH: ".\\scripts\\strategy-matrix-baseline-full.csv"
       STRATEGY_MATRIX_TIMEOUT_SECONDS: "240"
       STRATEGY_MATRIX_WARMUP_RUNS: "1"
@@ -55,8 +55,7 @@ jobs:
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
-            const date = new Date().toISOString().slice(0, 10);
-            const title = `[perf-gate] nightly full strategy matrix failed (${date})`;
+            const title = "[perf-gate] nightly full strategy matrix failing";
             const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
             const body = [
               "Nightly full strategy matrix compare failed.",
@@ -66,7 +65,7 @@ jobs:
               `- Commit: ${context.sha}`,
               `- Trigger: ${context.eventName}`,
               `- Case set: full`,
-              `- Exclude keys: greedy-full:20,2,6`,
+              `- Exclude keys: greedy-full:20,2,6;proof-tighten-first:20,2,6`,
               `- Baseline: scripts/strategy-matrix-baseline-full.csv`,
               "",
               "Please inspect StrategyMatrixTests output for FAIL_TIME_REGRESSION / FAIL_STRUCTURE_CHANGED rows."
@@ -96,4 +95,26 @@ jobs:
                 body,
                 labels: ["perf-gate", "nightly-full-matrix", "regression"]
               });
+            }
+
+      - name: Resolve failure episode
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const title = "[perf-gate] nightly full strategy matrix failing";
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner, repo, state: "open", per_page: 100,
+              labels: "perf-gate,nightly-full-matrix"
+            });
+            const existing = issues.find(issue => issue.title === title);
+            if (existing) {
+              const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: existing.number,
+                body: `Nightly full strategy matrix recovered.\n\n- Workflow run: ${runUrl}\n- Commit: ${context.sha}`
+              });
+              await github.rest.issues.update({ owner, repo, issue_number: existing.number, state: "closed" });
             }

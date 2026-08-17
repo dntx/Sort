@@ -338,9 +338,10 @@ dotnet test .\tests\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter Pr
 - 触发：每天一次（`16:00 UTC`，即中国时区 `00:00`）
 - 行为：拆成两个夜间 gate
   - `StrategyMatrixTests` 的 smoke 矩阵，覆盖 `6,2,2`、`10,2,5`、`12,4,4` 的 exact / greedy / greedy-tighten / proof-tighten / greedy-full 代表行
-  - 单点 `ProofTightenPerfGateTests`，继续盯住历史敏感的 `20,2,6` 首探针
+  - `ProofTightenPerfGateTests`，专门盯住历史敏感的 `20,2,6` 首探针和 `20,5,5` attempt trace
   - proof-tighten 夜间门槛默认超时设为 `150s`（`PROOF_TIGHTEN_TIMEOUT_SECONDS`），用于吸收 hosted runner 抖动，避免在接近完成时的偶发压线误报
-- 报警：任一 job 失败时自动创建或更新带标签 `perf-gate,nightly-performance-gates` 的 issue，附上 run 链接与 commit
+- 报警：smoke 与 proof-tighten 分别维护独立的 failure episode issue。失败时创建或追加，成功时记录恢复并关闭；标签分别为 `nightly-strategy-smoke` 与 `nightly-proof-tighten`。
+- full matrix 与 nightly counter full audit 也使用同一 episode 生命周期：每个 gate 保持一个固定标题的 open issue，成功后记录恢复并关闭，下一次失败才开启新的 episode。
 - 本地 smoke：把 `STRATEGY_MATRIX_CASE_SET=smoke`，即可跳过最重的 `20,2,6` 行做快速验证；如果要看完整矩阵，可手动把 case set 切到 `full`
 
 这样可以把慢例 gate 从日间 PR 流程里解耦出来：白天保持 required checks 轻量，夜间用 smoke 矩阵加关键单点 probe 持续做回归巡检，full 矩阵保留给手动触发。
@@ -349,16 +350,16 @@ full nightly 报警（一步一步）:
 
 1. 先跑一次 full baseline seed（只需要第一次，之后按需重做）
   - 在 GitHub Actions 手动运行 `.github/workflows/manual-seed-full-strategy-baseline.yml`
-  - 默认参数可直接用：`case_set=full`、`exclude_keys=greedy-full:20,2,6`、`timeout_seconds=240`、`warmup_runs=0`、`measured_runs=1`
-  - 说明：通过 `exclude_keys`（分号分隔）排除慢例；默认仅排除 `greedy-full:20,2,6`，保留其余 full 行（包括 `20,2,6` 的 `greedy-feasible / greedy-tighten / proof-tighten-first`）
+  - 默认参数可直接用：`case_set=full`、`exclude_keys=greedy-full:20,2,6;proof-tighten-first:20,2,6`、`timeout_seconds=240`、`warmup_runs=0`、`measured_runs=1`
+  - 说明：通过 `exclude_keys`（分号分隔）排除慢例；默认排除 `greedy-full:20,2,6` 和已由专门 gate 覆盖的 `proof-tighten-first:20,2,6`，保留其余 `20,2,6` 行。
   - 该 workflow 会自动生成并提交 `scripts/strategy-matrix-baseline-full.csv`，并自动创建 PR
   - 合并该 PR 后，full nightly 才有可比较的基线
 
 2. 启用 full nightly compare + 报警
   - 工作流：`.github/workflows/nightly-full-strategy-matrix.yml`
   - 触发：每天 `18:00 UTC`（中国时区 `02:00`）+ 支持手动触发
-  - 行为：运行 `StrategyMatrixTests` 的 `full` case-set，并通过 `STRATEGY_MATRIX_EXCLUDE_KEYS` 排除慢例后与 `scripts/strategy-matrix-baseline-full.csv` 比较
-  - 报警：失败时自动创建/更新标签 `perf-gate,nightly-full-matrix` 的 issue（标题包含日期，便于按天追踪）
+  - 行为：运行 `StrategyMatrixTests` 的 `full` case-set，并通过 `STRATEGY_MATRIX_EXCLUDE_KEYS` 排除专门 gate 已覆盖的慢例后与 `scripts/strategy-matrix-baseline-full.csv` 比较
+  - 报警：失败时创建或追加固定的 full-matrix failure episode；成功时记录恢复并关闭该 issue。标签为 `perf-gate,nightly-full-matrix`。
 
 3. 后续维护（推荐）
   - 当算法有明显性能变化时，再手动跑一次 seed workflow，生成新的 baseline PR
