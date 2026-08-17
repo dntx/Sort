@@ -1095,8 +1095,8 @@ public sealed class MainFormRenderingTests
 
         InvokePrivateInstanceVoid(form, "BeginStagePause", stage);
 
-        Assert.Null(GetPrivateField<TaskCompletionSource<object?>?>(form, "_stagePauseCompletion"));
-        Assert.Null(GetPrivateField<string?>(form, "_pausedStageName"));
+        Assert.Null(GetPrivateFieldValue(form, "_stagePauseCompletion"));
+        Assert.Null(GetPrivateFieldValue(form, "_pausedStageName"));
     }
 
     [Fact]
@@ -1537,6 +1537,14 @@ public sealed class MainFormRenderingTests
         FieldInfo field = type.GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Instance)
             ?? throw new InvalidOperationException($"Missing private field {type.Name}.{fieldName}");
         object? value = field.GetValue(instance);
+        if (value is null)
+        {
+            if (default(T) is null)
+                return default!;
+
+            throw new InvalidOperationException($"{type.Name}.{fieldName} returned unexpected null value");
+        }
+
         return value is T typed
             ? typed
             : throw new InvalidOperationException($"{type.Name}.{fieldName} returned unexpected value");
