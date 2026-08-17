@@ -434,8 +434,19 @@ partial class MainForm : Form
             Height = 30,
             Margin = new Padding(0, 4, 8, 0),
         };
-        button.Click += (_, _) => RunStrategy();
+        button.Click += (_, _) => RunOrContinueStrategy();
         return button;
+    }
+
+    private void RunOrContinueStrategy()
+    {
+        if (_stagePausePresentationReady && _stagePauseCompletion is not null)
+        {
+            ContinuePausedStage();
+            return;
+        }
+
+        RunStrategy();
     }
 
     private Button CreateStopButton()
@@ -461,6 +472,7 @@ partial class MainForm : Form
             Height = 30,
             Margin = new Padding(0, 4, 8, 0),
             Enabled = false,
+            Visible = false,
         };
         button.Click += (_, _) => ContinuePausedStage();
         return button;
