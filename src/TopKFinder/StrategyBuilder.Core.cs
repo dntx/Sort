@@ -298,8 +298,9 @@ partial class StrategyBuilder
     internal StrategyPlan RunGreedyPipelineCore(
         Action<StageResult>? onStageCompleted = null,
         Action<string>? onStageStart = null,
-        bool materializeStages = true)
-        => GreedyPipeline.RunGreedyPipelineCore(onStageCompleted, onStageStart, materializeStages);
+        bool materializeStages = true,
+        Action<StageCompletion>? onStageBoundary = null)
+        => GreedyPipeline.RunGreedyPipelineCore(onStageCompleted, onStageStart, materializeStages, onStageBoundary);
 
     public StageResult ExecuteProofTightenStage(int budget)
         => GreedyPipeline.ExecuteProofTightenStage(budget);

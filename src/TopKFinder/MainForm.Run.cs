@@ -127,10 +127,10 @@ partial class MainForm
         _solverWorkStopped = false;
         _stagePauseCompletion = null;
         _pausedStageName = null;
+        _nextStageName = null;
         _stagePausePresentationReady = false;
         ResetPresentationInfrastructure();
         _pauseEachStageForRun = _pauseEachStageCheckBox.Checked;
-        _greedyTightenForRun = request.FeasibleMode && request.Builder.GreedyTightenEnabledForTesting;
         _currentStageName = request.FeasibleMode ? StageNames.GreedyFeasible : StageNames.StepProof;
         EnsureStageDisplayOrder(_currentStageName);
         _stageStartMs = 0;
@@ -154,10 +154,11 @@ partial class MainForm
         GreedyPreparationResult prep = await Task.Run(
             () => PublicPipelineOrchestrator.RunGreedyPreparation(
                 request.Builder,
-                onStageCompleted: MarshalGreedyPreparationStage,
+                onStageCompleted: null,
                 onStageStart: MarshalStageSearchStart,
                 emitStages: true,
-                materialize: false),
+                materialize: false,
+                onStageBoundary: MarshalGreedyPreparationStage),
             request.CancellationToken);
         // Unify callback timing across modes: flush posted UI callbacks before consuming
         // stage metadata in the mode transition code.
@@ -188,9 +189,10 @@ partial class MainForm
                 RecordRunTimeline("worker/proof-tighten-started", proofStartStageName);
                 PublicPipelineOrchestrator.RunGreedyPipelineDeferred(
                     request.Builder,
-                    MarshalProofTightenStage,
+                    onStageCompleted: null,
                     MarshalStageSearchStart,
-                    preparationAlreadyApplied: true);
+                    preparationAlreadyApplied: true,
+                    onStageBoundary: MarshalProofTightenStage);
                 return 0;
             },
             request.CancellationToken);
@@ -257,7 +259,11 @@ partial class MainForm
         // MaxStep-optimal, so EdgeCompact only trims edges among equally optimal groups.
         Interlocked.Exchange(ref _activePhase, 1);
         await Task.Run(
-            () => PublicPipelineOrchestrator.RunExactPipelineDeferred(request.Builder, MarshalExactStage, MarshalStageSearchStart),
+            () => PublicPipelineOrchestrator.RunExactPipelineDeferred(
+                request.Builder,
+                onStageCompleted: null,
+                MarshalStageSearchStart,
+                onStageBoundary: MarshalExactStage),
             request.CancellationToken);
         await FlushUiCallbacksAsync();
         _solverWorkStopped = true;
@@ -538,11 +544,11 @@ partial class MainForm
     // Synchronous marshaling shim: RunGreedyPipeline invokes this on the worker thread once per
     // stage. Control.Invoke hops to the UI thread AND blocks the worker until OnProofTightenStage
     // returns, so when the per-stage modal is enabled the search genuinely pauses until the user clicks OK.
-    private void MarshalProofTightenStage(StageResult stage)
-        => MarshalStageToUiThread(stage, OnProofTightenStage);
+    private void MarshalProofTightenStage(StageCompletion completion)
+        => MarshalStageCompletionToUiThread(completion, OnProofTightenStage);
 
-    private void MarshalExactStage(StageResult stage)
-        => MarshalStageToUiThread(stage, OnExactStage);
+    private void MarshalExactStage(StageCompletion completion)
+        => MarshalStageCompletionToUiThread(completion, OnExactStage);
 
     private void MarshalStageSearchStart(string stageName)
     {
@@ -572,8 +578,8 @@ partial class MainForm
         }
     }
 
-    private void MarshalGreedyPreparationStage(StageResult stage)
-        => MarshalStageToUiThread(stage, OnGreedyPreparationStage);
+    private void MarshalGreedyPreparationStage(StageCompletion completion)
+        => MarshalStageCompletionToUiThread(completion, OnGreedyPreparationStage);
 
     private void OnGreedyPreparationStage(StageResult stage)
     {
@@ -631,10 +637,14 @@ partial class MainForm
     }
 
     private void MarshalStageToUiThread(StageResult stage, Action<StageResult> onStage)
+        => MarshalStageCompletionToUiThread(new StageCompletion(stage, NextStageName: null), onStage);
+
+    private void MarshalStageCompletionToUiThread(StageCompletion completion, Action<StageResult> onStage)
     {
         if (!CanAcceptStageCallback())
             return;
 
+        StageResult stage = completion.Stage;
         int expectedGeneration = _presentationGeneration;
         TaskCompletionSource<object?>? pauseCompletion = null;
         void apply()
@@ -642,6 +652,7 @@ partial class MainForm
             if (expectedGeneration != _presentationGeneration)
                 return;
 
+            _nextStageName = completion.NextStageName;
             BeginStagePause(stage);
             onStage(stage);
             pauseCompletion = _stagePauseCompletion;
@@ -692,27 +703,12 @@ partial class MainForm
             || !string.Equals(_pausedStageName, stage.Name, StringComparison.Ordinal))
             return;
 
-        EnsureNextGreedyStageWaitingPlaceholder(stage);
+        if (_nextStageName is not null)
+            EnsureNextStageWaitingPlaceholder(_nextStageName);
         _stagePausePresentationReady = true;
         _runStopwatch?.Stop();
         SetRunUiState(RunUiState.StagePaused);
         _statusLabel.Text = FormatStagePauseSummary(stage, presentationReady: true);
-    }
-
-    private void EnsureNextGreedyStageWaitingPlaceholder(StageResult stage)
-    {
-        if (!_feasibleMode
-            || !stage.Name.StartsWith(StageNames.ProofTightenPrefix, StringComparison.Ordinal)
-            || _feasiblePlan is null)
-            return;
-
-        int incumbentMaxStep = _incumbentStage?.Solution?.Score.WorstCaseSteps
-            ?? _compactPlan?.MaxStep
-            ?? _feasiblePlan.MaxStep;
-        string nextStageName = stage.Outcome == StageOutcome.Tightened
-            ? NextProofTightenStageNameForPresentation(_feasiblePlan, incumbentMaxStep)
-            : StageNames.FormatGreedyEdgeCompact(incumbentMaxStep);
-        EnsureNextStageWaitingPlaceholder(nextStageName);
     }
 
     private void ContinuePausedStage()
@@ -904,20 +900,6 @@ partial class MainForm
             _greedyFeasibleStage?.Solution
                 ?? throw new InvalidOperationException("Greedy stage naming requires the initial solved strategy."),
             incumbentMaxStep);
-
-    private string NextProofTightenStageNameForPresentation(
-        StrategyPlan feasiblePlan,
-        int incumbentMaxStep)
-    {
-        if (_greedyFeasibleStage?.Solution is { } solution)
-            return PipelineStageProtocol.NextGreedyStageName(solution, incumbentMaxStep);
-
-        int lower = Math.Max(1, feasiblePlan.SearchStatistics.RootProvenLowerBound);
-        int nextBudget = incumbentMaxStep - 1;
-        return nextBudget >= lower
-            ? StageNames.FormatProofTighten(nextBudget)
-            : StageNames.FormatGreedyEdgeCompact(incumbentMaxStep);
-    }
 
     // Anytime greedy edge handler: invoked on the UI thread once per edge stage as the worker thread
     // produces it (each proof-tighten stage, then the final "greedy-edge-compact@S"

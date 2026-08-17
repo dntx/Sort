@@ -572,6 +572,9 @@ partial class MainForm
 
     private string PendingCompactStageName(StrategyPlan feasiblePlan, StrategyPlan? defaultPlan)
     {
+        if (_nextStageName is not null)
+            return _nextStageName;
+
         string displayedStepStageName = defaultPlan is null
             ? StageNames.GreedyFeasible
             : StageNames.StepProof;
@@ -580,12 +583,10 @@ partial class MainForm
             && !string.Equals(_currentStageName, "-", StringComparison.Ordinal))
             return _currentStageName;
 
-        if (defaultPlan is null && _greedyTightenForRun && _greedyTightenStage is null)
-            return StageNames.GreedyTighten;
-
         return defaultPlan is null
-            ? NextProofTightenStageNameForPresentation(
-                feasiblePlan,
+            ? PipelineStageProtocol.NextGreedyStageName(
+                _greedyFeasibleStage?.Solution?.Bounds.ProvenLowerBound
+                    ?? feasiblePlan.SearchStatistics.RootProvenLowerBound,
                 _incumbentStage?.Solution?.Score.WorstCaseSteps ?? feasiblePlan.MaxStep)
             : StageNames.FormatExactEdgeCompact(feasiblePlan.MaxStep);
     }

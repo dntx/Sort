@@ -185,9 +185,9 @@ partial class MainForm : Form
     private SearchStatistics? _completedFeasibleStats;
     private int _activePhase;
     private bool _pauseEachStageForRun;
-    private bool _greedyTightenForRun;
     private TaskCompletionSource<object?>? _stagePauseCompletion;
     private string? _pausedStageName;
+    private string? _nextStageName;
     private bool _stagePausePresentationReady;
     // Anytime greedy edge state (UI thread only): every edge stage as it arrives (baseline compact,
     // each tightening, plus a terminal no-solution stage). The current-stage name and the run-clock ms

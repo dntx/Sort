@@ -1026,12 +1026,12 @@ public sealed class MainFormRenderingTests
     }
 
     [Fact]
-    public void InitialTrees_PausedWithGreedyTightenEnabled_ShowGreedyTightenWaitingPlaceholder()
+    public void InitialTrees_PausedWithNextStageMetadata_ShowWaitingPlaceholder()
     {
         using var form = new MainForm();
         _ = form.Handle;
         SetPrivateField(form, "_pauseEachStageForRun", true);
-        SetPrivateField(form, "_greedyTightenForRun", true);
+        SetPrivateField(form, "_nextStageName", StageNames.GreedyTighten);
 
         StrategyPlan feasiblePlan = new StrategyBuilder(8, 3, 3).ExecuteStepProofStage();
         StageResult stage = new(
@@ -1053,12 +1053,12 @@ public sealed class MainFormRenderingTests
     }
 
     [Fact]
-    public void InitialTrees_PausedWithGreedyTightenDisabled_DoNotShowGreedyTightenPlaceholder()
+    public void InitialTrees_PausedWithoutGreedyTightenMetadata_DoNotShowGreedyTightenPlaceholder()
     {
         using var form = new MainForm();
         _ = form.Handle;
         SetPrivateField(form, "_pauseEachStageForRun", true);
-        SetPrivateField(form, "_greedyTightenForRun", false);
+        SetPrivateField(form, "_nextStageName", StageNames.FormatProofTighten(4));
 
         StrategyPlan feasiblePlan = new StrategyBuilder(8, 3, 3).ExecuteStepProofStage();
         StageResult stage = new(
@@ -1391,6 +1391,7 @@ public sealed class MainFormRenderingTests
         SetPrivateField(form, "_pauseEachStageForRun", true);
         SetPrivateField(form, "_feasiblePlan", feasiblePlan);
         SetPrivateField(form, "_incumbentStage", incumbent);
+        SetPrivateField(form, "_nextStageName", StageNames.FormatGreedyEdgeCompact(feasiblePlan.MaxStep));
         InvokePrivateInstanceVoid(form, "BeginStagePause", stage);
         InvokePrivateInstanceVoid(form, "OnProofTightenStage", stage);
 
