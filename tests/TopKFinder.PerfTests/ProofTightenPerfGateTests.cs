@@ -4,8 +4,7 @@ using Xunit;
 using Xunit.Abstractions;
 using Xunit.Sdk;
 
-// On-demand regression gate for the greedy proof-tighten stage on the historically sensitive
-// (20,2,6) shape. This does NOT run in the default suite.
+// Nightly regression gates for historically sensitive greedy proof-tighten shapes.
 //
 // Enable:
 //   $env:RUN_PROOF_TIGHTEN_GATE = "1"
@@ -31,17 +30,23 @@ public sealed class ProofTightenPerfGateTests
     }
 
     [Fact]
-    public void GreedyProofTighten_AttemptTrace_20_5_5()
+    public void GreedyProofTighten_20_5_5_CompletesWithinWatchdog()
     {
-        if (Environment.GetEnvironmentVariable("RUN_PROOF_TIGHTEN_20_5_5_TRACE") != "1")
-            return;
+        int timeoutSeconds = ReadPositiveIntEnv("PROOF_TIGHTEN_TIMEOUT_SECONDS", 200);
 
-        var builder = new StrategyBuilder(20, 5, 5);
-        _ = builder.ExecuteGreedyFeasibleStage();
+        (StageOutcome Outcome, StrategyBuilder.ProofTightenAttemptDiagnostics[] Attempts) result =
+            TestTimeoutHelper.RunWithTimeout(
+                "greedy proof-tighten probe (20,5,5)",
+                TimeSpan.FromSeconds(timeoutSeconds),
+                cancellationToken =>
+                {
+                    var builder = new StrategyBuilder(20, 5, 5, cancellationToken);
+                    _ = builder.ExecuteGreedyFeasibleStage();
+                    StageResult stage = builder.ExecuteProofTightenStage(budget: 6);
+                    return (stage.Outcome, builder.ProofTightenAttemptTrace.ToArray());
+                });
 
-        StageResult stage = builder.ExecuteProofTightenStage(budget: 6);
-
-        foreach (StrategyBuilder.ProofTightenAttemptDiagnostics attempt in builder.ProofTightenAttemptTrace)
+        foreach (StrategyBuilder.ProofTightenAttemptDiagnostics attempt in result.Attempts)
         {
             _output.WriteLine(
                 $"attempt={attempt.Attempt}, cap={attempt.CandidateCap}, " +
@@ -55,12 +60,12 @@ public sealed class ProofTightenPerfGateTests
                 $"reusedCandidateGeneration={attempt.ReusedCandidateGenerationEntries}");
         }
 
-        Assert.Equal(StageOutcome.ProvenInfeasible, stage.Outcome);
+        Assert.Equal(StageOutcome.ProvenInfeasible, result.Outcome);
         Assert.Contains(
-            builder.ProofTightenAttemptTrace.Skip(1),
+            result.Attempts.Skip(1),
             attempt => attempt.ReusedInfeasibleStates > 0);
         Assert.Contains(
-            builder.ProofTightenAttemptTrace,
+            result.Attempts,
             attempt => attempt.ReusedBudgetFitTransitions > 0);
     }
 

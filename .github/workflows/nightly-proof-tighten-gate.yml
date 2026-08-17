@@ -25,6 +25,7 @@ concurrency:
 jobs:
   strategy-matrix-smoke:
     runs-on: windows-latest
+    timeout-minutes: 30
     env:
       RUN_STRATEGY_MATRIX: "1"
       STRATEGY_MATRIX_CASE_SET: ${{ github.event_name == 'workflow_dispatch' && inputs.case_set || 'smoke' }}
@@ -94,6 +95,7 @@ jobs:
   
   proof-tighten-gate:
     runs-on: windows-latest
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
