@@ -248,9 +248,7 @@ partial class StrategyBuilder
             int configuredCap = _owner.CompactGreedyCandidateCap;
             int attemptCap = NormalizeGreedyCandidateCap(configuredCap);
             int attempt = 0;
-            _owner._proofTightenBudgetFitRetryCache = _owner.DisableProofTightenBudgetFitReuseForTesting
-                ? null
-                : new Dictionary<BudgetFitRetryCacheKey, BudgetFitRetryCacheEntry>();
+            _owner._proofTightenBudgetFitRetryCache = null;
             _owner._proofTightenCandidateGenerationRetryCache =
                 _owner.DisableProofTightenCandidateGenerationReuseForTesting
                     ? null
@@ -330,6 +328,14 @@ partial class StrategyBuilder
                                 StageOutcome.Incomplete,
                                 Solution: null,
                                 Plan: null);
+
+                        if (_owner._proofTightenBudgetFitRetryCache is null
+                            && !_owner.DisableProofTightenBudgetFitReuseForTesting)
+                        {
+                            // Enable transition-reuse cache only when a capped attempt proves a retry is needed.
+                            _owner._proofTightenBudgetFitRetryCache =
+                                new Dictionary<BudgetFitRetryCacheKey, BudgetFitRetryCacheEntry>();
+                        }
 
                         attemptCap = NextGreedyCandidateCap(attemptCap);
                         continue;
