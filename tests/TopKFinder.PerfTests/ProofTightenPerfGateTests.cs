@@ -6,8 +6,7 @@ using Xunit.Sdk;
 
 // Nightly regression gates for historically sensitive greedy proof-tighten shapes.
 //
-// Enable:
-//   $env:RUN_PROOF_TIGHTEN_GATE = "1"
+// Run:
 //   dotnet test tests\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter ProofTightenPerfGateTests
 //
 // Optional knobs:
@@ -32,7 +31,7 @@ public sealed class ProofTightenPerfGateTests
     [Fact]
     public void GreedyProofTighten_20_5_5_CompletesWithinWatchdog()
     {
-        int timeoutSeconds = ReadPositiveIntEnv("PROOF_TIGHTEN_TIMEOUT_SECONDS", 200);
+        int timeoutSeconds = ReadPositiveIntEnv("PROOF_TIGHTEN_20_5_5_TIMEOUT_SECONDS", 30);
 
         (StageOutcome Outcome, StrategyBuilder.ProofTightenAttemptDiagnostics[] Attempts) result =
             TestTimeoutHelper.RunWithTimeout(
@@ -72,9 +71,6 @@ public sealed class ProofTightenPerfGateTests
     [Fact]
     public void GreedyProofTighten_FirstProbe_20_2_6_CompletesWithinGate()
     {
-        if (Environment.GetEnvironmentVariable("RUN_PROOF_TIGHTEN_GATE") != "1")
-            return;
-
         int timeoutSeconds = ReadPositiveIntEnv("PROOF_TIGHTEN_TIMEOUT_SECONDS", 200);
         int outcomesCap = ReadNonNegativeIntEnv("PROOF_TIGHTEN_OUTCOMES_CAP", 0);
         int candidatesCap = ReadNonNegativeIntEnv("PROOF_TIGHTEN_CANDIDATES_CAP", 0);
