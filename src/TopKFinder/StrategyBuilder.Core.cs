@@ -321,18 +321,6 @@ partial class StrategyBuilder
     private CompactProbeArtifacts ProbeAndClassify(int budget)
         => GreedyPipeline.ProbeAndClassify(budget);
 
-    private static int NormalizeGreedyCandidateCap(int cap)
-        => cap <= 0 ? GreedyCandidateCapMinimum : cap;
-
-    private static int NextGreedyCandidateCap(int current)
-    {
-        if (current >= int.MaxValue)
-            return int.MaxValue;
-
-        long grown = (long)current * GreedyCandidateCapGrowthFactor;
-        return grown >= int.MaxValue ? int.MaxValue : (int)grown;
-    }
-
     // Runs a single compact pass at a fixed root ceiling, returning the materialized plan or null if the
     // ceiling is infeasible (root solve yields the unsolvable sentinel). Resets the per-budget compact
     // caches first. Progress snapshots flow normally so the bar/ETA track the current tightening probe.
@@ -418,6 +406,15 @@ partial class StrategyBuilder
         out bool wasTruncated)
         => GroupSelectionHelper.EnumerateDistinctGroups(
             this, state, candidates, groupSize, generationCap, out wasTruncated);
+
+    private IReadOnlyList<List<int>> EnumerateDistinctGroupsDelta(
+        ComparisonState state,
+        IReadOnlyList<int> candidates,
+        int groupSize,
+        int generationCap,
+        out bool wasTruncated)
+        => GroupSelectionHelper.EnumerateDistinctGroups(
+            this, state, candidates, groupSize, generationCap, out wasTruncated, deltaOnly: true);
 
     private IEnumerable<List<int>> EnumeratePrioritizedGroups(
         ComparisonState state,

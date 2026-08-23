@@ -85,7 +85,8 @@ partial class StrategyBuilder
                 key,
                 candidates,
                 groupSize,
-                branchBudget);
+                branchBudget,
+                CandidateEnumerationPolicy.Capped);
 
             foreach (var (group, transition) in fits.Fits)
             {
@@ -117,7 +118,8 @@ partial class StrategyBuilder
                 key,
                 candidates,
                 groupSize,
-                branchBudget);
+                branchBudget,
+                CandidateEnumerationPolicy.Progressive);
 
             bool allGroupsProvenInfeasible = true;
             foreach (var (group, transition) in collection.Fits)
@@ -286,31 +288,13 @@ partial class StrategyBuilder
             return rejected || !traversal.IsUseful ? null : children;
         }
 
-        private BudgetFitRetryCacheEntry EvaluateBudgetFitChildren(
+        private BudgetFitTransition EvaluateBudgetFitChildren(
             ComparisonState state,
             int remainingSlots,
             SearchStateKey key,
             IReadOnlyList<int> group,
             int branchBudget)
         {
-            BudgetFitRetryCacheKey? retryCacheKey = null;
-            if (_owner._proofTightenBudgetFitRetryCache is { } retryCache)
-            {
-                var groupItems = new int[group.Count];
-                for (int i = 0; i < group.Count; i++)
-                    groupItems[i] = group[i];
-                retryCacheKey = new BudgetFitRetryCacheKey(
-                    state.GetRawStructureKey(),
-                    remainingSlots,
-                    branchBudget,
-                    new IntSequenceKey(groupItems));
-                if (retryCache.TryGetValue(retryCacheKey.Value, out BudgetFitRetryCacheEntry? cached))
-                {
-                    _owner._proofTightenBudgetFitRetryHits++;
-                    return cached;
-                }
-            }
-
             bool rejected = false;
             var children = new List<(ComparisonState State, int RemainingSlots)>();
             OutcomeTraversalSummary traversal = _owner.VisitComparisonOutcomes(
@@ -335,11 +319,7 @@ partial class StrategyBuilder
             List<(ComparisonState State, int RemainingSlots)>? childrenResult = rejected || !traversal.IsUseful
                 ? null
                 : children;
-            var result = new BudgetFitRetryCacheEntry(childrenResult);
-            if (retryCacheKey is { } cacheKey)
-                _owner._proofTightenBudgetFitRetryCache![cacheKey] = result;
-
-            return result;
+            return new BudgetFitTransition(childrenResult);
         }
 
         private BudgetCandidateCollection CollectBudgetFeasibleCandidates(
@@ -348,13 +328,14 @@ partial class StrategyBuilder
             SearchStateKey key,
             IReadOnlyList<int> candidates,
             int groupSize,
-            int branchBudget)
+            int branchBudget,
+            CandidateEnumerationPolicy enumerationPolicy)
         {
-            var fits = new List<(List<int> Group, BudgetFitRetryCacheEntry Transition)>();
+            var fits = new List<(List<int> Group, BudgetFitTransition Transition)>();
 
             List<int> constructiveGroup = _owner.ChooseConstructiveGroup(state, remainingSlots);
             var seen = new HashSet<IntSequenceKey>();
-            BudgetFitRetryCacheEntry constructiveTransition = EvaluateBudgetFitChildren(
+            BudgetFitTransition constructiveTransition = EvaluateBudgetFitChildren(
                 state, remainingSlots, key, constructiveGroup, branchBudget);
             if (constructiveTransition.HasChildren)
             {
@@ -364,9 +345,18 @@ partial class StrategyBuilder
                 fits.Add((constructiveGroup, constructiveTransition));
             }
 
-            int candidateCap = _owner.GetCompactGreedyCandidateCap(candidates.Count, groupSize);
-            IReadOnlyList<List<int>> groups = _owner.EnumerateDistinctGroups(
-                state, candidates, groupSize, candidateCap, out bool wasTruncated);
+            int candidateCap = enumerationPolicy switch
+            {
+                CandidateEnumerationPolicy.Full => int.MaxValue,
+                CandidateEnumerationPolicy.Progressive =>
+                    _owner.GetCompactGreedyCandidateCap(candidates.Count, groupSize),
+                _ => _owner.GetCompactGreedyCandidateCap(candidates.Count, groupSize),
+            };
+            IReadOnlyList<List<int>> groups = enumerationPolicy == CandidateEnumerationPolicy.Progressive
+                ? _owner.EnumerateDistinctGroupsDelta(
+                    state, candidates, groupSize, candidateCap, out bool wasTruncated)
+                : _owner.EnumerateDistinctGroups(
+                    state, candidates, groupSize, candidateCap, out wasTruncated);
             foreach (var group in groups)
             {
                 if (!seen.Add(new IntSequenceKey(group.ToArray())))
@@ -375,7 +365,7 @@ partial class StrategyBuilder
                 _owner.ThrowIfCancellationRequested();
                 _owner._compactGroupsEnumerated++;
 
-                BudgetFitRetryCacheEntry transition = EvaluateBudgetFitChildren(
+                BudgetFitTransition transition = EvaluateBudgetFitChildren(
                     state, remainingSlots, key, group, branchBudget);
                 if (!transition.HasChildren)
                     continue;
@@ -428,17 +418,17 @@ partial class StrategyBuilder
         }
 
         private BudgetChildrenResult ResolveBudgetFitTransition(
-            BudgetFitRetryCacheEntry transition,
+            BudgetFitTransition transition,
             int branchBudget,
             out int realSteps)
         {
             realSteps = 0;
             for (int i = 0; i < transition.ChildCount; i++)
             {
-                BudgetFitRetryCacheEntry.ChildResult priorResult = transition.GetChildResult(i);
-                if (priorResult == BudgetFitRetryCacheEntry.ChildResult.ProvenInfeasible)
+                BudgetFitTransition.ChildResult priorResult = transition.GetChildResult(i);
+                if (priorResult == BudgetFitTransition.ChildResult.ProvenInfeasible)
                     return BudgetChildrenResult.ProvenInfeasible;
-                if (priorResult == BudgetFitRetryCacheEntry.ChildResult.Feasible)
+                if (priorResult == BudgetFitTransition.ChildResult.Feasible)
                 {
                     realSteps = Math.Max(realSteps, transition.GetChildRealSteps(i));
                     continue;
@@ -472,7 +462,7 @@ partial class StrategyBuilder
         }
 
         private static List<(ComparisonState State, int RemainingSlots)> CreateTransitionChildren(
-            BudgetFitRetryCacheEntry transition)
+            BudgetFitTransition transition)
         {
             var children = new List<(ComparisonState State, int RemainingSlots)>(transition.ChildCount);
             for (int i = 0; i < transition.ChildCount; i++)
@@ -484,8 +474,15 @@ partial class StrategyBuilder
             => _owner._compactProvenInfeasibleMemo.Contains((key, budget));
 
         private readonly record struct BudgetCandidateCollection(
-            List<(List<int> Group, BudgetFitRetryCacheEntry Transition)> Fits,
+            List<(List<int> Group, BudgetFitTransition Transition)> Fits,
             bool EnumerationComplete);
+
+        private enum CandidateEnumerationPolicy
+        {
+            Full,
+            Progressive,
+            Capped,
+        }
 
         private enum BudgetChildrenResult
         {
