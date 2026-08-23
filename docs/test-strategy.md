@@ -312,7 +312,7 @@ Lane 决策表（先选信号，再选车道）：
 | `DominanceReuseStatsTests.cs` | `RUN_DOMINANCE_STATS` | 统计 dominance floor 复用命中与覆盖率，定位下界复用退化 |
 | `GapTreeDumpTests.cs` | `RUN_GAP_DUMP` | 把 default 计划与 gap oracle 证明的边最优计划并排渲染，肉眼对比为何真最优边数更少 |
 | `OrderedBlockHonestyTests.cs` | `RUN_BLOCK_HONESTY` | 有序块置换检测器的诚实性 / 完整性扫描：确认 sibling 合并都由真实 parent-state automorphism 支撑 |
-| `ProofTightenPerfGateTests.cs` | `PROOF_TIGHTEN_TIMEOUT_SECONDS` 等 | 针对历史敏感形状 `20,2,6` 和 `20,5,5` 的 greedy proof-tighten watchdog；两条用例都会执行，可选叠加 `OutcomesConstructed / CandidateGroupsEnumerated / SearchedStates` 的确定性上限（机器无关，便于 ratchet） |
+| `ProofTightenPerfGateTests.cs` | `PROOF_TIGHTEN_20_2_6_TIMEOUT_SECONDS`、`PROOF_TIGHTEN_20_5_5_TIMEOUT_SECONDS` 等 | 针对历史敏感形状 `20,2,6` 和 `20,5,5` 的 greedy proof-tighten watchdog；两条用例都会执行，可选叠加 `OutcomesConstructed / CandidateGroupsEnumerated / SearchedStates` 的确定性上限（机器无关，便于 ratchet） |
 
 `ProofTightenPerfGateTests` 使用说明：
 
@@ -323,7 +323,8 @@ dotnet test .\tests\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter Pr
 ```
 
 - 可选环境变量：
-  - `PROOF_TIGHTEN_TIMEOUT_SECONDS`（默认 200）
+  - `PROOF_TIGHTEN_20_2_6_TIMEOUT_SECONDS`（默认 200）
+  - `PROOF_TIGHTEN_20_5_5_TIMEOUT_SECONDS`（默认 30）
   - `PROOF_TIGHTEN_OUTCOMES_CAP`（默认 0，0=关闭）
   - `PROOF_TIGHTEN_CANDIDATES_CAP`（默认 0，0=关闭）
   - `PROOF_TIGHTEN_SEARCHED_STATES_CAP`（默认 0，0=关闭）
@@ -338,7 +339,7 @@ dotnet test .\tests\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter Pr
 - 行为：拆成两个夜间 gate
   - `StrategyMatrixTests` 的 smoke 矩阵，覆盖 `6,2,2`、`10,2,5`、`12,4,4` 的 exact / greedy / greedy-tighten / proof-tighten / greedy-full 代表行
   - `ProofTightenPerfGateTests`，专门盯住历史敏感的 `20,2,6` 首探针和 `20,5,5` attempt trace
-  - proof-tighten 夜间门槛默认超时设为 `150s`（`PROOF_TIGHTEN_TIMEOUT_SECONDS`），用于吸收 hosted runner 抖动，避免在接近完成时的偶发压线误报
+  - proof-tighten 夜间门槛分别为 `20,2,6=150s`（`PROOF_TIGHTEN_20_2_6_TIMEOUT_SECONDS`）和 `20,5,5=30s`（`PROOF_TIGHTEN_20_5_5_TIMEOUT_SECONDS`），用于吸收 hosted runner 抖动，避免在接近完成时的偶发压线误报
 - 报警：smoke 与 proof-tighten 分别维护独立的 failure episode issue。失败时创建或追加，成功时记录恢复并关闭；标签分别为 `nightly-strategy-smoke` 与 `nightly-proof-tighten`。
 - full matrix 与 nightly counter full audit 也使用同一 episode 生命周期：每个 gate 保持一个固定标题的 open issue，成功后记录恢复并关闭，下一次失败才开启新的 episode。
 - 本地 smoke：把 `STRATEGY_MATRIX_CASE_SET=smoke`，即可跳过最重的 `20,2,6` 行做快速验证；如果要看完整矩阵，可手动把 case set 切到 `full`

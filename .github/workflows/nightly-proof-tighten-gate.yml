@@ -129,7 +129,8 @@ jobs:
       - name: Run proof-tighten gate test
         shell: pwsh
         env:
-          PROOF_TIGHTEN_TIMEOUT_SECONDS: "150"
+          PROOF_TIGHTEN_20_2_6_TIMEOUT_SECONDS: "150"
+          PROOF_TIGHTEN_20_5_5_TIMEOUT_SECONDS: "30"
         working-directory: ./tests/TopKFinder.PerfTests
         run: |
           dotnet test TopKFinder.PerfTests.csproj -c Release --filter "ProofTightenPerfGateTests"
