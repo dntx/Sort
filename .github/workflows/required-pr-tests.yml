@@ -49,8 +49,7 @@ jobs:
           function Invoke-TestWithRemainingBudget {
             param(
               [Parameter(Mandatory = $true)][string]$ProjectPath,
-              [Parameter(Mandatory = $true)][string]$WorkingDirectory,
-              [string[]]$AdditionalArguments = @()
+              [Parameter(Mandatory = $true)][string]$WorkingDirectory
             )
 
             $remainingSeconds = [int][Math]::Floor(($deadline - (Get-Date)).TotalSeconds)
@@ -59,8 +58,7 @@ jobs:
             }
 
             Write-Host "Running $ProjectPath with $remainingSeconds seconds remaining."
-            $testArguments = @('test', $ProjectPath, '--configuration', 'Release', '--nologo') + $AdditionalArguments
-            $process = Start-Process -FilePath 'dotnet' -ArgumentList $testArguments -WorkingDirectory $WorkingDirectory -NoNewWindow -PassThru
+            $process = Start-Process -FilePath 'dotnet' -ArgumentList @('test', $ProjectPath, '--configuration', 'Release', '--nologo') -WorkingDirectory $WorkingDirectory -NoNewWindow -PassThru
 
             if (-not $process.WaitForExit($remainingSeconds * 1000)) {
               try {
@@ -79,7 +77,4 @@ jobs:
           }
 
           Invoke-TestWithRemainingBudget -ProjectPath 'TopKFinder.Tests.csproj' -WorkingDirectory './tests/TopKFinder.Tests'
-          Invoke-TestWithRemainingBudget `
-            -ProjectPath 'TopKFinder.PerfTests.csproj' `
-            -WorkingDirectory './tests/TopKFinder.PerfTests' `
-            -AdditionalArguments @('--filter', 'FullyQualifiedName!~ProofTightenPerfGateTests')
+          Invoke-TestWithRemainingBudget -ProjectPath 'TopKFinder.PerfTests.csproj' -WorkingDirectory './tests/TopKFinder.PerfTests'

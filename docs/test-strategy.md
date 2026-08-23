@@ -312,13 +312,14 @@ Lane 决策表（先选信号，再选车道）：
 | `DominanceReuseStatsTests.cs` | `RUN_DOMINANCE_STATS` | 统计 dominance floor 复用命中与覆盖率，定位下界复用退化 |
 | `GapTreeDumpTests.cs` | `RUN_GAP_DUMP` | 把 default 计划与 gap oracle 证明的边最优计划并排渲染，肉眼对比为何真最优边数更少 |
 | `OrderedBlockHonestyTests.cs` | `RUN_BLOCK_HONESTY` | 有序块置换检测器的诚实性 / 完整性扫描：确认 sibling 合并都由真实 parent-state automorphism 支撑 |
-| `ProofTightenPerfGateTests.cs` | `PROOF_TIGHTEN_20_2_6_TIMEOUT_SECONDS`、`PROOF_TIGHTEN_20_5_5_TIMEOUT_SECONDS` 等 | 针对历史敏感形状 `20,2,6` 和 `20,5,5` 的 greedy proof-tighten watchdog；两条用例都会执行，可选叠加 `OutcomesConstructed / CandidateGroupsEnumerated / SearchedStates` 的确定性上限（机器无关，便于 ratchet） |
+| `ProofTightenPerfGateTests.cs` | `RUN_PROOF_TIGHTEN_GATE`、`PROOF_TIGHTEN_20_2_6_TIMEOUT_SECONDS`、`PROOF_TIGHTEN_20_5_5_TIMEOUT_SECONDS` 等 | 针对历史敏感形状 `20,2,6` 和 `20,5,5` 的 greedy proof-tighten watchdog；设置 `RUN_PROOF_TIGHTEN_GATE=1` 时两条用例都会执行，可选叠加 `OutcomesConstructed / CandidateGroupsEnumerated / SearchedStates` 的确定性上限（机器无关，便于 ratchet） |
 
 `ProofTightenPerfGateTests` 使用说明：
 
 - 本地运行：
 
 ```powershell
+$env:RUN_PROOF_TIGHTEN_GATE = "1"
 dotnet test .\tests\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter ProofTightenPerfGateTests
 ```
 
