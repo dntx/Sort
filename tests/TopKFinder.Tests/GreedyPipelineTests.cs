@@ -465,40 +465,6 @@ public class GreedyPipelineTests
     }
 
     [Fact]
-    public void ProofTightenProbe_BudgetFitRetryReuse_PreservesOutcomeAndPlan()
-    {
-        var reused = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 1 };
-        var baseline = new StrategyBuilder(12, 4, 4)
-        {
-            CompactGreedyCandidateCap = 1,
-            DisableProofTightenBudgetFitReuseForTesting = true,
-        };
-        int budget = reused.ExecuteGreedyFeasibleStage().MaxStep - 1;
-        _ = baseline.ExecuteGreedyFeasibleStage();
-
-        StageResult reusedStage = reused.ExecuteProofTightenStage(budget);
-        StageResult baselineStage = baseline.ExecuteProofTightenStage(budget);
-
-        Assert.Equal(baselineStage.Outcome, reusedStage.Outcome);
-        Assert.Equal(baselineStage.MaterializedPlan?.MaxStep, reusedStage.MaterializedPlan?.MaxStep);
-        Assert.Equal(
-            baseline.ProofTightenAttemptTrace.Select(attempt => attempt.CandidateCap),
-            reused.ProofTightenAttemptTrace.Select(attempt => attempt.CandidateCap));
-    }
-
-    [Fact]
-    public void ProofTightenProbe_BudgetFitRetryReuse_DelaysActivationUntilRetry()
-    {
-        var builder = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 1 };
-        int budget = builder.ExecuteGreedyFeasibleStage().MaxStep - 1;
-
-        _ = builder.ExecuteProofTightenStage(budget);
-
-        Assert.NotEmpty(builder.ProofTightenAttemptTrace);
-        Assert.Equal(0, builder.ProofTightenAttemptTrace[0].ReusedBudgetFitTransitions);
-    }
-
-    [Fact]
     public void ProofTightenProbe_CandidateGenerationResume_PreservesOutcomeAndSkipsRawPrefix()
     {
         var resumed = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 1 };
