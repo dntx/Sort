@@ -129,6 +129,7 @@ jobs:
       - name: Run proof-tighten gate test
         shell: pwsh
         env:
+          RUN_PROOF_TIGHTEN_GATE: "1"
           PROOF_TIGHTEN_20_2_6_TIMEOUT_SECONDS: "160"
           PROOF_TIGHTEN_20_5_5_TIMEOUT_SECONDS: "40"
         working-directory: ./tests/TopKFinder.PerfTests
