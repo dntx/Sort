@@ -293,24 +293,6 @@ partial class StrategyBuilder
             IReadOnlyList<int> group,
             int branchBudget)
         {
-            BudgetFitRetryCacheKey? retryCacheKey = null;
-            if (_owner._proofTightenBudgetFitRetryCache is { } retryCache)
-            {
-                var groupItems = new int[group.Count];
-                for (int i = 0; i < group.Count; i++)
-                    groupItems[i] = group[i];
-                retryCacheKey = new BudgetFitRetryCacheKey(
-                    state.GetRawStructureKey(),
-                    remainingSlots,
-                    branchBudget,
-                    new IntSequenceKey(groupItems));
-                if (retryCache.TryGetValue(retryCacheKey.Value, out BudgetFitRetryCacheEntry? cached))
-                {
-                    _owner._proofTightenBudgetFitRetryHits++;
-                    return cached;
-                }
-            }
-
             bool rejected = false;
             var children = new List<(ComparisonState State, int RemainingSlots)>();
             OutcomeTraversalSummary traversal = _owner.VisitComparisonOutcomes(
@@ -335,11 +317,7 @@ partial class StrategyBuilder
             List<(ComparisonState State, int RemainingSlots)>? childrenResult = rejected || !traversal.IsUseful
                 ? null
                 : children;
-            var result = new BudgetFitRetryCacheEntry(childrenResult);
-            if (retryCacheKey is { } cacheKey)
-                _owner._proofTightenBudgetFitRetryCache![cacheKey] = result;
-
-            return result;
+            return new BudgetFitRetryCacheEntry(childrenResult);
         }
 
         private BudgetCandidateCollection CollectBudgetFeasibleCandidates(

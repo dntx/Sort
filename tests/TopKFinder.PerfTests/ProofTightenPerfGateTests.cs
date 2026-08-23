@@ -60,7 +60,6 @@ public sealed class ProofTightenPerfGateTests
                 $"outcomes={attempt.OutcomesConstructed}, rawCandidates={attempt.CandidateGroupsEnumerated}, " +
                 $"reusedFeasible={attempt.ReusedFeasibleStates}, " +
                 $"reusedInfeasible={attempt.ReusedInfeasibleStates}, " +
-                $"reusedTransitions={attempt.ReusedBudgetFitTransitions}, " +
                 $"reusedCandidateGeneration={attempt.ReusedCandidateGenerationEntries}");
         }
 
@@ -68,9 +67,6 @@ public sealed class ProofTightenPerfGateTests
         Assert.Contains(
             result.Attempts.Skip(1),
             attempt => attempt.ReusedInfeasibleStates > 0);
-        Assert.Contains(
-            result.Attempts,
-            attempt => attempt.ReusedBudgetFitTransitions > 0);
     }
 
     [Fact]

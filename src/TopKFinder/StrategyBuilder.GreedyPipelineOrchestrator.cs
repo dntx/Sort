@@ -10,20 +10,11 @@ partial class StrategyBuilder
     internal IReadOnlyList<ProofTightenAttemptDiagnostics> ProofTightenAttemptTrace => _proofTightenAttemptTrace;
     internal bool DisableProofTightenFeasibleReuseForTesting { get; set; }
     internal bool DisableProofTightenInfeasibleReuseForTesting { get; set; }
-    internal bool DisableProofTightenBudgetFitReuseForTesting { get; set; }
     internal bool DisableProofTightenCandidateGenerationReuseForTesting { get; set; }
 
-    private Dictionary<BudgetFitRetryCacheKey, BudgetFitRetryCacheEntry>? _proofTightenBudgetFitRetryCache;
     private Dictionary<GroupSelectionHelper.CandidateGenerationRetryCacheKey,
         GroupSelectionHelper.CandidateGenerationRetryCacheEntry>? _proofTightenCandidateGenerationRetryCache;
-    private int _proofTightenBudgetFitRetryHits;
     private int _proofTightenCandidateGenerationRetryHits;
-
-    private readonly record struct BudgetFitRetryCacheKey(
-        RawStructureKey State,
-        int RemainingSlots,
-        int BranchBudget,
-        IntSequenceKey Group);
 
     private sealed class BudgetFitRetryCacheEntry
     {
@@ -248,7 +239,6 @@ partial class StrategyBuilder
             int configuredCap = _owner.CompactGreedyCandidateCap;
             int attemptCap = NormalizeGreedyCandidateCap(configuredCap);
             int attempt = 0;
-            _owner._proofTightenBudgetFitRetryCache = null;
             _owner._proofTightenCandidateGenerationRetryCache =
                 _owner.DisableProofTightenCandidateGenerationReuseForTesting
                     ? null
@@ -269,7 +259,6 @@ partial class StrategyBuilder
                     _owner.CompactGreedyCandidateCap = attemptCap;
 
                     attempt++;
-                    int budgetFitRetryHitsBefore = _owner._proofTightenBudgetFitRetryHits;
                     int candidateGenerationRetryHitsBefore = _owner._proofTightenCandidateGenerationRetryHits;
                     var attemptStopwatch = Stopwatch.StartNew();
                     CompactStageArtifacts? candidate = ProbeFeasibleCompactCore(
@@ -299,7 +288,6 @@ partial class StrategyBuilder
                         _owner._candidateGroupsEnumerated,
                         retryCache?.RestoredEntryCount ?? 0,
                         retryCache?.RestoredProofCount ?? 0,
-                        _owner._proofTightenBudgetFitRetryHits - budgetFitRetryHitsBefore,
                         _owner._proofTightenCandidateGenerationRetryHits - candidateGenerationRetryHitsBefore);
                     _owner._proofTightenAttemptTrace.Add(diagnostics);
                     string logLine =
@@ -310,7 +298,6 @@ partial class StrategyBuilder
                         $"outcomes={_owner._outcomesConstructed}, raw-candidates={_owner._candidateGroupsEnumerated}, " +
                         $"reused-feasible={retryCache?.RestoredEntryCount ?? 0}, " +
                         $"reused-infeasible={retryCache?.RestoredProofCount ?? 0}, " +
-                        $"reused-transitions={_owner._proofTightenBudgetFitRetryHits - budgetFitRetryHitsBefore}, " +
                         $"reused-candidate-generation={_owner._proofTightenCandidateGenerationRetryHits - candidateGenerationRetryHitsBefore}";
                     Debug.WriteLine(logLine);
                     if (Console.IsErrorRedirected)
@@ -328,14 +315,6 @@ partial class StrategyBuilder
                                 StageOutcome.Incomplete,
                                 Solution: null,
                                 Plan: null);
-
-                        if (_owner._proofTightenBudgetFitRetryCache is null
-                            && !_owner.DisableProofTightenBudgetFitReuseForTesting)
-                        {
-                            // Enable transition-reuse cache only when a capped attempt proves a retry is needed.
-                            _owner._proofTightenBudgetFitRetryCache =
-                                new Dictionary<BudgetFitRetryCacheKey, BudgetFitRetryCacheEntry>();
-                        }
 
                         attemptCap = NextGreedyCandidateCap(attemptCap);
                         continue;
@@ -361,9 +340,7 @@ partial class StrategyBuilder
             finally
             {
                 _owner.CompactGreedyCandidateCap = configuredCap;
-                _owner._proofTightenBudgetFitRetryCache = null;
                 _owner._proofTightenCandidateGenerationRetryCache = null;
-                _owner._proofTightenBudgetFitRetryHits = 0;
                 _owner._proofTightenCandidateGenerationRetryHits = 0;
             }
         }
@@ -558,6 +535,5 @@ partial class StrategyBuilder
         int CandidateGroupsEnumerated,
         int ReusedFeasibleStates,
         int ReusedInfeasibleStates,
-        int ReusedBudgetFitTransitions,
         int ReusedCandidateGenerationEntries);
 }
