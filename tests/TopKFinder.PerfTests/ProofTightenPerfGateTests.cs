@@ -6,12 +6,12 @@ using Xunit.Sdk;
 
 // Nightly regression gates for historically sensitive greedy proof-tighten shapes.
 //
-// Enable:
-//   $env:RUN_PROOF_TIGHTEN_GATE = "1"
+// Run:
 //   dotnet test tests\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter ProofTightenPerfGateTests
 //
 // Optional knobs:
-//   PROOF_TIGHTEN_TIMEOUT_SECONDS       (default 200)
+//   PROOF_TIGHTEN_20_2_6_TIMEOUT_SECONDS (default 160)
+//   PROOF_TIGHTEN_20_5_5_TIMEOUT_SECONDS (default 40)
 //   PROOF_TIGHTEN_OUTCOMES_CAP          (default 0 = disabled)
 //   PROOF_TIGHTEN_CANDIDATES_CAP        (default 0 = disabled)
 //   PROOF_TIGHTEN_SEARCHED_STATES_CAP   (default 0 = disabled)
@@ -32,7 +32,7 @@ public sealed class ProofTightenPerfGateTests
     [Fact]
     public void GreedyProofTighten_20_5_5_CompletesWithinWatchdog()
     {
-        int timeoutSeconds = ReadPositiveIntEnv("PROOF_TIGHTEN_TIMEOUT_SECONDS", 200);
+        int timeoutSeconds = ReadPositiveIntEnv("PROOF_TIGHTEN_20_5_5_TIMEOUT_SECONDS", 40);
 
         (StageOutcome Outcome, StrategyBuilder.ProofTightenAttemptDiagnostics[] Attempts) result =
             TestTimeoutHelper.RunWithTimeout(
@@ -72,10 +72,7 @@ public sealed class ProofTightenPerfGateTests
     [Fact]
     public void GreedyProofTighten_FirstProbe_20_2_6_CompletesWithinGate()
     {
-        if (Environment.GetEnvironmentVariable("RUN_PROOF_TIGHTEN_GATE") != "1")
-            return;
-
-        int timeoutSeconds = ReadPositiveIntEnv("PROOF_TIGHTEN_TIMEOUT_SECONDS", 200);
+        int timeoutSeconds = ReadPositiveIntEnv("PROOF_TIGHTEN_20_2_6_TIMEOUT_SECONDS", 160);
         int outcomesCap = ReadNonNegativeIntEnv("PROOF_TIGHTEN_OUTCOMES_CAP", 0);
         int candidatesCap = ReadNonNegativeIntEnv("PROOF_TIGHTEN_CANDIDATES_CAP", 0);
         int searchedCap = ReadNonNegativeIntEnv("PROOF_TIGHTEN_SEARCHED_STATES_CAP", 0);
@@ -147,7 +144,7 @@ public sealed class ProofTightenPerfGateTests
                     $"lastRootProvenLowerBound={lastRootProvenLowerBound}. " +
                     $"lastElapsedMs={lastElapsedMilliseconds}. " +
                     $"lastEstimatedProgress01={lastEstimatedProgress01:F4}. " +
-                "Set PROOF_TIGHTEN_TIMEOUT_SECONDS higher for baseline capture, " +
+                "Set PROOF_TIGHTEN_20_2_6_TIMEOUT_SECONDS higher for baseline capture, " +
                 "or keep this timeout to enforce the current gate.");
         }
 

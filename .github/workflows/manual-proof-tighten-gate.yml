@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       timeout_seconds:
-        description: Timeout for the proof-tighten gate test case
+        description: Timeout for both proof-tighten gate cases
         type: number
         default: 200
       outcomes_cap:
@@ -39,8 +39,8 @@ jobs:
       - name: Run proof-tighten gate test
         shell: pwsh
         env:
-          RUN_PROOF_TIGHTEN_GATE: "1"
-          PROOF_TIGHTEN_TIMEOUT_SECONDS: ${{ inputs.timeout_seconds }}
+          PROOF_TIGHTEN_20_2_6_TIMEOUT_SECONDS: ${{ inputs.timeout_seconds }}
+          PROOF_TIGHTEN_20_5_5_TIMEOUT_SECONDS: ${{ inputs.timeout_seconds }}
           PROOF_TIGHTEN_OUTCOMES_CAP: ${{ inputs.outcomes_cap }}
           PROOF_TIGHTEN_CANDIDATES_CAP: ${{ inputs.candidates_cap }}
           PROOF_TIGHTEN_SEARCHED_STATES_CAP: ${{ inputs.searched_states_cap }}
