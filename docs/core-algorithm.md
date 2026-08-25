@@ -232,6 +232,32 @@ compact 是二级优化：
 
 这条流程的核心价值是「先给可行解，再逐步给证明」。详细阶段事件、UI 呈现与工作流约定不在本文展开。
 
+### 4.6 proof-tighten 的候选枚举策略
+
+compact 求解器对每个状态的候选比较组使用 `CandidateEnumerationPolicy` 控制枚举范围：
+
+| 策略 | 候选范围 | 当前用途 |
+| --- | --- | --- |
+| `Progressive` | 使用有限 cap；若本轮因 cap 截断而无法判定，则扩大 cap 后在同一预算重试 | `proof-tighten` 默认策略 |
+| `Capped` | 使用有限 cap；到达 cap 后结束本轮，不自动扩大 | `greedy-edge-compact` |
+| `Full` | 使用 `int.MaxValue`，枚举当前状态的全部候选代表 | 内部完整枚举策略，当前未作为用户选项暴露 |
+
+`Progressive` 的 cap 序列通常为 `128 -> 512 -> 2048 -> ...`。每一轮都必须区分：
+
+- **完整且无解**：所有候选都已枚举，可以报告 `ProvenInfeasible`；
+- **被 cap 截断**：仍有候选未尝试，只能报告 `Incomplete`，不能据此证明预算不可行；
+- **找到可行解**：立即返回当前预算内的策略，不再枚举剩余候选。
+
+候选生成器会在 retry 之间保留原始代表的生成进度，并在每次扩容后重新提供当前累计的候选代表集合。
+这是一种枚举 continuation，目的是避免从原始组合的开头重新生成；它不改变候选集合的正确性，也不改变
+状态求解的 minimax 语义。当前实现仍可能对已经看到的候选再次执行部分 child/outcome 评估，因此 progressive
+并不保证在无解证明场景中优于一次性 `Full`。无解场景必须最终覆盖所有候选，progressive 额外承担多轮调度和
+重复评估成本；它的主要收益场景是较小 cap 就能找到可行解并提前返回。
+
+因此，`Full` 与 `Progressive` 的区别是**候选枚举调度**，不是 BFS/DFS 的区别，也不是是否使用状态 memo、
+lower bound 或对称性约减的区别。设置 `CompactGreedyCandidateCap = int.MaxValue` 会使 cap 不再截断，
+实际效果接近一次完整候选枚举，但仍保留上述状态归一化、剪枝、memo 和对称性约减。
+
 ---
 
 ## 5. 对称性约减：McKay 风格规范形
