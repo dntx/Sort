@@ -68,6 +68,9 @@ partial class MainForm
         ResetRunCancellationInfrastructure();
 
         bool feasibleMode = _modeComboBox.SelectedIndex == 1;
+        ProofTightenMode proofTightenMode = _proofTightenModeComboBox.SelectedIndex == 1
+            ? ProofTightenMode.Full
+            : ProofTightenMode.Progressive;
         CancellationToken cancellationToken = _runCancellationSource!.Token;
         IProgress<SearchProgressSnapshot> progress = new Progress<SearchProgressSnapshot>(UpdateSearchProgress);
 
@@ -81,6 +84,7 @@ partial class MainForm
             snapshot => progress.Report(snapshot),
             reportCombinedRunProgress: true);
         builder.GreedyTightenEnabledForTesting = _enableGtCheckBox.Checked;
+        builder.ProofTightenSearchMode = proofTightenMode;
 
         request = new RunRequest(n, m, k, feasibleMode, builder, cancellationToken);
         return true;

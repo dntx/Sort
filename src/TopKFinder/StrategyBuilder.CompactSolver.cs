@@ -119,7 +119,9 @@ partial class StrategyBuilder
                 candidates,
                 groupSize,
                 branchBudget,
-                CandidateEnumerationPolicy.Progressive);
+                _owner.ProofTightenSearchMode == ProofTightenMode.Full
+                    ? CandidateEnumerationPolicy.Full
+                    : CandidateEnumerationPolicy.Progressive);
 
             bool allGroupsProvenInfeasible = true;
             foreach (var (group, transition) in collection.Fits)

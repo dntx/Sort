@@ -33,6 +33,7 @@ class Program
         "  --mode <mode>   Search mode. exact (proven) = exact + compact (proven optimal).\n" +
         "                  greedy (fast) = feasible bound, then min-step tightening, then one min-edge pass (interruptible with Ctrl+C).\n" +
         "  --greedy-tighten Enable the optional GreedyTighten pre-step in greedy mode.\n" +
+        "  --proof-tighten-mode <mode>  proof-tighten candidate search: progressive (default) or full.\n" +
         "  --stage <n>     Stop after stage n (1-based).\n" +
         "                  exact: 1=step-proof, 2=exact-edge-compact@S.\n" +
         "                  greedy: 1=greedy-feasible, 2+=continue along proof-tighten progression.\n" +
@@ -62,7 +63,7 @@ class Program
                 return;
             }
 
-            if (!TryParseCliArgs(args, out string? nText, out string? mText, out string? kText, out Mode mode, out bool enableGreedyTighten, out int? stageLimit, out string? argError))
+            if (!TryParseCliArgs(args, out string? nText, out string? mText, out string? kText, out Mode mode, out bool enableGreedyTighten, out ProofTightenMode proofTightenMode, out int? stageLimit, out string? argError))
             {
                 Console.WriteLine(argError);
                 Console.WriteLine(UsageText);
@@ -75,7 +76,7 @@ class Program
                 return;
             }
 
-            RunHeadless(nFromArgs, mFromArgs, kFromArgs, mode, enableGreedyTighten, stageLimit);
+            RunHeadless(nFromArgs, mFromArgs, kFromArgs, mode, enableGreedyTighten, proofTightenMode, stageLimit);
             return;
         }
 
@@ -101,7 +102,7 @@ class Program
             return;
         }
 
-        RunHeadless(n, m, k, Mode.Exact, enableGreedyTighten: false, stageLimit: null);
+        RunHeadless(n, m, k, Mode.Exact, enableGreedyTighten: false, ProofTightenMode.Progressive, stageLimit: null);
     }
 
     public static bool IsHelpRequested(string[] args)
@@ -116,6 +117,7 @@ class Program
         out string? kText,
         out Mode mode,
         out bool enableGreedyTighten,
+        out ProofTightenMode proofTightenMode,
         out int? stageLimit,
         out string? error)
     {
@@ -124,6 +126,7 @@ class Program
         kText = null;
         mode = Mode.Exact;
         enableGreedyTighten = false;
+        proofTightenMode = ProofTightenMode.Progressive;
         stageLimit = null;
         error = null;
 
@@ -171,6 +174,25 @@ class Program
             {
                 enableGreedyTighten = true;
             }
+            else if (arg == "--proof-tighten-mode")
+            {
+                if (i + 1 >= args.Length)
+                {
+                    error = "Error: --proof-tighten-mode requires a value (progressive or full)";
+                    return false;
+                }
+
+                string value = args[++i];
+                if (string.Equals(value, "progressive", StringComparison.OrdinalIgnoreCase))
+                    proofTightenMode = ProofTightenMode.Progressive;
+                else if (string.Equals(value, "full", StringComparison.OrdinalIgnoreCase))
+                    proofTightenMode = ProofTightenMode.Full;
+                else
+                {
+                    error = $"Error: unknown proof-tighten mode '{value}' (expected progressive or full)";
+                    return false;
+                }
+            }
             else if (arg.StartsWith("-", StringComparison.Ordinal))
             {
                 error = $"Error: unknown option '{arg}'";
@@ -194,7 +216,29 @@ class Program
         return true;
     }
 
-    private static void RunHeadless(int n, int m, int k, Mode mode, bool enableGreedyTighten, int? stageLimit)
+    public static bool TryParseCliArgs(
+        string[] args,
+        out string? nText,
+        out string? mText,
+        out string? kText,
+        out Mode mode,
+        out bool enableGreedyTighten,
+        out int? stageLimit,
+        out string? error)
+    {
+        return TryParseCliArgs(
+            args,
+            out nText,
+            out mText,
+            out kText,
+            out mode,
+            out enableGreedyTighten,
+            out _,
+            out stageLimit,
+            out error);
+    }
+
+    private static void RunHeadless(int n, int m, int k, Mode mode, bool enableGreedyTighten, ProofTightenMode proofTightenMode, int? stageLimit)
     {
         int canonicalK = Math.Min(k, n - k);
         if (canonicalK != k)
@@ -259,6 +303,7 @@ class Program
             ReportProgress,
             reportCombinedRunProgress: true);
         builder.GreedyTightenEnabledForTesting = mode == Mode.Greedy && enableGreedyTighten;
+        builder.ProofTightenSearchMode = proofTightenMode;
 
         try
         {
