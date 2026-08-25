@@ -316,8 +316,14 @@ partial class StrategyBuilder
 
         internal sealed class CandidateGenerationRetryCacheEntry
         {
+            private sealed class OrbitBucket
+            {
+                public List<int>? Single { get; set; }
+                public Dictionary<IntSequenceKey, List<int>>? Representatives { get; set; }
+            }
+
             private readonly IEnumerator<List<int>> _rawGroups;
-            private readonly Dictionary<IntSequenceKey, List<List<int>>> _buckets = new();
+            private readonly Dictionary<IntSequenceKey, OrbitBucket> _buckets = new();
             private readonly int[] _labels;
             private HashSet<IntSequenceKey> _lastReturnedGroups = new();
             private int _generatedCount;
@@ -355,13 +361,7 @@ partial class StrategyBuilder
                     owner._candidateGroupsEnumerated++;
                     _generatedCount++;
                     group ??= _rawGroups.Current;
-                    IntSequenceKey signature = GroupEnumerationService.BuildCheapGroupSignature(_labels, group);
-                    if (!_buckets.TryGetValue(signature, out List<List<int>>? bucket))
-                    {
-                        bucket = new List<List<int>>();
-                        _buckets[signature] = bucket;
-                    }
-                    bucket.Add(group);
+                    AddGroup(state, group);
                 }
 
                 if (!_complete && _pendingGroup is null)
@@ -373,31 +373,49 @@ partial class StrategyBuilder
                 }
 
                 wasTruncated = !_complete && generationCap != int.MaxValue;
-                var ordered = new List<List<int>>();
-                foreach (List<List<int>> bucket in _buckets.Values)
+                var ordered = new List<List<int>>(_buckets.Count);
+                foreach (OrbitBucket bucket in _buckets.Values)
                 {
-                    if (bucket.Count == 1)
-                    {
-                        ordered.Add(bucket[0]);
-                        continue;
-                    }
-
-                    var representatives = new Dictionary<IntSequenceKey, List<int>>();
-                    foreach (List<int> group in bucket)
-                    {
-                        IntSequenceKey pattern = GetGroupPattern(state, group);
-                        if (!representatives.TryGetValue(pattern, out List<int>? existing)
-                            || GroupEnumerationService.CompareGroupsLexicographically(group, existing) < 0)
-                        {
-                            representatives[pattern] = group;
-                        }
-                    }
-                    foreach (List<int> representative in representatives.Values)
-                        ordered.Add(representative);
+                    if (bucket.Representatives is null)
+                        ordered.Add(bucket.Single!);
+                    else
+                        ordered.AddRange(bucket.Representatives.Values);
                 }
 
                 ordered.Sort(GroupEnumerationService.CompareGroupsLexicographically);
                 return ordered;
+            }
+
+            private void AddGroup(ComparisonState state, List<int> group)
+            {
+                IntSequenceKey cheap = GroupEnumerationService.BuildCheapGroupSignature(_labels, group);
+                if (!_buckets.TryGetValue(cheap, out OrbitBucket? bucket))
+                {
+                    _buckets[cheap] = new OrbitBucket { Single = group };
+                    return;
+                }
+
+                if (bucket.Representatives is null)
+                {
+                    bucket.Representatives = new Dictionary<IntSequenceKey, List<int>>();
+                    AddRepresentative(state, bucket.Representatives, bucket.Single!);
+                    bucket.Single = null;
+                }
+
+                AddRepresentative(state, bucket.Representatives, group);
+            }
+
+            private static void AddRepresentative(
+                ComparisonState state,
+                Dictionary<IntSequenceKey, List<int>> representatives,
+                List<int> group)
+            {
+                IntSequenceKey pattern = GetGroupPattern(state, group);
+                if (!representatives.TryGetValue(pattern, out List<int>? existing)
+                    || GroupEnumerationService.CompareGroupsLexicographically(group, existing) < 0)
+                {
+                    representatives[pattern] = group;
+                }
             }
 
             internal IReadOnlyList<List<int>> ExtendToDelta(

@@ -352,11 +352,8 @@ partial class StrategyBuilder
                     _owner.GetCompactGreedyCandidateCap(candidates.Count, groupSize),
                 _ => _owner.GetCompactGreedyCandidateCap(candidates.Count, groupSize),
             };
-            IReadOnlyList<List<int>> groups = enumerationPolicy == CandidateEnumerationPolicy.Progressive
-                ? _owner.EnumerateDistinctGroupsDelta(
-                    state, candidates, groupSize, candidateCap, out bool wasTruncated)
-                : _owner.EnumerateDistinctGroups(
-                    state, candidates, groupSize, candidateCap, out wasTruncated);
+            IReadOnlyList<List<int>> groups = _owner.EnumerateDistinctGroups(
+                state, candidates, groupSize, candidateCap, out bool wasTruncated);
             foreach (var group in groups)
             {
                 if (!seen.Add(new IntSequenceKey(group.ToArray())))
