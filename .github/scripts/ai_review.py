@@ -177,8 +177,11 @@ deterministic automated check, so NEVER raise a "missing tests" finding here
 4. MISSING DOCUMENTATION UPDATES
    If the PR adds or changes user-facing behavior (a new CLI mode/flag, new
    command, changed output/interface) but the manifest shows NO doc files
-   changed (README/docs/*.md), flag the missing documentation. Use the
-   manifest's "Doc files changed" fact — do not guess.
+   changed (README/docs/*.md), flag the missing documentation. The same applies
+   when core algorithm files (StrategyBuilder.*, ComparisonState.cs) receive
+   substantive behavior changes while no doc file changed — internal algorithm
+   behavior is documented in docs/core-algorithm.md and must stay in sync. Use
+   the manifest's "Doc files changed" fact — do not guess.
 
 ## Precision rules (avoid false positives)
 - Judge only from the provided manifest, diff, title, and description. Never
@@ -218,8 +221,8 @@ manifest, diff, title, or description:
 - NAMING INCONSISTENCY: a new user-facing identifier that breaks the
   established convention of its existing siblings (e.g. `three-phase` joining
   `exact`/`greedy`). → BLOCK
-- MISSING DOCS: user-facing behavior added or changed but the manifest shows NO
-  doc files changed. → BLOCK
+- MISSING DOCS: user-facing behavior or core algorithm behavior added or
+  changed but the manifest shows NO doc files changed. → BLOCK
 - COMMENT: reserve for genuinely optional polish that does NOT fall into any of
   the four gates above.
 - APPROVE: the change set is internally consistent and adequately covered — no
@@ -747,6 +750,106 @@ _NO_TEST_SECTION_HEADER_RE = re.compile(
     re.IGNORECASE,
 )
 
+_NO_DOC_SECTION_HEADER_RE = re.compile(
+    r"^\s{0,3}#{1,6}\s*(why\s+no(?:\s+new|\s+additional)?\s+docs?|doc(?:umentation)?\s+rationale|no-?doc\s+rationale)\b",
+    re.IGNORECASE,
+)
+_NO_DOC_DECLARATION_RE = re.compile(
+    r"\b(?:no|without|skip(?:ped|ping)?|omit(?:ted|ting)?|not\s+updating)\b"
+    r"[^\n.]{0,40}\b(?:doc|docs|documentation)\b",
+    re.IGNORECASE,
+)
+_NO_DOC_REASON_HINTS = {
+    "internal implementation",
+    "implementation detail",
+    "no user-visible",
+    "no user visible",
+    "not user-facing",
+    "internal-only",
+    "docs already cover",
+    "already documented",
+    "documentation already covers",
+    "no documented behavior",
+    "behavior contract unchanged",
+    "no contract change",
+    "behavior-preserving",
+    "no observable change",
+    "performance only",
+    "performance-only",
+    "experimental",
+    "not final",
+    "will be documented",
+    "docs planned",
+    "documentation planned",
+}
+_NO_DOC_EVIDENCE_HINTS = {
+    "core-algorithm.md",
+    "docs/",
+    "readme",
+    "already documented",
+    "docs already cover",
+    "documentation already covers",
+    "still accurate",
+    "remains accurate",
+    "unchanged",
+    "up to date",
+    "up-to-date",
+    "verified",
+    "validated",
+    "reviewed",
+}
+
+
+def _extract_no_doc_section(pr_body: str) -> str:
+    """Extract a markdown section dedicated to documentation-omission rationale."""
+    lines = (pr_body or "").splitlines()
+    if not lines:
+        return ""
+
+    start = -1
+    for idx, line in enumerate(lines):
+        if _NO_DOC_SECTION_HEADER_RE.match(line):
+            start = idx + 1
+            break
+    if start < 0:
+        return ""
+
+    section: list[str] = []
+    for line in lines[start:]:
+        if line.lstrip().startswith("#"):
+            break
+        section.append(line)
+    return "\n".join(section).strip()
+
+
+def _has_reasonable_no_doc_reason(text: str) -> bool:
+    normalized = _normalize_review_text(text)
+    return bool(normalized) and any(hint in normalized for hint in _NO_DOC_REASON_HINTS)
+
+
+def _has_reasonable_no_doc_evidence(text: str) -> bool:
+    normalized = _normalize_review_text(text)
+    return bool(normalized) and any(hint in normalized for hint in _NO_DOC_EVIDENCE_HINTS)
+
+
+def _has_reasonable_no_doc_explanation(pr_body: str) -> bool:
+    """Heuristic: PR description explicitly and concretely justifies no doc update."""
+    raw = pr_body or ""
+    if not raw.strip():
+        return False
+
+    section_text = _extract_no_doc_section(raw)
+    has_explicit_no_doc_section = bool(section_text)
+    candidate = section_text if section_text else raw
+    normalized = _normalize_review_text(candidate)
+    if not (has_explicit_no_doc_section or _NO_DOC_DECLARATION_RE.search(normalized)):
+        return False
+
+    reason_text, evidence_text = _extract_no_test_fields(candidate)
+    has_reason = _has_reasonable_no_doc_reason(reason_text or candidate)
+    has_evidence = _has_reasonable_no_doc_evidence(evidence_text or candidate)
+    return has_reason and has_evidence
+
 
 def _extract_no_test_section(pr_body: str) -> str:
     """Extract a markdown section dedicated to test-omission rationale."""
@@ -924,6 +1027,77 @@ def detect_core_algorithm_test_gap(diff: str, pr_body: str = "") -> str | None:
         "the reason in the PR description instead of adding a no-op test. Recommended format: "
         "add a `Why no test` section stating (1) why behavior risk is low and (2) what existing "
         "coverage/verification already guards the change."
+    )
+
+
+def detect_core_algorithm_doc_gap(diff: str, pr_body: str = "") -> str | None:
+    """Return a BLOCK finding when core algorithm changes lack doc updates.
+
+    Mirrors detect_core_algorithm_test_gap: the documented core algorithm
+    behavior (docs/core-algorithm.md) must stay in sync with substantive
+    changes to StrategyBuilder.*/ComparisonState.cs. A doc gap is waived when
+    the PR description explicitly explains why no doc update is needed (e.g.
+    internal-only refactor, or the existing docs remain accurate).
+    """
+    changed_core_files: set[str] = set()
+    changed_doc_files: set[str] = set()
+    core_added_norm: list[str] = []
+    core_removed_norm: list[str] = []
+    saw_core_added_file = False
+
+    for section in split_diff_sections(diff):
+        path = section_path(section)
+        if not path or path in EXCLUDED_REVIEW_PATHS:
+            continue
+
+        category = classify_path(path)
+        if category == "doc":
+            changed_doc_files.add(path)
+            continue
+
+        if category != "code" or not _is_core_algorithm_code_path(path):
+            continue
+        if section_status(section) == "added":
+            saw_core_added_file = True
+        added_lines, removed_lines = _split_changed_content_lines(section)
+        added_sub = [l for l in added_lines if _is_substantive_csharp_change(l, test_file=False)]
+        removed_sub = [l for l in removed_lines if _is_substantive_csharp_change(l, test_file=False)]
+        if not added_sub and not removed_sub:
+            continue
+        # A pure access-modifier flip changes no behavior, so it does not
+        # require a doc update.
+        if _is_visibility_only_change(added_sub, removed_sub):
+            continue
+        core_added_norm.extend(_normalized_move_lines(added_sub))
+        core_removed_norm.extend(_normalized_move_lines(removed_sub))
+        changed_core_files.add(path)
+
+    # A mechanical split/move of existing core-algorithm code into new files is
+    # a reorganization-only change and does not require doc updates.
+    if (
+        changed_core_files
+        and saw_core_added_file
+        and sorted(core_added_norm) == sorted(core_removed_norm)
+    ):
+        return None
+
+    if not changed_core_files or changed_doc_files:
+        return None
+
+    # Allow an explicit PR-level waiver when the author explains why the
+    # documented behavior contract is unaffected by this change.
+    if _has_reasonable_no_doc_explanation(pr_body):
+        return None
+
+    core_list = ", ".join(f"`{p}`" for p in sorted(changed_core_files))
+    return (
+        f"- **[BLOCK]** Core algorithm files changed ({core_list}) but no doc files "
+        "were updated. The documented algorithm behavior (e.g. `docs/core-algorithm.md`) "
+        "must stay in sync with core algorithm changes. Update the relevant algorithm "
+        "documentation, or — if the documented behavior contract is genuinely unaffected "
+        "(e.g. internal-only implementation detail) — explain that in the PR description. "
+        "Recommended format: add a `Why no docs` section stating (1) why the documented "
+        "behavior contract is unchanged and (2) which existing doc remains accurate."
     )
 
 
@@ -2089,6 +2263,10 @@ def main() -> int:
     if core_algo_test_gap:
         print("Policy check: core algorithm test gap detected (forcing BLOCK).")
         policy_findings.append(core_algo_test_gap)
+    core_algo_doc_gap = detect_core_algorithm_doc_gap(raw_diff, pr_body=pr_body)
+    if core_algo_doc_gap:
+        print("Policy check: core algorithm doc gap detected (forcing BLOCK).")
+        policy_findings.append(core_algo_doc_gap)
     suspicious_files = detect_suspicious_added_files(raw_diff)
     if suspicious_files:
         print("Policy check: suspicious/unexplained added files detected (forcing BLOCK).")
