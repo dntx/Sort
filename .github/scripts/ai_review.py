@@ -177,11 +177,13 @@ deterministic automated check, so NEVER raise a "missing tests" finding here
 4. MISSING DOCUMENTATION UPDATES
    If the PR adds or changes user-facing behavior (a new CLI mode/flag, new
    command, changed output/interface) but the manifest shows NO doc files
-   changed (README/docs/*.md), flag the missing documentation. The same applies
-   when core algorithm files (StrategyBuilder.*, ComparisonState.cs) receive
-   substantive behavior changes while no doc file changed — internal algorithm
-   behavior is documented in docs/core-algorithm.md and must stay in sync. Use
-   the manifest's "Doc files changed" fact — do not guess.
+   changed (README/docs/*.md), flag the missing documentation. Use the
+   manifest's "Doc files changed" fact — do not guess.
+   NOTE: missing docs for CORE ALGORITHM changes (StrategyBuilder.*,
+   ComparisonState.cs) are already enforced by a separate deterministic gate
+   that always runs and always BLOCKs. Do NOT flag missing core-algorithm docs
+   here — doing so would duplicate that gate's finding. Only flag missing docs
+   for user-facing surface changes that the deterministic gate does not cover.
 
 ## Precision rules (avoid false positives)
 - Judge only from the provided manifest, diff, title, and description. Never
@@ -193,6 +195,9 @@ deterministic automated check, so NEVER raise a "missing tests" finding here
   intentional). Simply use the manifest's facts.
 - Test coverage is OUT OF SCOPE for this pass (a separate deterministic check
   owns it): never flag missing/insufficient tests here.
+- Core-algorithm doc sync is OUT OF SCOPE for this pass (a separate
+  deterministic check owns it): never flag missing docs for StrategyBuilder.* /
+  ComparisonState.cs changes here.
 - If the manifest already shows a doc/README/*.md file changed, DO NOT flag
   missing docs.
 - Pure refactors, pure formatting, pure dependency bumps, and comment-only
@@ -221,8 +226,9 @@ manifest, diff, title, or description:
 - NAMING INCONSISTENCY: a new user-facing identifier that breaks the
   established convention of its existing siblings (e.g. `three-phase` joining
   `exact`/`greedy`). → BLOCK
-- MISSING DOCS: user-facing behavior or core algorithm behavior added or
-  changed but the manifest shows NO doc files changed. → BLOCK
+- MISSING DOCS: user-facing behavior added or changed but the manifest shows
+  NO doc files changed. → BLOCK (core algorithm doc gaps are handled by the
+  deterministic gate, not here)
 - COMMENT: reserve for genuinely optional polish that does NOT fall into any of
   the four gates above.
 - APPROVE: the change set is internally consistent and adequately covered — no
