@@ -412,7 +412,7 @@ partial class MainForm : Form
     {
         var comboBox = new ComboBox
         {
-            Width = 150,
+            Width = 220,
             DropDownStyle = ComboBoxStyle.DropDownList,
             Margin = new Padding(0, 4, 0, 0),
         };
