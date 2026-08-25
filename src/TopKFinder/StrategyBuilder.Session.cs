@@ -116,6 +116,24 @@ sealed class StrategyBuilderSession
         Compact.ResetCompactProbeState();
     }
 
+    public void ResetCompactForProgressiveRetry()
+    {
+        var incompleteKeys = new List<(SearchStateKey Key, int Budget)>();
+        foreach (KeyValuePair<(SearchStateKey Key, int Budget), int> entry in CompactCostMemo)
+        {
+            if (entry.Value == int.MaxValue
+                && !CompactProvenInfeasibleMemo.Contains(entry.Key))
+            {
+                incompleteKeys.Add(entry.Key);
+            }
+        }
+
+        foreach ((SearchStateKey Key, int Budget) key in incompleteKeys)
+            CompactCostMemo.Remove(key);
+
+        Compact.ResetCompactProbeState();
+    }
+
     public void LoadCompactPatternAssignment(IReadOnlyDictionary<SearchStateKey, BestGroupPattern> assignment)
     {
         ResetCompactCaches();

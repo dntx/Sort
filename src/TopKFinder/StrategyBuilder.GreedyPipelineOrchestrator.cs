@@ -8,15 +8,11 @@ partial class StrategyBuilder
 {
     private readonly List<ProofTightenAttemptDiagnostics> _proofTightenAttemptTrace = new();
     internal IReadOnlyList<ProofTightenAttemptDiagnostics> ProofTightenAttemptTrace => _proofTightenAttemptTrace;
-    internal bool DisableProofTightenFeasibleReuseForTesting { get; set; }
-    internal bool DisableProofTightenInfeasibleReuseForTesting { get; set; }
-    internal bool DisableProofTightenCandidateGenerationReuseForTesting { get; set; }
-
     private Dictionary<GroupSelectionHelper.CandidateGenerationRetryCacheKey,
         GroupSelectionHelper.CandidateGenerationRetryCacheEntry>? _proofTightenCandidateGenerationRetryCache;
     private int _proofTightenCandidateGenerationRetryHits;
 
-    private sealed class BudgetFitRetryCacheEntry
+    private sealed class BudgetFitTransition
     {
         private readonly List<(ComparisonState State, int RemainingSlots)>? _children;
         private readonly ChildResult[]? _childResults;
@@ -28,7 +24,7 @@ partial class StrategyBuilder
             ProvenInfeasible,
         }
 
-        public BudgetFitRetryCacheEntry(List<(ComparisonState State, int RemainingSlots)>? children)
+        public BudgetFitTransition(List<(ComparisonState State, int RemainingSlots)>? children)
         {
             _children = CloneChildren(children);
             _childResults = children is null ? null : new ChildResult[children.Count];
@@ -237,48 +233,37 @@ partial class StrategyBuilder
         public CompactProbeArtifacts ProbeAndClassify(int budget, bool materialize = true)
         {
             int configuredCap = _owner.CompactGreedyCandidateCap;
-            int attemptCap = NormalizeGreedyCandidateCap(configuredCap);
+            int attemptCap = NormalizeGreedyCandidateCap(_owner.CompactGreedyCandidateCap);
             int attempt = 0;
-            _owner._proofTightenCandidateGenerationRetryCache =
-                _owner.DisableProofTightenCandidateGenerationReuseForTesting
-                    ? null
-                    : new Dictionary<GroupSelectionHelper.CandidateGenerationRetryCacheKey,
-                        GroupSelectionHelper.CandidateGenerationRetryCacheEntry>();
-            ProofTightenRetryCache? retryCache = _owner.DisableProofTightenFeasibleReuseForTesting
-                ? null
-                : new ProofTightenRetryCache(
-                    reuseInfeasibilityProofs: !_owner.DisableProofTightenInfeasibleReuseForTesting);
+            _owner._proofTightenCandidateGenerationRetryCache = new Dictionary<
+                GroupSelectionHelper.CandidateGenerationRetryCacheKey,
+                GroupSelectionHelper.CandidateGenerationRetryCacheEntry>();
+            _owner._proofTightenCandidateGenerationRetryHits = 0;
             _owner._proofTightenAttemptTrace.Clear();
             try
             {
                 while (true)
                 {
-                    // Keep one user-facing knob (CompactGreedyCandidateCap) as the starting point, but
-                    // internally escalate capped incomplete probes on the same budget until they either
-                    // resolve conclusively or reach full enumeration.
                     _owner.CompactGreedyCandidateCap = attemptCap;
-
                     attempt++;
-                    int candidateGenerationRetryHitsBefore = _owner._proofTightenCandidateGenerationRetryHits;
-                    var attemptStopwatch = Stopwatch.StartNew();
+                    int retryHitsBefore = _owner._proofTightenCandidateGenerationRetryHits;
+                    var stopwatch = Stopwatch.StartNew();
                     CompactStageArtifacts? candidate = ProbeFeasibleCompactCore(
                         budget,
                         SolvedStrategyStageKind.ProofTighten,
                         StageNames.FormatProofTighten(budget),
                         materialize,
-                        retryCache);
-                    attemptStopwatch.Stop();
+                        progressiveRetry: attempt > 1);
+                    stopwatch.Stop();
                     bool enumerationCapped = candidate is null && _owner._lastProbeEnumerationCapped;
                     string outcome = candidate is not null
                         ? "tightened"
-                        : enumerationCapped
-                            ? "incomplete"
-                            : "proven-infeasible";
-                    var diagnostics = new ProofTightenAttemptDiagnostics(
+                        : enumerationCapped ? "incomplete" : "proven-infeasible";
+                    _owner._proofTightenAttemptTrace.Add(new ProofTightenAttemptDiagnostics(
                         attempt,
                         budget,
                         attemptCap,
-                        attemptStopwatch.Elapsed,
+                        stopwatch.Elapsed,
                         outcome,
                         enumerationCapped,
                         _owner._compactStatesSolved,
@@ -286,49 +271,34 @@ partial class StrategyBuilder
                         _owner._compactStepOptimalGroups,
                         _owner._outcomesConstructed,
                         _owner._candidateGroupsEnumerated,
-                        retryCache?.RestoredEntryCount ?? 0,
-                        retryCache?.RestoredProofCount ?? 0,
-                        _owner._proofTightenCandidateGenerationRetryHits - candidateGenerationRetryHitsBefore);
-                    _owner._proofTightenAttemptTrace.Add(diagnostics);
+                        _owner._proofTightenCandidateGenerationRetryHits - retryHitsBefore));
                     string logLine =
                         $"[proof-tighten] budget={budget}, attempt={attempt}, cap={attemptCap}, " +
-                        $"elapsed={attemptStopwatch.Elapsed.TotalMilliseconds:F1}ms, outcome={outcome}, " +
+                        $"elapsed={stopwatch.Elapsed.TotalMilliseconds:F1}ms, outcome={outcome}, " +
                         $"capped={enumerationCapped}, states={_owner._compactStatesSolved}, " +
                         $"groups={_owner._compactGroupsEnumerated}, fit-groups={_owner._compactStepOptimalGroups}, " +
                         $"outcomes={_owner._outcomesConstructed}, raw-candidates={_owner._candidateGroupsEnumerated}, " +
-                        $"reused-feasible={retryCache?.RestoredEntryCount ?? 0}, " +
-                        $"reused-infeasible={retryCache?.RestoredProofCount ?? 0}, " +
-                        $"reused-candidate-generation={_owner._proofTightenCandidateGenerationRetryHits - candidateGenerationRetryHitsBefore}";
+                        $"reused-candidate-generation={_owner._proofTightenCandidateGenerationRetryHits - retryHitsBefore}";
                     Debug.WriteLine(logLine);
                     if (Console.IsErrorRedirected)
                         Console.Error.WriteLine(logLine);
-                    if (candidate is null)
+
+                    if (candidate is null && enumerationCapped && attemptCap < int.MaxValue)
                     {
-                        if (!_owner._lastProbeEnumerationCapped)
-                            return new CompactProbeArtifacts(
-                                StageOutcome.ProvenInfeasible,
-                                Solution: null,
-                                Plan: null);
-
-                        if (attemptCap == int.MaxValue)
-                            return new CompactProbeArtifacts(
-                                StageOutcome.Incomplete,
-                                Solution: null,
-                                Plan: null);
-
                         attemptCap = NextGreedyCandidateCap(attemptCap);
                         continue;
                     }
 
-                    // A complete probe that materializes a plan must honor the ceiling: the feasibility proxy proves
-                    // a within-budget strategy exists and, with the tightest-budget pattern kept, materialization
-                    // renders exactly that strategy. An overshoot means the proxy diverged from materialization -- a
-                    // broken invariant we surface loudly instead of silently reporting an over-budget plan.
+                    if (candidate is null)
+                        return new CompactProbeArtifacts(
+                            enumerationCapped ? StageOutcome.Incomplete : StageOutcome.ProvenInfeasible,
+                            Solution: null,
+                            Plan: null);
+
                     if (candidate.Solution.Score.WorstCaseSteps > budget)
                         throw new InvalidOperationException(
                             $"Compact feasibility probe at budget {budget} materialized a plan whose realized MaxStep " +
-                            $"{candidate.Solution.Score.WorstCaseSteps} overshoots the ceiling. The tighter-budget-keep invariant should make " +
-                            $"this unreachable; an overshoot indicates the feasibility proxy diverged from materialization.");
+                            $"{candidate.Solution.Score.WorstCaseSteps} overshoots the ceiling.");
 
                     return new CompactProbeArtifacts(
                         StageOutcome.Tightened,
@@ -350,21 +320,20 @@ partial class StrategyBuilder
             SolvedStrategyStageKind stageKind,
             string stageName,
             bool materialize = true)
-            => ProbeFeasibleCompactCore(rootBudget, stageKind, stageName, materialize, retryCache: null);
+            => ProbeFeasibleCompactCore(rootBudget, stageKind, stageName, materialize);
 
         private CompactStageArtifacts? ProbeFeasibleCompactCore(
             int rootBudget,
             SolvedStrategyStageKind stageKind,
             string stageName,
             bool materialize = true,
-            ProofTightenRetryCache? retryCache = null)
+            bool progressiveRetry = false)
         {
             return _owner.RunWithComparisonStateCancellation(() =>
             {
                 bool feasibilityOnly = _owner._compactFeasibilityOnly;
-                _owner.PrepareFeasibleCompactProbe();
+                _owner.PrepareFeasibleCompactProbe(progressiveRetry);
                 _owner._compactFeasibilityOnly = feasibilityOnly;
-                retryCache?.Restore(_owner);
 
                 var stopwatch = Stopwatch.StartNew();
                 _owner._compactUsesFeasibleBudget = true;
@@ -379,8 +348,6 @@ partial class StrategyBuilder
                         // "no group fit within budget" is not a proof of infeasibility (an untried group might
                         // have fit), so the caller must not close the squeeze / claim proven optimality.
                         _owner._lastProbeEnumerationCapped = _owner._compactEnumerationCapped;
-                        if (_owner._lastProbeEnumerationCapped)
-                            retryCache?.Capture(_owner);
                         _owner.ResetCompactState();
                         return null;
                     }
@@ -418,6 +385,18 @@ partial class StrategyBuilder
             });
         }
 
+        private static int NormalizeGreedyCandidateCap(int cap)
+            => cap <= 0 ? GreedyCandidateCapMinimum : cap;
+
+        private static int NextGreedyCandidateCap(int current)
+        {
+            if (current >= int.MaxValue)
+                return int.MaxValue;
+
+            long grown = (long)current * GreedyCandidateCapGrowthFactor;
+            return grown >= int.MaxValue ? int.MaxValue : (int)grown;
+        }
+
         public CompactPlanResult BuildEdgeCompactPlanAtBudget(
             int rootBudget,
             bool materialize = true)
@@ -447,78 +426,6 @@ partial class StrategyBuilder
                 $"Greedy edge-compaction could not materialize a plan at the proven-feasible budget {rootBudget}.");
         }
 
-        private static int NormalizeGreedyCandidateCap(int cap)
-            => cap <= 0 ? GreedyCandidateCapMinimum : cap;
-
-        private static int NextGreedyCandidateCap(int current)
-        {
-            if (current >= int.MaxValue)
-                return int.MaxValue;
-
-            long grown = (long)current * GreedyCandidateCapGrowthFactor;
-            return grown >= int.MaxValue ? int.MaxValue : (int)grown;
-        }
-
-        private sealed class ProofTightenRetryCache
-        {
-            private readonly bool _reuseInfeasibilityProofs;
-            private readonly Dictionary<(SearchStateKey Key, int Budget), int> _costs = new();
-            private readonly Dictionary<SearchStateKey, BestGroupPattern> _patterns = new();
-            private readonly Dictionary<SearchStateKey, int> _tightestBudgets = new();
-            private readonly Dictionary<SearchStateKey, int> _realSteps = new();
-            private readonly HashSet<(SearchStateKey Key, int Budget)> _provenInfeasible = new();
-
-            public int RestoredEntryCount { get; private set; }
-            public int RestoredProofCount { get; private set; }
-
-            public ProofTightenRetryCache(bool reuseInfeasibilityProofs)
-            {
-                _reuseInfeasibilityProofs = reuseInfeasibilityProofs;
-            }
-
-            public void Capture(StrategyBuilder owner)
-            {
-                foreach (KeyValuePair<(SearchStateKey Key, int Budget), int> entry in owner._compactCostMemo)
-                {
-                    SearchStateKey key = entry.Key.Key;
-                    if (entry.Value == int.MaxValue
-                        || !owner._compactGroupPatternCache.TryGetValue(key, out BestGroupPattern pattern)
-                        || !owner._compactGroupPatternTightestBudget.TryGetValue(key, out int tightestBudget)
-                        || !owner._compactRealStepsMemo.TryGetValue(key, out int realSteps))
-                    {
-                        continue;
-                    }
-
-                    _costs[entry.Key] = entry.Value;
-                    _patterns[key] = pattern;
-                    _tightestBudgets[key] = tightestBudget;
-                    _realSteps[key] = realSteps;
-                }
-
-                if (_reuseInfeasibilityProofs)
-                    _provenInfeasible.UnionWith(owner._compactProvenInfeasibleMemo);
-            }
-
-            public void Restore(StrategyBuilder owner)
-            {
-                RestoredEntryCount = _costs.Count;
-                foreach (KeyValuePair<(SearchStateKey Key, int Budget), int> entry in _costs)
-                    owner._compactCostMemo[entry.Key] = entry.Value;
-                foreach (KeyValuePair<SearchStateKey, BestGroupPattern> entry in _patterns)
-                    owner._compactGroupPatternCache[entry.Key] = entry.Value;
-                foreach (KeyValuePair<SearchStateKey, int> entry in _tightestBudgets)
-                    owner._compactGroupPatternTightestBudget[entry.Key] = entry.Value;
-                foreach (KeyValuePair<SearchStateKey, int> entry in _realSteps)
-                    owner._compactRealStepsMemo[entry.Key] = entry.Value;
-
-                RestoredProofCount = _provenInfeasible.Count;
-                foreach ((SearchStateKey Key, int Budget) proof in _provenInfeasible)
-                {
-                    owner._compactProvenInfeasibleMemo.Add(proof);
-                    owner._compactCostMemo[proof] = int.MaxValue;
-                }
-            }
-        }
     }
 
     internal readonly record struct ProofTightenAttemptDiagnostics(
@@ -533,7 +440,5 @@ partial class StrategyBuilder
         int CompactStepOptimalGroups,
         int OutcomesConstructed,
         int CandidateGroupsEnumerated,
-        int ReusedFeasibleStates,
-        int ReusedInfeasibleStates,
         int ReusedCandidateGenerationEntries);
 }

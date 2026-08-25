@@ -74,10 +74,19 @@ partial class StrategyBuilder
         _phase1bSolved = false;
     }
 
-    private void PrepareFeasibleCompactProbe()
+    private void ResetCompactForProgressiveRetry()
+    {
+        _session.ResetCompactForProgressiveRetry();
+        _phase1bSolved = false;
+    }
+
+    private void PrepareFeasibleCompactProbe(bool progressiveRetry = false)
     {
         ResetPerBuildTransientState();
-        ResetCompactState();
+        if (progressiveRetry)
+            ResetCompactForProgressiveRetry();
+        else
+            ResetCompactState();
         _lastProbeEnumerationCapped = false;
     }
 

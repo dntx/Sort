@@ -58,15 +58,11 @@ public sealed class ProofTightenPerfGateTests
                 $"capped={attempt.EnumerationCapped}, states={attempt.CompactStatesSolved}, " +
                 $"groups={attempt.CompactGroupsEnumerated}, fitGroups={attempt.CompactStepOptimalGroups}, " +
                 $"outcomes={attempt.OutcomesConstructed}, rawCandidates={attempt.CandidateGroupsEnumerated}, " +
-                $"reusedFeasible={attempt.ReusedFeasibleStates}, " +
-                $"reusedInfeasible={attempt.ReusedInfeasibleStates}, " +
                 $"reusedCandidateGeneration={attempt.ReusedCandidateGenerationEntries}");
         }
 
         Assert.Equal(StageOutcome.ProvenInfeasible, result.Outcome);
-        Assert.Contains(
-            result.Attempts.Skip(1),
-            attempt => attempt.ReusedInfeasibleStates > 0);
+        Assert.All(result.Attempts, attempt => Assert.False(attempt.EnumerationCapped));
     }
 
     [Fact]

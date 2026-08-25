@@ -325,9 +325,10 @@ partial class StrategyBuilder
             private readonly IEnumerator<List<int>> _rawGroups;
             private readonly Dictionary<IntSequenceKey, OrbitBucket> _buckets = new();
             private readonly int[] _labels;
-            private List<int>? _pendingGroup;
+            private HashSet<IntSequenceKey> _lastReturnedGroups = new();
             private int _generatedCount;
             private bool _complete;
+            private List<int>? _pendingGroup;
 
             internal CandidateGenerationRetryCacheEntry(
                 List<List<int>> classes,
@@ -336,11 +337,7 @@ partial class StrategyBuilder
                 int[] labels)
             {
                 _rawGroups = EnumerateClassRepresentatives(
-                    classes,
-                    suffixCapacity,
-                    classIndex: 0,
-                    remaining: groupSize,
-                    prefix: new List<int>(groupSize)).GetEnumerator();
+                    classes, suffixCapacity, 0, groupSize, new List<int>(groupSize)).GetEnumerator();
                 _labels = labels;
             }
 
@@ -352,34 +349,27 @@ partial class StrategyBuilder
             {
                 while (!_complete && _generatedCount < generationCap)
                 {
-                    owner.ProbeCancellation();
                     List<int>? group = _pendingGroup;
                     _pendingGroup = null;
                     if (group is null && !_rawGroups.MoveNext())
                     {
                         _complete = true;
-                        _rawGroups.Dispose();
                         break;
                     }
 
-                    group ??= _rawGroups.Current;
                     owner.ThrowIfCancellationRequested();
                     owner._candidateGroupsEnumerated++;
                     _generatedCount++;
+                    group ??= _rawGroups.Current;
                     AddGroup(state, group);
                 }
 
                 if (!_complete && _pendingGroup is null)
                 {
                     if (_rawGroups.MoveNext())
-                    {
                         _pendingGroup = _rawGroups.Current;
-                    }
                     else
-                    {
                         _complete = true;
-                        _rawGroups.Dispose();
-                    }
                 }
 
                 wasTruncated = !_complete && generationCap != int.MaxValue;
@@ -421,11 +411,32 @@ partial class StrategyBuilder
                 List<int> group)
             {
                 IntSequenceKey pattern = GetGroupPattern(state, group);
-                if (!representatives.TryGetValue(pattern, out List<int>? existing) ||
-                    GroupEnumerationService.CompareGroupsLexicographically(group, existing) < 0)
+                if (!representatives.TryGetValue(pattern, out List<int>? existing)
+                    || GroupEnumerationService.CompareGroupsLexicographically(group, existing) < 0)
                 {
                     representatives[pattern] = group;
                 }
+            }
+
+            internal IReadOnlyList<List<int>> ExtendToDelta(
+                StrategyBuilder owner,
+                ComparisonState state,
+                int generationCap,
+                out bool wasTruncated)
+            {
+                IReadOnlyList<List<int>> allGroups = ExtendTo(owner, state, generationCap, out wasTruncated);
+                var delta = new List<List<int>>();
+                var currentGroups = new HashSet<IntSequenceKey>();
+                foreach (List<int> group in allGroups)
+                {
+                    IntSequenceKey key = new(group.ToArray());
+                    currentGroups.Add(key);
+                    if (!_lastReturnedGroups.Contains(key))
+                        delta.Add(group);
+                }
+
+                _lastReturnedGroups = currentGroups;
+                return delta;
             }
         }
 
@@ -502,7 +513,8 @@ partial class StrategyBuilder
             IReadOnlyList<int> candidates,
             int groupSize,
             int generationCap,
-            out bool wasTruncated)
+            out bool wasTruncated,
+            bool deltaOnly = false)
         {
             // Exploit the active poset's automorphisms to avoid enumerating all C(active, groupSize)
             // combinations. Active items are partitioned into "free symmetry classes" (items with
@@ -528,16 +540,11 @@ partial class StrategyBuilder
             if (owner._proofTightenCandidateGenerationRetryCache is { } retryCache)
             {
                 var retryKey = new CandidateGenerationRetryCacheKey(
-                    state.GetRawStructureKey(),
-                    new IntSequenceKey(candidates.ToArray()),
-                    groupSize);
+                    state.GetRawStructureKey(), new IntSequenceKey(candidates.ToArray()), groupSize);
                 if (!retryCache.TryGetValue(retryKey, out CandidateGenerationRetryCacheEntry? entry))
                 {
                     entry = new CandidateGenerationRetryCacheEntry(
-                        classes,
-                        suffixCapacity,
-                        groupSize,
-                        state.GetStructuralLabels());
+                        classes, suffixCapacity, groupSize, state.GetStructuralLabels());
                     retryCache[retryKey] = entry;
                 }
                 else
@@ -545,8 +552,9 @@ partial class StrategyBuilder
                     owner._proofTightenCandidateGenerationRetryHits++;
                 }
 
-                IReadOnlyList<List<int>> resumed = entry.ExtendTo(
-                    owner, state, generationCap, out wasTruncated);
+                IReadOnlyList<List<int>> resumed = deltaOnly
+                    ? entry.ExtendToDelta(owner, state, generationCap, out wasTruncated)
+                    : entry.ExtendTo(owner, state, generationCap, out wasTruncated);
                 if (wasTruncated)
                     owner._compactEnumerationCapped = true;
                 return resumed;

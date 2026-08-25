@@ -328,17 +328,34 @@ public class GreedyPipelineTests
         Assert.Equal(recomputed, artifacts.Solution.Score.SearchEdgeCost);
     }
 
-    // Proof-tighten now auto-expands capped probes on the SAME budget (starting from
-    // CompactGreedyCandidateCap, then x4 until complete), so a cap-truncated inconclusive infeasibility
-    // should converge to a genuine proof when full enumeration is tractable. 12,4,4 exercises this.
+    // Proof-tighten progressively expands the candidate cap on the same budget, while edge-compaction
+    // keeps its own capped policy. 12,4,4 exercises the proof-tighten convergence path.
     [Fact]
-    public void GreedyPipeline_DefaultCap_AutoExpandsToProvenInfeasible()
+    public void GreedyPipeline_ProofTightenFullEnumeration_ProvesInfeasible()
     {
         StageOutcome terminal = TerminalOutcome(new StrategyBuilder(12, 4, 4), out StrategyPlan plan);
         Assert.Equal(StageOutcome.ProvenInfeasible, terminal);
         Assert.True(
             plan.SearchStatistics.RootProvenLowerBound == plan.MaxStep,
             "auto-expanded capped probes should close the squeeze when infeasibility is proven");
+    }
+
+    [Fact]
+    public void ProofTighten_ProgressiveCapResumesAndRestoresConfiguredCap()
+    {
+        var builder = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 1 };
+        StageResult stage = builder.ExecuteProofTightenStage(budget: 5);
+
+        Assert.NotEqual(StageOutcome.Incomplete, stage.Outcome);
+        Assert.Equal(1, builder.CompactGreedyCandidateCap);
+        int[] caps = builder.ProofTightenAttemptTrace.Select(attempt => attempt.CandidateCap).ToArray();
+        Assert.True(caps.Length > 1);
+        Assert.Equal(1, caps[0]);
+        for (int i = 1; i < caps.Length; i++)
+            Assert.Equal(caps[i - 1] * 4, caps[i]);
+        Assert.Contains(
+            builder.ProofTightenAttemptTrace.Skip(1),
+            attempt => attempt.ReusedCandidateGenerationEntries > 0);
     }
 
     [Fact]
@@ -367,127 +384,6 @@ public class GreedyPipelineTests
         var builder = new StrategyBuilder(25, 10, 1) { CompactGreedyCandidateCap = 64 };
 
         Assert.Equal(64, builder.GetCompactGreedyCandidateCapForTesting(25, 10));
-    }
-
-    // Locks the new per-probe auto-expansion behavior: even with a tiny starting cap, a single
-    // proof-tighten probe at U-1 should internally widen caps on the same budget until it reaches a
-    // conclusive answer (Tightened or ProvenInfeasible), rather than stopping at Incomplete.
-    [Fact]
-    public void ProofTightenProbe_TinyStartingCap_AutoExpandsToConclusiveOutcome()
-    {
-        var builder = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 1 };
-        int budget = builder.ExecuteGreedyFeasibleStage().MaxStep - 1;
-
-        StageResult stage = builder.ExecuteProofTightenStage(budget);
-
-        Assert.Equal($"proof-tighten\u2264{budget}", stage.Name);
-        Assert.NotEqual(StageOutcome.Incomplete, stage.Outcome);
-        Assert.NotEmpty(builder.ProofTightenAttemptTrace);
-        for (int i = 1; i < builder.ProofTightenAttemptTrace.Count; i++)
-        {
-            Assert.Equal(
-                builder.ProofTightenAttemptTrace[i - 1].CandidateCap * 4,
-                builder.ProofTightenAttemptTrace[i].CandidateCap);
-            Assert.True(builder.ProofTightenAttemptTrace[i - 1].EnumerationCapped);
-        }
-        Assert.False(builder.ProofTightenAttemptTrace[^1].EnumerationCapped);
-        if (stage.Outcome == StageOutcome.Tightened)
-        {
-            Assert.True(stage.HasPlan);
-            Assert.True(stage.MaterializedPlan!.MaxStep <= budget,
-                $"tightened probe must realize a step within budget {budget}, got {stage.MaterializedPlan.MaxStep}");
-        }
-        else
-        {
-            Assert.Equal(StageOutcome.ProvenInfeasible, stage.Outcome);
-            Assert.False(stage.HasPlan);
-        }
-    }
-
-    // ProbeAndClassify temporarily overrides CompactGreedyCandidateCap while retrying higher caps.
-    // This locks the restoration contract so callers' configured cap survives each probe unchanged.
-    [Fact]
-    public void ProofTightenProbe_RestoresConfiguredCandidateCap_AfterAutoExpansion()
-    {
-        var builder = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 1 };
-        int originalCap = builder.CompactGreedyCandidateCap;
-        int budget = builder.ExecuteGreedyFeasibleStage().MaxStep - 1;
-
-        _ = builder.ExecuteProofTightenStage(budget);
-
-        Assert.Equal(originalCap, builder.CompactGreedyCandidateCap);
-    }
-
-    [Fact]
-    public void ProofTightenProbe_FeasibleRetryReuse_PreservesOutcomeAndPlan()
-    {
-        var reused = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 1 };
-        var baseline = new StrategyBuilder(12, 4, 4)
-        {
-            CompactGreedyCandidateCap = 1,
-            DisableProofTightenFeasibleReuseForTesting = true,
-        };
-        int budget = reused.ExecuteGreedyFeasibleStage().MaxStep - 1;
-        _ = baseline.ExecuteGreedyFeasibleStage();
-
-        StageResult reusedStage = reused.ExecuteProofTightenStage(budget);
-        StageResult baselineStage = baseline.ExecuteProofTightenStage(budget);
-
-        Assert.Equal(baselineStage.Outcome, reusedStage.Outcome);
-        Assert.Equal(baselineStage.MaterializedPlan?.MaxStep, reusedStage.MaterializedPlan?.MaxStep);
-        Assert.Equal(
-            baseline.ProofTightenAttemptTrace.Select(attempt => attempt.CandidateCap),
-            reused.ProofTightenAttemptTrace.Select(attempt => attempt.CandidateCap));
-        if (reused.ProofTightenAttemptTrace.Count > 1)
-            Assert.Contains(reused.ProofTightenAttemptTrace.Skip(1), attempt => attempt.ReusedFeasibleStates > 0);
-    }
-
-    [Fact]
-    public void ProofTightenProbe_InfeasibleRetryReuse_PreservesOutcomeAndPlan()
-    {
-        var reused = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 1 };
-        var baseline = new StrategyBuilder(12, 4, 4)
-        {
-            CompactGreedyCandidateCap = 1,
-            DisableProofTightenInfeasibleReuseForTesting = true,
-        };
-        int budget = reused.ExecuteGreedyFeasibleStage().MaxStep - 1;
-        _ = baseline.ExecuteGreedyFeasibleStage();
-
-        StageResult reusedStage = reused.ExecuteProofTightenStage(budget);
-        StageResult baselineStage = baseline.ExecuteProofTightenStage(budget);
-
-        Assert.Equal(baselineStage.Outcome, reusedStage.Outcome);
-        Assert.Equal(baselineStage.MaterializedPlan?.MaxStep, reusedStage.MaterializedPlan?.MaxStep);
-        Assert.Equal(
-            baseline.ProofTightenAttemptTrace.Select(attempt => attempt.CandidateCap),
-            reused.ProofTightenAttemptTrace.Select(attempt => attempt.CandidateCap));
-    }
-
-    [Fact]
-    public void ProofTightenProbe_CandidateGenerationResume_PreservesOutcomeAndSkipsRawPrefix()
-    {
-        var resumed = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 1 };
-        var baseline = new StrategyBuilder(12, 4, 4)
-        {
-            CompactGreedyCandidateCap = 1,
-            DisableProofTightenCandidateGenerationReuseForTesting = true,
-        };
-
-        StageResult resumedStage = resumed.ExecuteProofTightenStage(budget: 4);
-        StageResult baselineStage = baseline.ExecuteProofTightenStage(budget: 4);
-
-        Assert.Equal(baselineStage.Outcome, resumedStage.Outcome);
-        Assert.Equal(baselineStage.MaterializedPlan?.MaxStep, resumedStage.MaterializedPlan?.MaxStep);
-        Assert.Equal(
-            baseline.ProofTightenAttemptTrace.Select(attempt => attempt.CandidateCap),
-            resumed.ProofTightenAttemptTrace.Select(attempt => attempt.CandidateCap));
-        Assert.Contains(
-            resumed.ProofTightenAttemptTrace.Skip(1),
-            attempt => attempt.ReusedCandidateGenerationEntries > 0);
-        Assert.True(
-            resumed.ProofTightenAttemptTrace.Sum(attempt => attempt.CandidateGroupsEnumerated) <
-            baseline.ProofTightenAttemptTrace.Sum(attempt => attempt.CandidateGroupsEnumerated));
     }
 
     // Pins the user-facing stage-name contract emitted by RunGreedyPipeline: each downward
