@@ -345,13 +345,9 @@ partial class StrategyBuilder
                 fits.Add((constructiveGroup, constructiveTransition));
             }
 
-            int candidateCap = enumerationPolicy switch
-            {
-                CandidateEnumerationPolicy.Full => int.MaxValue,
-                CandidateEnumerationPolicy.Progressive =>
-                    _owner.GetCompactGreedyCandidateCap(candidates.Count, groupSize),
-                _ => _owner.GetCompactGreedyCandidateCap(candidates.Count, groupSize),
-            };
+            int candidateCap = enumerationPolicy == CandidateEnumerationPolicy.Full
+                ? int.MaxValue
+                : _owner.GetCompactGreedyCandidateCap(candidates.Count, groupSize);
             IReadOnlyList<List<int>> groups = _owner.EnumerateDistinctGroups(
                 state, candidates, groupSize, candidateCap, out bool wasTruncated);
             foreach (var group in groups)
