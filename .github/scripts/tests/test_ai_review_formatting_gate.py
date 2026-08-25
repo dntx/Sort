@@ -222,6 +222,88 @@ def test_request_chat_completion_uses_copilot_cli_prompt_mode():
     assert "[USER]" in command[3]
 
 
+_CORE_ALGO_DIFF = """diff --git a/src/TopKFinder/StrategyBuilder.Core.cs b/src/TopKFinder/StrategyBuilder.Core.cs
+index 1111111..2222222 100644
+--- a/src/TopKFinder/StrategyBuilder.Core.cs
++++ b/src/TopKFinder/StrategyBuilder.Core.cs
+@@ -10,6 +10,7 @@ internal int Probe(int budget)
+         var candidate = Find(budget);
++        var widened = WidenCaps(candidate);
+-        return candidate;
++        return widened;
+"""
+
+
+def test_core_algorithm_change_without_doc_update_blocks():
+    finding = ai_review.detect_core_algorithm_doc_gap(_CORE_ALGO_DIFF, pr_body="")
+
+    assert finding is not None
+    assert "[BLOCK]" in finding
+    assert "StrategyBuilder.Core.cs" in finding
+    assert "no doc files" in finding
+
+
+def test_core_algorithm_change_with_doc_update_passes():
+    diff = _CORE_ALGO_DIFF + """diff --git a/docs/core-algorithm.md b/docs/core-algorithm.md
+index 3333333..4444444 100644
+--- a/docs/core-algorithm.md
++++ b/docs/core-algorithm.md
+@@ -230,1 +230,2 @@
+ - `proof-tighten`：说明。
++- 补充新行为说明。
+"""
+
+    finding = ai_review.detect_core_algorithm_doc_gap(diff, pr_body="")
+
+    assert finding is None
+
+
+def test_core_algorithm_doc_gap_waived_by_explicit_no_doc_section():
+    pr_body = """## Summary
+- internal refactor of probe cap plumbing
+
+## Why no docs
+- Reason: internal implementation detail only; the documented behavior contract is unchanged.
+- Evidence: docs/core-algorithm.md remains accurate for the described proof-tighten contract.
+"""
+
+    finding = ai_review.detect_core_algorithm_doc_gap(_CORE_ALGO_DIFF, pr_body=pr_body)
+
+    assert finding is None
+
+
+def test_non_core_code_change_without_doc_update_does_not_block():
+    diff = """diff --git a/src/TopKFinder/MainForm.cs b/src/TopKFinder/MainForm.cs
+index 1111111..2222222 100644
+--- a/src/TopKFinder/MainForm.cs
++++ b/src/TopKFinder/MainForm.cs
+@@ -5,6 +5,7 @@ void Render()
+         var x = Compute();
++        var y = ComputeTwice();
+-        Paint(x);
++        Paint(x + y);
+"""
+
+    finding = ai_review.detect_core_algorithm_doc_gap(diff, pr_body="")
+
+    assert finding is None
+
+
+def test_core_algorithm_visibility_only_change_does_not_block():
+    diff = """diff --git a/src/TopKFinder/StrategyBuilder.Core.cs b/src/TopKFinder/StrategyBuilder.Core.cs
+index 1111111..2222222 100644
+--- a/src/TopKFinder/StrategyBuilder.Core.cs
++++ b/src/TopKFinder/StrategyBuilder.Core.cs
+@@ -10,1 +10,1 @@
+-        private int Probe(int budget)
++        internal int Probe(int budget)
+"""
+
+    finding = ai_review.detect_core_algorithm_doc_gap(diff, pr_body="")
+
+    assert finding is None
+
+
 def test_build_change_manifest_keeps_ai_review_infra_files():
     diff = """diff --git a/.github/scripts/ai_review.py b/.github/scripts/ai_review.py
 index 1111111..2222222 100644
