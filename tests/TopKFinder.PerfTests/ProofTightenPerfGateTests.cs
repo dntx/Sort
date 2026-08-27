@@ -21,6 +21,11 @@ using Xunit.Sdk;
 // - Wall-clock-only gates are noisy across machines.
 // - This gate combines a coarse timeout sentinel (hang/explosion catcher) with optional deterministic
 //   work counters (machine-independent, ratchet-friendly).
+//
+// Timeout model (soft gate + hard watchdog):
+// - The *_TIMEOUT_SECONDS values above are the soft gate. Finishing slower than the gate fails the
+//   test, but the run is allowed to continue up to 3x the gate so the failure message can report the
+//   actual duration (e.g. "completed in 167.3s" vs "still running at 480s").
 public sealed class ProofTightenPerfGateTests
 {
     private readonly ITestOutputHelper _output;
@@ -39,9 +44,10 @@ public sealed class ProofTightenPerfGateTests
         int timeoutSeconds = ReadPositiveIntEnv("PROOF_TIGHTEN_20_5_5_TIMEOUT_SECONDS", 40);
 
         (StageOutcome Outcome, StrategyBuilder.ProofTightenAttemptDiagnostics[] Attempts) result =
-            TestTimeoutHelper.RunWithTimeout(
+            TestTimeoutHelper.RunWithGate(
                 "greedy proof-tighten probe (20,5,5)",
                 TimeSpan.FromSeconds(timeoutSeconds),
+                TimeSpan.FromSeconds(timeoutSeconds * 3.0),
                 cancellationToken =>
                 {
                     var builder = new StrategyBuilder(20, 5, 5, cancellationToken);
@@ -89,9 +95,10 @@ public sealed class ProofTightenPerfGateTests
 
         try
         {
-            result = TestTimeoutHelper.RunWithTimeout(
+            result = TestTimeoutHelper.RunWithGate(
                 "greedy proof-tighten first probe (20,2,6)",
                 TimeSpan.FromSeconds(timeoutSeconds),
+                TimeSpan.FromSeconds(timeoutSeconds * 3.0),
                 cancellationToken =>
                 {
                     var builder = new StrategyBuilder(
@@ -134,7 +141,7 @@ public sealed class ProofTightenPerfGateTests
                         StageElapsedMs: stage.Elapsed.TotalMilliseconds);
                 });
         }
-        catch (XunitException ex) when (ex.Message.Contains("exceeded timeout", StringComparison.OrdinalIgnoreCase))
+        catch (XunitException ex) when (ex.Message.Contains("exceeded", StringComparison.OrdinalIgnoreCase))
         {
             throw new XunitException(
                 ex.Message +
