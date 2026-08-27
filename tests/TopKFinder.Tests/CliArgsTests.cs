@@ -21,6 +21,45 @@ public sealed class CliArgsTests
     }
 
     [Theory]
+    [InlineData("progressive", ProofTightenMode.Progressive)]
+    [InlineData("PROGRESSIVE", ProofTightenMode.Progressive)]
+    [InlineData("full", ProofTightenMode.Full)]
+    [InlineData("FULL", ProofTightenMode.Full)]
+    public void TryParseCliArgs_ParsesProofTightenMode(string value, ProofTightenMode expected)
+    {
+        bool ok = Program.TryParseCliArgs(
+            new[] { "9", "3", "3", "--proof-tighten-mode", value },
+            out _, out _, out _, out _, out _, out ProofTightenMode mode, out _, out string? error);
+
+        Assert.True(ok);
+        Assert.Equal(expected, mode);
+        Assert.Null(error);
+    }
+
+    [Fact]
+    public void TryParseCliArgs_DefaultsProofTightenModeToProgressive()
+    {
+        bool ok = Program.TryParseCliArgs(
+            new[] { "9", "3", "3" },
+            out _, out _, out _, out _, out _, out ProofTightenMode mode, out _, out string? error);
+
+        Assert.True(ok);
+        Assert.Equal(ProofTightenMode.Progressive, mode);
+        Assert.Null(error);
+    }
+
+    [Fact]
+    public void TryParseCliArgs_RejectsUnknownProofTightenMode()
+    {
+        bool ok = Program.TryParseCliArgs(
+            new[] { "9", "3", "3", "--proof-tighten-mode", "other" },
+            out _, out _, out _, out _, out _, out _, out _, out string? error);
+
+        Assert.False(ok);
+        Assert.Equal("Error: unknown proof-tighten mode 'other' (expected progressive or full)", error);
+    }
+
+    [Theory]
     [InlineData("greedy", "Greedy")]
     [InlineData("GREEDY", "Greedy")]
     [InlineData("exact", "Exact")]

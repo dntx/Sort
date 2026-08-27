@@ -15,6 +15,7 @@ partial class MainForm
         public string Theme { get; set; } = nameof(ColorTheme.Dark);
         public bool PauseEachStage { get; set; }
         public bool EnableGt { get; set; }
+        public string ProofTightenSearchMode { get; set; } = nameof(TopKFinder.ProofTightenMode.Progressive);
     }
 
     private static string SettingsFilePath =>
@@ -48,6 +49,8 @@ partial class MainForm
                 _themeComboBox.SelectedItem = settings.Theme;
             _pauseEachStageCheckBox.Checked = settings.PauseEachStage;
             _enableGtCheckBox.Checked = settings.EnableGt;
+            if (_proofTightenModeComboBox.Items.Contains(settings.ProofTightenSearchMode))
+                _proofTightenModeComboBox.SelectedItem = settings.ProofTightenSearchMode;
         }
         catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException)
         {
@@ -68,6 +71,8 @@ partial class MainForm
                 Theme = ParseSelectedTheme().ToString(),
                 PauseEachStage = _pauseEachStageCheckBox.Checked,
                 EnableGt = _enableGtCheckBox.Checked,
+                ProofTightenSearchMode = _proofTightenModeComboBox.SelectedItem?.ToString()
+                    ?? nameof(TopKFinder.ProofTightenMode.Progressive),
             };
 
             string path = SettingsFilePath;

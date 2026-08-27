@@ -240,7 +240,7 @@ compact 求解器对每个状态的候选比较组使用 `CandidateEnumerationPo
 | --- | --- | --- |
 | `Progressive` | 使用有限 cap；若本轮因 cap 截断而无法判定，则扩大 cap 后在同一预算重试 | `proof-tighten` 默认策略 |
 | `Capped` | 使用有限 cap；到达 cap 后结束本轮，不自动扩大 | `greedy-edge-compact` |
-| `Full` | 使用 `int.MaxValue`，枚举当前状态的全部候选代表 | 内部完整枚举策略，当前未作为用户选项暴露 |
+| `Full` | 使用 `int.MaxValue`，枚举当前状态的全部候选代表 | 可由 CLI 或 UI 选择 |
 
 `Progressive` 的 cap 序列通常为 `128 -> 512 -> 2048 -> ...`。每一轮都必须区分：
 
@@ -255,8 +255,11 @@ compact 求解器对每个状态的候选比较组使用 `CandidateEnumerationPo
 重复评估成本；它的主要收益场景是较小 cap 就能找到可行解并提前返回。
 
 因此，`Full` 与 `Progressive` 的区别是**候选枚举调度**，不是 BFS/DFS 的区别，也不是是否使用状态 memo、
-lower bound 或对称性约减的区别。设置 `CompactGreedyCandidateCap = int.MaxValue` 会使 cap 不再截断，
-实际效果接近一次完整候选枚举，但仍保留上述状态归一化、剪枝、memo 和对称性约减。
+lower bound 或对称性约减的区别。用户选择 `Full` 时，proof-tighten 使用 `int.MaxValue`，使 cap 不再截断；
+仍保留上述状态归一化、剪枝、memo 和对称性约减。`Progressive` 是默认模式，适合希望可行场景尽早返回的运行。
+
+CLI 使用 `--proof-tighten-mode progressive|full` 选择模式；桌面 UI 在 Inputs 区域提供同名下拉框。
+该设置只影响 greedy 流程中的 proof-tighten，不改变 exact 流程或 greedy-edge-compact 的 capped policy。
 
 ---
 

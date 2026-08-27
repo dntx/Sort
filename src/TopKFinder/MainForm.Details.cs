@@ -202,6 +202,7 @@ partial class MainForm
         _continueStageButton.Enabled = false;
         _continueStageButton.Visible = false;
         _modeComboBox.Enabled = !running;
+        _proofTightenModeComboBox.Enabled = !running;
         _treeExpandButton.Enabled = interactive;
         _treeCollapseButton.Enabled = interactive;
         _overviewExpandButton.Enabled = interactive;

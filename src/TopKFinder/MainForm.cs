@@ -112,6 +112,7 @@ partial class MainForm : Form
     private readonly TextBox _kTextBox;
     private readonly ComboBox _themeComboBox;
     private readonly ComboBox _modeComboBox;
+    private readonly ComboBox _proofTightenModeComboBox;
     private readonly CheckBox _pauseEachStageCheckBox;
     private readonly CheckBox _enableGtCheckBox;
     private readonly Button _runButton;
@@ -218,6 +219,7 @@ partial class MainForm : Form
 
         // Search mode matches the UI labels: exact (proven) and greedy (fast).
         _modeComboBox = CreateModeComboBox();
+        _proofTightenModeComboBox = CreateProofTightenModeComboBox();
 
         // When checked, each completed search waits for its rendered result and explicit continuation.
         _pauseEachStageCheckBox = CreatePauseEachStageCheckBox();
@@ -245,6 +247,7 @@ partial class MainForm : Form
         inputsPanel.Controls.Add(CreateLabeledInput("m", _mTextBox));
         inputsPanel.Controls.Add(CreateLabeledInput("k", _kTextBox));
         inputsPanel.Controls.Add(CreateLabeledInput("mode", _modeComboBox));
+        inputsPanel.Controls.Add(CreateLabeledInput("proof-tighten", _proofTightenModeComboBox));
         inputsPanel.Controls.Add(CreateLabeledInput("theme", _themeComboBox));
         inputsPanel.Controls.Add(_pauseEachStageCheckBox);
         inputsPanel.Controls.Add(_enableGtCheckBox);
@@ -401,6 +404,19 @@ partial class MainForm : Form
             Margin = new Padding(0, 4, 0, 0),
         };
         comboBox.Items.AddRange(new object[] { "exact (proven)", "greedy (fast)" });
+        comboBox.SelectedIndex = 0;
+        return comboBox;
+    }
+
+    private static ComboBox CreateProofTightenModeComboBox()
+    {
+        var comboBox = new ComboBox
+        {
+            Width = 220,
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Margin = new Padding(0, 4, 0, 0),
+        };
+        comboBox.Items.AddRange(new object[] { "progressive", "full" });
         comboBox.SelectedIndex = 0;
         return comboBox;
     }

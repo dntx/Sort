@@ -9,6 +9,8 @@
   - `exact`：`step-proof → exact-edge-compact@S`
   - `greedy`：`greedy-feasible → (optional) greedy-tighten → proof-tighten≤N (0..n 次) → greedy-edge-compact@S`
 - UI 右侧输入区新增 `Enable Greedy Tighten` 复选框：勾选后会在 greedy 预处理阶段执行 `greedy-tighten`；未勾选时默认跳过 GT，直接进入常规 proof-tighten 流程。
+- UI 输入区提供 `proof-tighten` 下拉框，可选择 `progressive`（默认）或 `full`；该选择只影响 greedy 流程中的 proof-tighten 候选枚举。
+- proof-tighten 模式选择会与其他 UI 设置一起持久化，运行期间禁用，避免运行中途修改不生效。
 
 实现归属：
 
@@ -26,6 +28,9 @@ UI 使用与 CLI 相同的阶段名展示进度：
 - `proof-tighten≤N`
 - `exact-edge-compact@S`（exact 终段）
 - `greedy-edge-compact@S`（greedy 终段）
+
+proof-tighten 的 `progressive` 模式从有限 candidate cap 开始，在当前预算无法判定时逐步扩大 cap；`full`
+模式直接使用完整候选枚举。两者共享相同的状态、剪枝和结果语义；`full` 只跳过 progressive 的 cap 扩展过程。
 
 当阶段尚在运行时，tree / overview 会显示阶段状态占位，而不是笼统的 `computing...`：
 

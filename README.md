@@ -133,7 +133,7 @@ stage/output semantics are unchanged.
 ### Command-line arguments
 
 ```bash
-dotnet run -- <n> <m> <k> [--mode exact|greedy] [--greedy-tighten] [--stage <n>]
+dotnet run -- <n> <m> <k> [--mode exact|greedy] [--greedy-tighten] [--proof-tighten-mode progressive|full] [--stage <n>]
 ```
 
 - Prints the strategy tree for `n`, `m`, `k` to **stdout**.
@@ -146,6 +146,10 @@ dotnet run -- <n> <m> <k> [--mode exact|greedy] [--greedy-tighten] [--stage <n>]
     compact pass for edge. Fast and interruptible, but not proven optimal.
 - `--greedy-tighten` enables the optional `greedy-tighten` pre-step in greedy
   mode. By default this pre-step is disabled in CLI/headless runs.
+- `--proof-tighten-mode progressive|full` selects proof-tighten candidate
+  enumeration. `progressive` is the default and widens the candidate cap only
+  when needed; `full` uses an uncapped candidate enumeration for each probe.
+  This option affects greedy proof-tighten only.
 - `--stage <n>` stops after stage `n` (1-based):
   - exact: `1` = step-proof, `2` = exact-edge-compact@S
   - greedy: `1` = greedy-feasible, `2+` continues along tightening progression
@@ -173,6 +177,10 @@ The explorer now includes an explicit `Enable Greedy Tighten` checkbox in the
 input/actions area. When checked, the greedy preparation pipeline runs the
 optional `greedy-tighten` stage before proof-tighten begins; when unchecked, the
 default path skips GT and proceeds straight to the normal proof-tighten flow.
+
+The Inputs area also includes a `proof-tighten` selector with `progressive`
+(default) and `full` options. The selection is persisted with the other explorer
+settings and is disabled while a run is active.
 
 ### Example
 
