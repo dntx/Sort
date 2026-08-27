@@ -134,7 +134,16 @@ jobs:
           PROOF_TIGHTEN_20_5_5_TIMEOUT_SECONDS: "40"
         working-directory: ./tests/TopKFinder.PerfTests
         run: |
-          dotnet test TopKFinder.PerfTests.csproj -c Release --filter "ProofTightenPerfGateTests"
+          dotnet test TopKFinder.PerfTests.csproj -c Release --filter "ProofTightenPerfGateTests" --logger "trx;LogFileName=proof-tighten-gate.trx"
+
+      - name: Upload proof-tighten test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: proof-tighten-gate-test-results
+          path: tests/TopKFinder.PerfTests/TestResults/
+          if-no-files-found: ignore
+          retention-days: 30
 
       - name: Alert on failure (create or update issue)
         if: failure()
