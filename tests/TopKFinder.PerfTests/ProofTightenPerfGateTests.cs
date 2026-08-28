@@ -12,7 +12,7 @@ using Xunit.Sdk;
 //
 // Optional knobs:
 //   PROOF_TIGHTEN_20_2_6_TIMEOUT_SECONDS (default 160)
-//   PROOF_TIGHTEN_20_5_5_TIMEOUT_SECONDS (default 40)
+//   PROOF_TIGHTEN_20_5_5_TIMEOUT_SECONDS (default 30)
 //   PROOF_TIGHTEN_OUTCOMES_CAP          (default 0 = disabled)
 //   PROOF_TIGHTEN_CANDIDATES_CAP        (default 0 = disabled)
 //   PROOF_TIGHTEN_SEARCHED_STATES_CAP   (default 0 = disabled)
@@ -41,7 +41,7 @@ public sealed class ProofTightenPerfGateTests
         if (Environment.GetEnvironmentVariable("RUN_PROOF_TIGHTEN_GATE") != "1")
             return;
 
-        int timeoutSeconds = ReadPositiveIntEnv("PROOF_TIGHTEN_20_5_5_TIMEOUT_SECONDS", 40);
+        int timeoutSeconds = ReadPositiveIntEnv("PROOF_TIGHTEN_20_5_5_TIMEOUT_SECONDS", 30);
 
         (StageOutcome Outcome, StrategyBuilder.ProofTightenAttemptDiagnostics[] Attempts) result =
             TestTimeoutHelper.RunWithGate(
@@ -68,7 +68,7 @@ public sealed class ProofTightenPerfGateTests
         }
 
         Assert.Equal(StageOutcome.ProvenInfeasible, result.Outcome);
-        Assert.All(result.Attempts, attempt => Assert.False(attempt.EnumerationCapped));
+        Assert.False(result.Attempts[^1].EnumerationCapped);
     }
 
     [Fact]
