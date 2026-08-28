@@ -324,7 +324,7 @@ dotnet test .\tests\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter Pr
 ```
 
 - 可选环境变量：
-  - `PROOF_TIGHTEN_20_2_6_TIMEOUT_SECONDS`（默认 160）
+  - `PROOF_TIGHTEN_20_2_6_TIMEOUT_SECONDS`（默认 180）
   - `PROOF_TIGHTEN_20_5_5_TIMEOUT_SECONDS`（默认 30）
   - `PROOF_TIGHTEN_OUTCOMES_CAP`（默认 0，0=关闭）
   - `PROOF_TIGHTEN_CANDIDATES_CAP`（默认 0，0=关闭）
@@ -340,7 +340,7 @@ dotnet test .\tests\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter Pr
 - 行为：拆成两个夜间 gate
   - `StrategyMatrixTests` 的 smoke 矩阵，覆盖 `6,2,2`、`10,2,5`、`12,4,4` 的 exact / greedy / greedy-tighten / proof-tighten / greedy-full 代表行
   - `ProofTightenPerfGateTests`，专门盯住历史敏感的 `20,2,6` 首探针和 `20,5,5` attempt trace
-  - proof-tighten 夜间门槛分别为 `20,2,6=160s`（`PROOF_TIGHTEN_20_2_6_TIMEOUT_SECONDS`）和 `20,5,5=30s`（`PROOF_TIGHTEN_20_5_5_TIMEOUT_SECONDS`），用于吸收 hosted runner 抖动，避免在接近完成时的偶发压线误报
+  - proof-tighten 夜间门槛分别为 `20,2,6=180s`（`PROOF_TIGHTEN_20_2_6_TIMEOUT_SECONDS`）和 `20,5,5=30s`（`PROOF_TIGHTEN_20_5_5_TIMEOUT_SECONDS`），用于吸收 hosted runner 抖动，避免在接近完成时的偶发压线误报
 - 报警：smoke 与 proof-tighten 分别维护独立的 failure episode issue。失败时创建或追加，成功时记录恢复并关闭；标签分别为 `nightly-strategy-smoke` 与 `nightly-proof-tighten`。
 - full matrix 与 nightly counter full audit 也使用同一 episode 生命周期：每个 gate 保持一个固定标题的 open issue，成功后记录恢复并关闭，下一次失败才开启新的 episode。
 - 本地 smoke：把 `STRATEGY_MATRIX_CASE_SET=smoke`，即可跳过最重的 `20,2,6` 行做快速验证；如果要看完整矩阵，可手动把 case set 切到 `full`
