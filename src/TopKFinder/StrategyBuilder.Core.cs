@@ -7,6 +7,12 @@ using System.Threading;
 
 namespace TopKFinder;
 
+public enum ProofTightenMode
+{
+    Progressive,
+    Full,
+}
+
 partial class StrategyBuilder
 {
     private readonly StrategyBuilderSession _session = new();
@@ -84,6 +90,7 @@ partial class StrategyBuilder
     // differently, so a gated (5,5) case may yield a different (still MaxStep-optimal) tree than the
     // single-pass path. See docs/core-algorithm.md sec 4.3.
     private readonly bool _useIterativeDeepening;
+    public ProofTightenMode ProofTightenSearchMode { get; set; } = ProofTightenMode.Progressive;
     // Test-only override of the iterative-deepening gate. When non-null it forces the search path
     // regardless of the (m, k, n) heuristic, letting a regression test run the SAME case under both
     // paths and assert they reach the same MaxStep optimum while iterative deepening constructs
