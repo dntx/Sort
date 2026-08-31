@@ -71,7 +71,11 @@ partial class StrategyBuilder
                 ? _feasibleRootBudgetActive
                 : (_feasibleRootBudget >= 0 ? _feasibleRootBudget : ConstructiveRootUpperBound()))
             : int.MaxValue;
-        _compactRootCost = SolveCompact(new ComparisonState(_n), _k, rootBudget);
+        _compactRootCost = _compactUsesFeasibleBudget
+            && _compactFeasibilityOnly
+            && ProofTightenSearchMode == ProofTightenMode.Progressive
+                ? CompactSolverInstance.SolveProgressiveFeasibility(rootBudget)
+                : SolveCompact(new ComparisonState(_n), _k, rootBudget);
         _phase1bSolved = true;
         _compactPatternCacheReadyForMaterialization = _compactRootCost != int.MaxValue;
     }
