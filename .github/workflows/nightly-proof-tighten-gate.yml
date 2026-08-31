@@ -134,7 +134,7 @@ jobs:
           PROOF_TIGHTEN_20_5_5_TIMEOUT_SECONDS: "30"
         working-directory: ./tests/TopKFinder.PerfTests
         run: |
-          dotnet test TopKFinder.PerfTests.csproj -c Release --filter "ProofTightenPerfGateTests"
+          dotnet test TopKFinder.PerfTests.csproj -c Release --filter "ProofTightenPerfGateTests" --logger "console;verbosity=detailed"
 
       - name: Alert on failure (create or update issue)
         if: failure()

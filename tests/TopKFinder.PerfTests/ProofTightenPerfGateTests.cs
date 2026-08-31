@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using TopKFinder;
 using Xunit;
 using Xunit.Abstractions;
@@ -42,6 +43,7 @@ public sealed class ProofTightenPerfGateTests
             return;
 
         int timeoutSeconds = ReadPositiveIntEnv("PROOF_TIGHTEN_20_5_5_TIMEOUT_SECONDS", 30);
+        var stopwatch = Stopwatch.StartNew();
 
         (StageOutcome Outcome, StrategyBuilder.ProofTightenAttemptDiagnostics[] Attempts) result =
             TestTimeoutHelper.RunWithGate(
@@ -55,6 +57,11 @@ public sealed class ProofTightenPerfGateTests
                     StageResult stage = builder.ExecuteProofTightenStage(budget: 6);
                     return (stage.Outcome, builder.ProofTightenAttemptTrace.ToArray());
                 });
+                stopwatch.Stop();
+
+                _output.WriteLine(
+                    $"ProofTightenGateTiming: case=20,5,5, elapsedSeconds={stopwatch.Elapsed.TotalSeconds:F1}, " +
+                    $"gateSeconds={timeoutSeconds}, outcome={result.Outcome}");
 
         foreach (StrategyBuilder.ProofTightenAttemptDiagnostics attempt in result.Attempts)
         {
@@ -81,6 +88,7 @@ public sealed class ProofTightenPerfGateTests
         int outcomesCap = ReadNonNegativeIntEnv("PROOF_TIGHTEN_OUTCOMES_CAP", 0);
         int candidatesCap = ReadNonNegativeIntEnv("PROOF_TIGHTEN_CANDIDATES_CAP", 0);
         int searchedCap = ReadNonNegativeIntEnv("PROOF_TIGHTEN_SEARCHED_STATES_CAP", 0);
+        var stopwatch = Stopwatch.StartNew();
 
         int maxObservedSearched = 0;
         int lastPendingStates = -1;
@@ -153,9 +161,13 @@ public sealed class ProofTightenPerfGateTests
                 "Set PROOF_TIGHTEN_20_2_6_TIMEOUT_SECONDS higher for baseline capture, " +
                 "or keep this timeout to enforce the current gate.");
         }
+        stopwatch.Stop();
 
         _output.WriteLine(
-            "ProofTightenGate: " +
+            "ProofTightenGateTiming: " +
+            "case=20,2,6, " +
+            $"elapsedSeconds={stopwatch.Elapsed.TotalSeconds:F1}, " +
+            $"gateSeconds={timeoutSeconds}, " +
             $"feasibleStep={result.FeasibleStep}, " +
             $"budget={result.Budget}, " +
             $"outcome={result.Outcome}, " +
