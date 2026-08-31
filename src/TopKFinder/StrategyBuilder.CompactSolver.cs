@@ -334,11 +334,13 @@ partial class StrategyBuilder
             CandidateEnumerationPolicy enumerationPolicy)
         {
             var fits = new List<(List<int> Group, BudgetFitTransition Transition)>();
+            BudgetCandidateRetryCacheEntry? continuationEntry = GetBudgetCandidateContinuationEntry(
+                state, candidates, groupSize, branchBudget);
 
             List<int> constructiveGroup = _owner.ChooseConstructiveGroup(state, remainingSlots);
             var seen = new HashSet<IntSequenceKey>();
-            BudgetFitTransition constructiveTransition = EvaluateBudgetFitChildren(
-                state, remainingSlots, key, constructiveGroup, branchBudget);
+            BudgetFitTransition constructiveTransition = GetOrEvaluateBudgetFitTransition(
+                continuationEntry, state, remainingSlots, key, constructiveGroup, branchBudget);
             if (constructiveTransition.HasChildren)
             {
                 _owner._compactGroupsEnumerated++;
@@ -360,8 +362,8 @@ partial class StrategyBuilder
                 _owner.ThrowIfCancellationRequested();
                 _owner._compactGroupsEnumerated++;
 
-                BudgetFitTransition transition = EvaluateBudgetFitChildren(
-                    state, remainingSlots, key, group, branchBudget);
+                BudgetFitTransition transition = GetOrEvaluateBudgetFitTransition(
+                    continuationEntry, state, remainingSlots, key, group, branchBudget);
                 if (!transition.HasChildren)
                     continue;
 
@@ -371,6 +373,58 @@ partial class StrategyBuilder
 
             fits.Sort((a, b) => a.Transition.ChildCount.CompareTo(b.Transition.ChildCount));
             return new BudgetCandidateCollection(fits, EnumerationComplete: !wasTruncated);
+        }
+
+        private BudgetCandidateRetryCacheEntry? GetBudgetCandidateContinuationEntry(
+            ComparisonState state,
+            IReadOnlyList<int> candidates,
+            int groupSize,
+            int branchBudget)
+        {
+            if (_owner._proofTightenStateContinuationCache is not { } cache)
+                return null;
+
+            var cacheKey = new BudgetCandidateRetryCacheKey(
+                state.GetRawStructureKey(),
+                CopyItems(candidates),
+                groupSize,
+                branchBudget);
+            if (!cache.TryGetValue(cacheKey, out BudgetCandidateRetryCacheEntry? entry))
+            {
+                entry = new BudgetCandidateRetryCacheEntry();
+                cache.Add(cacheKey, entry);
+            }
+
+            return entry;
+        }
+
+        private static IntSequenceKey CopyItems(IReadOnlyList<int> items)
+        {
+            var copy = new int[items.Count];
+            for (int i = 0; i < items.Count; i++)
+                copy[i] = items[i];
+            return new IntSequenceKey(copy);
+        }
+
+        private BudgetFitTransition GetOrEvaluateBudgetFitTransition(
+            BudgetCandidateRetryCacheEntry? continuationEntry,
+            ComparisonState state,
+            int remainingSlots,
+            SearchStateKey key,
+            IReadOnlyList<int> group,
+            int branchBudget)
+        {
+            if (continuationEntry is not null
+                && continuationEntry.TryGetTransition(group, out BudgetFitTransition cached))
+            {
+                _owner._proofTightenStateContinuationHits++;
+                return cached;
+            }
+
+            BudgetFitTransition transition = EvaluateBudgetFitChildren(
+                state, remainingSlots, key, group, branchBudget);
+            continuationEntry?.AddTransition(group, transition);
+            return transition;
         }
 
         private bool TrySumChildCostsWithPruning(

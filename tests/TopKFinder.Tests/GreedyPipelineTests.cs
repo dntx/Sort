@@ -356,6 +356,9 @@ public class GreedyPipelineTests
         Assert.Contains(
             builder.ProofTightenAttemptTrace.Skip(1),
             attempt => attempt.ReusedCandidateGenerationEntries > 0);
+        Assert.Contains(
+            builder.ProofTightenAttemptTrace.Skip(1),
+            attempt => attempt.ReusedStateTransitions > 0);
     }
 
     [Fact]

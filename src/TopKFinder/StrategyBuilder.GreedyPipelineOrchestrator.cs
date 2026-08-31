@@ -11,6 +11,37 @@ partial class StrategyBuilder
     private Dictionary<GroupSelectionHelper.CandidateGenerationRetryCacheKey,
         GroupSelectionHelper.CandidateGenerationRetryCacheEntry>? _proofTightenCandidateGenerationRetryCache;
     private int _proofTightenCandidateGenerationRetryHits;
+    private Dictionary<BudgetCandidateRetryCacheKey, BudgetCandidateRetryCacheEntry>? _proofTightenStateContinuationCache;
+    private int _proofTightenStateContinuationHits;
+
+    private readonly record struct BudgetCandidateRetryCacheKey(
+        RawStructureKey State,
+        IntSequenceKey Candidates,
+        int GroupSize,
+        int BranchBudget);
+
+    // A transition is cap-independent once it has been built: it captures the exact successor
+    // states for one candidate group, and only records child results after they are conclusive.
+    // Keeping it across cap epochs lets a retry resume the state-level proof work rather than
+    // rebuilding and re-solving every already-seen candidate at that state.
+    private sealed class BudgetCandidateRetryCacheEntry
+    {
+        private readonly Dictionary<IntSequenceKey, BudgetFitTransition> _transitions = new();
+
+        public bool TryGetTransition(IReadOnlyList<int> group, out BudgetFitTransition transition)
+            => _transitions.TryGetValue(new IntSequenceKey(CopyGroup(group)), out transition!);
+
+        public void AddTransition(IReadOnlyList<int> group, BudgetFitTransition transition)
+            => _transitions.Add(new IntSequenceKey(CopyGroup(group)), transition);
+
+        private static int[] CopyGroup(IReadOnlyList<int> group)
+        {
+            var copy = new int[group.Count];
+            for (int i = 0; i < group.Count; i++)
+                copy[i] = group[i];
+            return copy;
+        }
+    }
 
     private sealed class BudgetFitTransition
     {
@@ -239,6 +270,10 @@ partial class StrategyBuilder
                 GroupSelectionHelper.CandidateGenerationRetryCacheKey,
                 GroupSelectionHelper.CandidateGenerationRetryCacheEntry>();
             _owner._proofTightenCandidateGenerationRetryHits = 0;
+            _owner._proofTightenStateContinuationCache = new Dictionary<
+                BudgetCandidateRetryCacheKey,
+                BudgetCandidateRetryCacheEntry>();
+            _owner._proofTightenStateContinuationHits = 0;
             _owner._proofTightenAttemptTrace.Clear();
             try
             {
@@ -247,6 +282,7 @@ partial class StrategyBuilder
                     _owner.CompactGreedyCandidateCap = attemptCap;
                     attempt++;
                     int retryHitsBefore = _owner._proofTightenCandidateGenerationRetryHits;
+                    int stateContinuationHitsBefore = _owner._proofTightenStateContinuationHits;
                     var stopwatch = Stopwatch.StartNew();
                     CompactStageArtifacts? candidate = ProbeFeasibleCompactCore(
                         budget,
@@ -271,14 +307,16 @@ partial class StrategyBuilder
                         _owner._compactStepOptimalGroups,
                         _owner._outcomesConstructed,
                         _owner._candidateGroupsEnumerated,
-                        _owner._proofTightenCandidateGenerationRetryHits - retryHitsBefore));
+                        _owner._proofTightenCandidateGenerationRetryHits - retryHitsBefore,
+                        _owner._proofTightenStateContinuationHits - stateContinuationHitsBefore));
                     string logLine =
                         $"[proof-tighten] budget={budget}, attempt={attempt}, cap={attemptCap}, " +
                         $"elapsed={stopwatch.Elapsed.TotalMilliseconds:F1}ms, outcome={outcome}, " +
                         $"capped={enumerationCapped}, states={_owner._compactStatesSolved}, " +
                         $"groups={_owner._compactGroupsEnumerated}, fit-groups={_owner._compactStepOptimalGroups}, " +
                         $"outcomes={_owner._outcomesConstructed}, raw-candidates={_owner._candidateGroupsEnumerated}, " +
-                        $"reused-candidate-generation={_owner._proofTightenCandidateGenerationRetryHits - retryHitsBefore}";
+                        $"reused-candidate-generation={_owner._proofTightenCandidateGenerationRetryHits - retryHitsBefore}, " +
+                        $"reused-state-transitions={_owner._proofTightenStateContinuationHits - stateContinuationHitsBefore}";
                     Debug.WriteLine(logLine);
                     if (Console.IsErrorRedirected)
                         Console.Error.WriteLine(logLine);
@@ -312,6 +350,8 @@ partial class StrategyBuilder
                 _owner.CompactGreedyCandidateCap = configuredCap;
                 _owner._proofTightenCandidateGenerationRetryCache = null;
                 _owner._proofTightenCandidateGenerationRetryHits = 0;
+                _owner._proofTightenStateContinuationCache = null;
+                _owner._proofTightenStateContinuationHits = 0;
             }
         }
 
@@ -440,5 +480,6 @@ partial class StrategyBuilder
         int CompactStepOptimalGroups,
         int OutcomesConstructed,
         int CandidateGroupsEnumerated,
-        int ReusedCandidateGenerationEntries);
+        int ReusedCandidateGenerationEntries,
+        int ReusedStateTransitions);
 }
