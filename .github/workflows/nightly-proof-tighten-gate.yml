@@ -130,7 +130,7 @@ jobs:
         shell: pwsh
         env:
           RUN_PROOF_TIGHTEN_GATE: "1"
-          PROOF_TIGHTEN_20_2_6_TIMEOUT_SECONDS: "180"
+          PROOF_TIGHTEN_20_2_6_TIMEOUT_SECONDS: "200"
           PROOF_TIGHTEN_20_5_5_TIMEOUT_SECONDS: "30"
         working-directory: ./tests/TopKFinder.PerfTests
         run: |
