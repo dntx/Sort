@@ -262,11 +262,14 @@ partial class StrategyBuilder
                         continue;
                     }
 
-                    _owner._compactGroupPatternCache[frame.Key] = MakeGroupPattern(frame.State, candidate.Group);
-                    _owner._compactGroupPatternTightestBudget[frame.Key] = budget;
+                    _solver.CacheCompactPatternForBudget(frame.Key, frame.State, candidate.Group, budget);
                     int cost = 1 + realSteps;
                     _owner._compactCostMemo[(frame.Key, budget)] = cost;
-                    _owner._compactRealStepsMemo[frame.Key] = cost;
+                    if (!_owner._compactRealStepsMemo.TryGetValue(frame.Key, out int existingSteps)
+                        || cost < existingSteps)
+                    {
+                        _owner._compactRealStepsMemo[frame.Key] = cost;
+                    }
                     return cost;
                 }
 
