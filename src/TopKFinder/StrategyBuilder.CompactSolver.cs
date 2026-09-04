@@ -175,6 +175,7 @@ partial class StrategyBuilder
 
                 public List<int> Group { get; }
                 public BudgetFitTransition Transition { get; }
+                public bool Rejected { get; set; }
             }
 
             private sealed class StateFrame
@@ -251,9 +252,15 @@ partial class StrategyBuilder
                 bool allGroupsProvenInfeasible = true;
                 foreach (CandidateFrame candidate in frame.OrderedCandidates)
                 {
+                    if (candidate.Rejected)
+                        continue;
+
                     BudgetChildrenResult result = ResolveChildren(candidate.Transition, budget - 1, out int realSteps);
                     if (result == BudgetChildrenResult.ProvenInfeasible)
+                    {
+                        candidate.Rejected = true;
                         continue;
+                    }
                     if (result == BudgetChildrenResult.Incomplete)
                     {
                         allGroupsProvenInfeasible = false;
@@ -272,7 +279,10 @@ partial class StrategyBuilder
                 }
 
                 if (frame.EnumerationComplete && allGroupsProvenInfeasible)
+                {
                     _owner._compactProvenInfeasibleMemo.Add((frame.Key, budget));
+                    _owner._compactCostMemo[(frame.Key, budget)] = int.MaxValue;
+                }
                 return int.MaxValue;
             }
 
@@ -293,7 +303,8 @@ partial class StrategyBuilder
                     groupSize,
                     _owner.GetCompactGreedyCandidateCap(candidates.Count, groupSize),
                     out bool wasTruncated);
-                frame.EnumerationComplete = !wasTruncated;
+                if (!wasTruncated)
+                    frame.EnumerationComplete = true;
                 foreach (List<int> group in delta)
                     AddCandidate(frame, group, branchBudget);
 
