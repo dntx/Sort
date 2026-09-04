@@ -21,8 +21,8 @@ partial class StrategyBuilder
 
         public int SolveProgressiveFeasibility(int rootBudget)
         {
-            _progressiveDfsContinuation ??= new ProgressiveDfsContinuation(_owner, this, rootBudget);
-            return _progressiveDfsContinuation.SolveRoot();
+            _progressiveDfsContinuation ??= new ProgressiveDfsContinuation(_owner, this);
+            return _progressiveDfsContinuation.SolveRoot(rootBudget);
         }
 
         public void ResetProgressiveFeasibility()
@@ -200,18 +200,16 @@ partial class StrategyBuilder
 
             private readonly StrategyBuilder _owner;
             private readonly CompactSolver _solver;
-            private readonly int _rootBudget;
             private readonly Dictionary<(SearchStateKey Key, int Budget), StateFrame> _frames = new();
 
-            public ProgressiveDfsContinuation(StrategyBuilder owner, CompactSolver solver, int rootBudget)
+            public ProgressiveDfsContinuation(StrategyBuilder owner, CompactSolver solver)
             {
                 _owner = owner;
                 _solver = solver;
-                _rootBudget = rootBudget;
             }
 
-            public int SolveRoot()
-                => Solve(new ComparisonState(_owner._n), _owner._k, _rootBudget, out _);
+            public int SolveRoot(int rootBudget)
+                => Solve(new ComparisonState(_owner._n), _owner._k, rootBudget, out _);
 
             private int Solve(ComparisonState state, int remainingSlots, int budget, out SearchStateKey normalizedKey)
             {
