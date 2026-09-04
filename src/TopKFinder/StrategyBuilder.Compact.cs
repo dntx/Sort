@@ -87,6 +87,8 @@ partial class StrategyBuilder
             ResetCompactForProgressiveRetry();
         else if (!progressiveRetry)
             ResetCompactState();
+        else
+            _compactEnumerationCapped = false;
         _lastProbeEnumerationCapped = false;
     }
 
