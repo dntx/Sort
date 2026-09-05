@@ -312,7 +312,7 @@ Lane 决策表（先选信号，再选车道）：
 | `DominanceReuseStatsTests.cs` | `RUN_DOMINANCE_STATS` | 统计 dominance floor 复用命中与覆盖率，定位下界复用退化 |
 | `GapTreeDumpTests.cs` | `RUN_GAP_DUMP` | 把 default 计划与 gap oracle 证明的边最优计划并排渲染，肉眼对比为何真最优边数更少 |
 | `OrderedBlockHonestyTests.cs` | `RUN_BLOCK_HONESTY` | 有序块置换检测器的诚实性 / 完整性扫描：确认 sibling 合并都由真实 parent-state automorphism 支撑 |
-| `ProofTightenPerfGateTests.cs` | `RUN_PROOF_TIGHTEN_GATE`、`PROOF_TIGHTEN_20_2_6_TIMEOUT_SECONDS`、`PROOF_TIGHTEN_20_5_5_TIMEOUT_SECONDS` 等 | 针对历史敏感形状 `20,2,6` 和 `20,5,5` 的 greedy proof-tighten watchdog；设置 `RUN_PROOF_TIGHTEN_GATE=1` 时两条用例都会执行，可选叠加 `OutcomesConstructed / CandidateGroupsEnumerated / SearchedStates` 的确定性上限（机器无关，便于 ratchet） |
+| `ProofTightenPerfGateTests.cs` | `RUN_PROOF_TIGHTEN_GATE`、`PROOF_TIGHTEN_20_2_6_TIMEOUT_SECONDS`、`PROOF_TIGHTEN_20_5_5_TIMEOUT_SECONDS` 等 | 针对历史敏感形状 `20,2,6` 和 `20,5,5` 的 greedy proof-tighten watchdog；设置 `RUN_PROOF_TIGHTEN_GATE=1` 时两条用例都会执行，可选叠加 `OutcomesConstructed / CandidateGroupsEnumerated / SearchedStates` 的确定性上限（机器无关，便于 ratchet）；Progressive 路径同时覆盖跨 cap 的 DFS continuation 生命周期 |
 
 `ProofTightenPerfGateTests` 使用说明：
 
@@ -331,6 +331,11 @@ dotnet test .\tests\TopKFinder.PerfTests\TopKFinder.PerfTests.csproj --filter Pr
   - `PROOF_TIGHTEN_SEARCHED_STATES_CAP`（默认 0，0=关闭）
 
 - 建议流程：先用 timeout-only 观察稳定性，再在同机多次测量后把确定性 cap 锁进 CI（优先锁 `OutcomesConstructed`）。
+- continuation 相关回归至少应覆盖：`12,4,4` 的完整不可行证明、`20,5,5` 的可行 `proof-tighten<=7` 路径，
+  以及 `20,5,5` 的不可行 `proof-tighten<=6` 路径。前两者分别保护“最终能闭合 proof”和“可行路径保持 early return”；
+  后者用于观察无解场景的跨 cap 状态复用，不能只用最终 outcome 判断性能是否改善。
+- 预算状态的 correctness 回归应确认：继续调用时使用新的 root budget；较严格 budget 的 group pattern 不被较宽松
+  budget 覆盖；retry 只清除本轮 capped 标志，不清空 continuation frame。
 - GitHub Actions 手动工作流：`.github/workflows/manual-proof-tighten-gate.yml`（`workflow_dispatch`）。
 
 夜间自动巡检（推荐）：
