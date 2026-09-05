@@ -248,15 +248,28 @@ compact 求解器对每个状态的候选比较组使用 `CandidateEnumerationPo
 - **被 cap 截断**：仍有候选未尝试，只能报告 `Incomplete`，不能据此证明预算不可行；
 - **找到可行解**：立即返回当前预算内的策略，不再枚举剩余候选。
 
-候选生成器会在 retry 之间保留原始代表的生成进度，并在每次扩容后重新提供当前累计的候选代表集合。
-这是一种枚举 continuation，目的是避免从原始组合的开头重新生成；它不改变候选集合的正确性，也不改变
-状态求解的 minimax 语义。当前实现仍可能对已经看到的候选再次执行部分 child/outcome 评估，因此 progressive
-并不保证在无解证明场景中优于一次性 `Full`。无解场景必须最终覆盖所有候选，progressive 额外承担多轮调度和
-重复评估成本；它的主要收益场景是较小 cap 就能找到可行解并提前返回。
+Progressive retry 使用状态级 DFS continuation，而不只是保存原始候选生成 cursor。每个 proof 状态 frame
+以 `(canonical SearchStateKey, budget)` 标识，并保留：
 
-因此，`Full` 与 `Progressive` 的区别是**候选枚举调度**，不是 BFS/DFS 的区别，也不是是否使用状态 memo、
-lower bound 或对称性约减的区别。用户选择 `Full` 时，proof-tighten 使用 `int.MaxValue`，使 cap 不再截断；
-仍保留上述状态归一化、剪枝、memo 和对称性约减。`Progressive` 是默认模式，适合希望可行场景尽早返回的运行。
+- 当前 normalized state 的候选 frontier 与候选顺序；
+- 每个候选 group 的 `BudgetFitTransition`；
+- transition 中每个 child 的 `Feasible`、`ProvenInfeasible` 或 `Incomplete` 结果；
+- 当前 cap 下的枚举完成状态。
+
+cap 扩大后，frame 通过候选生成器的 delta 继续取得新增候选，并复用已经完成的 child transition。retry 仍会从
+root 进入 continuation，但不会重建已经保存的 state frame、候选 transition 或已完成 child 结果。frame 使用
+canonical state identity，使同构状态共享 continuation；保存的 concrete state 只作为该 canonical frame 的枚举
+representative。每次调用 continuation 时都使用当前传入的 root budget，不会复用第一次调用的旧 budget。
+
+该 continuation 保持原有的 depth-first、first-feasible 语义：找到预算内可行候选时立即返回；只有在所有候选都
+完成且所有候选都被证明不可行时，才写入 `ProvenInfeasible`。被 cap 截断的状态只能返回 `Incomplete`，不能写入
+不可行 memo。每次 retry 开始时只清理本轮的 enumeration-capped 标志，不清理持久 frame；整个 proof-tighten probe
+结束后才释放 continuation。
+
+`Full` 与 `Progressive` 的区别仍然是候选枚举调度，不是搜索语义的区别。用户选择 `Full` 时，proof-tighten
+使用 `int.MaxValue`，不经过 Progressive continuation；仍保留状态归一化、剪枝、memo 和对称性约减。
+`Progressive` 是默认模式，适合希望可行场景尽早返回、并在 cap 扩大时继续已有 proof 状态的运行。无解场景仍需
+最终覆盖完整候选 frontier，因此实际收益取决于状态转移复用和具体搜索形状，不能假设所有无解案例都会快于 `Full`。
 
 CLI 使用 `--proof-tighten-mode progressive|full` 选择模式；桌面 UI 在 Inputs 区域提供同名下拉框。
 该设置只影响 greedy 流程中的 proof-tighten，不改变 exact 流程或 greedy-edge-compact 的 capped policy。

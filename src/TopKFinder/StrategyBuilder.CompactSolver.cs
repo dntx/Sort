@@ -9,6 +9,7 @@ partial class StrategyBuilder
     private sealed class CompactSolver
     {
         private readonly StrategyBuilder _owner;
+        private ProgressiveDfsContinuation? _progressiveDfsContinuation;
 
         public CompactSolver(StrategyBuilder owner)
         {
@@ -17,6 +18,15 @@ partial class StrategyBuilder
 
         public int SolveCompact(ComparisonState state, int remainingSlots, int feasibleBudget = int.MaxValue)
             => SolveCompact(state, remainingSlots, feasibleBudget, out _);
+
+        public int SolveProgressiveFeasibility(int rootBudget)
+        {
+            _progressiveDfsContinuation ??= new ProgressiveDfsContinuation(_owner, this);
+            return _progressiveDfsContinuation.SolveRoot(rootBudget);
+        }
+
+        public void ResetProgressiveFeasibility()
+            => _progressiveDfsContinuation = null;
 
         private int SolveCompact(
             ComparisonState state,
@@ -148,6 +158,222 @@ partial class StrategyBuilder
                 _owner._compactProvenInfeasibleMemo.Add(memoKey);
 
             return int.MaxValue;
+        }
+
+        // This preserves the recursive solver's depth-first and first-feasible semantics while
+        // making every cap-truncated concrete state resumable. A retry only extends each frame's
+        // candidate frontier and revisits child entries whose previous result was incomplete.
+        private sealed class ProgressiveDfsContinuation
+        {
+            private sealed class CandidateFrame
+            {
+                public CandidateFrame(List<int> group, BudgetFitTransition transition)
+                {
+                    Group = group;
+                    Transition = transition;
+                }
+
+                public List<int> Group { get; }
+                public BudgetFitTransition Transition { get; }
+                public bool Rejected { get; set; }
+            }
+
+            private sealed class StateFrame
+            {
+                public StateFrame(ComparisonState state, int remainingSlots, int budget, SearchStateKey key)
+                {
+                    State = state;
+                    RemainingSlots = remainingSlots;
+                    Budget = budget;
+                    Key = key;
+                }
+
+                public ComparisonState State { get; }
+                public int RemainingSlots { get; }
+                public int Budget { get; }
+                public SearchStateKey Key { get; }
+                public bool ConstructiveAdded { get; set; }
+                public bool EnumerationComplete { get; set; }
+                public Dictionary<IntSequenceKey, CandidateFrame> Candidates { get; } = new();
+                public List<CandidateFrame> OrderedCandidates { get; } = new();
+                public bool CandidateOrderDirty { get; set; }
+            }
+
+            private readonly StrategyBuilder _owner;
+            private readonly CompactSolver _solver;
+            private readonly Dictionary<(SearchStateKey Key, int Budget), StateFrame> _frames = new();
+
+            public ProgressiveDfsContinuation(StrategyBuilder owner, CompactSolver solver)
+            {
+                _owner = owner;
+                _solver = solver;
+            }
+
+            public int SolveRoot(int rootBudget)
+                => Solve(new ComparisonState(_owner._n), _owner._k, rootBudget, out _);
+
+            private int Solve(ComparisonState state, int remainingSlots, int budget, out SearchStateKey normalizedKey)
+            {
+                _owner.ThrowIfCancellationRequested();
+                ulong ignoredFixedTopMask = 0;
+                _owner.NormalizeState(state, ref ignoredFixedTopMask, ref remainingSlots);
+                normalizedKey = _owner.GetSearchStateKey(state, remainingSlots);
+                var memoKey = (normalizedKey, budget);
+
+                if (remainingSlots == 0
+                    || _owner.TryGetDeterminedTopSet(state, remainingSlots, out _)
+                    || state.ActiveCount <= remainingSlots
+                    || state.ActiveCount <= _owner._m)
+                {
+                    return 0;
+                }
+
+                if (_owner._compactCostMemo.TryGetValue(memoKey, out int cached)
+                    && cached != int.MaxValue)
+                {
+                    return cached;
+                }
+                if (_owner._compactProvenInfeasibleMemo.Contains(memoKey))
+                    return int.MaxValue;
+
+                var frameKey = (normalizedKey, budget);
+                if (!_frames.TryGetValue(frameKey, out StateFrame? frame))
+                {
+                    frame = new StateFrame(state.Clone(), remainingSlots, budget, normalizedKey);
+                    _frames.Add(frameKey, frame);
+                    _owner._compactStatesSolved++;
+                    _owner.ReportProgress();
+                }
+
+                // The frame's first normalized state is the representative for this canonical
+                // transposition class. Its canonical group patterns remain replayable from any
+                // isomorphic caller, while its cursor must only be extended once per cap epoch.
+                ExtendCandidates(frame);
+                bool allGroupsProvenInfeasible = true;
+                foreach (CandidateFrame candidate in frame.OrderedCandidates)
+                {
+                    if (candidate.Rejected)
+                        continue;
+
+                    BudgetChildrenResult result = ResolveChildren(candidate.Transition, budget - 1, out int realSteps);
+                    if (result == BudgetChildrenResult.ProvenInfeasible)
+                    {
+                        candidate.Rejected = true;
+                        continue;
+                    }
+                    if (result == BudgetChildrenResult.Incomplete)
+                    {
+                        allGroupsProvenInfeasible = false;
+                        continue;
+                    }
+
+                    _solver.CacheCompactPatternForBudget(frame.Key, frame.State, candidate.Group, budget);
+                    int cost = 1 + realSteps;
+                    _owner._compactCostMemo[(frame.Key, budget)] = cost;
+                    if (!_owner._compactRealStepsMemo.TryGetValue(frame.Key, out int existingSteps)
+                        || cost < existingSteps)
+                    {
+                        _owner._compactRealStepsMemo[frame.Key] = cost;
+                    }
+                    return cost;
+                }
+
+                if (frame.EnumerationComplete && allGroupsProvenInfeasible)
+                {
+                    _owner._compactProvenInfeasibleMemo.Add((frame.Key, budget));
+                    _owner._compactCostMemo[(frame.Key, budget)] = int.MaxValue;
+                }
+                return int.MaxValue;
+            }
+
+            private void ExtendCandidates(StateFrame frame)
+            {
+                int branchBudget = frame.Budget - 1;
+                IReadOnlyList<int> candidates = frame.State.GetActiveItemsOrdered();
+                int groupSize = Math.Min(_owner._m, candidates.Count);
+                if (!frame.ConstructiveAdded)
+                {
+                    AddCandidate(frame, _owner.ChooseConstructiveGroup(frame.State, frame.RemainingSlots), branchBudget);
+                    frame.ConstructiveAdded = true;
+                }
+
+                IReadOnlyList<List<int>> delta = _owner.EnumerateDistinctGroupsDelta(
+                    frame.State,
+                    candidates,
+                    groupSize,
+                    _owner.GetCompactGreedyCandidateCap(candidates.Count, groupSize),
+                    out bool wasTruncated);
+                if (!wasTruncated)
+                    frame.EnumerationComplete = true;
+                foreach (List<int> group in delta)
+                    AddCandidate(frame, group, branchBudget);
+
+                if (frame.CandidateOrderDirty)
+                {
+                    frame.OrderedCandidates.Sort((left, right) =>
+                        left.Transition.ChildCount.CompareTo(right.Transition.ChildCount));
+                    frame.CandidateOrderDirty = false;
+                }
+            }
+
+            private void AddCandidate(StateFrame frame, List<int> group, int branchBudget)
+            {
+                IntSequenceKey groupKey = new(group.ToArray());
+                if (frame.Candidates.ContainsKey(groupKey))
+                    return;
+
+                _owner._compactGroupsEnumerated++;
+                BudgetFitTransition transition = _solver.EvaluateBudgetFitChildren(
+                    frame.State, frame.RemainingSlots, frame.Key, group, branchBudget);
+                if (!transition.HasChildren)
+                    return;
+
+                _owner._compactStepOptimalGroups++;
+                var candidate = new CandidateFrame(group, transition);
+                frame.Candidates.Add(groupKey, candidate);
+                frame.OrderedCandidates.Add(candidate);
+                frame.CandidateOrderDirty = true;
+            }
+
+            private BudgetChildrenResult ResolveChildren(
+                BudgetFitTransition transition,
+                int branchBudget,
+                out int realSteps)
+            {
+                realSteps = 0;
+                for (int i = 0; i < transition.ChildCount; i++)
+                {
+                    BudgetFitTransition.ChildResult prior = transition.GetChildResult(i);
+                    if (prior == BudgetFitTransition.ChildResult.ProvenInfeasible)
+                        return BudgetChildrenResult.ProvenInfeasible;
+                    if (prior == BudgetFitTransition.ChildResult.Feasible)
+                    {
+                        realSteps = Math.Max(realSteps, transition.GetChildRealSteps(i));
+                        continue;
+                    }
+
+                    var (childState, childRemainingSlots) = transition.CreateChild(i);
+                    int childCost = Solve(childState, childRemainingSlots, branchBudget, out SearchStateKey childKey);
+                    if (childCost == int.MaxValue)
+                    {
+                        if (_owner._compactProvenInfeasibleMemo.Contains((childKey, branchBudget)))
+                        {
+                            transition.MarkChildProvenInfeasible(i);
+                            return BudgetChildrenResult.ProvenInfeasible;
+                        }
+
+                        return BudgetChildrenResult.Incomplete;
+                    }
+
+                    int childSteps = _owner._compactRealStepsMemo.TryGetValue(childKey, out int cachedSteps)
+                        ? cachedSteps
+                        : 0;
+                    transition.MarkChildFeasible(i, childSteps);
+                    realSteps = Math.Max(realSteps, childSteps);
+                }
+
+                return BudgetChildrenResult.Feasible;
+            }
         }
 
         private bool TryResolveCompactTerminalOrCached(

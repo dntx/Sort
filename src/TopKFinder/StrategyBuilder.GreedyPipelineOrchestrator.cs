@@ -312,6 +312,7 @@ partial class StrategyBuilder
                 _owner.CompactGreedyCandidateCap = configuredCap;
                 _owner._proofTightenCandidateGenerationRetryCache = null;
                 _owner._proofTightenCandidateGenerationRetryHits = 0;
+                _owner.CompactSolverInstance.ResetProgressiveFeasibility();
             }
         }
 
@@ -348,7 +349,8 @@ partial class StrategyBuilder
                         // "no group fit within budget" is not a proof of infeasibility (an untried group might
                         // have fit), so the caller must not close the squeeze / claim proven optimality.
                         _owner._lastProbeEnumerationCapped = _owner._compactEnumerationCapped;
-                        _owner.ResetCompactState();
+                        if (_owner.ProofTightenSearchMode != ProofTightenMode.Progressive)
+                            _owner.ResetCompactState();
                         return null;
                     }
 
