@@ -286,6 +286,8 @@ partial class StrategyBuilder
                     if (candidate is null && enumerationCapped && attemptCap < int.MaxValue)
                     {
                         attemptCap = NextGreedyCandidateCap(attemptCap);
+                        if (_owner.ProofTightenSearchMode == ProofTightenMode.Progressive)
+                            _owner.CompactSolverInstance.EnsureProgressiveFeasibilityContinuation();
                         continue;
                     }
 

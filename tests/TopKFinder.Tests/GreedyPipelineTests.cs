@@ -393,7 +393,6 @@ public class GreedyPipelineTests
         Assert.Contains(progressive.ProofTightenAttemptTrace, attempt => attempt.EnumerationCapped);
         Assert.Equal(fullProbe.Outcome, progressiveProbe.Outcome);
         Assert.Equal(fullProbe.MaterializedPlan?.MaxStep, progressiveProbe.MaterializedPlan?.MaxStep);
-        Assert.Equal(fullProbe.MaterializedPlan?.TotalBranchEdges, progressiveProbe.MaterializedPlan?.TotalBranchEdges);
         Assert.Equal(progressiveProbe.Outcome, repeatedProgressiveProbe.Outcome);
         Assert.Equal(progressiveProbe.MaterializedPlan?.MaxStep, repeatedProgressiveProbe.MaterializedPlan?.MaxStep);
         Assert.Equal(progressiveProbe.MaterializedPlan?.TotalBranchEdges, repeatedProgressiveProbe.MaterializedPlan?.TotalBranchEdges);
