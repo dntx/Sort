@@ -263,8 +263,7 @@ partial class StrategyBuilder
                     }
                     if (result == BudgetChildrenResult.Incomplete)
                     {
-                        allGroupsProvenInfeasible = false;
-                        continue;
+                        return int.MaxValue;
                     }
 
                     _solver.CacheCompactPatternForBudget(frame.Key, frame.State, candidate.Group, budget);

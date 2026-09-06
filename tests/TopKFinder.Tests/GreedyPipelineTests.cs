@@ -378,6 +378,23 @@ public class GreedyPipelineTests
     }
 
     [Fact]
+    public void ProofTighten_ProgressiveContinuation_MatchesFullProbeAfterCapGrowth()
+    {
+        const int budget = 5;
+        var progressive = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 1 };
+        var full = new StrategyBuilder(12, 4, 4) { ProofTightenSearchMode = ProofTightenMode.Full };
+
+        StageResult progressiveProbe = progressive.ExecuteProofTightenStage(budget);
+        StageResult fullProbe = full.ExecuteProofTightenStage(budget);
+
+        Assert.True(progressive.ProofTightenAttemptTrace.Count > 1);
+        Assert.Contains(progressive.ProofTightenAttemptTrace, attempt => attempt.EnumerationCapped);
+        Assert.Equal(fullProbe.Outcome, progressiveProbe.Outcome);
+        Assert.Equal(fullProbe.MaterializedPlan?.MaxStep, progressiveProbe.MaterializedPlan?.MaxStep);
+        Assert.Equal(fullProbe.MaterializedPlan?.TotalBranchEdges, progressiveProbe.MaterializedPlan?.TotalBranchEdges);
+    }
+
+    [Fact]
     public void GreedyPipeline_ExplicitCompleteEnumeration_IsProvenOptimal()
     {
         var builder = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 2_000_000 };
