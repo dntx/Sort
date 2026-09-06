@@ -382,9 +382,11 @@ public class GreedyPipelineTests
     {
         const int budget = 5;
         var progressive = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 1 };
+        var repeatedProgressive = new StrategyBuilder(12, 4, 4) { CompactGreedyCandidateCap = 1 };
         var full = new StrategyBuilder(12, 4, 4) { ProofTightenSearchMode = ProofTightenMode.Full };
 
         StageResult progressiveProbe = progressive.ExecuteProofTightenStage(budget);
+        StageResult repeatedProgressiveProbe = repeatedProgressive.ExecuteProofTightenStage(budget);
         StageResult fullProbe = full.ExecuteProofTightenStage(budget);
 
         Assert.True(progressive.ProofTightenAttemptTrace.Count > 1);
@@ -392,6 +394,10 @@ public class GreedyPipelineTests
         Assert.Equal(fullProbe.Outcome, progressiveProbe.Outcome);
         Assert.Equal(fullProbe.MaterializedPlan?.MaxStep, progressiveProbe.MaterializedPlan?.MaxStep);
         Assert.Equal(fullProbe.MaterializedPlan?.TotalBranchEdges, progressiveProbe.MaterializedPlan?.TotalBranchEdges);
+        Assert.Equal(progressiveProbe.Outcome, repeatedProgressiveProbe.Outcome);
+        Assert.Equal(progressiveProbe.MaterializedPlan?.MaxStep, repeatedProgressiveProbe.MaterializedPlan?.MaxStep);
+        Assert.Equal(progressiveProbe.MaterializedPlan?.TotalBranchEdges, repeatedProgressiveProbe.MaterializedPlan?.TotalBranchEdges);
+        Assert.Equal(progressiveProbe.Solution?.Score.SearchEdgeCost, repeatedProgressiveProbe.Solution?.Score.SearchEdgeCost);
     }
 
     [Fact]
