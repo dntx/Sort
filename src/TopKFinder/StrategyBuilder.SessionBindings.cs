@@ -74,6 +74,7 @@ partial class StrategyBuilder
         _compactRootCost = _compactUsesFeasibleBudget
             && _compactFeasibilityOnly
             && ProofTightenSearchMode == ProofTightenMode.Progressive
+            && CompactSolverInstance.HasProgressiveFeasibilityContinuation
                 ? CompactSolverInstance.SolveProgressiveFeasibility(rootBudget)
                 : SolveCompact(new ComparisonState(_n), _k, rootBudget);
         _phase1bSolved = true;
