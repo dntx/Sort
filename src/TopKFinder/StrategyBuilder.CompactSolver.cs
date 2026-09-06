@@ -167,14 +167,16 @@ partial class StrategyBuilder
         {
             private sealed class CandidateFrame
             {
-                public CandidateFrame(List<int> group, BudgetFitTransition transition)
+                public CandidateFrame(List<int> group, BudgetFitTransition transition, int sequence)
                 {
                     Group = group;
                     Transition = transition;
+                    Sequence = sequence;
                 }
 
                 public List<int> Group { get; }
                 public BudgetFitTransition Transition { get; }
+                public int Sequence { get; }
                 public bool Rejected { get; set; }
             }
 
@@ -194,6 +196,8 @@ partial class StrategyBuilder
                 public SearchStateKey Key { get; }
                 public bool ConstructiveAdded { get; set; }
                 public bool EnumerationComplete { get; set; }
+                public int LastCandidateCap { get; set; }
+                public int NextCandidateSequence { get; set; }
                 public Dictionary<IntSequenceKey, CandidateFrame> Candidates { get; } = new();
                 public List<CandidateFrame> OrderedCandidates { get; } = new();
                 public bool CandidateOrderDirty { get; set; }
@@ -295,14 +299,16 @@ partial class StrategyBuilder
                     frame.ConstructiveAdded = true;
                 }
 
-                if (!frame.EnumerationComplete)
+                int candidateCap = _owner.GetCompactGreedyCandidateCap(candidates.Count, groupSize);
+                if (!frame.EnumerationComplete && candidateCap > frame.LastCandidateCap)
                 {
                     IReadOnlyList<List<int>> delta = _owner.EnumerateDistinctGroupsDelta(
                         frame.State,
                         candidates,
                         groupSize,
-                        _owner.GetCompactGreedyCandidateCap(candidates.Count, groupSize),
+                        candidateCap,
                         out bool wasTruncated);
+                    frame.LastCandidateCap = candidateCap;
                     if (!wasTruncated)
                         frame.EnumerationComplete = true;
                     foreach (List<int> group in delta)
@@ -312,7 +318,12 @@ partial class StrategyBuilder
                 if (frame.CandidateOrderDirty)
                 {
                     frame.OrderedCandidates.Sort((left, right) =>
-                        left.Transition.ChildCount.CompareTo(right.Transition.ChildCount));
+                    {
+                        int childCountComparison = left.Transition.ChildCount.CompareTo(right.Transition.ChildCount);
+                        return childCountComparison != 0
+                            ? childCountComparison
+                            : left.Sequence.CompareTo(right.Sequence);
+                    });
                     frame.CandidateOrderDirty = false;
                 }
             }
@@ -330,7 +341,7 @@ partial class StrategyBuilder
                     return;
 
                 _owner._compactStepOptimalGroups++;
-                var candidate = new CandidateFrame(group, transition);
+                var candidate = new CandidateFrame(group, transition, frame.NextCandidateSequence++);
                 frame.Candidates.Add(groupKey, candidate);
                 frame.OrderedCandidates.Add(candidate);
                 frame.CandidateOrderDirty = true;
