@@ -249,7 +249,6 @@ partial class StrategyBuilder
                 // transposition class. Its canonical group patterns remain replayable from any
                 // isomorphic caller, while its cursor must only be extended once per cap epoch.
                 ExtendCandidates(frame);
-                bool allGroupsProvenInfeasible = true;
                 foreach (CandidateFrame candidate in frame.OrderedCandidates)
                 {
                     if (candidate.Rejected)
@@ -277,7 +276,7 @@ partial class StrategyBuilder
                     return cost;
                 }
 
-                if (frame.EnumerationComplete && allGroupsProvenInfeasible)
+                if (frame.EnumerationComplete)
                 {
                     _owner._compactProvenInfeasibleMemo.Add((frame.Key, budget));
                     _owner._compactCostMemo[(frame.Key, budget)] = int.MaxValue;
@@ -296,16 +295,19 @@ partial class StrategyBuilder
                     frame.ConstructiveAdded = true;
                 }
 
-                IReadOnlyList<List<int>> delta = _owner.EnumerateDistinctGroupsDelta(
-                    frame.State,
-                    candidates,
-                    groupSize,
-                    _owner.GetCompactGreedyCandidateCap(candidates.Count, groupSize),
-                    out bool wasTruncated);
-                if (!wasTruncated)
-                    frame.EnumerationComplete = true;
-                foreach (List<int> group in delta)
-                    AddCandidate(frame, group, branchBudget);
+                if (!frame.EnumerationComplete)
+                {
+                    IReadOnlyList<List<int>> delta = _owner.EnumerateDistinctGroupsDelta(
+                        frame.State,
+                        candidates,
+                        groupSize,
+                        _owner.GetCompactGreedyCandidateCap(candidates.Count, groupSize),
+                        out bool wasTruncated);
+                    if (!wasTruncated)
+                        frame.EnumerationComplete = true;
+                    foreach (List<int> group in delta)
+                        AddCandidate(frame, group, branchBudget);
+                }
 
                 if (frame.CandidateOrderDirty)
                 {
