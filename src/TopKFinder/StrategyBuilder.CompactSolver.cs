@@ -21,13 +21,15 @@ partial class StrategyBuilder
 
         public int SolveProgressiveFeasibility(int rootBudget)
         {
-            EnsureProgressiveFeasibilityContinuation();
-            return _progressiveDfsContinuation.SolveRoot(rootBudget);
+            return GetOrCreateProgressiveFeasibilityContinuation().SolveRoot(rootBudget);
         }
 
         public bool HasProgressiveFeasibilityContinuation => _progressiveDfsContinuation is not null;
 
         public void EnsureProgressiveFeasibilityContinuation()
+            => GetOrCreateProgressiveFeasibilityContinuation();
+
+        private ProgressiveDfsContinuation GetOrCreateProgressiveFeasibilityContinuation()
             => _progressiveDfsContinuation ??= new ProgressiveDfsContinuation(_owner, this);
 
         public void ResetProgressiveFeasibility()
