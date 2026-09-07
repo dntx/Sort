@@ -182,7 +182,7 @@ public sealed class MainFormRenderingTests
         Assert.False(worker.IsCompleted);
 
         InvokePrivateInstanceVoid(form, "ContinuePausedStage");
-        Assert.True(PumpMessagesUntil(() => worker.IsCompleted, TimeSpan.FromSeconds(2)));
+    Assert.True(WaitForWorkerCompletion(worker, TimeSpan.FromSeconds(2)));
     }
 
     [Fact]
@@ -213,7 +213,7 @@ public sealed class MainFormRenderingTests
 
         Assert.True(PumpMessagesUntil(() => callbackRan, TimeSpan.FromSeconds(2)));
         cancellationSource.Cancel();
-        Assert.True(PumpMessagesUntil(() => worker.IsCompleted, TimeSpan.FromSeconds(2)));
+        Assert.True(WaitForWorkerCompletion(worker, TimeSpan.FromSeconds(2)));
         Assert.Equal(TaskStatus.RanToCompletion, worker.Status);
     }
 
@@ -228,6 +228,19 @@ public sealed class MainFormRenderingTests
 
         Application.DoEvents();
         return condition();
+    }
+
+    private static bool WaitForWorkerCompletion(Task worker, TimeSpan timeout)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        while (!worker.IsCompleted && stopwatch.Elapsed < timeout)
+        {
+            Application.DoEvents();
+            worker.Wait(TimeSpan.FromMilliseconds(10));
+        }
+
+        Application.DoEvents();
+        return worker.IsCompleted;
     }
 
     [Fact]
