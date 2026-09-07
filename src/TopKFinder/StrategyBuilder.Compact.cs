@@ -83,10 +83,12 @@ partial class StrategyBuilder
     private void PrepareFeasibleCompactProbe(bool progressiveRetry = false)
     {
         ResetPerBuildTransientState();
-        if (progressiveRetry)
+        if (!progressiveRetry)
+            ResetCompactState();
+        else if (ProofTightenSearchMode != ProofTightenMode.Progressive)
             ResetCompactForProgressiveRetry();
         else
-            ResetCompactState();
+            _compactEnumerationCapped = false;
         _lastProbeEnumerationCapped = false;
     }
 
