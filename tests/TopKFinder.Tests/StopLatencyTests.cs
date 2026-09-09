@@ -13,6 +13,7 @@ public class StopLatencyTests
     // Keep this suite intentionally small: enough shape coverage to catch regressions,
     // but bounded so it does not dominate test runtime.
     [Theory]
+    [InlineData("greedy", 20, 2, 6, 1)]
     [InlineData("greedy", 20, 2, 6, 2)]
     [InlineData("greedy", 20, 2, 6, 5)]
     [InlineData("greedy", 20, 2, 6, 10)]
