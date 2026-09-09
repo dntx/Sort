@@ -331,13 +331,19 @@ partial class StrategyBuilder
             private List<int>? _pendingGroup;
 
             internal CandidateGenerationRetryCacheEntry(
+                Action probeCancellation,
                 List<List<int>> classes,
                 int[] suffixCapacity,
                 int groupSize,
                 int[] labels)
             {
                 _rawGroups = EnumerateClassRepresentatives(
-                    classes, suffixCapacity, 0, groupSize, new List<int>(groupSize)).GetEnumerator();
+                    probeCancellation,
+                    classes,
+                    suffixCapacity,
+                    0,
+                    groupSize,
+                    new List<int>(groupSize)).GetEnumerator();
                 _labels = labels;
             }
 
@@ -441,12 +447,14 @@ partial class StrategyBuilder
         }
 
         private static IEnumerable<List<int>> EnumerateClassRepresentatives(
+            Action probeCancellation,
             List<List<int>> classes,
             int[] suffixCapacity,
             int classIndex,
             int remaining,
             List<int> prefix)
         {
+            probeCancellation();
             if (remaining == 0)
             {
                 var group = new List<int>(prefix);
@@ -462,10 +470,12 @@ partial class StrategyBuilder
             int maxTake = Math.Min(cls.Count, remaining);
             for (int take = 0; take <= maxTake; take++)
             {
+                probeCancellation();
                 for (int j = 0; j < take; j++)
                     prefix.Add(cls[j]);
 
                 foreach (List<int> group in EnumerateClassRepresentatives(
+                    probeCancellation,
                     classes,
                     suffixCapacity,
                     classIndex + 1,
@@ -544,6 +554,7 @@ partial class StrategyBuilder
                 if (!retryCache.TryGetValue(retryKey, out CandidateGenerationRetryCacheEntry? entry))
                 {
                     entry = new CandidateGenerationRetryCacheEntry(
+                        () => owner.ProbeCancellation(),
                         classes, suffixCapacity, groupSize, state.GetStructuralLabels());
                     retryCache[retryKey] = entry;
                 }
@@ -563,6 +574,7 @@ partial class StrategyBuilder
             var collected = new List<List<int>>();
             var prefix = new List<int>(groupSize);
             using IEnumerator<List<int>> rawGroups = EnumerateClassRepresentatives(
+                () => owner.ProbeCancellation(),
                 classes, suffixCapacity, 0, groupSize, prefix).GetEnumerator();
             bool enumerationComplete = false;
             while (collected.Count < generationCap)
