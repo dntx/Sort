@@ -331,6 +331,15 @@ partial class StrategyBuilder
             private List<int>? _pendingGroup;
 
             internal CandidateGenerationRetryCacheEntry(
+                List<List<int>> classes,
+                int[] suffixCapacity,
+                int groupSize,
+                int[] labels)
+                : this(() => { }, classes, suffixCapacity, groupSize, labels)
+            {
+            }
+
+            internal CandidateGenerationRetryCacheEntry(
                 Action probeCancellation,
                 List<List<int>> classes,
                 int[] suffixCapacity,

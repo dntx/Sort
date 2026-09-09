@@ -70,12 +70,12 @@ public sealed class GroupEnumerationServiceTests
         var owner = new StrategyBuilder(8, 3, 3);
 
         var resumed = new StrategyBuilder.GroupSelectionHelper.CandidateGenerationRetryCacheEntry(
-            classes, suffixCapacity, groupSize: 3, state.GetStructuralLabels());
+            classes, suffixCapacity, groupSize: 3, labels: state.GetStructuralLabels());
         IReadOnlyList<List<int>> first = resumed.ExtendTo(owner, state, generationCap: 1, out bool firstTruncated);
         IReadOnlyList<List<int>> continued = resumed.ExtendTo(owner, state, generationCap: 4, out bool continuedTruncated);
 
         var baseline = new StrategyBuilder.GroupSelectionHelper.CandidateGenerationRetryCacheEntry(
-            classes, suffixCapacity, groupSize: 3, state.GetStructuralLabels());
+            classes, suffixCapacity, groupSize: 3, labels: state.GetStructuralLabels());
         IReadOnlyList<List<int>> direct = baseline.ExtendTo(owner, state, generationCap: 4, out bool directTruncated);
 
         Assert.True(firstTruncated);
@@ -94,7 +94,7 @@ public sealed class GroupEnumerationServiceTests
         var candidates = Enumerable.Range(0, 8).ToList();
 
         IReadOnlyList<List<int>> groups = StrategyBuilder.GroupSelectionHelper.EnumerateDistinctGroups(
-            owner, state, candidates, groupSize: 3, generationCap: 1, out bool wasTruncated);
+            owner, state, candidates, groupSize: 3, generationCap: 1, wasTruncated: out bool wasTruncated);
 
         Assert.Single(groups);
         Assert.False(wasTruncated);
@@ -104,7 +104,7 @@ public sealed class GroupEnumerationServiceTests
             classes,
             BuildSuffixCapacity(classes),
             groupSize: 3,
-            state.GetStructuralLabels());
+            labels: state.GetStructuralLabels());
         IReadOnlyList<List<int>> cursorGroups = cursor.ExtendTo(
             owner, state, generationCap: 1, out bool cursorWasTruncated);
 
